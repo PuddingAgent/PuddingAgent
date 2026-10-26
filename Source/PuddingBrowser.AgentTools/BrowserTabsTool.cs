@@ -112,7 +112,9 @@ public sealed class BrowserTabsTool(
 
         var created = await surface.TabsAsync(
             BrowserTabsRequest.New(contextId, initialUrl, args.Activate), createCall, ct);
-        return created.IsFailure ? Failure(created.Error!) : Success(created.Value);
+        return created.IsFailure
+            ? Failure(created.Error!)
+            : Success(created.Value, [SingleTargetPageNotice]);
     }
 
     private async Task<ToolExecutionResult> ListAsync(BrowserTabsArgs args, CancellationToken ct)
@@ -229,7 +231,19 @@ public sealed class BrowserTabsTool(
             : Success(changed.Value);
     }
 
-    private static ToolExecutionResult Success(DesktopTabsResult tabs) => BrowserToolResponse.Success(
+    /// <summary>
+    /// 新建页面的回执必须自报授权状态。
+    ///
+    /// 授权模型是单目标页：新页能建出来，但**不自动成为授权目标**。
+    /// 不在这里说明，调用方会拿着一个 ok 回执继续 evaluate/navigate，
+    /// 然后在另一处得到一个看不懂的 `no page grant covers …`。
+    /// </summary>
+    internal const string SingleTargetPageNotice =
+        "single_target_page: this page was created but is not the authorized target (only one page can be driven at a time); ask the user to hand it over in Desktop before driving it";
+
+    private static ToolExecutionResult Success(
+        DesktopTabsResult tabs,
+        IReadOnlyList<string>? warnings = null) => BrowserToolResponse.Success(
         new BrowserTabToolValue
         {
             ContextId = tabs.Page.Target.ContextId,
@@ -241,7 +255,8 @@ public sealed class BrowserTabsTool(
         },
         new BrowserContextId(tabs.Page.Target.ContextId),
         new PageId(tabs.Page.Target.PageId),
-        tabs.Page.Version.IsKnown ? tabs.Page.Version.Value : null);
+        tabs.Page.Version.IsKnown ? tabs.Page.Version.Value : null,
+        warnings);
 
     private static ToolExecutionResult Failure(DesktopCapabilityError error) =>
         BrowserCapabilityFailure.From(error, "browser_tabs_failed", "stale_page_version");

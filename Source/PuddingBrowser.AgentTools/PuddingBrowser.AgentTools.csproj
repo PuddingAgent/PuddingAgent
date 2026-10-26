@@ -8,6 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- 只对**测试程序集**开放 internals（同 PuddingSsh/PuddingRuntime 的做法）。
+         组件化交付规程 §3.2 禁止的是向上层调用方开放，不包含测试工程。
+         用途：浏览器回执的错误码映射表必须能被单测直接打到，否则「未授权被降级成操作失败」
+         这类缺陷只能靠部署后的实跑发现。 -->
+    <InternalsVisibleTo Include="PuddingBrowser.AgentToolsTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\PuddingBrowser.Abstractions\PuddingBrowser.Abstractions.csproj" />
     <!-- 回执判定（completion/断言/重试裁定）是纯逻辑组件：工具层只调用它一次，
          因此两条传输天然同形，映射层不必各自再验一遍。 -->

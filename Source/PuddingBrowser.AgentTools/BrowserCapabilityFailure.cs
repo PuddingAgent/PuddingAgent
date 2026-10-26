@@ -16,6 +16,16 @@ internal static class BrowserCapabilityFailure
     internal const string CursorExpiredHint =
         "the cursor belongs to an older page version or a different locator: re-read (call again without the cursor) and page from the fresh result";
 
+    /// <summary>
+    /// 页面未授权时的可执行提示。
+    ///
+    /// 授权模型是**单目标页**（用户显式选中的那一页，见 AgentTargetSession）：
+    /// 新建或切到另一页**不会**自动取得授权。不给这条提示，调用方只能看到一句
+    /// `no page grant covers …`，既不知为何，也不知下一步该做什么。
+    /// </summary>
+    internal const string PageNotAuthorizedHint =
+        "page_not_authorized: only one page can be driven at a time and it must be the page the user handed to this session; ask the user to hand this page over in Desktop, or switch back to the already-authorized page";
+
     public static ToolExecutionResult From(
         DesktopCapabilityError error,
         string fallbackCode,
@@ -24,6 +34,10 @@ internal static class BrowserCapabilityFailure
         IReadOnlyList<string>? warnings = null) => BrowserToolResponse.Failure(
         error.Code switch
         {
+            // 未授权是**独立错误码**：既不是“参数错”也不是“操作失败”，而是“这一页没交给你”。
+            // 归到 fallback 会把授权拒绝伪装成执行失败，调用方只会反复重试同一个动作
+            // （实测：browser_evaluate / browser_navigate 都报 browser_*_failed）。
+            DesktopCapabilityErrorCode.Unauthorized => "browser_page_not_authorized",
             DesktopCapabilityErrorCode.InvalidTarget => "browser_page_not_found",
             DesktopCapabilityErrorCode.PageVersionMismatch => versionMismatchCode,
             DesktopCapabilityErrorCode.InvalidRequest => "browser_invalid_arguments",
@@ -34,7 +48,13 @@ internal static class BrowserCapabilityFailure
         },
         error.Message,
         value: value,
-        warnings: warnings ?? (error.Code == DesktopCapabilityErrorCode.CursorExpired
-            ? [CursorExpiredHint]
-            : null));
+        warnings: warnings ?? HintFor(error.Code));
+
+    /// <summary>失败也该带“下一步怎么做”：提示按错误码固定，不随工具变。</summary>
+    private static IReadOnlyList<string>? HintFor(DesktopCapabilityErrorCode code) => code switch
+    {
+        DesktopCapabilityErrorCode.CursorExpired => [CursorExpiredHint],
+        DesktopCapabilityErrorCode.Unauthorized => [PageNotAuthorizedHint],
+        _ => null,
+    };
 }
