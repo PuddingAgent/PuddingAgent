@@ -170,6 +170,71 @@ public sealed class OfficialSourceFetcherTests
         Assert.AreEqual(Encoding.UTF8.GetByteCount(payload), result.Bytes);
     }
 
+    [TestMethod]
+    public async Task FetchBytesAsync_PreservesNonTextBytes()
+    {
+        // 0x00/0xFF/0x80 不是合法 UTF-8：走 FetchAsync 会被替换字符揭穿，字节数也会变。
+        byte[] payload = [0x00, 0xFF, 0xFE, 0x80, 0x25, 0x50];
+        var handler = new ByteHandler(payload);
+        using var http = new HttpClient(handler);
+        var fetcher = new OfficialSourceFetcher(http);
+
+        var binary = await fetcher.FetchBytesAsync(
+            new SourceFetchRequest("https://www.cninfo.com.cn/x.pdf"));
+
+        CollectionAssert.AreEqual(payload, binary.Bytes, "二进制必须逐字节原样返回");
+        Assert.AreEqual(payload.Length, binary.Bytes.Length);
+        var expected = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+        Assert.AreEqual(expected, binary.Sha256);
+    }
+
+    [TestMethod]
+    public async Task FetchAsync_OnTheSameBinary_LosesBytes()
+    {
+        byte[] payload = [0x00, 0xFF, 0xFE, 0x80];
+        var handler = new ByteHandler(payload);
+        using var http = new HttpClient(handler);
+        var fetcher = new OfficialSourceFetcher(http);
+
+        var text = await fetcher.FetchAsync(
+            new SourceFetchRequest("https://www.cninfo.com.cn/x.pdf"));
+
+        // 对照：Bytes 字段仍然如实报告原始字节数，但 Body 已不可还原（非法 UTF-8 → 替换字符）。
+        Assert.AreEqual(payload.Length, text.Bytes, "Bytes 统计的是解码前的原始字节数");
+        Assert.IsTrue(text.Body.Contains('\uFFFD'), "解码后的字符串已经丟了信息，不能当二进制用");
+    }
+
+    [TestMethod]
+    public async Task FetchBytesAsync_KeepsPdfMagicAndTruncationFlag()
+    {
+        var body = Encoding.ASCII.GetBytes("%PDF-1.7\n%âãÏÓ\n1 0 obj\n");
+        var handler = new ByteHandler(body);
+        using var http = new HttpClient(handler);
+        var fetcher = new OfficialSourceFetcher(http);
+
+        var full = await fetcher.FetchBytesAsync(
+            new SourceFetchRequest("https://www.cninfo.com.cn/x.pdf"));
+        Assert.AreEqual("%PDF-", Encoding.ASCII.GetString(full.Bytes, 0, 5));
+        Assert.IsFalse(full.Truncated);
+
+        var clipped = await fetcher.FetchBytesAsync(
+            new SourceFetchRequest("https://www.cninfo.com.cn/x.pdf", MaxBytes: 4));
+        Assert.IsTrue(clipped.Truncated);
+        Assert.AreEqual(4, clipped.Bytes.Length);
+    }
+
+    private sealed class ByteHandler(byte[] payload) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var content = new ByteArrayContent(payload);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+        }
+    }
+
     private static HttpResponseMessage Text(int status, string body)
     {
         return new HttpResponseMessage((HttpStatusCode)status)

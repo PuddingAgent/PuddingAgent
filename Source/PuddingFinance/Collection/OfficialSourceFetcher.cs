@@ -38,6 +38,21 @@ public sealed record SourceFetchResult(
     IReadOnlyList<int> RetriedStatusCodes);
 
 /// <summary>
+/// 二进制抓取结果。PDF / 图片必须走 <see cref="OfficialSourceFetcher.FetchBytesAsync"/>：
+/// 先当文本解码再回编码会把中文 PDF 变成替换字符，字节数也会对不上。
+/// </summary>
+public sealed record SourceBinaryResult(
+    string Url,
+    int StatusCode,
+    string? ContentType,
+    byte[] Bytes,
+    string Sha256,
+    bool Truncated,
+    int Attempts,
+    long ElapsedMs,
+    IReadOnlyList<int> RetriedStatusCodes);
+
+/// <summary>
 /// 抓取失败。<see cref="IsRetryable"/> 区分"值得退避重试"和"再试也没用"：
 /// 域名不在白名单是确定态，而 429/5xx 是临时态。
 /// </summary>
@@ -105,9 +120,49 @@ public sealed class OfficialSourceFetcher
     /// <summary>白名单快照，供调用方在抓取前自查。</summary>
     public static IReadOnlyList<string> AllowedHosts => OfficialSourceHosts.All;
 
+    /// <summary>取文本。二进制资源请用 <see cref="FetchBytesAsync"/>：解码会破坏非文本字节。</summary>
     public async Task<SourceFetchResult> FetchAsync(
         SourceFetchRequest request,
         CancellationToken cancellationToken = default)
+    {
+        var raw = await ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+        return new SourceFetchResult(
+            Url: raw.Uri.ToString(),
+            StatusCode: raw.StatusCode,
+            ContentType: raw.ContentType,
+            Body: Decode(raw.Bytes, raw.Charset),
+            Sha256: Sha256(raw.Bytes),
+            Bytes: raw.Bytes.Length,
+            Truncated: raw.Truncated,
+            Attempts: raw.Attempts,
+            ElapsedMs: raw.ElapsedMs,
+            RetriedStatusCodes: raw.Retried);
+    }
+
+    /// <summary>
+    /// 取原始字节。二进制资源必须走这里——先解码成 string 再回编码，
+    /// 中文 PDF 会变成替换字符，而且字节数会变，后面的哈希与解析全部失真。
+    /// </summary>
+    public async Task<SourceBinaryResult> FetchBytesAsync(
+        SourceFetchRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var raw = await ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+        return new SourceBinaryResult(
+            Url: raw.Uri.ToString(),
+            StatusCode: raw.StatusCode,
+            ContentType: raw.ContentType,
+            Bytes: raw.Bytes,
+            Sha256: Sha256(raw.Bytes),
+            Truncated: raw.Truncated,
+            Attempts: raw.Attempts,
+            ElapsedMs: raw.ElapsedMs,
+            RetriedStatusCodes: raw.Retried);
+    }
+
+    private async Task<RawFetch> ExecuteAsync(
+        SourceFetchRequest request,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -180,17 +235,16 @@ public sealed class OfficialSourceFetcher
                     .ConfigureAwait(false);
                 stopwatch.Stop();
 
-                return new SourceFetchResult(
-                    Url: uri.ToString(),
-                    StatusCode: status,
-                    ContentType: response.Content.Headers.ContentType?.ToString(),
-                    Body: Decode(bytes, response.Content.Headers.ContentType?.CharSet),
-                    Sha256: Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
-                    Bytes: bytes.Length,
-                    Truncated: truncated,
-                    Attempts: attempt,
-                    ElapsedMs: stopwatch.ElapsedMilliseconds,
-                    RetriedStatusCodes: retried);
+                return new RawFetch(
+                    uri,
+                    status,
+                    response.Content.Headers.ContentType?.ToString(),
+                    response.Content.Headers.ContentType?.CharSet,
+                    bytes,
+                    truncated,
+                    attempt,
+                    stopwatch.ElapsedMilliseconds,
+                    retried);
             }
         }
     }
@@ -232,6 +286,21 @@ public sealed class OfficialSourceFetcher
         var factor = Math.Pow(2, Math.Max(0, attempt - 1));
         return TimeSpan.FromMilliseconds(BackoffUnit.TotalMilliseconds * factor);
     }
+
+    private static string Sha256(byte[] bytes) =>
+        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
+    /// <summary>一次成功响应的原始形态：文本与二进制两条出口共用它。</summary>
+    private sealed record RawFetch(
+        Uri Uri,
+        int StatusCode,
+        string? ContentType,
+        string? Charset,
+        byte[] Bytes,
+        bool Truncated,
+        int Attempts,
+        long ElapsedMs,
+        List<int> Retried);
 
     private static HttpRequestMessage BuildRequest(Uri uri, SourceFetchRequest request)
     {
