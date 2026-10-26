@@ -153,8 +153,9 @@ public static class NativeInputSequence
     }
 
     /// <summary>
-    /// 逐键输入：每个字符发一次 <c>keyDown</c>（带 text）与 <c>keyUp</c>。
-    /// 这样页面能收到 <c>keydown/keypress/input/keyup</c> 的完整序列，而 <c>insertText</c> 只给 input。
+    /// 逐键输入：可打印 ASCII 走 <c>keyDown</c>(带 text)+<c>keyUp</c>，
+    /// 非 ASCII（中文/emoji/全角标点）走 <c>Input.insertText</c>。
+    /// 两条路的分工不是风格选择，而是受控编辑器认什么决定的（见下方注释）。
     /// </summary>
     public static IReadOnlyList<CdpCall> PlanType(string? text)
     {
@@ -170,12 +171,15 @@ public static class NativeInputSequence
                 continue;
             }
 
-            // 非 ASCII（中文/emoji/全角标点）没有可派发的物理键位。旧版直接 continue ——
-            // 于是 type("同款蓝毛") 一个字也进不去（实测 2026-10-26）。
-            // 正确形态是 CDP 里“输入法提交”的样子：只带 text 的 keyDown。
-            // 页面会走正常的输入管线（beforeinput/input），自定义富文本编辑器
-            // （Slate/ProseMirror 那类）也才会认这是人打的字、才肯置脏。
-            calls.Add(Text(character.ToString()));
+            // 非 ASCII（中文/emoji/全角标点）没有可派发的物理键位，只能用 insertText。
+            //
+            // 曾经用“只带 text 的 keyDown”代替，认为那等于输入法提交。抖音评论框
+            // （Draft.js 受控 contenteditable）实测证伪：DOM 里字出现了、EditorState 仍是空的，
+            // 于是发送按钮不出现、回车也不提交 —— 页面看到的是“有字”，框架看到的是“没字”。
+            // 原因是 Draft/React 的可打印字符插入挂在 keydown 上，而 keydown 只认物理键位
+            // （key/code/vkCode）；没有键位的 keyDown 只让浏览器自己改了 DOM。
+            // Input.insertText 走浏览器原生插入路径，受控编辑器会正确置脏（实测 2026-10-26）。
+            calls.Add(InsertText(character.ToString()));
         }
 
         return calls;
@@ -347,16 +351,11 @@ public static class NativeInputSequence
     }
 
     /// <summary>
-    /// 只带 text 的按键：CDP 里“输入法提交”的形态。没有物理键位可给（中文/emoji），
-    /// 但页面会走正常输入管线 —— 这是“模拟键盘输入”对非 ASCII 的唯一诚实表达。
+    /// 原生插入文本：唯一能让受控富文本编辑器（Draft.js / React）真正更新自己状态的写入形态。
+    /// 中文/emoji 没有物理键位，必须走这条；伪造一个错的虚拟键码会被页面当成别的按键。
     /// </summary>
-    private static CdpCall Text(string text) =>
-        new("Input.dispatchKeyEvent", JsonSerializer.Serialize(new Dictionary<string, object?>
-        {
-            ["type"] = "keyDown",
-            ["text"] = text,
-            ["unmodifiedText"] = text,
-        }));
+    private static CdpCall InsertText(string text) =>
+        new("Input.insertText", JsonSerializer.Serialize(new { text }));
 
     /// <summary>
     /// 显式 <c>char</c> 事件：CDP 里唯一会为命名键产生 <c>beforeinput</c>/<c>input</c> 的形态。

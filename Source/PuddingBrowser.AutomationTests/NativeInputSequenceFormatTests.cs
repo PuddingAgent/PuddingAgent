@@ -91,22 +91,20 @@ public sealed class NativeInputSequenceTests
 
     /// <summary>
     /// 非 ASCII（中文/emoji/全角）没有物理键位：旧版直接 continue，“type("大肥鱼")” 一个字也进不去
-    /// （实测 2026-10-26：内容不进框、发送按钮不出现）。正确形态是只带 text 的 keyDown，
-    /// 也就是 CDP 里输入法提交的样子 —— 页面走正常输入管线，自定义富文本编辑器才肯置脏。
+    /// （实测 2026-10-26：内容不进框、发送按钮不出现）。正确形态是 Input.insertText，
+    /// 实测：只带 text 的 keyDown 让 DOM 有字而 EditorState 仍空（发送按钮不出现、回车不提交）。
     /// </summary>
     [TestMethod]
-    public void TypeEmitsImeStyleKeyDownForNonAsciiCharacters()
+    public void TypeUsesInsertTextForNonAsciiCharacters()
     {
         var calls = NativeInputSequence.PlanType("大a");
 
-        // '大': 一个 text-only keyDown；'a': 常规 keyDown+keyUp。
+        // '大': 一次 insertText；'a': 常规 keyDown+keyUp。
         Assert.AreEqual(3, calls.Count);
 
         var first = Parse(calls[0]);
-        Assert.AreEqual("Input.dispatchKeyEvent", calls[0].Method);
-        Assert.AreEqual("keyDown", first.GetProperty("type").GetString());
+        Assert.AreEqual("Input.insertText", calls[0].Method);
         Assert.AreEqual("大", first.GetProperty("text").GetString());
-        Assert.AreEqual("大", first.GetProperty("unmodifiedText").GetString());
         // 关键判据：没有伪造键位。塞一个错的虚拟键码会让页面当成别的按键。
         Assert.IsFalse(first.TryGetProperty("windowsVirtualKeyCode", out _));
         Assert.IsFalse(first.TryGetProperty("key", out _));
