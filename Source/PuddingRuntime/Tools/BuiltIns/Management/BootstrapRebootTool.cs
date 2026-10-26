@@ -10,21 +10,15 @@ using PuddingCode.Tools;
 namespace PuddingRuntime.Services.Tools;
 
 /// <summary>
-/// Bootstrap 点火工具 —— Agent 自助触发 Desktop 引导式 rebuild-restart（ADR-068 自举闭环）。
-/// 从 &lt;DataRoot&gt;/config/system.json 读取 desktop.core.controlToken 与
-/// desktop.bootstrap.httpPort，向 Desktop 环回控制端点
-/// POST /desktop/bootstrap/start（X-Control-Token 头 + JSON body）。
-/// Desktop 接受后：停 Core → 构建/接收预构建产物 → 事务部署到实际 Core
-/// 启动目录 → SHA-256 校验 → 重启 Core。
-/// frontendMode=build/load 时，Desktop 会在 dotnet build 之前先重建/投放
-/// Admin 前端（复用 FrontendBuildDeployService）；该步骤失败将 fail-closed
-/// 中止本次重启并在结果 JSON 的 frontend 字段中给出原因。
-/// 成功触发后本进程将在数秒内被停止，会话于重启后自动恢复（心跳/消息唤醒）。
+/// Agent 自助提交 Guardian 生命周期命令：独立编译、Desktop/Core 重启与健康回滚。
+/// 仅从 system.json 读取本地端口和控制令牌；Guardian 请求只在头中携带令牌。
+/// 202 表示接单，最终成功或回滚由独立主管的状态接口确认。
+/// 显式禁用 Guardian 时保留既有 Desktop Core 点火路径。
 /// </summary>
 [Tool(
     id: "bootstrap_reboot",
     name: "Bootstrap reboot",
-    description: "触发 Desktop 引导的 Core 程序集部署与重启（自举点火）。默认 desktop-build：Desktop 停止 Core、编译、把产物事务部署到实际 Core 启动目录、校验 PuddingAgent.dll SHA-256 后重启；prebuilt-artifact 可接收 Agent 已编译产物；restart-only 才只重启。frontendMode 可选 build/load：在 dotnet build 之前先重建/投放 Admin 前端，步骤失败则中止本次重启（结果 JSON 的 frontend 字段给出 mode/ran/copiedFileCount/indexSha256 等事实）。触发后本进程会终止并在新 Core 中恢复。警告：重启会终止所有运行中的子代理。",
+    description: "通知独立 Guardian 编译、部署和重启产品。target=core（默认）只更新 Core；target=desktop 更新 Desktop 与随包 Core。action 可选 build-restart（默认）、build、restart、rollback、start、stop。先在隔离目录编译，成功后停止进程并部署；Desktop 响应与 Core 就绪未通过稳定观察期时自动恢复旧程序集。202 只是接单，使用返回的 statusUrl/requestId 查询最终结果；重启会中断当前 Core 会话及子代理。frontendMode=build/load 将前端加入候选产物。",
     category: ToolCategory.General,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.None)]
@@ -72,6 +66,17 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
         if (!httpEnabled)
             return Fail("Desktop bootstrap HTTP endpoint is disabled (desktop.bootstrap.httpEnabled=false).");
 
+        if (!TryExtractGuardianTarget(configJson, out var guardianEnabled, out var guardianPort))
+            return Fail("Invalid guardian configuration.");
+        var target = args.Target?.Trim().ToLowerInvariant() ?? "core";
+        var action = args.Action?.Trim().ToLowerInvariant() ?? "build-restart";
+        if (target is not ("core" or "desktop") || action is not ("build-restart" or "build" or "restart" or "rollback" or "start" or "stop"))
+            return Fail("Invalid guardian target or action.");
+        if (!guardianEnabled && (target != "core" || action != "build-restart"))
+            return Fail("This operation requires desktop.guardian.enabled=true.");
+        var requestId = args.RequestId ?? Guid.NewGuid().ToString("N");
+        if (!Guid.TryParse(requestId, out _)) return Fail("requestId must be a UUID.");
+
         var yolo = args.KeepYolo ?? _runtimeControl.Mode == RuntimeExecutionMode.Yolo;
         var deploymentMode = NormalizeDeploymentMode(args.DeploymentMode);
         if (deploymentMode is null)
@@ -86,8 +91,9 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
             return Fail("frontendMode=load requires frontendArtifactDirectory.");
 
         var requestedBy = $"agent:{context.AgentInstanceId}";
-        var url = $"http://127.0.0.1:{port}/desktop/bootstrap/start";
-        var body = BuildStartRequestJson(
+        var url = guardianEnabled ? $"http://127.0.0.1:{guardianPort}/guardian/commands" : $"http://127.0.0.1:{port}/desktop/bootstrap/start";
+        var body = guardianEnabled ? BuildGuardianRequestJson(args with { Target = target, Action = action, RequestId = requestId,
+            DeploymentMode = deploymentMode, FrontendMode = frontendMode }, requestedBy, yolo) : BuildStartRequestJson(
             token,
             requestedBy,
             yolo,
@@ -104,7 +110,7 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
 
         try
         {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            using var client = new HttpClient(new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(30) };
             using var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json"),
@@ -118,6 +124,7 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
             var statusText = statusCode switch
             {
                 202 => "accepted",
+                200 when guardianEnabled => "accepted",
                 401 => "unauthorized",
                 409 => "busy",
                 _ => $"unexpected_{statusCode}",
@@ -125,8 +132,9 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
 
             var notice = statusCode switch
             {
+                200 or 202 when guardianEnabled => "Guardian accepted the command. Acceptance is not completion; query the returned statusUrl and requestId. Build preparation precedes shutdown, and failed health acceptance rolls back automatically.",
                 202 => "Rebuild-restart accepted. Core will stop within seconds; the session resumes after the restart.",
-                409 => "A rebuild-restart is already in progress; check GET /desktop/bootstrap/status.",
+                409 => guardianEnabled ? "Guardian is busy or the requestId conflicts; check GET /guardian/status." : "A rebuild-restart is already in progress; check GET /desktop/bootstrap/status.",
                 _ => "Trigger rejected by Desktop.",
             };
 
@@ -137,6 +145,9 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
                 yolo_signal_requested = yolo,
                 deployment_mode = deploymentMode,
                 frontend_mode = frontendMode,
+                target,
+                action,
+                request_id = guardianEnabled ? requestId : null,
                 desktop_response = responseBody,
                 notice,
             }, OutputJsonOptions));
@@ -183,6 +194,28 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
             return false;
         }
     }
+
+    public static bool TryExtractGuardianTarget(string json, out bool enabled, out int port)
+    {
+        enabled = true; port = 8200;
+        try
+        {
+            var config = JsonSerializer.Deserialize<PuddingSystemConfig>(json, ConfigJsonOptions);
+            if (config is null) return false;
+            enabled = config.Desktop.Guardian.Enabled;
+            port = config.Desktop.Guardian.HttpPort;
+            return port is >= 1024 and <= 65535 && port != config.Desktop.Bootstrap.HttpPort;
+        }
+        catch (JsonException) { return false; }
+    }
+
+    public static string BuildGuardianRequestJson(BootstrapRebootArgs args, string requestedBy, bool yolo)
+        => JsonSerializer.Serialize(new {
+            requestId = args.RequestId, action = args.Action ?? "build-restart", target = args.Target ?? "core",
+            requestedBy, yolo, deploymentMode = args.DeploymentMode ?? "desktop-build", args.ArtifactDirectory,
+            args.ArtifactAssemblySha256, frontendMode = args.FrontendMode ?? "skip", args.FrontendArtifactDirectory,
+            args.FrontendArtifactIndexSha256
+        }, OutputJsonOptions);
 
     /// <summary>Builds the POST /desktop/bootstrap/start JSON body.</summary>
     public static string BuildStartRequestJson(
@@ -256,6 +289,14 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
 /// <summary>bootstrap_reboot 工具参数。</summary>
 public sealed record BootstrapRebootArgs
 {
+    [ToolParam("core (default) or desktop. desktop updates/restarts the Shell and its bundled Core together.")]
+    public string? Target { get; init; }
+
+    [ToolParam("build-restart (default), build (prepare only), restart, rollback, start, or stop. Guardian must be enabled for explicit control actions.")]
+    public string? Action { get; init; }
+
+    [ToolParam("Optional UUID for idempotent retries. Reuse only for the identical command; omitted means generate a new request.")]
+    public string? RequestId { get; init; }
     [ToolParam("Why the reboot is triggered; recorded in the Core log for audit. Recommended.")]
     public string? Reason { get; init; }
 

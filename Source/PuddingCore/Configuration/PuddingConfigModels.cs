@@ -110,6 +110,21 @@ public sealed record PuddingDesktopConfig
 {
     public PuddingDesktopCoreConfig Core { get; init; } = new();
     public PuddingDesktopBootstrapConfig Bootstrap { get; init; } = new();
+    public PuddingDesktopGuardianConfig Guardian { get; init; } = new();
+}
+
+/// <summary>Independent process supervising the packaged Desktop/Core pair.</summary>
+public sealed record PuddingDesktopGuardianConfig
+{
+    public bool Enabled { get; init; } = true;
+    public int HttpPort { get; init; } = 8200;
+    public string? RepositoryRoot { get; init; }
+    public string Configuration { get; init; } = "Debug";
+    public int StartupTimeoutSeconds { get; init; } = 120;
+    public int StableSeconds { get; init; } = 15;
+    public int PollSeconds { get; init; } = 5;
+    public int FailureThreshold { get; init; } = 3;
+    public int BuildTimeoutSeconds { get; init; } = 600;
 }
 
 public sealed record PuddingDesktopCoreConfig

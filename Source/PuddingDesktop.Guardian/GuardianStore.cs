@@ -5,6 +5,9 @@ namespace PuddingDesktop.Guardian;
 
 public static class SafeFiles
 {
+    public static bool Overlaps(string first, string second) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(first)).Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(second)), StringComparison.OrdinalIgnoreCase)
+        || Within(first, second) || Within(second, first);
     public static bool Within(string path, string root) => Path.GetFullPath(path).StartsWith(
         Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 
@@ -94,6 +97,25 @@ public sealed class GuardianStore(GuardianSettings settings)
     }
 
     public void Apply(ArtifactSnapshot snapshot) => Copy(snapshot, settings.TargetDirectory(snapshot.Target));
+
+    public void Prune(GuardianState state)
+    {
+        if (state.Pending is not null) return;
+        var root = Path.GetFullPath(Path.Combine(settings.StateDirectory, "releases"));
+        if (!Directory.Exists(root)) return;
+        var unused = Directory.EnumerateDirectories(root)
+            .Where(path => Guid.TryParseExact(Path.GetFileName(path), "N", out _)
+                && !string.Equals(path, state.Fallback?.Directory, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(Directory.GetCreationTimeUtc).Skip(2).ToArray();
+        foreach (var path in unused)
+        {
+            // Only this store's GUID-named snapshots; never a product, DataRoot or an active transaction.
+            if (!SafeFiles.Within(Path.GetFullPath(path), root)) throw new IOException("Snapshot escapes release storage.");
+            SafeFiles.NoLinks(path);
+            Directory.Delete(path, recursive: true);
+            File.Delete(path + ".manifest.json");
+        }
+    }
 
     public void Deploy(PendingDeployment pending)
     {

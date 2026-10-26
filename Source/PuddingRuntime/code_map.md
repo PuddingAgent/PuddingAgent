@@ -370,7 +370,7 @@
 | `Tools/BuiltIns/Http/HttpFetchSkill.cs` | `http_fetch`：发起 HTTP 请求并返回正文 | `HttpFetchSkill` | `Tools/BuiltIns/Http/HttpFetchContentFormatter.cs` | — |
 | `Tools/BuiltIns/Llm/ListLlmProvidersTool.cs` | `list_llm_providers`：资源池路由表查询 | `ListLlmProvidersTool` | `Services/LlmProfileResolver.cs` | 严禁输出 apiKey 与 baseUrl |
 | `Tools/BuiltIns/Management/AgentStateTool.cs` | `agent_state`：Agent 私有状态的读写 | `AgentStateTool` | `Services/AgentSessionManager.cs` | — |
-| `Tools/BuiltIns/Management/BootstrapRebootTool.cs` | `bootstrap_reboot`：点火式重建重启 | `BootstrapRebootTool` | `Services/RuntimeSelfRegistrationService.cs` | 默认走构建与事务部署并校验哈希 |
+| `Tools/BuiltIns/Management/BootstrapRebootTool.cs` | `bootstrap_reboot`：Guardian 编译/重启控制 | `BootstrapRebootTool` | `Services/RuntimeSelfRegistrationService.cs` | core/desktop 目标、build/restart/rollback/start/stop 动作、请求 ID；202 接单后查询 Guardian 的健康/回滚结果 |
 | `Tools/BuiltIns/Management/LlmResourcePoolTool.cs` | `llm_resource_pool`：服务商与模型清单 | `LlmResourcePoolTool` | `Tools/BuiltIns/Llm/ListLlmProvidersTool.cs` | — |
 | `Tools/BuiltIns/Management/SubconsciousTriggerTool.cs` | `subconscious_trigger`：手动触发潜意识管道 | `SubconsciousTriggerTool` | `Services/Background/SubconsciousWorkerService.cs` | — |
 | `Tools/BuiltIns/Memory/GrepMemoryTool.cs` | `grep_memory`：记忆全文与混合检索 | `GrepMemoryTool` | `Tools/BuiltIns/Memory/MemoryLibraryTool.cs` | — |

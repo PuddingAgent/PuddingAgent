@@ -20,8 +20,8 @@ try
     var controller = new GuardianController(settings, store, runtime);
     using var server = new GuardianHttpServer(settings, controller);
     server.Start();
-    await controller.RecoverInterruptedAsync(lifetime.Token);
     var listener = server.RunAsync(lifetime.Token);
+    await controller.RecoverInterruptedAsync(lifetime.Token);
     while (!lifetime.IsCancellationRequested)
     {
         await controller.TickAsync(lifetime.Token);

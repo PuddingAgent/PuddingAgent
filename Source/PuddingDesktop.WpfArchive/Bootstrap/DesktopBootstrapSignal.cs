@@ -48,6 +48,8 @@ public sealed record DesktopBootstrapSignal
 /// </summary>
 public sealed record DesktopBootstrapResult
 {
+    /// <summary>A separate guardian accepted the operation; Success still means completed health acceptance.</summary>
+    public bool Accepted { get; init; }
     /// <summary>True only when the build succeeded, Core is running again and no error was recorded.</summary>
     public bool Success { get; init; }
 

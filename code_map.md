@@ -23,6 +23,8 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | 项目 | 用途 | 文件级索引 |
 |------|------|-----------|
 | `Source/PuddingDesktop/` | WinUI 3 Shell：承载 WebView2 工作台并监督 Core 子进程生命周期 | [code_map](Source/PuddingDesktop/code_map.md) |
+| `Source/PuddingDesktop.Guardian/` | 独立 BCL 进程：本地 HTTP 编译/重启命令、Desktop/Core 健康与持久程序集回滚 | [code_map](Source/PuddingDesktop.Guardian/code_map.md) |
+| `Source/PuddingDesktop.GuardianTests/` · `Tests/PuddingDesktop.GuardianIntegrationTests/` | 主管独立门禁与真实 WinUI 控制面集成门禁 | [独立测试](Source/PuddingDesktop.GuardianTests/code_map.md) · [集成测试](Tests/PuddingDesktop.GuardianIntegrationTests/code_map.md) |
 | `Source/PuddingDesktop.Diagnostics/` | BCL 现场记录：原子快照、脱敏、退出分类与补录 | [code_map](Source/PuddingDesktop.Diagnostics/code_map.md) |
 | `Source/PuddingDesktop.ExitObserver/` | 独立观察 Shell 退出码并保存现场，不管理产品生命周期 | [code_map](Source/PuddingDesktop.ExitObserver/code_map.md) |
 | `Source/PuddingAgent/` | 入口 `Program.cs`：Console / DesktopChild 两种薄壳 | [code_map](Source/PuddingAgent/code_map.md) |
@@ -150,6 +152,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | 层 / 项目 | 符号 | 一句话作用 |
 |----------|------|----------|
 | `Desktop → Core` | `PuddingDesktop/Hosting` → `PuddingHost/Hosting` | Shell 以子进程点火 Core：`STARTING`（每 5s 带协议/PID/序号）→ 全部 hosted service 就绪后 `READY` |
+| `bootstrap_reboot → Guardian → Desktop → Core` | `PuddingRuntime/Tools/BuiltIns/Management/BootstrapRebootTool.cs` → `PuddingDesktop.Guardian` → `PuddingDesktop/Hosting/DesktopApplicationCoordinator.Guardian.cs` | 独立进程先构建候选，认证 HTTP 控制停止/启动，UI 响应与 readiness 稳定验收；失败恢复旧包，不回滚用户数据 |
 | `Core 组合根` | `Source/PuddingHost/` | HTTP 宿主、本机控制地址、Browser Bridge、飞书连接器的装配起点 |
 | `入口薄壳` | `Source/PuddingAgent/Program.cs` | Console 与 DesktopChild 两种模式分派；Console 只用于开发/诊断 |
 | `WebUI → Runtime` | `TurnExecutorAdapter` → `AgentExecutionAdmissionCoordinator` | 前台 Turn 准入并抢占同 agent 后台执行，旧执行立即 defer 回队列 |
@@ -192,6 +195,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | `TestScripts/BrowserDeliveryReview/` | 浏览器任务授权、原租约复检、完整请求去重及子代理身份的行为回归；[README](TestScripts/BrowserDeliveryReview/README.md) 说明显式注入与迁入常规套件的方式 |
 | `Tests/PuddingDesktop.Tests/` · `Tests/PuddingHost.Tests/` · `Tests/PuddingBrowser.AgentTools.Tests/` | Desktop 进程与配置、调试模式（路由/反向代理/SSE/WS）· Bridge Endpoint · 七项 Agent Tools |
 | `Tests/PuddingDesktop.Diagnostics.Tests/` | 独立现场组件：退出分类、脱敏、文件容量、保留策略、写入失败与补录 |
+| `Source/PuddingDesktop.GuardianTests/` · `Tests/PuddingDesktop.GuardianIntegrationTests/` · `TestScripts/test-pudding-guardian.ps1` | Guardian 独立事务/认证测试 · 真实 WinUI 控制端点 · 隔离产品的构建/故障注入/回滚/停止验收；[运行手册](Docs/13_runbooks/Desktop-Guardian.md) |
 | `Tests/PuddingAgent.IntegrationTests/` · `Tests/PuddingNativeChat.IntegrationTests/` · `Tests/e2e/` · `TestScripts/` · `Tests/PuddingBrowser.TestSite/` | 集成测试 · 端到端脚本 · 生命周期/部署/smoke/性能探针 · 测试站点与门禁脚本（见下「关键语义」） |
 
 **关键语义（§5「测试工程索引」表·覆盖列逐字原文）**

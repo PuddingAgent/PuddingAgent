@@ -3,6 +3,9 @@
 
 - `App.xaml` retains native theme brushes, rounded controls and Mica styling from desktop development B.
 - `App.xaml.cs`: single-instance activation and launcher composition; wires UI/AppDomain/task exceptions, process-exit callback, five-second durable scene capture and the independent exit observer.
+- `Hosting/DesktopApplicationCoordinator.Guardian.cs`: generates token-free guardian settings, starts/adopts the independent process, checks installation identity and routes bootstrap commands. Authenticated UI-dispatch health and graceful exit remain in the shared HTTP endpoint. Successful adoption disables competing in-process automatic recovery.
+- `PuddingDesktop.csproj`: serially publishes Core, observer and `guardian/`; honors isolated artifacts paths and skips guardian self-replacement builds. `GuardianTestAssembly.cs` grants only the WinUI integration test access to existing test hooks.
+- `../PuddingDesktop.Guardian/code_map.md`: independent build/deployment supervisor; [operation contract](../../Docs/13_runbooks/Desktop-Guardian.md).
 - `../PuddingDesktop.Diagnostics/code_map.md`: bounded, redacted per-run evidence and next-start recovery; no UI or Core dependencies.
 - `../PuddingDesktop.ExitObserver/code_map.md`: separate observer in `observer/`; preserves actual exit code even when managed callbacks do not run.
 - `MainWindow.xaml[.cs]`: trusted Web workbench, separate Agent browser, runtime controls and launcher-only settings. Business configuration remains Web.

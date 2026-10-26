@@ -66,7 +66,8 @@ public sealed class GuardianBuilder(GuardianSettings settings)
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(settings.BuildTimeoutSeconds));
         var info = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true,
-            WorkingDirectory = workingDirectory, RedirectStandardOutput = true, RedirectStandardError = true };
+            WorkingDirectory = workingDirectory, RedirectStandardOutput = true, RedirectStandardError = true,
+            StandardOutputEncoding = new System.Text.UTF8Encoding(false), StandardErrorEncoding = new System.Text.UTF8Encoding(false) };
         foreach (var argument in arguments) info.ArgumentList.Add(argument);
         if (environment is not null) foreach (var (key, value) in environment) info.Environment[key] = value;
         using var process = Process.Start(info) ?? throw new IOException("Build process could not start.");

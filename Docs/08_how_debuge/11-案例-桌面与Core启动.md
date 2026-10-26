@@ -2,12 +2,12 @@
 title: 案例：桌面与 Core 启动
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-24
+last_reviewed: 2026-10-26
 status: active
 description: 先 dry-run 检查服务端当前识别出的 deterministic cases；该操作不会调用付费模型：
 categories: [docs, how-debug]
 tags: [案例, 桌面与, 启动, how_debuge]
-related_docs: [Docs/08_how_debuge/README.md]
+related_docs: [Docs/08_how_debuge/README.md, Docs/13_runbooks/Desktop-Guardian.md]
 related_files: [Source/PuddingPlatformAdmin/dist/index.html]
 slug: how-debuge-11-案例-桌面与core启动
 draft: false
@@ -29,13 +29,19 @@ draft: false
 
 分类区分 `unhandled_exception`、`abnormal_exit_code`、`uncoordinated_process_exit`、`unobserved_termination` 与 `clean_shutdown`。
 `exit_requested` 只表示开始清理；`shutdown_completed` 才表示协调清理成功。`windows_query_end_session` / `windows_end_session` 保留原始 flags，便于与 Windows 更新、注销和关机事件对照。
-`bootstrap_reboot` 只重启 Core：正常情况下同一 Desktop runId 内应看到 Core PID 改变，而不应产生 Shell 退出回执。
+`bootstrap_reboot target=core` 正常更新保留 Desktop PID；`target=desktop` 或失败回滚会重启整个 Desktop/Core 对。Guardian 引发的退出标为 `guardian_restart`，与用户主动退出区分。
 
 硬终止、断电或同一作业中的进程一起被结束时，不能承诺异常回调或观察器运行；此时保留最近已落盘现场，补录时间不冒充真实退出时间。
 退出码不能确定终止发起者，`terminationInitiator` 保持 unknown。现场是有界文本与状态，**不是完整内存转储**；不读取环境变量列表、配置内容或会话数据库，敏感字段在写盘前脱敏。
 
 启动时保留最近 20 次已结束运行，不清理仍活跃或状态不可确认的进程。运行中心导出的诊断 ZIP 追加最近三次运行的指定现场文件。
 独立验证入口为 `TestScripts/test-desktop-exit-observer.ps1 -ObserverExe <观察器路径>`；集成生命周期验证使用隔离 DesktopHome/DataRoot 的 `TestScripts/test-pudding-desktop-launcher.ps1`。
+
+## 独立 Guardian 的编译、健康与回滚诊断
+
+先检查认证端点 `GET http://127.0.0.1:<guardianPort>/guardian/status`（默认 8200），将 `requestId` 对应到本次命令。`healthy` 才表示新包验收完成；`rolled-back` 表示旧包已经恢复；202 不能当作完成。当前/未完成事务在 `<DesktopHome>/guardian/state.json`，旧包在 `guardian/releases/`，构建输出在 `<repo>/temp/build/guardian/<id>/build.log`。
+
+`GuardianStart` 失败时核对 guardian 随包文件、独立 HTTP 端口、bootstrap 内部控制开关和实际 Core 路径。UI 调度不响应、Core 进程身份不符、`/health/ready` 失败都不能通过稳定观察期。主动停止或退出不会自动复活；`faulted` 表示恢复失败或触发上限，保留事务供外部修复后重试。具体命令、回滚范围与隔离验收见 [Guardian 运行手册](../13_runbooks/Desktop-Guardian.md)。
 
 ## 自举重建报 MSB1009，但 Core 又启动成功
 

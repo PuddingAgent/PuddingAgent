@@ -38,6 +38,7 @@ public sealed class GuardianRuntime : IGuardianRuntime, IDisposable
             if (desktop is null) return new(false, false, false, "desktop_identity_mismatch");
             Desktop = desktop;
             var diagnostics = value.GetProperty("diagnostics");
+            var shellHealthy = diagnostics.GetProperty("desktopState").GetString() is "WorkbenchReady" or "CoreStopped" or "CoreStarting" or "CoreStopping";
             if (!Path.GetFullPath(diagnostics.GetProperty("dataRoot").GetString()!).Equals(Path.GetFullPath(_settings.DataRoot), StringComparison.OrdinalIgnoreCase))
                 return new(false, false, false, "data_root_mismatch");
             if (diagnostics.TryGetProperty("coreProcessId", out var pid) && pid.ValueKind == JsonValueKind.Number)
@@ -50,7 +51,7 @@ public sealed class GuardianRuntime : IGuardianRuntime, IDisposable
             if (!Uri.TryCreate(diagnostics.GetProperty("coreAddress").GetString(), UriKind.Absolute, out var address)
                 || !address.IsLoopback || address.Scheme != "http") return new(true, false);
             using var ready = await _http.GetAsync(new Uri(address, "/health/ready"), timeout.Token);
-            return new(true, ready.IsSuccessStatusCode);
+            return new(shellHealthy, ready.IsSuccessStatusCode);
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or InvalidOperationException or KeyNotFoundException)
         {
@@ -73,12 +74,15 @@ public sealed class GuardianRuntime : IGuardianRuntime, IDisposable
                 throw new InvalidOperationException("Desktop is busy with another lifecycle operation.");
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException) { ct.ThrowIfCancellationRequested(); }
-        await WaitOrTerminateAsync(target == "desktop" ? Desktop : Core, ct);
-        if (target == "desktop") await WaitOrTerminateAsync(Core, ct);
+        await WaitOrTerminateAsync(target == "desktop" ? Desktop : Core, includeChildren: target != "desktop", ct);
+        if (target == "desktop") await WaitOrTerminateAsync(Core, includeChildren: true, ct);
     }
 
     public async Task StartAsync(string target, bool yolo, CancellationToken ct)
     {
+        if (yolo && _settings.AutoYolo)
+            await File.WriteAllTextAsync(Path.Combine(_settings.RepositoryRoot ?? Path.GetDirectoryName(_settings.CoreExecutablePath)!, "yolo.signal"),
+                "writtenBy=PuddingDesktop.Guardian\naction=rebuild-restart\n", ct);
         if (Desktop is null || !IsAlive(Desktop))
         {
             var info = new ProcessStartInfo(_settings.DesktopExecutablePath)
@@ -88,10 +92,17 @@ public sealed class GuardianRuntime : IGuardianRuntime, IDisposable
             };
             info.Environment["PUDDING_DESKTOP_HOME"] = _settings.DesktopHome;
             info.ArgumentList.Add("--guardian-managed");
+            if (_settings.StartHidden) info.ArgumentList.Add("--background");
             using var process = Process.Start(info) ?? throw new IOException("Could not start Desktop.");
             Desktop = new(process.Id, process.StartTime.ToUniversalTime(), _settings.DesktopExecutablePath);
             Core = null;
-            return; // Desktop owns Core auto-start. Readiness is accepted separately.
+            if (_settings.AutoStartCore) return; // Desktop owns Core auto-start. Readiness is accepted separately.
+            var deadline = DateTime.UtcNow.AddSeconds(_settings.StartupTimeoutSeconds);
+            while (DateTime.UtcNow < deadline)
+            {
+                if ((await ProbeAsync(ct)).DesktopHealthy) break;
+                await Task.Delay(250, ct);
+            }
         }
         if (target == "core" || Core is null || !IsAlive(Core))
         {
@@ -110,6 +121,7 @@ public sealed class GuardianRuntime : IGuardianRuntime, IDisposable
     {
         var request = new HttpRequestMessage(method, $"http://127.0.0.1:{_settings.DesktopControlPort}{path}");
         request.Headers.Add("X-Control-Token", GuardianToken.Read(_settings));
+        request.Headers.Add("X-Pudding-Guardian", "1");
         return request;
     }
 
@@ -126,7 +138,7 @@ public sealed class GuardianRuntime : IGuardianRuntime, IDisposable
     }
     public static bool IsAlive(ProcessIdentity identity) => Identify(identity.Id, identity.ExecutablePath) is { } found && found.StartTimeUtc == identity.StartTimeUtc;
 
-    private async Task WaitOrTerminateAsync(ProcessIdentity? identity, CancellationToken ct)
+    private async Task WaitOrTerminateAsync(ProcessIdentity? identity, bool includeChildren, CancellationToken ct)
     {
         if (identity is null || !IsAlive(identity)) return;
         using var process = Process.GetProcessById(identity.Id);
@@ -134,7 +146,9 @@ public sealed class GuardianRuntime : IGuardianRuntime, IDisposable
         catch (TimeoutException)
         {
             // PID reuse is checked again immediately before terminating only the owned process.
-            if (IsAlive(identity)) process.Kill(entireProcessTree: true);
+            // The initial Desktop launched this guardian. Never kill that whole ancestry tree;
+            // stop the verified Core separately, otherwise the supervisor would kill itself.
+            if (IsAlive(identity)) process.Kill(entireProcessTree: includeChildren);
             await process.WaitForExitAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
         }
     }
@@ -162,7 +176,7 @@ public sealed class GuardianRuntime : IGuardianRuntime, IDisposable
                 var value = json.RootElement;
                 if (value.GetProperty("process").GetProperty("startedUtc").GetDateTime().ToUniversalTime() != Desktop.StartTimeUtc) continue;
                 var reason = value.GetProperty("exitReason").GetString();
-                if (reason is "user_exit" or "window_close_policy" or "session_ending" or "windows_session_end") return true;
+                if (reason is "user_exit" or "tray_exit" or "window_close_policy" or "windows_session_query" or "session_ending" or "windows_session_end") return true;
             }
             catch (Exception ex) when (ex is IOException or JsonException or KeyNotFoundException) { }
         }

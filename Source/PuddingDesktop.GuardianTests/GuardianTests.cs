@@ -126,6 +126,7 @@ public sealed class GuardianTests
         using var f = new Fixture();
         f.Runtime.IntentionalStop = true;
         await f.Controller.TickAsync(default);
+        await f.Controller.TickAsync(default);
         Assert.False(f.Controller.State.Monitoring);
         Assert.Empty(f.Runtime.Starts);
     }
@@ -155,6 +156,46 @@ public sealed class GuardianTests
         await f.Controller.TickAsync(default);
         Assert.Equal("rolled-back", f.Controller.State.Phase);
         Assert.Equal("old", File.ReadAllText(f.Settings.CoreExecutablePath));
+    }
+
+    [Fact]
+    public async Task RepeatedCrashesStopAfterThreeRecoveriesWithinFiveMinutes()
+    {
+        using var f = new Fixture();
+        await f.Execute(new());
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            f.Time.Advance(TimeSpan.FromSeconds(10));
+            File.WriteAllText(f.Settings.CoreExecutablePath, "bad");
+            await f.Controller.TickAsync(default);
+            Assert.Equal("rolled-back", f.Controller.State.Phase);
+        }
+        File.WriteAllText(f.Settings.CoreExecutablePath, "bad");
+        await f.Controller.TickAsync(default);
+        Assert.Equal("faulted", f.Controller.State.Phase);
+        Assert.False(f.Controller.State.Monitoring);
+    }
+
+    [Fact]
+    public async Task FreshStartDoesNotClaimAnInterruptedCommand()
+    {
+        using var f = new Fixture();
+        await f.Controller.RecoverInterruptedAsync(default);
+        Assert.Equal("starting", f.Controller.State.Phase);
+        Assert.Null(f.Controller.State.Error);
+    }
+
+    [Fact]
+    public void SnapshotRetentionNeverDeletesActiveFallbackOrPendingTransaction()
+    {
+        using var f = new Fixture();
+        var snapshots = Enumerable.Range(0, 5).Select(_ => f.Store.Capture("core")).ToArray();
+        var state = new GuardianState { Fallback = snapshots[0] };
+        f.Store.Prune(state with { Pending = new(snapshots[1], snapshots[2]) });
+        Assert.All(snapshots, snapshot => Assert.True(Directory.Exists(snapshot.Directory)));
+        f.Store.Prune(state);
+        Assert.True(Directory.Exists(snapshots[0].Directory));
+        Assert.Equal(3, snapshots.Count(snapshot => Directory.Exists(snapshot.Directory)));
     }
 
     [Fact]
@@ -218,6 +259,16 @@ public sealed class GuardianTests
         Assert.True(GuardianRuntime.IsAlive(identity));
         Assert.False(GuardianRuntime.IsAlive(identity with { StartTimeUtc = identity.StartTimeUtc.AddSeconds(-1) }));
         Assert.Null(GuardianRuntime.Identify(current.Id, Path.Combine(Path.GetTempPath(), "not-this-process.exe")));
+    }
+
+    [Fact]
+    public void ConfigurationCasingAndDirectoryIsolationMatchProductContract()
+    {
+        using var f = new Fixture();
+        File.WriteAllText(Path.Combine(f.Settings.DataRoot, "config", "system.json"), """{"Desktop":{"Core":{"ControlToken":"case-test"}}}""");
+        Assert.Equal("case-test", GuardianToken.Read(f.Settings));
+        Assert.Throws<ArgumentException>(() => (f.Settings with { StateDirectory = f.Settings.TargetDirectory("desktop") }).Validate());
+        Assert.Throws<ArgumentException>(() => (f.Settings with { DataRoot = f.Settings.TargetDirectory("desktop") }).Validate());
     }
 
     private sealed class Fixture : IDisposable

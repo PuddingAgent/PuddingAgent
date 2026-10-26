@@ -19,6 +19,9 @@ public sealed record GuardianSettings
     public int BuildTimeoutSeconds { get; init; } = 600;
     public int ShutdownTimeoutSeconds { get; init; } = 30;
     public string Configuration { get; init; } = "Debug";
+    public bool AutoStartCore { get; init; } = true;
+    public bool AutoYolo { get; init; } = true;
+    public bool StartHidden { get; init; }
 
     public void Validate()
     {
@@ -33,8 +36,8 @@ public sealed record GuardianSettings
         if (Configuration is not ("Debug" or "Release")) throw new ArgumentException("Invalid build configuration.");
         var package = Path.GetDirectoryName(DesktopExecutablePath)!;
         if (!SafeFiles.Within(CoreExecutablePath, package)) throw new ArgumentException("Guardian requires a bundled Core.");
-        if (SafeFiles.Within(StateDirectory, package) || SafeFiles.Within(DataRoot, package)
-            || SafeFiles.Within(package, DataRoot) || SafeFiles.Within(StateDirectory, DataRoot))
+        if (SafeFiles.Overlaps(StateDirectory, package) || SafeFiles.Overlaps(DataRoot, package)
+            || SafeFiles.Overlaps(StateDirectory, DataRoot))
             throw new ArgumentException("Package, data and guardian state must be isolated.");
     }
 
@@ -69,6 +72,8 @@ public sealed record GuardianCommand
             throw new ArgumentException("artifactDirectory is required.");
         if (FrontendMode == "load" && string.IsNullOrWhiteSpace(FrontendArtifactDirectory))
             throw new ArgumentException("frontendArtifactDirectory is required.");
+        if (FrontendMode != "skip" && (DeploymentMode != "desktop-build" || Action is not ("build-restart" or "build")))
+            throw new ArgumentException("Frontend preparation requires a source build command.");
         if (RequestedBy?.Length > 256) throw new ArgumentException("requestedBy is too long.");
     }
 }
@@ -76,7 +81,7 @@ public sealed record GuardianCommand
 public sealed record ProcessIdentity(int Id, DateTime StartTimeUtc, string ExecutablePath);
 public sealed record GuardianHealth(bool DesktopHealthy, bool CoreHealthy, bool IntentionalStop = false, string? Reason = null)
 {
-    public bool Healthy => DesktopHealthy && CoreHealthy;
+    public bool Healthy => DesktopHealthy && CoreHealthy && !IntentionalStop;
 }
 public sealed record ArtifactFile(string Path, string Sha256);
 public sealed record ArtifactSnapshot(string Directory, string Target, IReadOnlyList<ArtifactFile> Files);

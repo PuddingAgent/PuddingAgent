@@ -95,6 +95,7 @@ public sealed partial class DesktopApplicationCoordinator : IAsyncDisposable
 
     public async Task StartAsync(string[] args, CancellationToken cancellationToken)
     {
+        _guardianStartHidden = args.Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));
         _lifetimeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         _mainWindow = new MainWindow(this);
@@ -132,7 +133,9 @@ public sealed partial class DesktopApplicationCoordinator : IAsyncDisposable
 
         // Guided bootstrap services: the loopback HTTP control endpoint (default
         // on) plus the opt-in signal-file polling loop (default off).
+        _guardianConfig = systemResult.Config.Desktop.Guardian;
         StartBootstrapServices(dataRoot, systemResult.Config.Desktop.Bootstrap, _lifetimeCts.Token);
+        await EnsureGuardianAsync(dataRoot, systemResult.Config.Desktop, _lifetimeCts.Token);
 
         if (systemResult.Config.Desktop.Core.AutoStart)
             _ = TryStartCoreAsync(_lifetimeCts.Token);
@@ -157,7 +160,7 @@ public sealed partial class DesktopApplicationCoordinator : IAsyncDisposable
             var service = new DesktopBootstrapSignalService(this, dataRoot, bootstrapConfig, _tokenService);
             _bootstrapSignalService = service;
 
-            if (bootstrapConfig.Enabled)
+            if (bootstrapConfig.Enabled && !_guardianConfig.Enabled)
                 service.Start(cancellationToken);
         }
         catch (Exception ex)
@@ -175,7 +178,10 @@ public sealed partial class DesktopApplicationCoordinator : IAsyncDisposable
                     () => RuntimeSnapshot.State.ToString(),
                     DeployFrontendAsync,
                     LoadFrontendArtifactsAsync,
-                    CreateControlDiagnosticsSnapshot);
+                    CreateControlDiagnosticsSnapshot,
+                    ct => UiThread.InvokeAsync(() => Task.CompletedTask).WaitAsync(ct),
+                    () => UiThread.Post(async () => { if (_mainWindow is not null) await _mainWindow.RequestCloseAsync(true, "guardian_restart"); }),
+                    () => _guardianManaged);
                 endpoint.Start(cancellationToken);
                 _bootstrapHttpEndpoint = endpoint;
             }
@@ -194,6 +200,7 @@ public sealed partial class DesktopApplicationCoordinator : IAsyncDisposable
     public Task<DesktopBootstrapResult> TriggerBootstrapAsync(
         string? requestedBy, bool yolo, CancellationToken ct = default)
     {
+        if (_guardianConfig.Enabled) return TriggerGuardianBootstrapAsync(requestedBy, yolo, ct);
         var service = _bootstrapSignalService
             ?? throw new InvalidOperationException("bootstrap signal service is not available.");
         return service.TriggerRebuildRestartAsync(requestedBy, yolo, ct);
@@ -549,7 +556,7 @@ public sealed partial class DesktopApplicationCoordinator : IAsyncDisposable
             ShutdownTimeout = TimeSpan.FromSeconds(coreConfig.ShutdownTimeoutSeconds),
             EnvironmentName = debugExecutablePath is null ? null : "Development",
         };
-        _runtime.Configure(_runtimeOptions, CreateRestartPolicy(coreConfig));
+        _runtime.Configure(_runtimeOptions, CreateRestartPolicy(_guardianManaged ? coreConfig with { AutoRestart = false } : coreConfig));
     }
 
     /// <summary>

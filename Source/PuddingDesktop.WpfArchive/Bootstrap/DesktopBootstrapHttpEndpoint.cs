@@ -47,6 +47,9 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
     private readonly Func<CancellationToken, Task<FrontendDeployResult>> _frontendBuildDeploy;
     private readonly Func<string, string?, CancellationToken, Task<FrontendDeployResult>> _frontendLoad;
     private readonly Func<DesktopControlDiagnosticsSnapshot> _diagnosticsProvider;
+    private readonly Func<CancellationToken, Task>? _shellPing;
+    private readonly Action? _shellExit;
+    private readonly Func<bool>? _guardianManaged;
     private readonly string _dataRoot;
     private readonly int _port;
     private readonly CancellationTokenSource _cts = new();
@@ -61,7 +64,10 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
         Func<string> coreStateProvider,
         Func<CancellationToken, Task<FrontendDeployResult>> frontendBuildDeploy,
         Func<string, string?, CancellationToken, Task<FrontendDeployResult>> frontendLoad,
-        Func<DesktopControlDiagnosticsSnapshot> diagnosticsProvider)
+        Func<DesktopControlDiagnosticsSnapshot> diagnosticsProvider,
+        Func<CancellationToken, Task>? shellPing = null,
+        Action? shellExit = null,
+        Func<bool>? guardianManaged = null)
     {
         ArgumentNullException.ThrowIfNull(signalService);
         ArgumentNullException.ThrowIfNull(tokenService);
@@ -79,6 +85,9 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
         _frontendBuildDeploy = frontendBuildDeploy;
         _frontendLoad = frontendLoad;
         _diagnosticsProvider = diagnosticsProvider;
+        _shellPing = shellPing;
+        _shellExit = shellExit;
+        _guardianManaged = guardianManaged;
         _dataRoot = dataRoot;
         _port = port;
     }
@@ -141,6 +150,34 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
         try
         {
             var path = context.Request.Url?.AbsolutePath ?? "/";
+
+            if (path is "/desktop/guardian/health" or "/desktop/guardian/exit")
+            {
+                if (!await CheckTokenAsync(context, "{}", cancellationToken))
+                { await WriteJsonAsync(context, 401, """{"error":"unauthorized"}"""); return; }
+                if (path == "/desktop/guardian/health" && context.Request.HttpMethod == "GET" && _shellPing is not null)
+                {
+                    await _shellPing(cancellationToken).WaitAsync(TimeSpan.FromSeconds(2), cancellationToken);
+                    await WriteJsonAsync(context, 200, JsonSerializer.Serialize(new {
+                        desktopProcessId = Environment.ProcessId, diagnostics = _diagnosticsProvider()
+                    }, ResponseJsonOptions));
+                }
+                else if (path == "/desktop/guardian/exit" && context.Request.HttpMethod == "POST" && _shellExit is not null)
+                {
+                    await WriteJsonAsync(context, 202, """{"accepted":true}""");
+                    _shellExit();
+                }
+                else await WriteJsonAsync(context, 404, """{"error":"not_found"}""");
+                return;
+            }
+
+            if (_guardianManaged?.Invoke() == true && context.Request.HttpMethod == "POST"
+                && (path is StartPath or BuildPath or CoreDeployRestartPath or CoreRestartPath
+                    || (path is CoreStopPath or CoreStartPath && context.Request.Headers["X-Pudding-Guardian"] != "1")))
+            {
+                await WriteJsonAsync(context, 409, """{"error":"guardian_required","route":"/guardian/commands"}""");
+                return;
+            }
 
             if (string.Equals(context.Request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase))
             {

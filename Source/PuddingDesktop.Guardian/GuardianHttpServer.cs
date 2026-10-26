@@ -9,14 +9,16 @@ public static class GuardianToken
 {
     public static string Read(GuardianSettings settings)
     {
-        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(settings.DataRoot, "config", "system.json")),
-            new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
-        var token = document.RootElement.GetProperty("desktop").GetProperty("core").GetProperty("controlToken").GetString();
+        var document = JsonSerializer.Deserialize<TokenRoot>(File.ReadAllText(Path.Combine(settings.DataRoot, "config", "system.json")), GuardianJson.Options);
+        var token = document?.Desktop?.Core?.ControlToken;
         return string.IsNullOrWhiteSpace(token) ? throw new InvalidDataException("Desktop control token is not initialized.") : token;
     }
 
     public static bool Matches(string? actual, string expected) => actual is not null && actual.Length <= 1024
         && CryptographicOperations.FixedTimeEquals(SHA256.HashData(Encoding.UTF8.GetBytes(actual)), SHA256.HashData(Encoding.UTF8.GetBytes(expected)));
+    private sealed record TokenRoot(TokenDesktop? Desktop);
+    private sealed record TokenDesktop(TokenCore? Core);
+    private sealed record TokenCore(string? ControlToken);
 }
 
 public sealed class GuardianHttpServer(GuardianSettings settings, GuardianController controller) : IDisposable
@@ -57,6 +59,7 @@ public sealed class GuardianHttpServer(GuardianSettings settings, GuardianContro
                 var state = controller.State;
                 await ReplyAsync(context, 200, new { protocol = "pudding.guardian/1", processId = Environment.ProcessId,
                     state.Phase, state.Monitoring, busy = controller.Busy, state.RequestId, state.Error, state.PreparedDirectory,
+                    settings.DesktopExecutablePath, settings.DataRoot, settings.DesktopHome,
                     hasFallback = state.Fallback is not null, pending = state.Pending is not null, state.UpdatedAt });
                 return;
             }

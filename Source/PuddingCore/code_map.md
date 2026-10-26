@@ -246,6 +246,7 @@ RetrievalGlobMatcher 合同：`public static`，API 为 `Matches/MatchesFileName
 | 目录/文件 | 用途 |
 |------|------|
 | `Configuration/` | 配置抽象与 `llm.providers.json` 解析 |
+| `Configuration/PuddingConfigModels.cs` | 系统配置记录；`desktop.guardian` 定义独立主管端口、构建源路径及健康策略，与 `desktop.bootstrap` 内部控制端口分离 |
 | `Configuration/AtomicFileWriter.cs` | 原子配置写入：严格无 BOM UTF-8，磁盘 JSON 默认保留可读中文；保留显式编码器、命名策略与转换器 |
 | `Serialization/` | 序列化契约 |
 | `Skills/` | 技能系统抽象 |

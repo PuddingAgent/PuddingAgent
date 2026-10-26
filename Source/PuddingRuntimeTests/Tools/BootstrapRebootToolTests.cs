@@ -10,6 +10,36 @@ namespace PuddingRuntimeTests.Tools;
 [TestClass]
 public sealed class BootstrapRebootToolTests
 {
+    [TestMethod]
+    public void GuardianTarget_DefaultEnabledAndDedicatedPort()
+    {
+        Assert.IsTrue(BootstrapRebootTool.TryExtractGuardianTarget("{}", out var enabled, out var port));
+        Assert.IsTrue(enabled);
+        Assert.AreEqual(8200, port);
+    }
+
+    [TestMethod]
+    public void GuardianTarget_UsesConfiguredPortAndRejectsDesktopPortCollision()
+    {
+        Assert.IsTrue(BootstrapRebootTool.TryExtractGuardianTarget("""{"desktop":{"guardian":{"enabled":false,"httpPort":18200}}}""", out var enabled, out var port));
+        Assert.IsFalse(enabled);
+        Assert.AreEqual(18200, port);
+        Assert.IsFalse(BootstrapRebootTool.TryExtractGuardianTarget("""{"desktop":{"guardian":{"httpPort":8199}}}""", out _, out _));
+    }
+
+    [TestMethod]
+    public void GuardianRequestIncludesDesktopControlAndIdempotencyWithoutBodyCredential()
+    {
+        var id = Guid.NewGuid().ToString("N");
+        var body = BootstrapRebootTool.BuildGuardianRequestJson(new() { Target = "desktop", Action = "build-restart", RequestId = id }, "agent:test", true);
+        using var json = System.Text.Json.JsonDocument.Parse(body);
+        Assert.AreEqual("desktop", json.RootElement.GetProperty("target").GetString());
+        Assert.AreEqual("build-restart", json.RootElement.GetProperty("action").GetString());
+        Assert.AreEqual(id, json.RootElement.GetProperty("requestId").GetString());
+        Assert.IsTrue(json.RootElement.GetProperty("yolo").GetBoolean());
+        Assert.IsFalse(json.RootElement.TryGetProperty("token", out _));
+    }
+
     // ── TryExtractBootstrapTarget ──────────────────────────────
 
     [TestMethod]

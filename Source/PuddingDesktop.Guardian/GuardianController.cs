@@ -16,12 +16,15 @@ public sealed class GuardianController
     private GuardianState _state;
     private int _failures;
     private DateTimeOffset _startupDeadline;
+    private readonly bool _hasPreviousState;
 
     public GuardianController(GuardianSettings settings, GuardianStore store, IGuardianRuntime runtime, TimeProvider? time = null)
     {
         settings.Validate();
         _settings = settings; _store = store; _runtime = runtime; _time = time ?? TimeProvider.System;
+        _hasPreviousState = File.Exists(store.StatePath);
         _state = store.Load();
+        if (!File.Exists(store.StatePath) && !settings.AutoStartCore) _state = _state with { Phase = "stopped", Monitoring = false };
         _startupDeadline = _time.GetUtcNow().AddSeconds(settings.StartupTimeoutSeconds);
     }
     public GuardianState State => Volatile.Read(ref _state);
@@ -37,7 +40,7 @@ public sealed class GuardianController
         if (!_gate.Wait(0)) return "busy";
         try
         {
-            if (State.Pending is not null) throw new InvalidOperationException("An interrupted deployment must be recovered first.");
+            if (State.Pending is not null && command.Action != "rollback") throw new InvalidOperationException("An interrupted deployment must be recovered first.");
             Write(State with { RequestId = command.RequestId, RequestFingerprint = fingerprint, Phase = "accepted", Error = null });
             RunningOperation = RunAcceptedAsync(command, lifetime);
             return "accepted";
@@ -64,7 +67,7 @@ public sealed class GuardianController
             {
                 try
                 {
-                    using var recovery = new CancellationTokenSource(TimeSpan.FromSeconds(_settings.StartupTimeoutSeconds + _settings.ShutdownTimeoutSeconds));
+                    using var recovery = new CancellationTokenSource(TimeSpan.FromSeconds(_settings.StartupTimeoutSeconds + 3 * _settings.ShutdownTimeoutSeconds + 30));
                     await RollbackPendingAsync(recovery.Token);
                     Write(State with { Phase = "rolled-back", Error = "Deployment rejected: " + failure });
                 }
@@ -89,7 +92,8 @@ public sealed class GuardianController
         }
         if (command.Action == "rollback")
         {
-            await RollbackFallbackAsync(ct);
+            if (State.Pending is not null) await RollbackPendingAsync(ct);
+            else await RollbackFallbackAsync(ct);
             return;
         }
         var restartOnly = command.Action is "restart" or "start" || command.DeploymentMode == "restart-only";
@@ -116,6 +120,7 @@ public sealed class GuardianController
         Write(State); // Persist the replacement PID/start time before readiness polling.
         await WaitHealthyAsync(ct);
         Write(State with { Fallback = State.Pending?.Backup ?? State.Fallback, Pending = null, Phase = "healthy", Error = null });
+        _store.Prune(State);
         _failures = 0;
     }
 
@@ -125,7 +130,7 @@ public sealed class GuardianController
         try
         {
             if (State.Pending is not null) await RollbackPendingAsync(ct);
-            else if (State.Phase is "accepted" or "building" or "starting" or "interrupted")
+            else if (_hasPreviousState && State.Phase is "accepted" or "building" or "starting" or "interrupted")
                 Write(State with { Phase = "interrupted", Error = "Previous command interrupted; no deployment is assumed complete." });
         }
         catch (Exception ex)
@@ -140,7 +145,13 @@ public sealed class GuardianController
         if (!_gate.Wait(0)) return;
         try
         {
-            if (!State.Monitoring) return;
+            if (!State.Monitoring)
+            {
+                // A deliberate stop stays stopped. An explicit UI start or fresh Desktop launch can re-arm supervision.
+                if (State.Phase == "stopped" && (await _runtime.ProbeAsync(ct)).Healthy)
+                    Write(State with { Monitoring = true, Phase = "healthy" });
+                return;
+            }
             var health = await _runtime.ProbeAsync(ct);
             if (health.IntentionalStop)
             {
@@ -155,7 +166,7 @@ public sealed class GuardianController
                     await WaitHealthyAsync(ct);
                     Write(State with { Fallback = _store.Capture("desktop"), Phase = "healthy" });
                 }
-                else Write(State);
+                else if (State.Desktop != _runtime.Desktop || State.Core != _runtime.Core) Write(State);
                 return;
             }
             if (_time.GetUtcNow() < _startupDeadline || ++_failures < _settings.FailureThreshold) return;
@@ -206,6 +217,7 @@ public sealed class GuardianController
         Write(State);
         await WaitHealthyAsync(ct);
         Write(State with { Phase = "rolled-back", Pending = null, Fallback = pending.Backup, Monitoring = true });
+        _store.Prune(State);
     }
 
     private async Task WaitHealthyAsync(CancellationToken ct)

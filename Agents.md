@@ -51,6 +51,19 @@ Pudding 是 Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 - `desktop.json` 保存 DesktopHome 范围的 DataRoot、Core 路径、窗口与关闭行为；`<DataRoot>/config/system.json` 保存 Core 端口、ControlToken、启动超时与自动恢复策略。**Token 不放环境变量，不在 UI 或诊断包回显。**
 - `dev-up.py` 与 Desktop **不共享 PID、端口所有权**：使用同一个 `D:\data` 验证 Desktop 前必须先停止 dev-up 管理的 Core，反之亦然，避免两个 Core 同时访问数据库。
 
+**独立 Guardian：编译、健康检查与程序集回滚（强制）**
+
+- `guardian/PuddingDesktop.Guardian.exe` 是独立的产品守护进程，默认由 Desktop 启动；不引用 Shell、Core、Host 或 Runtime 程序集。Desktop 仍是 Core 的直接父进程；Guardian 通过认证 HTTP 控制 Desktop，不能另起第二个 Core 绕过数据目录租约。
+- 配置在 `<DataRoot>/config/system.json` 的 `desktop.guardian`，默认 `enabled=true`、`httpPort=8200`；Desktop 生成不含令牌的 `<DesktopHome>/guardian.json`，持久状态/回滚快照在 `<DesktopHome>/guardian/`。`desktop.bootstrap.httpEnabled` 必须开启，内部端口默认 8199，与 Guardian 端口分离。
+- Agent 编译/部署/重启统一用 `bootstrap_reboot`：`target=core`（默认）只更新 Core；`target=desktop` 更新 Desktop 和随包 Core；`action=build-restart`（默认）、`build`、`restart`、`rollback`、`start`、`stop`。启用 Guardian 后不再直接调用旧的 Desktop 构建/部署入口或使用 `dev-up.py` 管理产品进程。
+- 外部控制器使用 `POST http://127.0.0.1:<guardianPort>/guardian/commands` 和 `GET /guardian/status`，请求头为 `X-Control-Token`。令牌只从配置文件读取，**不得放入环境变量、命令行、UI、状态响应或日志**；不开放 LAN，不提供任意 shell 命令执行接口。
+- **202 仅代表接单**。按 `requestId` 对照状态；`healthy` 才代表新程序集通过稳定观察期，`rolled-back` 代表新版本未被接受、已恢复旧程序集。`build` 仅生成候选目录，`built` 不代表部署。命令串行；相同最近请求 ID/内容去重，内容冲突或忙碌返回 409。
+- 编译先在 `temp/build/guardian/<id>/` 隔离进行，成功后才停止对应进程、保存事务并替换程序集。Desktop 必须响应 UI 调度探针，Core 必须通过 `/health/ready`；连续健康达到稳定时间才接受新版本。失败恢复之前健康版本；守护中断后先恢复未完成事务。回滚只恢复程序包，**不回滚数据库或用户配置**。
+- Guardian 接管成功后，Desktop 内部 Core 自动恢复停用，避免双主管竞争。主动停止、托盘退出、关闭退出策略及 Windows 注销不触发自动复活；手动重新启动可恢复监督。连续恢复有上限，回滚仍失败则保留证据并停止自动尝试。
+- Guardian 自身不参与被监管包的在线替换/回滚；初次部署或升级 Guardian 须由进程外控制器在它停止后完成。不可对 Desktop 整棵进程树直接强杀，初次 Guardian 可能是它的子进程；只按 PID、启动时间和路径确认所属 Desktop/Core。
+- Desktop 源码 Debug 模式与 Guardian 产品部署分开使用；构建源路径由 `desktop.guardian.repositoryRoot` 配置或从安装位置向上发现。无源码安装仍可接受完整预构建包。生命周期验收运行 `TestScripts/test-pudding-guardian.ps1`，使用独立 DesktopHome、DataRoot、端口及包目录，不得破坏当前会话或生产数据。
+- 操作与故障处理：[Desktop Guardian 运行手册](Docs/13_runbooks/Desktop-Guardian.md)。
+
 **Browser 与上层能力**
 
 - DesktopChild 在启用 Browser Automation 时提供 `browser_context`、`browser_tabs`、`browser_navigate`、`browser_snapshot`、`browser_locate`、`browser_interact`、`browser_wait_for`、`browser_screenshot` 八项工具。

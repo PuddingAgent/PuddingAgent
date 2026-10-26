@@ -1,7 +1,9 @@
 <Project>
   <PropertyGroup>
-    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)..\..\temp\build\winui3\obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
-    <BaseOutputPath>$(MSBuildThisFileDirectory)..\..\temp\build\winui3\bin\$(MSBuildProjectName)\</BaseOutputPath>
+    <BaseIntermediateOutputPath Condition="'$(ArtifactsPath)' == ''">$(MSBuildThisFileDirectory)..\..\temp\build\winui3\obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <BaseOutputPath Condition="'$(ArtifactsPath)' == ''">$(MSBuildThisFileDirectory)..\..\temp\build\winui3\bin\$(MSBuildProjectName)\</BaseOutputPath>
+    <DesktopBundleArtifactsPath Condition="'$(ArtifactsPath)' != ''">$(ArtifactsPath)</DesktopBundleArtifactsPath>
+    <DesktopBundleArtifactsPath Condition="'$(DesktopBundleArtifactsPath)' == ''">$(MSBuildThisFileDirectory)..\..\temp\build\recovery</DesktopBundleArtifactsPath>
   </PropertyGroup>
   <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
   <PropertyGroup>
@@ -55,30 +57,43 @@
     </ItemGroup>
     <Error Condition="'@(_ForbiddenShellReference)' != ''" Text="Shell may reference launcher configuration contracts, browser adapters and the Desktop-side capability channel, never PuddingHost, Runtime, Platform or an in-process composition root." />
   </Target>
-  <Target Name="BuildExitObserver" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true' And '$(IsCrossTargetingBuild)' != 'true'">
+  <Target Name="BuildExitObserver" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true' And '$(IsCrossTargetingBuild)' != 'true' And '$(SkipExitObserverBuild)' != 'true'">
     <MSBuild Projects="../PuddingDesktop.ExitObserver/PuddingDesktop.ExitObserver.csproj" Targets="Restore;Publish" BuildInParallel="false"
       RemoveProperties="TargetFramework;TargetFrameworks;OutputPath;OutDir;BaseOutputPath;BaseIntermediateOutputPath;NoBuild"
-      Properties="Configuration=$(Configuration);ArtifactsPath=$(MSBuildThisFileDirectory)..\..\temp\build\recovery;PublishDir=$(TargetDir)observer/;RuntimeIdentifier=win-x64;SelfContained=false" />
+      Properties="Configuration=$(Configuration);ArtifactsPath=$(DesktopBundleArtifactsPath);PublishDir=$(TargetDir)observer/;RuntimeIdentifier=win-x64;SelfContained=false" />
     <Error Condition="!Exists('$(TargetDir)observer/PuddingDesktop.ExitObserver.exe')" Text="Desktop exit observer is missing." />
   </Target>
   <Target Name="PublishExitObserver" AfterTargets="Publish">
     <MSBuild Projects="../PuddingDesktop.ExitObserver/PuddingDesktop.ExitObserver.csproj" Targets="Restore;Publish" BuildInParallel="false"
       RemoveProperties="TargetFramework;TargetFrameworks;OutputPath;OutDir;BaseOutputPath;BaseIntermediateOutputPath;NoBuild"
-      Properties="Configuration=$(Configuration);ArtifactsPath=$(MSBuildThisFileDirectory)..\..\temp\build\recovery;PublishDir=$(PublishDir)observer/;RuntimeIdentifier=win-x64;SelfContained=false" />
+      Properties="Configuration=$(Configuration);ArtifactsPath=$(DesktopBundleArtifactsPath);PublishDir=$(PublishDir)observer/;RuntimeIdentifier=win-x64;SelfContained=false" />
   </Target>
   <Target Name="BuildCoreBundle" AfterTargets="Build"
-          Condition="'$(DesignTimeBuild)' != 'true' And '$(IsCrossTargetingBuild)' != 'true'">
+          Condition="'$(DesignTimeBuild)' != 'true' And '$(IsCrossTargetingBuild)' != 'true' And '$(SkipCoreBundleBuild)' != 'true'">
     <MSBuild Projects="../PuddingAgent/PuddingAgent.csproj" Targets="Restore;Publish" BuildInParallel="false"
       RemoveProperties="TargetFramework;TargetFrameworks;OutputPath;OutDir;BaseOutputPath;BaseIntermediateOutputPath;NoBuild"
-      Properties="Configuration=$(Configuration);ArtifactsPath=$(MSBuildThisFileDirectory)..\..\temp\build\desktop-launcher-core;PublishDir=$(TargetDir)core/;RuntimeIdentifier=win-x64;SelfContained=false;BuildProjectReferences=true;BuildingInsideVisualStudio=false" />
+      Properties="Configuration=$(Configuration);ArtifactsPath=$(DesktopBundleArtifactsPath);PublishDir=$(TargetDir)core/;RuntimeIdentifier=win-x64;SelfContained=false;BuildProjectReferences=true;BuildingInsideVisualStudio=false" />
     <Error Condition="!Exists('$(TargetDir)core/PuddingAgent.exe')" Text="Desktop build is incomplete: core/PuddingAgent.exe is missing." />
     <Error Condition="!Exists('$(TargetDir)core/wwwroot/admin/index.html')" Text="Desktop build is incomplete: Core Web workbench is missing. Build PuddingPlatformAdmin first." />
   </Target>
   <Target Name="PublishCoreBundle" AfterTargets="Publish" Condition="'$(SkipCorePublish)' != 'true'">
     <MSBuild Projects="../PuddingAgent/PuddingAgent.csproj" Targets="Restore;Publish" BuildInParallel="false"
-      Properties="Configuration=$(Configuration);PublishDir=$(PublishDir)core/;SkipCorePublish=true;RuntimeIdentifier=win-x64;SelfContained=false" />
+      RemoveProperties="TargetFramework;TargetFrameworks;OutputPath;OutDir;BaseOutputPath;BaseIntermediateOutputPath;NoBuild"
+      Properties="Configuration=$(Configuration);ArtifactsPath=$(DesktopBundleArtifactsPath);PublishDir=$(PublishDir)core/;SkipCorePublish=true;RuntimeIdentifier=win-x64;SelfContained=false" />
     <Error Condition="!Exists('$(PublishDir)core/PuddingAgent.exe')" Text="Independent Core executable missing from product bundle." />
     <Error Condition="!Exists('$(PublishDir)core/wwwroot/admin/index.html')" Text="Web workbench missing from product bundle." />
+  </Target>
+  <Target Name="BuildGuardianBundle" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true' And '$(IsCrossTargetingBuild)' != 'true' And '$(SkipGuardianBundle)' != 'true'">
+    <MSBuild Projects="../PuddingDesktop.Guardian/PuddingDesktop.Guardian.csproj" Targets="Restore;Publish" BuildInParallel="false"
+      RemoveProperties="TargetFramework;TargetFrameworks;OutputPath;OutDir;BaseOutputPath;BaseIntermediateOutputPath;NoBuild"
+      Properties="Configuration=$(Configuration);ArtifactsPath=$(DesktopBundleArtifactsPath);PublishDir=$(TargetDir)guardian/;RuntimeIdentifier=win-x64;SelfContained=false" />
+    <Error Condition="!Exists('$(TargetDir)guardian/PuddingDesktop.Guardian.exe')" Text="Independent guardian executable is missing." />
+  </Target>
+  <Target Name="PublishGuardianBundle" AfterTargets="Publish" Condition="'$(SkipGuardianBundle)' != 'true'">
+    <MSBuild Projects="../PuddingDesktop.Guardian/PuddingDesktop.Guardian.csproj" Targets="Restore;Publish" BuildInParallel="false"
+      RemoveProperties="TargetFramework;TargetFrameworks;OutputPath;OutDir;BaseOutputPath;BaseIntermediateOutputPath;NoBuild"
+      Properties="Configuration=$(Configuration);ArtifactsPath=$(DesktopBundleArtifactsPath);PublishDir=$(PublishDir)guardian/;RuntimeIdentifier=win-x64;SelfContained=false" />
+    <Error Condition="!Exists('$(PublishDir)guardian/PuddingDesktop.Guardian.exe')" Text="Independent guardian executable is missing from product bundle." />
   </Target>
   <Target Name="IncludeWinUiShellResourcesInPublish" AfterTargets="ComputeFilesToPublish">
     <ItemGroup>
