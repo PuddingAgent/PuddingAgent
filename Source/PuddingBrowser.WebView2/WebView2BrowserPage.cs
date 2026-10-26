@@ -14,6 +14,15 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
 {
     private readonly IWebView2UiDispatcher _dispatcher;
     private readonly Func<WebView2BrowserPage, Task>? _onNavigationChanged;
+    /// <summary>
+    /// 指针轨迹点之间的停留时长（毫秒）。
+    ///
+    /// 它是**行为特征**的一環：CDP 调用是同步快发，6 个 <c>mouseMoved</c> 不打停就是 0 毫秒走完全程，
+    /// 页面上看到的是“分步的位置”却“零时间”，比瞬移更可疑。
+    /// 12ms × 6 步 ≈ 70ms，与真人把鼠标移向目标的量级一致；真实生效后仍需真机验收（单测只能钉住计划器）。
+    /// </summary>
+    internal const int PointerMoveSettleMilliseconds = 12;
+
     private readonly SemaphoreSlim _navigationGate = new(1, 1);
     private readonly SemaphoreSlim _domGate = new(1, 1);
     private CoreWebView2? _coreWebView;
@@ -1333,6 +1342,18 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
 
                 var parameters = JsonDocument.Parse(call.ParametersJson).RootElement.Clone();
                 using var _ = await SendCdpAsync(call.Method, parameters, ct).ConfigureAwait(false);
+
+                // **时间维度**：轨迹点若在同一毫秒内发完，等于“瞬移但分 6 份记日志”。
+                // 只对**无按键按下**的移动停留：拖拽的中间步已在按下态，节奏由拖动本身表达。
+                if (call.Method == "Input.dispatchMouseEvent"
+                    && parameters.TryGetProperty("type", out var callType)
+                    && callType.GetString() == "mouseMoved"
+                    && parameters.TryGetProperty("buttons", out var heldButtons)
+                    && heldButtons.TryGetInt32(out var heldCount)
+                    && heldCount == 0)
+                {
+                    await Task.Delay(PointerMoveSettleMilliseconds, ct).ConfigureAwait(false);
+                }
             }
         }
         catch (OperationCanceledException)
