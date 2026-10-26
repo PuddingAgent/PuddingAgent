@@ -19,8 +19,16 @@ internal static class WebView2FingerprintScript
           try {
             const c = window.chrome;
             if (c && 'webview' in c) {
-              try { Object.defineProperty(c, 'webview', { get() { return undefined; }, configurable: true }); }
-              catch (e) { try { delete c.webview; } catch (e2) { /* 不可删就留给页面，不抛错 */ } }
+              // delete 优先：实测 descriptor 是 configurable=true，delete 之后
+              // 'webview' in chrome 变为 false，与真实 Edge 完全一致。
+              // defineProperty 只改值、保留属性与 enumerable —— 检测方用 in 或 Object.keys
+              // 依然能看出宿主身份（2026-10-26 对照实验：before in=true / after in=false）。
+              let removed = false;
+              try { removed = delete c.webview; } catch (e) { removed = false; }
+              if (!removed) {
+                try { Object.defineProperty(c, 'webview', { get() { return undefined; }, enumerable: false, configurable: true }); }
+                catch (e2) { /* 不可改就留给页面，不抛错 */ }
+              }
             }
           } catch (e) { /* 注入脚本绝不能让页面脚本失败 */ }
         })();
