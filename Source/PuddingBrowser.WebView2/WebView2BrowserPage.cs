@@ -441,10 +441,81 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
         return elements.Select(info => (IElementHandle)new WebView2ElementHandle(
             Id, version, fingerprint, info)).ToArray();
     }
-    public Task<BrowserScriptValue> EvaluateAsync(BrowserScript script, CancellationToken ct)
-        => throw new NotSupportedException("CDP not in Phase 2A-1");
+    /// <summary>
+    /// 在页面内求值（<c>Runtime.evaluate</c>）。
+    ///
+    /// 这条路径此前是 <c>NotSupportedException("CDP not in Phase 2A-1")</c> 的占位，
+    /// 结果 <c>browser_evaluate</c> 工具虽然注册成功、一调用就报 `ui surface failed (NotSupportedException)`。
+    /// 同一个类的 <see cref="SendCdpAsync"/> 早已可用，所以这里不需要新机制，只补回执映射。
+    /// </summary>
+    public async Task<BrowserScriptValue> EvaluateAsync(BrowserScript script, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(script);
+
+        var parameters = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+        {
+            ["expression"] = script.Source,
+            ["returnByValue"] = script.ReturnByValue,
+            ["awaitPromise"] = script.AwaitPromise,
+        });
+
+        using var response = await SendCdpAsync("Runtime.evaluate", parameters, ct).ConfigureAwait(false);
+        return MapScriptResult(response.RootElement);
+    }
+
+    /// <summary>
+    /// 把 CDP <c>Runtime.evaluate</c> 的回执映射成契约值（**纯函数**，可脱离 WebView2 验证）。
+    ///
+    /// 三条诚实约定：
+    /// · 页面抛异常 ⇒ **抛出** <see cref="BrowserOperationException"/>，而不是回一个看起来正常的 undefined；
+    /// · <c>value</c> 必须 <c>Clone()</c>——调用方的 <c>JsonDocument</c> 会在 <c>using</c> 结束时释放；
+    /// · 没有 <c>value</c> 的形态（undefined、非 by-value 的对象）只保留 <c>Type</c>/<c>Description</c>，
+    ///   <c>Value</c> 留空，不编造 <c>null</c>。
+    /// </summary>
+    internal static BrowserScriptValue MapScriptResult(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            throw new BrowserOperationException(
+                "browser_script_error", "Runtime.evaluate returned a non-object payload");
+        }
+
+        if (root.TryGetProperty("exceptionDetails", out var exception) && exception.ValueKind == JsonValueKind.Object)
+        {
+            var message =
+                (exception.TryGetProperty("exception", out var thrown) && thrown.ValueKind == JsonValueKind.Object
+                 && thrown.TryGetProperty("description", out var description) && description.ValueKind == JsonValueKind.String
+                    ? description.GetString()
+                    : ReadScriptString(exception, "text")) ?? "JavaScript evaluation failed";
+
+            throw new BrowserOperationException("browser_script_error", message);
+        }
+
+        if (!root.TryGetProperty("result", out var result) || result.ValueKind != JsonValueKind.Object)
+        {
+            throw new BrowserOperationException("browser_script_error", "Runtime.evaluate returned no result");
+        }
+
+        return new BrowserScriptValue
+        {
+            Type = ReadScriptString(result, "type"),
+            Subtype = ReadScriptString(result, "subtype"),
+            Description = ReadScriptString(result, "description"),
+            Value = result.TryGetProperty("value", out var value) ? value.Clone() : null,
+        };
+    }
+
+    private static string? ReadScriptString(JsonElement element, string name)
+        => element.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
+
+    /// <summary>
+    /// 句柄求值仍未实现：它要求一个 <see cref="IJsHandle"/> 生命周期（objectId 的持有与释放），
+    /// 而 <c>browser_evaluate</c> 走的是 by-value 路径。这里继续明确拒绝，不假装支持。
+    /// </summary>
     public Task<IJsHandle> EvaluateHandleAsync(BrowserScript script, CancellationToken ct)
-        => throw new NotSupportedException("CDP not in Phase 2A-1");
+        => throw new NotSupportedException("structured JS handles are not implemented; use by-value evaluation");
     /// <summary>
     /// 发一条 **CDP** 命令（设计方案 §7 的原生输入路径就靠它）。
     ///
