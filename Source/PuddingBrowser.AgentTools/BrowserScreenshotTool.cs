@@ -28,7 +28,7 @@ public sealed record BrowserScreenshotArgs
     [ToolParam("Detail: low (default, <=512px preview); high/original preserve device pixels. Use original or a region for small text and fine visual comparisons. The selected detail also reaches the model image input.")]
     public string? Detail { get; init; }
 
-    [ToolParam("Image format: png (default) or jpeg.")]
+    [ToolParam("Image format: jpeg (default for detail=low) or png.")]
     public string? Format { get; init; }
 
     [ToolParam("Region x (CSS viewport pixels; region scope only).")]
@@ -90,7 +90,14 @@ public sealed class BrowserScreenshotTool(
                 "browser_invalid_arguments", "screenshot detail is not registered (low, high, original)");
         }
 
-        var format = string.IsNullOrWhiteSpace(args.Format) ? "png" : args.Format!.Trim().ToLowerInvariant();
+        // detail=low 的验收基准是「最长边 512px / 40 KiB」（设计 §11 G9）。PNG 是无损的：
+        // 复杂页缩到 512px 仍有 200 KiB 量级（实测 2026-10-26：抖音视图 210412 B），
+        // 于是默认走 PNG 等于让低细节档**永远**撞预算、永远拿不到图。
+        // 所以低细节默认取有损 JPEG（质量由 ScreenshotPlan 固定为 80）；调用方显式要 png
+        // 仍被尊重，只是超预算时会如实报 budget_exceeded 而不是降级冒充可读。
+        var format = string.IsNullOrWhiteSpace(args.Format)
+            ? (detail == DesktopScreenshotDetail.Low ? "jpeg" : "png")
+            : args.Format!.Trim().ToLowerInvariant();
         if (format is not ("png" or "jpeg"))
         {
             return BrowserToolResponse.Failure(

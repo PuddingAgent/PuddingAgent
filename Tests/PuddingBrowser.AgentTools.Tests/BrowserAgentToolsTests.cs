@@ -2697,6 +2697,37 @@ public sealed class BrowserAgentToolsTests
         Assert.True(PuddingCode.Models.VisionContentPartDetails.IsValid(image.Detail));
     }
 
+    /// <summary>
+    /// 低细节档的格式默认值：设计 §11 G9 给 detail=low 的验收基准是「最长边 512px / 40 KiB」。
+    /// PNG 是无损的，复杂页面缩到 512px 仍有 200 KiB 量级（实测 2026-10-26：210412 B）⇒
+    /// 默认走 PNG 等于让该档永远撞预算、永远拿不到图。因此未显式指定 format 时，
+    /// 低细节必须走有损 JPEG；high/original 不受 40 KiB 约束，保持无损 PNG。
+    /// </summary>
+    [Theory]
+    [InlineData(null, "jpeg")]
+    [InlineData("low", "jpeg")]
+    [InlineData("high", "png")]
+    [InlineData("original", "png")]
+    public async Task Screenshot_DefaultsFormatToLossyOnlyForLowDetail(string? detail, string expectedFormat)
+    {
+        var capturedFormat = "unset";
+        var surface = SurfaceWithSingleChunk(out _);
+        surface.OnScreenshot = request =>
+        {
+            capturedFormat = request.Format;
+            return CapabilityResult<BrowserScreenshotResult>.Success(new BrowserScreenshotResult(
+                Metadata() with { Detail = request.Detail }, [new DesktopScreenshotChunk(0, true, [1, 2, 3, 4])]));
+        };
+        var tool = new BrowserScreenshotTool(
+            surface, new FakeCallContextFactory(), _originAccessor, new FakeScreenshotPublisher());
+        var detailJson = detail is null ? string.Empty : $",\"detail\":\"{detail}\"";
+        var result = await ExecuteAsync(
+            tool, $$"""{"page_id":"p-1","context_id":"ctx-1","expected_page_version":7{{detailJson}}}""");
+
+        Assert.True(result.Success, result.Output);
+        Assert.Equal(expectedFormat, capturedFormat);
+    }
+
     /// <summary>坏块必须**明确失败**，且**不得**发布任何工件（残缺字节不能被当成"成功截图"）。</summary>
     [Fact]
     public async Task Screenshot_RejectsIncompleteChunks_AndNeverPublishes()
