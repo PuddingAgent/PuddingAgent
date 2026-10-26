@@ -781,10 +781,15 @@ internal static partial class WebView2DomClient
   }
   if(el.disabled)return{ok:false,code:'browser_element_disabled',message:'Matched element is disabled'};
   const fire=(name,options={})=>el.dispatchEvent(new Event(name,{bubbles:true,...options}));
+  // **React 受控输入必须走原生 setter**：React 会给元素实例安装 value tracker（覆盖 value 访问器），
+  // 直接写 el.value 会让 tracker 认为「值没变」，于是 input 事件派发了但 onChange 不触发，
+  // 框架状态停在旧值上（2026-10-26 实测：抖音搜索框写入后 DOM 有新值、React 状态仍是空 ⇒ 回车搜的是热搜词）。
+  // 从原型取原生 setter 可以绕过实例覆盖，再派发 input，框架才会观察到变化。
+  const setNativeValue=(node,text)=>{const proto=node instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;if(setter)setter.call(node,text);else node.value=text;};
   try { switch(input.action){
     case'click':el.focus();el.click();break;
-    case'fill':el.focus();if(el.isContentEditable)el.textContent=String(input.value??'');else el.value=String(input.value??'');fire('input');fire('change');break;
-    case'type':el.focus();if(el.isContentEditable)el.textContent=(el.textContent||'')+String(input.value??'');else el.value=String(el.value??'')+String(input.value??'');fire('input');break;
+    case'fill':{el.focus();const text=String(input.value??'');if(el.isContentEditable){el.textContent=text;fire('input');}else{setNativeValue(el,text);fire('input');fire('change');}break;}
+    case'type':{el.focus();const text=String(input.value??'');if(el.isContentEditable){el.textContent=(el.textContent||'')+text;fire('input');}else{setNativeValue(el,String(el.value??'')+text);fire('input');}break;}
     case'press':{const key=String(input.value??'');el.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true}));el.dispatchEvent(new KeyboardEvent('keyup',{key,bubbles:true}));if(key==='Enter'&&el.form)el.form.requestSubmit();break;}
     case'hover':el.dispatchEvent(new MouseEvent('mouseenter',{bubbles:true}));el.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}));break;
     case'scroll':el.scrollIntoView({block:'center',inline:'center'});if(input.deltaX||input.deltaY)el.scrollBy(Number(input.deltaX||0),Number(input.deltaY||0));break;
