@@ -8,11 +8,12 @@
     <UseVSTest>true</UseVSTest>
   </PropertyGroup>
 
-  <!-- 组件化交付规程 S2/S3：本测试工程**只**引用 PuddingFinance，
+  <!-- 组件化交付规程 S2/S3：本测试工程**只**引用 PuddingFinance 与其文档子组件，
        不引用 PuddingRuntime / PuddingHost / PuddingAgent，
        因此不加载宿主、不受运行中 Core 的 DLL 文件锁影响。 -->
   <ItemGroup>
     <ProjectReference Include="..\PuddingFinance\PuddingFinance.csproj" />
+    <ProjectReference Include="..\PuddingFinance.Documents\PuddingFinance.Documents.csproj" />
   </ItemGroup>
 
 </Project>

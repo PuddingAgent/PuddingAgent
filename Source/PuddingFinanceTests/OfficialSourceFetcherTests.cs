@@ -201,7 +201,7 @@ public sealed class OfficialSourceFetcherTests
 
         // 对照：Bytes 字段仍然如实报告原始字节数，但 Body 已不可还原（非法 UTF-8 → 替换字符）。
         Assert.AreEqual(payload.Length, text.Bytes, "Bytes 统计的是解码前的原始字节数");
-        Assert.IsTrue(text.Body.Contains('\uFFFD'), "解码后的字符串已经丟了信息，不能当二进制用");
+        StringAssert.Contains(text.Body, "\uFFFD", "解码后的字符串已经丟了信息，不能当二进制用");
     }
 
     [TestMethod]
@@ -220,7 +220,7 @@ public sealed class OfficialSourceFetcherTests
         var clipped = await fetcher.FetchBytesAsync(
             new SourceFetchRequest("https://www.cninfo.com.cn/x.pdf", MaxBytes: 4));
         Assert.IsTrue(clipped.Truncated);
-        Assert.AreEqual(4, clipped.Bytes.Length);
+        Assert.HasCount(4, clipped.Bytes);
     }
 
     private sealed class ByteHandler(byte[] payload) : HttpMessageHandler

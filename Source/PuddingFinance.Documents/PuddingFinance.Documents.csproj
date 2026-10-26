@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>PuddingFinance.Documents</RootNamespace>
+  </PropertyGroup>
+
+  <!-- PDF 文本抽取的**独立组件**。
+       为什么单独成工程而不塞进 PuddingFinance：PuddingFinance 刻意零第三方依赖，
+       而这里必须引 PdfPig（0.x，README 明写 minor 版本会破坏 API）。
+       把第三方类型关在这一层里，将来换库只改本工程，上层与 PuddingFinance 不受影响。 -->
+  <ItemGroup>
+    <PackageReference Include="PdfPig" Version="0.1.16" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingFinanceTests" />
+  </ItemGroup>
+
+</Project>
