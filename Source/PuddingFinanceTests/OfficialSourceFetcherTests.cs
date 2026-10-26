@@ -183,7 +183,7 @@ public sealed class OfficialSourceFetcherTests
             new SourceFetchRequest("https://www.cninfo.com.cn/x.pdf"));
 
         CollectionAssert.AreEqual(payload, binary.Bytes, "二进制必须逐字节原样返回");
-        Assert.AreEqual(payload.Length, binary.Bytes.Length);
+        Assert.HasCount(payload.Length, binary.Bytes);
         var expected = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
         Assert.AreEqual(expected, binary.Sha256);
     }
