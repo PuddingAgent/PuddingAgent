@@ -346,6 +346,12 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
 
     public int ContextsCount => _calls.Count(call => string.Equals(call, "contexts", StringComparison.Ordinal));
 
+    /// <summary>
+    /// 清单里列出的页面目标。默认保留夹具原有的 ctx-1/page-1（与注册表里的 ctx-agent 不同，
+    /// 用于验证“未登记页不被凭空回写”）；需要断言“清单回写已登记页版本”时改为 <c>ServiceHarness.AgentPage</c>。
+    /// </summary>
+    public DesktopPageTarget InventoryPage { get; set; } = new("ctx-1", "page-1");
+
     public async Task<CapabilityResult<DesktopContexts>> GetContextsAsync(
         DesktopCallContext context, CancellationToken cancellationToken)
     {
@@ -357,7 +363,7 @@ internal sealed class RecordingUiSurface : IDesktopUiSurface
             new DesktopContextInfo("ctx-1", DesktopContextTrust.AgentAuthorized,
             [
                 new DesktopPageInfo(
-                    new DesktopPageTarget("ctx-1", "page-1"),
+                    InventoryPage,
                     DesktopPageVersion.Require(9),
                     title: "示例页",
                     url: new Uri("https://example.com/1"),

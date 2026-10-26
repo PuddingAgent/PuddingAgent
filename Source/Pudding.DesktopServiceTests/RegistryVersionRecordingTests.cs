@@ -23,7 +23,8 @@ public sealed class RegistryVersionRecordingTests
         | DesktopCapability.BrowserTabs
         | DesktopCapability.WebViewNavigate
         | DesktopCapability.WebViewPageState
-        | DesktopCapability.WebViewExecuteJavascript;
+        | DesktopCapability.WebViewExecuteJavascript
+        | DesktopCapability.BrowserContexts;
 
     private const long FixtureObservedVersion = 9;
     private const long InitialRegisteredVersion = 1;
@@ -98,6 +99,37 @@ public sealed class RegistryVersionRecordingTests
             DesktopCapabilityRequest.ForTabs(new BrowserTabsRequest(
                 ServiceHarness.AgentPage, DesktopTabAction.Activate, DesktopPageVersion.Require(InitialRegisteredVersion))),
             InitialRegisteredVersion + 1);
+    }
+
+    [Fact]
+    public async Task Contexts_RecordEveryListedPageVersion()
+    {
+        // 回归（2026-10-26 实测）：清单回带每页实时版本，但注册表只被「带单一目标的观察」更新过，
+        // 于是 agent 从 tabs list 读到 v9、准入却拿注册表的 v1 去比，两处互相否决。
+        // 截图强制要求版本号且无绕法 ⇒ 这条链会一直卡住。
+        var harness = ServiceHarness.Create(allowed: Allowed, hasThreadAccess: true);
+        harness.Surface.InventoryPage = ServiceHarness.AgentPage;
+        Assert.Equal(InitialRegisteredVersion, VersionOf(harness, ServiceHarness.AgentPage));
+
+        var response = await harness.ExecuteAsync(
+            DesktopCapability.BrowserContexts, DesktopCapabilityRequest.ForContexts());
+
+        Assert.False(response.IsFailure);
+        Assert.Equal(FixtureObservedVersion, VersionOf(harness, ServiceHarness.AgentPage));
+    }
+
+    [Fact]
+    public async Task Contexts_DoNotInventUnregisteredPages()
+    {
+        // 清单里有、注册表里没有的页面不得被补登记（凭空造目标等于对一个不存在的页面放行）。
+        var harness = ServiceHarness.Create(allowed: Allowed, hasThreadAccess: true);
+
+        var response = await harness.ExecuteAsync(
+            DesktopCapability.BrowserContexts, DesktopCapabilityRequest.ForContexts());
+
+        Assert.False(response.IsFailure);
+        Assert.Null(harness.Targets.Resolve(new DesktopPageTarget("ctx-1", "page-1")));
+        Assert.Equal(InitialRegisteredVersion, VersionOf(harness, ServiceHarness.AgentPage));
     }
 
     [Fact]

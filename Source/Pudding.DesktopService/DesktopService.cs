@@ -715,6 +715,27 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
             return;
         }
 
+        // 清单（contexts）是「一次调用里所有页面的实时版本」。若不逐页回写，注册表会停在
+        // 建页时的版本：agent 从清单读到 v3、准入却拿注册表的 v2 去比，两处互相否决（双源）。
+        // 2026-10-26 实测就是被这个卡住的：截图强制要求版本号，且没有绕法。
+        if (response.Contexts is { } inventory)
+        {
+            foreach (var page in inventory.Contexts.SelectMany(context => context.Pages))
+            {
+                if (Targets.Resolve(page.Target) is not { } known)
+                {
+                    continue;
+                }
+
+                Targets.UpdatePage(
+                    page.Target,
+                    page.Version,
+                    page.IsLoading ? DesktopPageReadiness.Loading : known.Readiness);
+            }
+
+            return;
+        }
+
         DesktopPageTarget? target;
         DesktopPageVersion version;
         DesktopPageReadiness? readiness;
