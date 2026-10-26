@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Runtime.CompilerServices;
 using Microsoft.Web.WebView2.Core;
@@ -15,6 +15,7 @@ public sealed class WebView2BrowserRuntime : IBrowserRuntime
     private readonly IWebView2UiDispatcher _dispatcher;
     private readonly IBrowserSurfaceHost? _surfaceHost;
     private readonly string _dataRoot;
+    private readonly string? _additionalBrowserArguments;
     private readonly ConcurrentDictionary<BrowserContextId, WebView2BrowserContext> _contexts = new();
 
     public BrowserRuntimeState State { get; private set; } = BrowserRuntimeState.Created;
@@ -22,11 +23,14 @@ public sealed class WebView2BrowserRuntime : IBrowserRuntime
     public WebView2BrowserRuntime(
         IWebView2UiDispatcher dispatcher,
         IBrowserSurfaceHost? surfaceHost,
-        string dataRoot)
+        string dataRoot,
+        string? additionalBrowserArguments = null)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _surfaceHost = surfaceHost;
         _dataRoot = dataRoot ?? throw new ArgumentNullException(nameof(dataRoot));
+        // 只作为透传：是否开启 DevTools 端点由调用方（Shell）决定，见 WebView2DevToolsArguments。
+        _additionalBrowserArguments = additionalBrowserArguments;
     }
 
     public async Task<IBrowserContext> CreateContextAsync(
@@ -48,7 +52,10 @@ public sealed class WebView2BrowserRuntime : IBrowserRuntime
 #else
             return await CoreWebView2Environment.CreateAsync(
 #endif
-                null, userDataDir, new CoreWebView2EnvironmentOptions());
+                null, userDataDir, new CoreWebView2EnvironmentOptions
+                {
+                    AdditionalBrowserArguments = _additionalBrowserArguments,
+                });
         }, ct);
 
         var context = new WebView2BrowserContext(id, options, environment, _dispatcher, _surfaceHost);

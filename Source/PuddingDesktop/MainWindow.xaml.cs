@@ -2919,7 +2919,9 @@ public sealed partial class MainWindow : Window
             var dispatcher = new WinUiDispatcher(DispatcherQueue);
             var surfaces = new WinUiBrowserSurfaceHost(dispatcher, BrowserSurfaceHostPanel);
             _browserSurfaces = surfaces;
-            var runtime = new WebView2BrowserRuntime(dispatcher, surfaces, dataRoot);
+            // Shell 持有 WebView2，因此 CDP 端点只能在这里开：环境变量 PUDDING_BROWSER_CDP_PORT 未设置时不注入任何参数。
+            var runtime = new WebView2BrowserRuntime(
+                dispatcher, surfaces, dataRoot, WebView2DevToolsArguments.FromEnvironment());
             _browserRuntime = runtime;
             // 接管/暂停的**唯一写入点**：控制状态推给所有执行闸门。
             // 这里先挂 Bridge dispatcher（默认传输路径）——不挂就等于「人工接管」按钮对 Agent 无效
