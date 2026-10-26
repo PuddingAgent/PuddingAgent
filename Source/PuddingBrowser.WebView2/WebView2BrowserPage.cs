@@ -448,7 +448,7 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
             : ExecuteInteractionAsync("click", l, value: null, deltaX: null, deltaY: null, ct);
     public Task FillAsync(Locator l, string v, FillOptions o, CancellationToken ct)
         => o.InputMode == InputMode.Native
-            ? ExecuteNativeAsync("fill", l, v, ct)
+            ? ExecuteNativeAsync("fill", l, v, ct, clearFirst: o.ClearFirst)
             : ExecuteInteractionAsync("fill", l, v, deltaX: null, deltaY: null, ct);
     public Task TypeAsync(Locator l, string t, TypeOptions o, CancellationToken ct)
         => o.InputMode == InputMode.Native
@@ -1124,7 +1124,8 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
         string action,
         Locator locator,
         string? value,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool clearFirst = false)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(locator);
@@ -1137,15 +1138,60 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
             ?? throw new BrowserOperationException(
                 "browser_element_not_found", "the matched element has no geometry; native input needs a box");
 
-        var plan = action switch
+        var centerX = box.X + (box.Width / 2);
+        var centerY = box.Y + (box.Height / 2);
+
+        IReadOnlyList<DriverCall>? plan;
+        switch (action)
         {
-            "click" => Policy.PlanClick(box.X + (box.Width / 2), box.Y + (box.Height / 2), 1),
-            "hover" => Policy.PlanHover(box.X + (box.Width / 2), box.Y + (box.Height / 2)),
-            "fill" => Policy.PlanFill(value),
-            "type" => Policy.PlanType(value),
-            "press" => Policy.PlanPress(value),
-            _ => null,
-        };
+            case "click":
+                plan = Policy.PlanClick(centerX, centerY, 1);
+                break;
+            case "hover":
+                plan = Policy.PlanHover(centerX, centerY);
+                break;
+            case "fill":
+            case "type":
+            case "press":
+            {
+                // 键盘类动作**必须先让目标获得焦点**：CDP 的 Input.* 只作用于当前焦点元素，
+                // 不会自己去找 locator 指向的节点。少了这一下，insertText 会落到上一个焦点持有者身上
+                // （2026-10-26 实测：抖音搜索框表现为「文字追加到旧值后面」）。
+                // 指针类动作本身就是聚焦动作，不需要额外点击。
+                var focusPlan = Policy.PlanClick(centerX, centerY, 1);
+                IReadOnlyList<DriverCall>? body = action switch
+                {
+                    "fill" => Policy.PlanFill(value),
+                    "type" => Policy.PlanType(value),
+                    _ => Policy.PlanPress(value),
+                };
+                if (focusPlan is null || body is null)
+                {
+                    plan = null;
+                    break;
+                }
+
+                // fill 的契约是「设置值」，而 insertText 是在光标处插入。
+                // ClearFirst 因此必须真的先全选再删除，否则「替换」会被静默变成「拼接」。
+                if (action == "fill" && clearFirst && !string.IsNullOrEmpty(value))
+                {
+                    var selectAll = Policy.PlanPress("Control+A");
+                    var delete = Policy.PlanPress("Delete");
+                    if (selectAll is null || delete is null)
+                    {
+                        plan = null;
+                        break;
+                    }
+                    body = [.. selectAll, .. delete, .. body];
+                }
+
+                plan = [.. focusPlan, .. body];
+                break;
+            }
+            default:
+                plan = null;
+                break;
+        }
 
         // 策略返回 null ⇒ 这一面不支持该动作：**明确拒绝**，绝不静默回落成 DOM 输入。
         if (plan is null)
