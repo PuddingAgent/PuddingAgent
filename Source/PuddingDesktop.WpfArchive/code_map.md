@@ -22,7 +22,7 @@
 | `Runtime/DesktopRuntimeOrchestrator.cs` | 异常退出恢复、退避熔断（2s/4s/8s，60s 3 次） |
 | `Runtime/CoreRestartPolicy.cs` | 重启策略与取消语义 |
 | `Bootstrap/DesktopBootstrapSignalService.cs` | 🔑 Core 点火部署主管（desktop-build 等三模式事务部署）见下「关键语义」 |
-| `Bootstrap/DesktopBootstrapHttpEndpoint.cs` | 仅回环 + ControlToken 的 Desktop 控制面；WinUI 增加 Guardian UI ping/协调退出，接管时拒绝旧部署入口；见下「关键语义」 |
+| `Bootstrap/DesktopBootstrapHttpEndpoint.cs` | 仅回环+ControlToken 的 Desktop 控制面；WinUI 加 Guardian UI ping/退出协调，接管即拒旧部署入口；见下「关键语义」 |
 | `Bootstrap/DesktopBootstrapSignal*.cs` | 信号协议、部署模式归一化与结果证据模型（产物/加载路径、复制计数、哈希、`assembliesReloaded`） |
 | `Bootstrap/DesktopBootstrapSignalParser.cs` | 自举仓库根从 EXE 目录向上查到卷根，识别 dev-up.py 与 .git 目录/工作树文件；无仓库时保留打包目录回退 |
 
