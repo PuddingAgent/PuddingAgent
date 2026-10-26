@@ -66,7 +66,7 @@ public sealed record BrowserInteractArgs
     /// <b>native 尚未实现 ⇒ 请求它必须明确失败</b>，绝不静默降级成 dom 再回一个"成功"——
     /// 否则调用方会以为走了真实输入路径（设计明确禁止"静默切换语义"）。
     /// </summary>
-    [ToolParam("Input path: dom (default, verified DOM events) or native (real browser input). native is not implemented yet and fails explicitly instead of silently falling back.")]
+    [ToolParam("Input path: dom (default, verified DOM events) or native (real browser input via CDP). Actions native cannot express fail explicitly instead of silently falling back to dom.")]
     public string? InputMode { get; init; }
 
     /// <summary>
@@ -105,7 +105,7 @@ public sealed record BrowserInteractArgs
 
     name: "Browser interact",
 
-    description: "Click, fill, type, press, hover, scroll, select, or check an element in a visible Desktop browser tab.",
+    description: "Click, fill, type, press, hover, scroll, select, or check an element — or act on raw viewport coordinates with pointer_click/pointer_move/pointer_drag — in a visible Desktop browser tab.",
 
     category: ToolCategory.Network,
 
@@ -202,8 +202,24 @@ public sealed class BrowserInteractTool(
                 return BrowserToolResponse.Failure("browser_invalid_arguments",
                     "expected_page_version must be the positive pageVersion from the snapshot/locate that produced this ref; re-observe before retrying");
 
-            if (action != "scroll" && locator is null)
+            // 指针动作按**坐标**表达（契约层 §8.2 明确禁止 locator 与坐标混用）。
+            // 于是这里的门禁方向与其它动作相反：必须拦坐标缺失、放行 locator 为空——
+            // 否则工具层要 locator、契约层拒 locator，任何参数组合都过不去（两层互斥）。
+            if (action is "pointer_click" or "pointer_move" or "pointer_drag")
+            {
+                if (args.X is null || args.Y is null)
+                    return BrowserToolResponse.Failure("browser_invalid_arguments",
+                        "pointer actions require both x and y (CSS viewport pixels)");
 
+                if (action == "pointer_drag" && (args.ToX is null || args.ToY is null))
+                    return BrowserToolResponse.Failure("browser_invalid_arguments",
+                        "action=pointer_drag requires both to_x and to_y (CSS viewport pixels)");
+
+                if (locator is not null)
+                    return BrowserToolResponse.Failure("browser_invalid_arguments",
+                        "pointer actions take coordinates, not a locator");
+            }
+            else if (action != "scroll" && locator is null)
                 return BrowserToolResponse.Failure("browser_invalid_arguments", "locator is required for this action");
 
             // 拖拽必须**两个端点都给**：只有一个端点无法表达「拖到哪儿」（契约层也会拦，这里给更早的提示）。

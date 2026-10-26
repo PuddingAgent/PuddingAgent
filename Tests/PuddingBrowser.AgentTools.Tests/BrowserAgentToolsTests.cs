@@ -1976,6 +1976,121 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Interact_PointerClickTakesCoordinatesWithoutLocator()
+    {
+        // 回归：工具层曾要求 locator、契约层又禁止 locator ⇒ 指针动作没有任何参数组合能通过。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "pointer_click",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                x = 140.5,
+                y = 415.5
+            }));
+
+        Assert.True(result.Success);
+        var call = Assert.Single(surface.PointerCalls);
+        Assert.Equal(DesktopInteractionAction.PointerClick, call.Action);
+        Assert.Equal(140.5, call.X);
+        Assert.Equal(415.5, call.Y);
+        // 坐标动作不得附带 locator（契约层禁止混用，语义只能有一种）。
+        Assert.Null(surface.LastInteractRequest!.Locator);
+    }
+
+    [Fact]
+    public async Task Interact_PointerActionsRequireBothCoordinates()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "pointer_click",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                x = 10.0
+            }));
+
+        Assert.False(result.Success);
+        using var document = JsonDocument.Parse(result.Error!);
+        Assert.Equal(
+            "browser_invalid_arguments",
+            document.RootElement.GetProperty("error").GetProperty("code").GetString());
+        Assert.Empty(surface.PointerCalls);
+    }
+
+    [Fact]
+    public async Task Interact_PointerActionRejectsLocatorInsteadOfSilentlyDroppingIt()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "pointer_move",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                x = 10.0,
+                y = 20.0,
+                locator = new { kind = "role", value = "button", name = "Save" }
+            }));
+
+        Assert.False(result.Success);
+        using var document = JsonDocument.Parse(result.Error!);
+        Assert.Equal(
+            "browser_invalid_arguments",
+            document.RootElement.GetProperty("error").GetProperty("code").GetString());
+        Assert.Empty(surface.PointerCalls);
+    }
+
+    [Fact]
+    public async Task Interact_PointerDragRequiresBothEndpoints()
+    {
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "pointer_drag",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                x = 10.0,
+                y = 20.0,
+                to_x = 30.0
+            }));
+
+        Assert.False(result.Success);
+        using var document = JsonDocument.Parse(result.Error!);
+        Assert.Equal(
+            "browser_invalid_arguments",
+            document.RootElement.GetProperty("error").GetProperty("code").GetString());
+        Assert.Empty(surface.PointerCalls);
+    }
+
+    [Fact]
     public async Task Interact_ReportsTheActualInputBackend()
     {
         var runtime = new FakeBrowserRuntime();
@@ -2814,6 +2929,11 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
     /// <summary>最近一次交互请求：断言 input_mode 真的下传（不静默改语义）。</summary>
     public BrowserInteractRequest? LastInteractRequest { get; private set; }
 
+    /// <summary>
+    /// 指针动作按坐标执行：替身记录每次调用的坐标，供断言「工具层真的把坐标原样下传」。
+    /// </summary>
+    public List<(DesktopInteractionAction Action, double? X, double? Y, double? ToX, double? ToY)> PointerCalls { get; } = [];
+
     /// <summary>最近一次定位请求（用于断言默认 limit 等参数确实传到了能力层）。</summary>
     public BrowserLocateRequest? LastLocateRequest { get; private set; }
 
@@ -3122,6 +3242,12 @@ internal sealed class FakeCapabilitySurface(IBrowserRuntime runtime)
                     scrollFacts.ConsumedDeltaY,
                     scrollFacts.AtBoundary,
                     scrollFacts.ContentChanged);
+                break;
+            case DesktopInteractionAction.PointerClick:
+            case DesktopInteractionAction.PointerMove:
+            case DesktopInteractionAction.PointerDrag:
+                // 坐标动作没有 locator：真实驱动直接派发鼠标事件，替身只需记录坐标。
+                PointerCalls.Add((request.Action, request.X, request.Y, request.ToX, request.ToY));
                 break;
             default:
                 return CapabilityResult<DesktopInteractionResult>.Failure(
