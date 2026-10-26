@@ -27,7 +27,7 @@ public sealed class BrowserBridgeServiceCollectionExtensionsTests
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
         Assert.Equal(
-            ["BrowserContextTool", "BrowserInteractTool", "BrowserLocateTool", "BrowserNavigateTool",
+            ["BrowserContextTool", "BrowserEvaluateTool", "BrowserInteractTool", "BrowserLocateTool", "BrowserNavigateTool",
                 "BrowserScreenshotTool", "BrowserSnapshotTool", "BrowserTabsTool", "BrowserWaitForTool"],
             toolTypes);
     }

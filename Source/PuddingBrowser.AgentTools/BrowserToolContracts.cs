@@ -38,6 +38,21 @@ public sealed record BrowserTabToolValue
     public long PageVersion { get; init; }
 }
 
+public sealed record BrowserEvaluateToolValue
+{
+    public required string ContextId { get; init; }
+
+    public required string PageId { get; init; }
+
+    /// <summary>返回值形态线名：undefined / null / boolean / number / string / json。</summary>
+    public required string Kind { get; init; }
+
+    /// <summary>裸 JSON 片段：String 自带引号，Undefined/Null 为 null。上层不要再二次序列化。</summary>
+    public string? JsonValue { get; init; }
+
+    public bool Truncated { get; init; }
+}
+
 public sealed record BrowserNavigationToolValue
 {
     public required string Action { get; init; }

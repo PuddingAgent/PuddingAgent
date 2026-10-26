@@ -3,9 +3,9 @@ using System.Collections.ObjectModel;
 namespace PuddingBrowser.AgentTools;
 
 /// <summary>
-/// Canonical tool IDs for the **eight** browser Agent tools (ADR-097 D1/D5).
+/// Canonical tool IDs for the **nine** browser Agent tools (ADR-097 D1/D5).
 /// The All collection defines the fixed enumeration order:
-/// Context, Tabs, Navigate, Snapshot, Screenshot, Locate, Interact, WaitFor.
+/// Context, Tabs, Navigate, Snapshot, Screenshot, Locate, Interact, WaitFor, Evaluate.
 ///
 /// “工具存在”与“该动作支持”是两件事：All 是**事实目录**（注册/发现/提示词/测试共用），
 /// 运行时支持集由 Host/Desktop 的能力握手如实表达。
@@ -22,6 +22,12 @@ public static class BrowserAgentToolIds
     public const string Interact = "browser_interact";
     public const string WaitFor = "browser_wait_for";
 
+    /// <summary>
+    /// 页面内求值（2026-10-26）：把「页面现在到底是什么状态」从外挂 CDP 探针变成一等工具。
+    /// 契约与 Desktop 实现本来就在（<c>ExecuteJavascriptAsync</c>），此前只缺这一层。
+    /// </summary>
+    public const string Evaluate = "browser_evaluate";
+
     public static readonly IReadOnlyList<string> All = new ReadOnlyCollection<string>(
     [
         Context,
@@ -31,7 +37,8 @@ public static class BrowserAgentToolIds
         Screenshot,
         Locate,
         Interact,
-        WaitFor
+        WaitFor,
+        Evaluate
     ]);
 }
 

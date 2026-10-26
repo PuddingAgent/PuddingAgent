@@ -135,19 +135,24 @@ public sealed class BrowserDelegationTasksTests
             "goal", null!, "grant", "expected", TimeSpan.FromMinutes(1)));
     }
 
-    // ── F6：canonical 八工具/能力事实目录必须包含 screenshot ────────────────
+    // ── F6：canonical 工具/能力事实目录必须包含 screenshot（以及新增的 evaluate） ──────────
 
     [Fact]
-    public void CanonicalToolAndCapabilityLists_IncludeAllEightTools()
+    public void CanonicalToolAndCapabilityLists_IncludeAllCanonicalTools()
     {
-        Assert.Equal(8, BrowserAgentToolIds.All.Count);
+        Assert.Equal(9, BrowserAgentToolIds.All.Count);
         Assert.Contains(BrowserAgentToolIds.Screenshot, BrowserAgentToolIds.All);
 
         Assert.Equal(8, BrowserAgentCapabilityIds.All.Count);
         Assert.Contains(BrowserAgentCapabilityIds.Screenshot, BrowserAgentCapabilityIds.All);
 
         // 两个事实目录必须同形（同一枚举顺序、同一数量）：注册、发现与提示词从同一目录生成。
-        Assert.Equal(BrowserAgentToolIds.All.Count, BrowserAgentCapabilityIds.All.Count);
+        // 能力目录是**委派投影**，可以比工具目录窄（browser_evaluate 能写页面，暂不向子代理开放），
+        // 但绝不能更宽：委派出去的东西必须是工具目录里真实存在的。
+        Assert.True(
+            BrowserAgentCapabilityIds.All.Count <= BrowserAgentToolIds.All.Count,
+            "the delegated capability catalog must never exceed the tool catalog");
+        Assert.DoesNotContain("cap-browser-evaluate", BrowserAgentCapabilityIds.All);
     }
 
     [Fact]
