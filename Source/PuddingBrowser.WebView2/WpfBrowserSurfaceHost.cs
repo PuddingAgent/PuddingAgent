@@ -1,4 +1,4 @@
-﻿using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using PuddingBrowser.Abstractions;
 
@@ -89,4 +89,51 @@ public sealed class WpfBrowserSurfaceHost : IBrowserSurfaceHost
             }, ct);
         }
     }
+
+    /// <summary>
+    /// 清空整个 profile 的 Cookie。
+    /// 所有表面共用同一个 <see cref="CoreWebView2Environment"/>（同一个用户数据目录），
+    /// 因此取任一个已初始化的表面就够，不必逐个循环 —— 与 WinUI 宿主同一语义。
+    /// </summary>
+    public Task<bool> ClearAllCookiesAsync(CancellationToken ct) => _dispatcher.InvokeAsync<bool>(async () =>
+    {
+        var core = _surfaces.Values
+            .Select(surface => surface.CoreWebView)
+            .FirstOrDefault(value => value is not null);
+        if (core is null)
+        {
+            return false;
+        }
+
+        core.Profile.CookieManager.DeleteAllCookies();
+        await Task.CompletedTask;
+        return true;
+    }, ct);
+
+    /// <summary>
+    /// 只清给定站点的 Cookie；作用域取 <c>scheme://host[:port]</c>。
+    /// 深层 path 单独设置的 Cookie 可能残留（WebView2 只提供 <c>DeleteCookies(name, uri)</c>）。
+    /// </summary>
+    public Task<int> ClearSiteCookiesAsync(Uri siteUri, CancellationToken ct) =>
+        _dispatcher.InvokeAsync<int>(async () =>
+        {
+            ArgumentNullException.ThrowIfNull(siteUri);
+            var core = _surfaces.Values
+                .Select(surface => surface.CoreWebView)
+                .FirstOrDefault(value => value is not null);
+            if (core is null)
+            {
+                return -1;
+            }
+
+            var scope = siteUri.GetLeftPart(UriPartial.Authority);
+            var manager = core.Profile.CookieManager;
+            var cookies = await manager.GetCookiesAsync(scope);
+            foreach (var cookie in cookies)
+            {
+                manager.DeleteCookies(cookie.Name, scope);
+            }
+
+            return cookies.Count;
+        }, ct);
 }

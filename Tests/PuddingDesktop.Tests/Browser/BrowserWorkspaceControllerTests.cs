@@ -1168,6 +1168,18 @@ internal sealed class FakeBrowserSurfaceHost : PuddingBrowser.WebView2.IBrowserS
     public List<PageId> ActivatedSurfaces { get; } = new();
     public List<PageId> ClosedSurfaces { get; } = new();
 
+    /// <summary>清全部 Cookie 的调用记录（每次一个条目）。</summary>
+    public List<string> AllCookieClears { get; } = new();
+
+    /// <summary>清单站点 Cookie 的调用记录（记录传入的作用域）。</summary>
+    public List<Uri> SiteCookieClears { get; } = new();
+
+    /// <summary>是否真的执行（与真实宿主一致：没有已初始化的表面时为 false）。</summary>
+    public bool ClearAllCookiesResult { get; set; } = true;
+
+    /// <summary>删除条数（-1 表示无法执行，与真实宿主一致）。</summary>
+    public int ClearSiteCookiesResult { get; set; }
+
     public Task<PuddingBrowser.WebView2.IBrowserSurface> CreateAsync(
         BrowserContextId contextId, PageId pageId,
         Microsoft.Web.WebView2.Core.CoreWebView2Environment environment,
@@ -1187,6 +1199,18 @@ internal sealed class FakeBrowserSurfaceHost : PuddingBrowser.WebView2.IBrowserS
     {
         ClosedSurfaces.Add(pageId);
         return Task.CompletedTask;
+    }
+
+    public Task<bool> ClearAllCookiesAsync(CancellationToken ct)
+    {
+        AllCookieClears.Add("all");
+        return Task.FromResult(ClearAllCookiesResult);
+    }
+
+    public Task<int> ClearSiteCookiesAsync(Uri siteUri, CancellationToken ct)
+    {
+        SiteCookieClears.Add(siteUri);
+        return Task.FromResult(ClearSiteCookiesResult);
     }
 }
 
