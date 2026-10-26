@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using PuddingBrowser.Abstractions;
-using PuddingBrowser.Automation;
 
 namespace PuddingBrowser.WebView2;
 
@@ -1077,24 +1076,48 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
         byte[] bytes;
         if (o.Quality is { } startQuality)
         {
-            var budgeted = await ScreenshotPlan.CaptureWithinBudgetAsync(
-                ScreenshotPlan.QualitySteps(startQuality),
-                o.MaxBytes,
-                (quality, token) => CaptureAtAsync(quality, token),
-                ct).ConfigureAwait(false);
-
-            bytes = budgeted.Bytes;
-            usedQuality = budgeted.Quality;
-
-            if (!budgeted.WithinBudget && o.MaxBytes.HasValue)
+            // 档位由**策略**给（Policy.ScreenshotQualitySteps）：驱动只负责按序拍，
+            // 这样阶梯逻辑既不依赖 Automation（WinUI 面只允许引用 Abstractions），
+            // 也不必在驱动里复制一份。策略不支持降档时只拍一次。
+            var steps = Policy.ScreenshotQualitySteps(startQuality);
+            if (steps.Count == 0)
             {
-                var jpegLimit = o.MaxBytes.Value;
+                steps = [startQuality];
+            }
+
+            byte[]? best = null;
+            var bestQuality = steps[0];
+            var fits = false;
+
+            foreach (var attemptQuality in steps)
+            {
+                var candidate = await CaptureAtAsync(attemptQuality, ct).ConfigureAwait(false);
+                if (best is null || candidate.Length < best.Length)
+                {
+                    best = candidate;
+                    bestQuality = attemptQuality;
+                }
+
+                if (o.MaxBytes is not { } limit || candidate.Length <= limit)
+                {
+                    best = candidate;
+                    bestQuality = attemptQuality;
+                    fits = true;
+                    break;
+                }
+            }
+
+            bytes = best!;
+            usedQuality = bestQuality;
+
+            if (!fits && o.MaxBytes is { } jpegLimit)
+            {
                 throw new BrowserOperationException(
                     "browser_resource_exhausted",
-                    $"screenshot is {bytes.Length} bytes even at q{budgeted.Quality} (the lowest deliberate quality),"
+                    $"screenshot is {bytes.Length} bytes even at q{bestQuality} (the lowest deliberate quality),"
                     + $" over the {jpegLimit}-byte budget; capture a smaller region or raise the budget"
                     + $" (a screenshot is never truncated to fit, and quality is not pushed below"
-                    + $" q{ScreenshotPlan.MinimumQuality} because a mush is not evidence)");
+                    + $" q{steps[^1]} because a mush is not evidence)");
             }
         }
         else

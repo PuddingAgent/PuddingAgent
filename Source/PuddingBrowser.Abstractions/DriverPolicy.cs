@@ -77,6 +77,13 @@ public interface IBrowserDriverPolicy
         int? quality, bool fullPage, double contentX, double contentY, double contentWidth, double contentHeight);
 
     /// <summary>
+    /// 低细节截图的**质量阶梯**（含起点）。驱动只按给定 quality 拍一次；
+    /// “超预算就降档重拍”的判断由这里的档位驱动，因此它属于策略而不是驱动。
+    /// 返回空集合 = 该面不支持降档 ⇒ 只拍一次。
+    /// </summary>
+    IReadOnlyList<int> ScreenshotQualitySteps(int startQuality);
+
+    /// <summary>
     /// **到达滚动（to_top/to_bottom）的一步决策**（§7/G8）：原生滚轮没有原子"滚到底"，
     /// 只能按步送并**必须能停**。返回 <c>null</c> 表示该面不支持到达滚动 ⇒ 驱动明确 unsupported。
     /// </summary>
@@ -212,6 +219,9 @@ public sealed class NullBrowserDriverPolicy : IBrowserDriverPolicy
     public string? BuildScreenshotParameters(
         int? quality, bool fullPage, double contentX, double contentY, double contentWidth, double contentHeight)
         => null;
+
+    /// <summary>fail-closed：不支持降档 ⇒ 调用方只拍一次。</summary>
+    public IReadOnlyList<int> ScreenshotQualitySteps(int startQuality) => [];
 
     private static string Lower(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim().ToLowerInvariant();

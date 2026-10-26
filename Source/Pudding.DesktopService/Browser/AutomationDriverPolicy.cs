@@ -124,6 +124,12 @@ public sealed class AutomationDriverPolicy : IBrowserDriverPolicy
             fullPage,
             fullPage ? new ScreenshotPlan.ContentSize(contentX, contentY, contentWidth, contentHeight) : null);
 
+    /// <summary>
+    /// detail=low 的 512px/40 KiB 是承诺，而 512px 已是硬上限 ⇒ 固定 q80 在密集页面上必然超预算。
+    /// 档位由这里给（策略），驱动只负责按序发 CDP。
+    /// </summary>
+    public IReadOnlyList<int> ScreenshotQualitySteps(int startQuality) => ScreenshotPlan.QualitySteps(startQuality);
+
     /// <summary>驱动只需要目标中心点，因此这里用 0×0 的盒子（中心即该点）。</summary>
     private static NativeInputSequence.InputTarget Target(double x, double y) => new(x, y, 0, 0);
 

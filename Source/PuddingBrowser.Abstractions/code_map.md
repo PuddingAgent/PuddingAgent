@@ -1,5 +1,5 @@
 # PuddingBrowser.Abstractions CodeMAP
-> 源指纹: *.cs=11-2294ead21ba8, *.csproj=1-eb0b706aca65 · 条目数: 10 · 最近整理: 2026-10-26
+> 源指纹: *.cs=11-c3a972e069b4, *.csproj=1-eb0b706aca65 · 条目数: 10 · 最近整理: 2026-10-26
 
 > Browser 抽象契约 | 接口 · 类型 · 策略
 
@@ -25,7 +25,7 @@
 
 ## 关键语义
 
-`IBrowserDriverPolicy` **接缝**：驱动把「计划/事件日志/停止原因」交给实现方决定（计划点击/悬停/滚动/填充/键入/按键/拖拽、到达步进、截图参数、文件上传三步、事件日志工厂）；`NullBrowserDriverPolicy` = **fail-closed**（一切返回 null/unsupported）
+`IBrowserDriverPolicy` **接缝**：驱动把「计划/事件日志/停止原因」交给实现方决定（计划点击/悬停/滚动/填充/键入/按键/拖拽、到达步进、截图参数**与质量阶梯 `ScreenshotQualitySteps`**、文件上传三步、事件日志工厂）；`NullBrowserDriverPolicy` = **fail-closed**（一切返回 null/unsupported，阶梯返回空 ⇒ 只拍一次）
 
 `PageVersionPolicy.BumpsOnSourceChange`：**真实导航**（`NavigationStarting` 之后、`NavigationCompleted` 之前）由 `NavigationCompleted` 递增，这里返回 false 以免重复计；**同文档导航**（URL 变了但没有导航在飞）必须递增 —— SPA 的 `pushState/replaceState` 换掉整页内容却不触发 `NavigationCompleted`，漏掉它等于让旧元素引用在新路由上继续有效
 
