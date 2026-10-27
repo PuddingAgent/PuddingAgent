@@ -16,6 +16,13 @@ public sealed class StorageMaintenanceCoordinator : BackgroundService
 {
     private static readonly TimeSpan PreviewLifetime = TimeSpan.FromMinutes(10);
 
+    /// <summary>
+    /// 自动清理评估周期（S1 第二部分，2026-10-27）。
+    /// 在此之前 automatic 队列只有重启恢复会写入，没有任何周期性生产者 —— 自动清理从未触发。
+    /// 评估成本是每张表的候选计数探测，不宜频繁；默认 6 小时。
+    /// </summary>
+    private static readonly TimeSpan AutomaticEvaluationInterval = TimeSpan.FromHours(6);
+
     private readonly StorageMaintenanceJobStore _jobStore;
     private readonly StorageCleanupExecutor _executor;
     private readonly IEnumerable<IStorageDerivedTargetHandler> _derivedHandlers;
@@ -130,13 +137,105 @@ public sealed class StorageMaintenanceCoordinator : BackgroundService
                 // ExecuteTask 永不完成，宿主 StopAsync 挂死。
                 var manualRead = _manualQueue.Reader.WaitToReadAsync(stoppingToken).AsTask();
                 var autoRead = _automaticQueue.Reader.WaitToReadAsync(stoppingToken).AsTask();
-                var finished = await Task.WhenAny(manualRead, autoRead);
-                if (!await finished)
+                // 第三个唤醒源：周期评估。没有它，自动清理就永远没有生产者（S1 第二部分）。
+                var evaluationTick = Task.Delay(AutomaticEvaluationInterval, stoppingToken);
+                var finished = await Task.WhenAny(manualRead, autoRead, evaluationTick);
+                if (finished == evaluationTick)
+                {
+                    await EvaluateAutomaticAsync(stoppingToken);
+                    continue;
+                }
+
+                // 只有队列读任务带 bool 结果；Task.Delay 是非泛型 Task，不能直接取反。
+                if (finished is Task<bool> queueRead && !await queueRead)
                     break;
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
+        }
+    }
+
+    /// <summary>
+    /// 周期评估（S1 第二部分，2026-10-27）：按目录保留策略判断哪些数据类应当自动清理，
+    /// 并以**试运行**方式把保留天数、cutoff 与候选行数写进日志。
+    ///
+    /// 本步只记录、不建作业、不删数据：自动删除的第一步必须先是「在日志里说清楚要删什么」，
+    /// 看几轮之后再接 trigger=automatic 的作业生成。
+    /// 之前 automatic 队列只有重启恢复会写入，所以自动清理从未触发过。
+    /// </summary>
+    private async Task EvaluateAutomaticAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            var decisions = StorageAutomaticCleanupPolicy.Evaluate(StorageDataClassCatalog.Definitions, now);
+            var candidates = decisions.Where(decision => decision.IsCandidate).ToList();
+
+            if (candidates.Count == 0)
+            {
+                _logger.LogInformation(
+                    "[StorageMaintenance:Auto] dry-run evaluated={Evaluated} candidates=0",
+                    decisions.Count);
+                return;
+            }
+
+            foreach (var decision in candidates)
+            {
+                stoppingToken.ThrowIfCancellationRequested();
+                var candidate = decision.Candidate!.Value;
+                var definition = StorageDataClassCatalog.Find(candidate.TargetId);
+                if (definition is null)
+                    continue;
+
+                long rows = 0;
+                var truncated = false;
+                try
+                {
+                    if (definition.Tables.Count > 0)
+                    {
+                        var databasePath = Path.Combine(
+                            _paths.DatabasesRoot,
+                            definition.DatabaseFile ?? StorageDataClassCatalog.PlatformDatabaseFile);
+                        if (File.Exists(databasePath))
+                        {
+                            await using var connection =
+                                await StorageCleanupExecutor.OpenReadWriteConnectionAsync(databasePath, stoppingToken);
+                            foreach (var mapping in definition.Tables)
+                            {
+                                var (count, wasTruncated) = await StorageCleanupExecutor.ProbeCandidatesAsync(
+                                    connection, mapping.Table, mapping.TimestampColumn, candidate.CutoffUtc.ToString("O"), stoppingToken);
+                                rows += count;
+                                truncated |= wasTruncated;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[StorageMaintenance:Auto] probe failed target={TargetId}", candidate.TargetId);
+                    continue;
+                }
+
+                _logger.LogInformation(
+                    "[StorageMaintenance:Auto] dry-run target={TargetId} retentionDays={RetentionDays} cutoff={CutoffUtc:O} candidates={Candidates} truncated={Truncated} jobCreated=False",
+                    candidate.TargetId, candidate.RetentionDays, candidate.CutoffUtc, rows, truncated);
+            }
+
+            var skipped = string.Join(",", decisions
+                .Where(decision => !decision.IsCandidate)
+                .GroupBy(decision => decision.Reason)
+                .Select(group => $"{group.Key}={group.Count()}"));
+            _logger.LogInformation(
+                "[StorageMaintenance:Auto] dry-run summary evaluated={Evaluated} candidates={Candidates} skipped=[{Skipped}]",
+                decisions.Count, candidates.Count, skipped);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[StorageMaintenance:Auto] evaluation crashed");
         }
     }
 
