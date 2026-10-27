@@ -18,6 +18,14 @@ public sealed class PlatformSqliteConnectionInterceptor : DbConnectionIntercepto
         "PRAGMA synchronous=NORMAL;",
         "PRAGMA temp_store=MEMORY;",
         "PRAGMA wal_autocheckpoint=4000;",
+
+        // 2026-10-28：平台库 11.94 GiB 却用 SQLite 默认 2 MB 页缓存。实测（空闲期 20 分钟、
+        // 240/240 个 5s 区间）读持续 30-44 MB/s，而同期写只有 KB 级，且库文件 delta=0
+        // —— 典型的**读放大**：每次小写都要在超大 B 树里重新读页。
+        // 32 MB 而不是代码索引那样的 128 MB：cache_size 是**按连接**生效的，而平台上下文是
+        // Scoped、连接可能被多个并发上下文各自持有；128 MB × N 会直接把内存吃穿。
+        // 这个值属于「先验证假设」的保守起点，验证成立后再按并发实测调。
+        "PRAGMA cache_size=-32768;",
     ];
 
     public override void ConnectionOpened(DbConnection connection, ConnectionEndEventData eventData)

@@ -30,6 +30,10 @@ public sealed class PlatformSqliteConnectionInterceptorTests
                 Assert.AreEqual(2, await ExecuteScalarIntAsync(db.Database.GetDbConnection(), "PRAGMA temp_store;"));
                 Assert.AreEqual(30000, await ExecuteScalarIntAsync(db.Database.GetDbConnection(), "PRAGMA busy_timeout;"));
                 Assert.AreEqual(4000, await ExecuteScalarIntAsync(db.Database.GetDbConnection(), "PRAGMA wal_autocheckpoint;"));
+                Assert.AreEqual(
+                    -32768,
+                    await ExecuteScalarIntAsync(db.Database.GetDbConnection(), "PRAGMA cache_size;"),
+                    "平台库必须显式设页缓存：默认 2 MB 在 11.94 GiB 的库上会造成读写放大");
                 await db.Database.CloseConnectionAsync();
             }
         }
