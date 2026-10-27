@@ -278,6 +278,36 @@ public sealed class CodeSourceMaintenanceLedgerTests
     }
 
     [TestMethod]
+    public void DropRetriesForMissingFiles_RemovesOnlyEntriesWhoseFileIsGone()
+    {
+        var ledger = Ledger(retryBase: TimeSpan.FromMinutes(1));
+        ledger.RecordFailure(@"C:\repo\keep.cs", "boom", T0);
+        ledger.RecordFailure(@"C:\repo\gone1.cs", "boom", T0);
+        ledger.RecordFailure(@"C:\repo\gone2.tmpdir", "boom", T0);
+
+        var dropped = ledger.DropRetriesForMissingFiles(
+            path => path.EndsWith("keep.cs", StringComparison.OrdinalIgnoreCase));
+
+        Assert.AreEqual(2, dropped, "只应剔除文件已不存在的两条");
+        var pending = ledger.Snapshot().PendingRetries;
+        Assert.AreEqual(1, pending.Count);
+        Assert.IsTrue(pending.ContainsKey(@"C:\repo\keep.cs"), "文件仍在的重试必须保留——那是真实故障，要可归因");
+    }
+
+    [TestMethod]
+    public void DropRetriesForMissingFiles_KeepsEverythingWhenAllFilesExist()
+    {
+        var ledger = Ledger(retryBase: TimeSpan.FromMinutes(1));
+        ledger.RecordFailure(@"C:\repo\a.cs", "boom", T0);
+        ledger.RecordFailure(@"C:\repo\b.cs", "boom", T0);
+
+        var dropped = ledger.DropRetriesForMissingFiles(_ => true);
+
+        Assert.AreEqual(0, dropped);
+        Assert.AreEqual(2, ledger.Snapshot().PendingRetries.Count);
+    }
+
+    [TestMethod]
     public void Snapshot_IsAnIndependentCopy()
     {
         var ledger = Ledger(retryBase: TimeSpan.FromMinutes(1));

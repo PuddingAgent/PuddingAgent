@@ -494,6 +494,17 @@ public sealed class CodeSourceMaintenanceCoordinator
             ScanComplete: scanRun.ChangeSet.ScanComplete,
             UnresolvedPathCount: failures.Count + deferredByPlan));
 
+        // F3（2026-10-28）：丢弃「源文件已不存在」的重试记录。
+        // 实测 11,624 条重试里 4,684 条属于此类 —— 重试不可能成功，却永久占住待办表。
+        // 文件仍在但一直失败的不动：那是真实故障，必须留在表里可归因。
+        var droppedStaleRetries = ledger.DropRetriesForMissingFiles(File.Exists);
+        if (droppedStaleRetries > 0)
+        {
+            _logger?.LogInformation(
+                "[CodeSourceMaintenance] Scope {ScopeId}: dropped {Dropped} pending retries whose source file no longer exists; {Remaining} remain.",
+                projectId, droppedStaleRetries, ledger.Snapshot().PendingRetries.Count);
+        }
+
         await _maintenanceStore.SaveMaintenanceLedgerAsync(workspaceId, projectId, ledger.Snapshot(), cancellationToken)
             .ConfigureAwait(false);
 

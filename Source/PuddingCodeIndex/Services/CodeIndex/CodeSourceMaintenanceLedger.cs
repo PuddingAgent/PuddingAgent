@@ -270,6 +270,46 @@ public sealed class CodeSourceMaintenanceLedger
         }
     }
 
+    /// <summary>
+    /// 丢弃「源文件已不存在」的重试记录。
+    /// <para>
+    /// 为什么需要它（2026-10-28 实测）：`CodeIndexMaintenanceRetries` 共 11,624 行，
+    /// 其中 **4,684 行的路径在盘上已经不存在**。这类条目重试不可能成功，
+    /// 却会永久占住待办表并让「没定论」计数永远偏高（即 G3 “后台自动维护”缺口）。
+    /// </para>
+    /// <para>
+    /// 判定通过 <paramref name="fileExists"/> 注入：本类型不直接触文件系统，
+    /// 因此这条清理可以被纯逻辑单测覆盖。
+    /// 只剔除“文件已不在”的条目；**文件仍在但一直失败的不动** —— 那是真实故障，必须留在表里可归因。
+    /// </para>
+    /// </summary>
+    /// <param name="fileExists">存在性谓词（生产传 <c>File.Exists</c>）。</param>
+    /// <returns>被丢弃的条数。</returns>
+    public int DropRetriesForMissingFiles(Func<string, bool> fileExists)
+    {
+        ArgumentNullException.ThrowIfNull(fileExists);
+
+        lock (_gate)
+        {
+            List<string>? stale = null;
+            foreach (var path in _pendingRetries.Keys)
+            {
+                if (fileExists(path))
+                    continue;
+
+                (stale ??= []).Add(path);
+            }
+
+            if (stale is null)
+                return 0;
+
+            foreach (var path in stale)
+                _pendingRetries.Remove(path);
+
+            return stale.Count;
+        }
+    }
+
     /// <summary>成功提交一条路径：移除它的待重试记录。</summary>
     /// <param name="filePath">成功路径。</param>
     /// <returns><c>true</c> 表示确实有记录被清除。</returns>
