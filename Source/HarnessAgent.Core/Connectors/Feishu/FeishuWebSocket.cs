@@ -34,6 +34,14 @@ public sealed class FeishuWebSocket : IDisposable
     private int _pingIntervalSeconds = 120;
     private bool _disposed;
 
+    /// <summary>
+    /// 最后一次收到任何帧的 UTC ticks（含 pong）。用于识别**半开连接**：
+    /// 路由重启 / 网络抖动后 TCP 常常停在半开——本端 socket.State 仍是 Open，
+    /// ReceiveAsync 既不返回数据也不报错，要等 TCP 重传耗尽（可达数分钟）才拿到 RST。
+    /// 这段时间通道「看起来在线、实际收不到消息」，必须靠时间判活自救。
+    /// </summary>
+    private long _lastFrameTicksUtc;
+
     private const string Domain = "https://open.feishu.cn";
     private const string UserAgent = "PuddingAgent/1.0 FeishuConnector/1.0";
 
@@ -90,6 +98,7 @@ public sealed class FeishuWebSocket : IDisposable
 
         var previous = Interlocked.Exchange(ref _ws, socket);
         previous?.Dispose();
+        Interlocked.Exchange(ref _lastFrameTicksUtc, DateTime.UtcNow.Ticks);
         try
         {
             // The official SDK sends the first ping immediately after WebSocket
@@ -216,6 +225,8 @@ public sealed class FeishuWebSocket : IDisposable
                     continue;
                 }
 
+                Interlocked.Exchange(ref _lastFrameTicksUtc, DateTime.UtcNow.Ticks);
+
                 if (message.Type == WebSocketMessageType.Binary)
                 {
                     var frame = ProtobufFrame.Parse(message.Payload);
@@ -241,6 +252,14 @@ public sealed class FeishuWebSocket : IDisposable
             {
                 // A malformed frame is isolated; the connection remains usable.
                 Trace($"invalid protobuf frame: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                // 任何未预期异常（含 MarkDisconnected 对 pending ReceiveAsync 造成的
+                // ObjectDisposedException）都不得让接收循环退出：一旦退出，之后既收不到事件
+                // 也不会再重连——任务已 faulted，而且没有任何地方观测它。
+                Trace($"receive loop recovered from {ex.GetType().Name}: {ex.Message}");
+                MarkDisconnected();
             }
         }
 
@@ -278,8 +297,26 @@ public sealed class FeishuWebSocket : IDisposable
                 await Task.Delay(
                     TimeSpan.FromSeconds(_pingIntervalSeconds),
                     ct);
-                if (IsConnected)
-                    await SendFrameAsync(ProtobufFrame.NewPing(_serviceId), ct);
+                if (!IsConnected)
+                    continue;
+
+                // 半开连接自救：已连接但长时间收不到任何帧 → 判定对端已死，
+                // 主动丢弃 socket，交给 ReceiveLoopAsync 走指数退避重连。
+                var lastFrameTicks = Interlocked.Read(ref _lastFrameTicksUtc);
+                if (lastFrameTicks != 0)
+                {
+                    var idle = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - lastFrameTicks);
+                    var idleLimit = TimeSpan.FromSeconds(Math.Max(300, _pingIntervalSeconds * 3));
+                    if (idle > idleLimit)
+                    {
+                        Trace(
+                            $"half-open suspected: no frame for {idle.TotalSeconds:F0}s (limit {idleLimit.TotalSeconds:F0}s); forcing reconnect");
+                        MarkDisconnected();
+                        continue;
+                    }
+                }
+
+                await SendFrameAsync(ProtobufFrame.NewPing(_serviceId), ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -287,6 +324,12 @@ public sealed class FeishuWebSocket : IDisposable
             }
             catch (WebSocketException)
             {
+                MarkDisconnected();
+            }
+            catch (Exception ex)
+            {
+                // Ping 循环同样不得因未预期异常退出；否则连接不再被保活。
+                Trace($"ping loop recovered from {ex.GetType().Name}: {ex.Message}");
                 MarkDisconnected();
             }
         }
