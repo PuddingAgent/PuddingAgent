@@ -10,6 +10,7 @@ using PuddingFullTextIndex.Contracts;
 using PuddingPathFiltering;
 using PuddingRuntime.Services.Search;
 using PuddingRuntime.Services.Tools;
+using PuddingRuntime.Tools.BuiltIns.Search;
 
 namespace PuddingRuntime.Services.Skills;
 
@@ -440,6 +441,12 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             ? Path.GetFullPath(HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory))
             : Path.GetFullPath(managedDirectory);
 
+        // 索引按**注册项目根**建，而引擎要求 HasIndex(directoryPath)。向下收窄的目录
+        // 本来会直接报 "has no index yet" 并退回托管扫描（撑 2000 文件上限）。
+        // 这里向上找一个有索引的祖先，把请求目录当相对子目录过滤前缀——引擎已支持该参数。
+        var workspaceRoot = Path.GetFullPath(HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory));
+        var indexScope = IndexScopeResolver.Resolve(scopeDirectory, _searchEngine.HasIndex, workspaceRoot);
+
         // 扩展名过滤与旧路径同源：file_ext 优先，其次 pattern 为 "*.ext" 形态时的等价扩展名。
         var filter = fileExt?.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(e => e.StartsWith('.') ? e : "." + e).ToArray();
@@ -455,10 +462,12 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         try
         {
             // maxResults + 1：多取一条用于判定“是否被 max_results 截断”，不改变返回语义。
+            // 作用域用解析出的有索引祖先；请求目录降为子目录过滤前缀（相对路径）。
+            var engineScope = indexScope?.IndexRoot ?? scopeDirectory;
             engineResult = await _searchEngine.SearchAsync(
-                query, scopeDirectory, maxResults + 1,
+                query, engineScope, maxResults + 1,
                 fileExtensionFilter: extFilter,
-                subDirectoryFilter: null,
+                subDirectoryFilter: indexScope?.SubDirectoryFilter,
                 ct: cts.Token);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -488,11 +497,12 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             // dependency_wait（不计入失败账本、不触发熔断），而不是 contract_error，否则调用方会把
             // "这里还没建索引"读成"我的参数写错了"，甚至把空结果当成"这些东西不在代码里"。
             // 后者才是需要排查的运行时故障，保持 contract_error。
-            if (!_searchEngine.HasIndex(scopeDirectory))
+            if (indexScope is null)
             {
                 ReportIndexBackendTelemetry(context, scopeDirectory, "not_indexed", total.ElapsedMilliseconds);
                 return ToolExecutionResult.Fail(
-                    $"Index backend: scope '{scopeDirectory}' has no index yet - nothing was searched, so this is "
+                    $"Index backend: scope '{scopeDirectory}' has no index yet, and neither does any ancestor "
+                    + "within the workspace - nothing was searched, so this is "
                     + "NOT evidence that the pattern is absent. Build this scope's index first, or omit 'backend' "
                     + "(or pass 'scan') to use the managed scan path.",
                     status: ToolResultStatuses.DependencyWait);
