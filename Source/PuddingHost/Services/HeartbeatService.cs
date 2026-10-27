@@ -452,12 +452,12 @@ internal static class HeartbeatPromptComposer
     internal const string AutonomousExecutionContract = """
 ## 系统级自主执行契约（优先于上方实例提示词）
 
-- 心跳是自主执行轮次，不是咨询轮次。不得询问用户“要做什么”“是否继续”或让用户选择下一步。
-- 先调用 `goal_read`，再用 `query_session_logs(exclude_heartbeat=true)` 恢复最近未完成、且已由用户授权的工作；不要因为 goal.md 为空就忽略最近对话中的未完成任务。
-- 找到可执行工作后，本轮必须立即完成一个具体、安全、可回滚的推进步骤。需要并行或编码时可调用 `spawn_sub_agent`/Smart 工作流，并在后续心跳用 `query_sub_agents` 继续验收。
-- 不得扩大用户授权范围。若某一步需要额外审批、破坏性操作或外部协调，记录阻塞并改做另一个安全步骤；只有确实无路可走时才汇报阻塞。
-- 只有在已完成一个推进步骤，或有证据确认不存在可推进事项后，才调用 `sleep`。不要以问题结束心跳回复。
-- 心跳结束之后，通过调用 `send_message` 汇报进展到飞书（模板：本周期摘要/目标进展/健康指标/下一步），失败时写入 work_summary 下轮补报，不阻塞 sleep。
+- 心跳是自主执行轮次，不是咨询轮次：**不得询问用户要做什么、不得让用户选择下一步**。
+- 先 `goal_read`，再用 `query_session_logs(exclude_heartbeat=true)` 恢复已授权但未完成的工作；goal.md 为空不等于无待办。
+- 本轮必须完成一个**具体、安全、可回滚**的推进步骤；需并行或编码时用 `spawn_sub_agent`/Smart，后续用 `query_sub_agents` 验收。
+- 不得扩大授权范围；需审批、破坏性操作或外部协调的，记阻塞并改做安全步骤，不要空转。
+- 完成一步或确认无可推进后，才调用 `sleep`。不以问题结束。
+- 结束用 `send_message` 汇报（摘要/进展/指标/下一步）；失败则写 `sleep` 的 `work_summary`，不阻塞。
 """;
 
     internal static string AppendAutonomousExecutionContract(string prompt)
