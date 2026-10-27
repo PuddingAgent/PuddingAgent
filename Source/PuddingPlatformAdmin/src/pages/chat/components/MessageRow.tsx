@@ -426,18 +426,26 @@ const MessageRow: React.FC<MessageRowProps> = ({
   }
 
   if (block.role === 'heartbeat') {
+    const heartbeatStatus =
+      block.status === 'error'
+        ? ' · 执行失败'
+        : block.status === 'cancelled'
+          ? ' · 已取消'
+          : '';
+    // 心跳正文是系统提示词，对用户没有阅读价值：默认折叠为一行，点击才展开。
     return (
       <div className={cx(styles.messageRow, styles.messageRowHeartbeat)}>
-        <div className={styles.heartbeatContainer}>
-          <div className={styles.heartbeatHeader}>
+        <details className={styles.heartbeatContainer}>
+          <summary className={styles.heartbeatHeader}>
             <HeartOutlined className={styles.heartbeatIcon} />
-            <span className={styles.heartbeatLabel}>系统心跳{block.status === 'error' ? ' · 执行失败' : block.status === 'cancelled' ? ' · 已取消' : ''}</span>
-          </div>
+            <span className={styles.heartbeatLabel}>系统心跳{heartbeatStatus}</span>
+            <span className={styles.heartbeatTime}>{formatTime(block.createdAt)}</span>
+          </summary>
           <div className={styles.heartbeatBody}>
             {block.executionError && <div role="alert">{block.executionError}</div>}
             <MessageItem markdownText={block.content} />
           </div>
-        </div>
+        </details>
       </div>
     );
   }

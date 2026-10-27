@@ -1,4 +1,4 @@
-﻿// ── 心跳显示样式 ─────────────────────────────────────────────────
+// ── 心跳显示样式 ─────────────────────────────────────────────────
 import { createStyles } from 'antd-style';
 
 export const useHeartbeatStyles = createStyles(() => ({
@@ -25,14 +25,18 @@ export const useHeartbeatStyles = createStyles(() => ({
       'color-mix(in srgb, var(--accent-purple) 22%, transparent)',
     borderRadius: 8,
     borderTopLeftRadius: 4,
-    padding: '12px 16px',
+    padding: '6px 12px',
   },
   heartbeatHeader: {
     display: 'flex',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 8,
-    paddingBottom: 0,
+    cursor: 'pointer',
+    listStyle: 'none',
+    userSelect: 'none' as const,
+    padding: '2px 0',
+    '&::-webkit-details-marker': { display: 'none' },
+    '&::marker': { content: 'none' },
   },
   heartbeatIcon: {
     fontSize: 13,
@@ -47,10 +51,21 @@ export const useHeartbeatStyles = createStyles(() => ({
     lineHeight: '20px',
   },
   heartbeatBody: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTop: '1px dashed',
+    borderTopColor: 'color-mix(in srgb, var(--earth-brown) 8%, transparent)',
     fontSize: 13,
     lineHeight: 1.65,
     color: 'var(--pudding-chat-text-muted)',
     '& p': { marginBottom: 4 },
     '& p:last-child': { marginBottom: 0 },
+  },
+  heartbeatTime: {
+    marginLeft: 'auto',
+    fontSize: 11,
+    color: 'var(--pudding-chat-text-muted)',
+    opacity: 0.65,
+    fontVariantNumeric: 'tabular-nums' as const,
   },
 }));
