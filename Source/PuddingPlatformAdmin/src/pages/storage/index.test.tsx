@@ -108,6 +108,32 @@ describe('StorageTrendChart', () => {
     );
     expect(screen.getByText(/历史快照不足/)).toBeTruthy();
   });
+
+  it('数据点少于两个时不渲染折线/面积，但保留坐标轴框架', () => {
+    // 单个/两个点连成的斜线会被读成「暴涨」，因此空态只留坐标轴与文案。
+    const { container } = render(
+      <StorageTrendChart points={[points[2]]} days={30} classNames={{}} />,
+    );
+
+    expect(container.querySelectorAll('path').length).toBe(0);
+    expect(screen.getByText(/历史快照不足/)).toBeTruthy();
+    expect(container.querySelectorAll('line').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('尚未采样的零值点被丢弃，不参与趋势绘制', () => {
+    const emptySample: StorageInventoryTrendPoint = {
+      capturedAtUtc: daysAgoIso(3),
+      classBytes: {},
+      databaseTotalBytes: 0,
+    };
+
+    const { container } = render(
+      <StorageTrendChart points={[emptySample, points[2]]} days={30} classNames={{}} />,
+    );
+
+    // 零值日不是「用量为 0」而是「还没采样」，剩一个有效点仍走空态。
+    expect(container.querySelectorAll('path').length).toBe(0);
+  });
 });
 
 describe('classColor', () => {

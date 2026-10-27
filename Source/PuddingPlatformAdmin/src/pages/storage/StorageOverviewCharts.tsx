@@ -122,6 +122,15 @@ export const StorageClassDonut: React.FC<{ classes: StorageInventoryClass[] }> =
   );
 };
 
+/** 趋势图几何常量：空态复用同一套尺寸，切换时不出现框架跳动。 */
+const TREND_WIDTH = 640;
+const TREND_HEIGHT = 180;
+const TREND_PADDING = { left: 56, right: 12, top: 10, bottom: 24 };
+
+/** 趋势空态文案：数据点少于 2 个时不画线，否则单点/两点会被误读成暴涨。 */
+const TREND_EMPTY_TITLE = '历史快照不足，趋势将从今天开始累计';
+const TREND_EMPTY_HINT = '每小时记录一个快照，累计 2 天以上后显示趋势';
+
 /** 趋势堆叠面积图（按天聚合历史快照点，纯 SVG）。 */
 export const StorageTrendChart: React.FC<{
   points: StorageInventoryTrendPoint[];
@@ -138,17 +147,22 @@ export const StorageTrendChart: React.FC<{
     for (const point of filtered) {
       byDay.set(point.capturedAtUtc.slice(0, 10), point);
     }
-    const daily = [...byDay.values()].sort((a, b) =>
-      a.capturedAtUtc.localeCompare(b.capturedAtUtc),
-    );
+    const daily = [...byDay.values()]
+      .sort((a, b) => a.capturedAtUtc.localeCompare(b.capturedAtUtc))
+      // 丢掉合计为 0 的采样日：那是「尚未采样」而不是「用量为 0」。
+      // 留着会让 0 → X 的两个点连成一条陡升斜线，被读成暴涨。
+      .filter(
+        (point) =>
+          Object.values(point.classBytes ?? {}).reduce((sum, value) => sum + (value ?? 0), 0) > 0,
+      );
     if (daily.length < 2) return null;
 
     const targetIds = [...new Set(daily.flatMap((point) => Object.keys(point.classBytes)))].filter(
       (id) => id !== '__other__',
     );
-    const width = 640;
-    const height = 180;
-    const padding = { left: 56, right: 12, top: 10, bottom: 24 };
+    const width = TREND_WIDTH;
+    const height = TREND_HEIGHT;
+    const padding = TREND_PADDING;
     const plotWidth = width - padding.left - padding.right;
     const plotHeight = height - padding.top - padding.bottom;
 
@@ -193,11 +207,57 @@ export const StorageTrendChart: React.FC<{
   }, [points, days]);
 
   if (!chart) {
+    // 空态：保留坐标轴框架，但绝不渲染折线与面积 —— 单点构不成趋势，
+    // 画出来只会被读成「暴涨」。文案说明趋势从什么时候开始出现。
     return (
-      <Empty
-        description="历史快照不足（每小时记录一个点），稍后可查看趋势"
-        image={Empty.PRESENTED_IMAGE_SIMPLE}
-      />
+      <div style={{ position: 'relative' }}>
+        <svg
+          width="100%"
+          viewBox={`0 0 ${TREND_WIDTH} ${TREND_HEIGHT}`}
+          role="img"
+          aria-label={`${days} 天存储趋势（历史快照不足）`}
+          preserveAspectRatio="none"
+        >
+          <line
+            x1={TREND_PADDING.left}
+            y1={TREND_PADDING.top}
+            x2={TREND_PADDING.left}
+            y2={TREND_HEIGHT - TREND_PADDING.bottom}
+            stroke="rgba(0,0,0,0.15)"
+          />
+          <line
+            x1={TREND_PADDING.left}
+            y1={TREND_HEIGHT - TREND_PADDING.bottom}
+            x2={TREND_WIDTH - TREND_PADDING.right}
+            y2={TREND_HEIGHT - TREND_PADDING.bottom}
+            stroke="rgba(0,0,0,0.25)"
+          />
+          <text
+            x={TREND_PADDING.left}
+            y={TREND_PADDING.top + 4}
+            style={{ fontSize: 10, fill: 'rgba(0,0,0,0.45)' }}
+          >
+            —
+          </text>
+        </svg>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 2,
+            pointerEvents: 'none',
+          }}
+        >
+          <Typography.Text type="secondary">{TREND_EMPTY_TITLE}</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {TREND_EMPTY_HINT}
+          </Typography.Text>
+        </div>
+      </div>
     );
   }
 

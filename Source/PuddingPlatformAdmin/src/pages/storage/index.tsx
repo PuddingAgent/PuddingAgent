@@ -15,6 +15,7 @@ import {
   Spin,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd';
@@ -58,6 +59,14 @@ import { StorageClassDonut, StorageTrendChart, classColor } from './StorageOverv
 import { StoragePolicyDrawer } from './StoragePolicyDrawer';
 import { CleanupPreviewModal } from './CleanupPreviewModal';
 import { DatabaseSpacePanel } from './DatabaseSpacePanel';
+import {
+  AUTO_CLEANUP_HINT,
+  AUTO_CLEANUP_SCHEDULING_NOTE,
+  AUTO_CLEANUP_TAG_COLOR,
+  resolveAutoCleanupState,
+  resolveEffectiveRetention,
+} from './autoCleanupState';
+import type { AutoCleanupState, EffectiveRetention } from './autoCleanupState';
 
 // ── ADR-076 Web 存储管理页 ─────────────────────────────────────
 // 首屏只读缓存快照；刷新是异步 202 请求（页面保持可交互）；
@@ -89,6 +98,10 @@ interface ClassRow extends StorageInventoryClass {
   showInSelector: boolean;
   description: string;
   requiresRollup: boolean;
+  /** 自动清理状态（纯前端推导，见 autoCleanupState.ts）。 */
+  autoCleanup: AutoCleanupState;
+  /** 保留策略生效天数与可接受范围（策略值优先，回落目录默认值）。 */
+  retention: EffectiveRetention;
 }
 
 const StoragePage: React.FC = () => {
@@ -192,6 +205,14 @@ const StoragePage: React.FC = () => {
         requiresRollup: definition?.requiresRollupBeforeAutomatic ?? false,
         policyEnabled: target?.enabled,
         policyRetentionDays: target?.retentionDays,
+        // 目录缺项时两个推导都失败关闭：不自动清理、保留天数未设置。
+        autoCleanup: resolveAutoCleanupState(definition ?? {}),
+        retention: resolveEffectiveRetention({
+          policyRetentionDays: target?.retentionDays,
+          defaultRetentionDays: definition?.defaultRetentionDays ?? target?.defaultRetentionDays,
+          minRetentionDays: definition?.minRetentionDays ?? target?.minRetentionDays,
+          maxRetentionDays: definition?.maxRetentionDays ?? target?.maxRetentionDays,
+        }),
       };
     });
   }, [snapshot, dataClasses, policy]);
@@ -318,12 +339,34 @@ const StoragePage: React.FC = () => {
       title: '保留策略',
       dataIndex: 'policy',
       width: 130,
-      render: (_: unknown, row) =>
-        row.policyEnabled == null
-          ? '—'
-          : row.policyEnabled
-            ? `${row.policyRetentionDays ?? '—'} 天`
-            : '自动关闭',
+      render: (_: unknown, row) => {
+        const policyLabel =
+          row.policyEnabled == null ? '策略未配置' : row.policyEnabled ? '策略启用' : '策略关闭';
+        const sourceLabel =
+          row.retention.source === 'policy'
+            ? '生效值取自策略'
+            : row.retention.source === 'default'
+              ? '策略未设值，回落目录默认值'
+              : '策略与默认值均未设置';
+        const hint = [policyLabel, sourceLabel, row.retention.rangeLabel]
+          .filter(Boolean)
+          .join('｜');
+        return (
+          <Tooltip title={hint}>
+            <span>{row.retention.label}</span>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      title: '自动清理状态',
+      dataIndex: 'autoCleanup',
+      width: 200,
+      render: (_: unknown, row) => (
+        <Tooltip title={AUTO_CLEANUP_HINT[row.autoCleanup.kind]}>
+          <Tag color={AUTO_CLEANUP_TAG_COLOR[row.autoCleanup.tone]}>{row.autoCleanup.label}</Tag>
+        </Tooltip>
+      ),
     },
     {
       title: '更新于',
@@ -533,6 +576,12 @@ const StoragePage: React.FC = () => {
                   数据库主文件 + WAL 合计 {formatBytes(databaseTotal)}｜库内可复用页{' '}
                   {formatBytes(reusableTotal)}｜可清理分类估算合计 ≈{formatBytes(classBytesTotal)}
                 </Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  可复用页：已删除数据留下的空闲页，会被后续写入复用，不是可再清理的额度。
+                </Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  可清理估算：按当前保留策略还能再删的数据量，不含上述空闲页。
+                </Typography.Text>
                 <Table
                   size="small"
                   pagination={false}
@@ -584,6 +633,12 @@ const StoragePage: React.FC = () => {
           </Col>
           <Col span={24}>
             <Card size="small" title="分类统计报表">
+              <Typography.Text
+                type="secondary"
+                style={{ fontSize: 12, display: 'block', marginBottom: 8 }}
+              >
+                {AUTO_CLEANUP_SCHEDULING_NOTE}
+              </Typography.Text>
               <Table<ClassRow>
                 size="small"
                 rowKey="targetId"
