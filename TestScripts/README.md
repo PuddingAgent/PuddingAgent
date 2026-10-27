@@ -1093,3 +1093,48 @@ pwsh -File TestScripts\install-git-hooks.ps1 -Remove
 > 环境坑：在 cmd 里写 `pwsh -File x.ps1 *>> log.txt` 是**无效**的。cmd 不认 `*>>`，
 > 会把 `*` 当成脚本的参数传进去（`$BaselinePath` 变成通配符 `*`，`Get-Content '*'` 撞上目录）。
 > 重定向必须写进 `-Command` 字符串里。
+
+---
+
+## 部署验收脚本（2026-10-27）
+
+`TestScripts/verify-deployment.ps1` —— 把「重启 ≠ 部署」和「文件存在 ≠ 代码已发版」两件事固化成一条命令，且**必须能取红**。
+
+### 三项独立检查
+
+| 检查 | 判据 | 失败含义 |
+|---|---|---|
+| 进程新鲜度 | 进程 `StartTime` ≥ 各程序集 `mtime` | 进程比程序集旧 ⇒ 跑的是旧产物 |
+| 令牌存在 | 期望令牌在部署的 DLL 中出现 | 代码没进这次构建/部署 |
+| 对照组 | 正控必须命中、负控必须不命中 | 探针本身坏了，其余结论一律作废 |
+
+### 用法
+
+```powershell
+# 默认检查 Pudding 栈，正负控内置
+pwsh -NoProfile -File TestScripts/verify-deployment.ps1
+
+# 断言本次改动真的进了部署产物
+pwsh -NoProfile -File TestScripts/verify-deployment.ps1 -ExpectToken StorageMaintenance:Auto,EvaluateAutomaticAsync
+
+# 期望-红（证明脚本能失败）
+pwsh -NoProfile -File TestScripts/verify-deployment.ps1 -ExpectToken NoSuchShippedCode_ZZZ
+```
+
+退出码：`0` 通过；`1` 有问题（逐条列出）。
+
+### 两个必须记住的编码/传参陷阱
+
+1. **令牌要按两种编码都扫。** .NET 程序集里**元数据名（类型/方法/字段名）是 UTF-8**，而**字符串字面量是 UTF-16LE**。只扫 UTF-16 去找方法名会得到 0 命中，看起来像「代码没发版」——2026-10-27 我本人就据此差点误判。脚本对每个令牌同时扫 UTF-8 与 UTF-16，任一命中即算存在。
+2. **`pwsh -File` 下 `-ExpectToken a,b` 是单个字符串。** 数组参数不会按逗号拆分（与 `-Command` 不同）。脚本内部自行拆分逗号列表，使两种调用形式行为一致。
+
+### 回滚路径
+
+```powershell
+git revert <bad-sha>        # 保留历史，推荐
+# 或
+git reset --hard <good-sha>
+# 然后重新构建 + 重启
+```
+
+**不要直接改部署目录里的 DLL** —— 下一次部署会覆盖它，且掩盖真实来源。
