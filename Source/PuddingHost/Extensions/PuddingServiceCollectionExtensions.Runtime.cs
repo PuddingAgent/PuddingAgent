@@ -54,6 +54,8 @@ using PuddingAgent.P2P;
 using PuddingFullTextIndex;
 using PuddingFullTextIndex.Contracts;
 using PuddingFullTextIndex.Infrastructure.Search;
+using PuddingFullTextIndex.Infrastructure.Maintenance;
+using PuddingFullTextIndex.Infrastructure.Supply;
 using PuddingFullTextIndex.Infrastructure.Text;
 using PuddingAgent.Connectors;
 using PuddingHost.Hosting;
@@ -64,6 +66,24 @@ namespace PuddingAgent.Services;
 
 public static partial class PuddingServiceCollectionExtensions
 {
+    /// <summary>
+    /// S3d：局部维护必须与**查询侧共用同一个** <see cref="LuceneSearchEngine"/> 实例。
+    /// <para>
+    /// 用错实例的后果是静默的：提交成功后失效的是另一个实例的 reader 缓存，查询侧会继续返回旧文档，
+    /// 表现为「索引说更新了、搜索却搜不到」。因此这里 fail-closed —— 实现换掉就当场抛错，
+    /// 而不是让维护链在后台降级成一个不起作用的东西。
+    /// </para>
+    /// </summary>
+    private static LuceneSearchEngine ResolveLuceneSearchEngine(IServiceProvider sp)
+    {
+        if (sp.GetRequiredService<IFullTextSearchEngine>() is LuceneSearchEngine engine)
+            return engine;
+
+        throw new InvalidOperationException(
+            "S3d：IFullTextSearchEngine 的实现必须是 LuceneSearchEngine；"
+            + "局部维护要复用它的 scope gate 与 reader 缓存失效接缝，否则提交后查询侧仍读到旧索引。");
+    }
+
     private static void AddRuntimeServices(
         WebApplicationBuilder builder,
         PuddingDataPaths dataPaths,
@@ -212,6 +232,39 @@ public static partial class PuddingServiceCollectionExtensions
         // S5（2026-09-25）：预建**不再直写引擎**——改为经上面的供给组合向 A1 协调器提交、
         // 轮询到终态（租约 / 预算硬限 / staging / 原子切换都在组件内），且新鲜度改为 per-scope。
         builder.Services.AddHostedService<IndexPrebuildService>();
+        // ── S3d（2026-10-28）：全文索引**局部增量维护**接线 ───────────────────
+        // 为什么必须接：此前 Maintenance.Enabled 没有任何消费者 —— LuceneFullTextIndexMaintenance
+        // 只被组件测试 new 过，宿主即使把配置打开也不会起 watcher，索引因此永久冻结
+        // （实测：新建文件后 20 s 内观察不到任何一次索引提交，三态验收报 INCONCLUSIVE）。
+        // 保留「默认关闭即零副作用」：下面全部是惰性工厂，Enabled=false 时 StartAsync 直接返回，
+        // 不解析 scope、不探目录、不建 watcher、不起线程。
+        builder.Services.AddSingleton(_ =>
+            builder.Configuration
+                .GetSection(FullTextIndexSupplyOptions.SectionName + ":Maintenance")
+                .Get<MaintenanceOptions>() ?? new MaintenanceOptions());
+        builder.Services.AddSingleton<IResourcePressureProbe, SystemCpuResourcePressureProbe>();
+        builder.Services.AddSingleton<IScopeReaderInvalidation>(sp =>
+            new SearchEngineScopeReaderInvalidation(ResolveLuceneSearchEngine(sp)));
+        builder.Services.AddSingleton<IFullTextSupplyLease>(sp =>
+            new FileSupplyLease(sp.GetRequiredService<FullTextIndexOptions>()));
+        builder.Services.AddSingleton<IFullTextIndexMaintenanceEngine>(sp =>
+        {
+            var maintenanceOptions = sp.GetRequiredService<MaintenanceOptions>();
+            return new LuceneFullTextIndexMaintenanceEngine(
+                ResolveLuceneSearchEngine(sp),
+                sp.GetRequiredService<FullTextIndexOptions>(),
+                sp.GetRequiredService<IFullTextSupplyLease>(),
+                maintenanceOptions.LeaseWaitUpperBound,
+                sp.GetRequiredService<IScopeReaderInvalidation>());
+        });
+        builder.Services.AddSingleton<IFullTextIndexMaintenance>(sp =>
+            new LuceneFullTextIndexMaintenance(
+                sp.GetRequiredService<FullTextIndexOptions>(),
+                sp.GetRequiredService<MaintenanceOptions>(),
+                sp.GetRequiredService<IFullTextIndexMaintenanceEngine>(),
+                sp.GetRequiredService<IResourcePressureProbe>(),
+                TimeProvider.System));
+        builder.Services.AddHostedService<FullTextIndexMaintenanceHostedService>();
         // S-A（2026-10-01）：全文索引**状态只读出口**的数据来源（IndexAdminController 注入它）。
         // 只读 Current（不构造组合）、只用读类文件 API（零副作用）；依赖全部已在上面注册：
         // IConfiguration / IOptionsMonitor<FullTextIndexSupplyOptions> / FullTextIndexOptions /
