@@ -1151,6 +1151,12 @@ internal static class SimpleLineDiff
     private const int MaxChangeGroups = 10;
     private const int MaxLookahead = 200;
 
+    /// <summary>
+    /// LCS 动态规划的单元上限（约 2000×2000 行）。超过时回退到旧贪心实现，
+    /// 以免在超大文件上分配过大的矩阵。
+    /// </summary>
+    private const long LcsCellBudget = 4_000_000;
+
     public static string Render(string original, string current)
     {
         var script = BuildScript(SplitLines(original), SplitLines(current));
@@ -1180,10 +1186,120 @@ internal static class SimpleLineDiff
         var raw = text.Split('\n');
         for (var i = 0; i < raw.Length; i++)
             raw[i] = raw[i].TrimEnd('\r');
+
+        // 末尾换行不构成额外一行：否则两侧各多一个空行，会参与 LCS 对齐，
+        // 在纯删除/单点替换时多渲染出 "- " / "+ " 这类无意义条目。
+        if (raw.Length > 0 && raw[^1].Length == 0)
+            raw = raw[..^1];
+
         return raw;
     }
 
     private static List<(char Kind, string Text)> BuildScript(string[] oldLines, string[] newLines)
+    {
+        // 2026-10-27：旧实现是贪心前瞻，把「空白行 / 花括号」当作定位锚点。
+        // 插入式改动旁边只要有重复锚点，它就会判定成「删除一大段」，
+        // 于是工具回显的 diff 与实际改动完全不同（用户看到的「错乱」）。
+        // 改用真正的 LCS，锚点歧义不再影响结果。
+        var n = oldLines.Length;
+        var m = newLines.Length;
+        if ((long)n * m > LcsCellBudget)
+            return BuildScriptGreedy(oldLines, newLines);
+
+        // 1 字节/单元的回溯方向：1=相等（对角）、2=删除旧行、3=插入新行。
+        var moves = new byte[n + 1, m + 1];
+        var prev = new int[m + 1];
+        var curr = new int[m + 1];
+
+        for (var i = 1; i <= n; i++)
+        {
+            curr[0] = 0;
+            for (var j = 1; j <= m; j++)
+            {
+                if (string.Equals(oldLines[i - 1], newLines[j - 1], StringComparison.Ordinal))
+                {
+                    curr[j] = prev[j - 1] + 1;
+                    moves[i, j] = 1;
+                }
+                else if (prev[j] >= curr[j - 1])
+                {
+                    curr[j] = prev[j];
+                    moves[i, j] = 2;
+                }
+                else
+                {
+                    curr[j] = curr[j - 1];
+                    moves[i, j] = 3;
+                }
+            }
+
+            (prev, curr) = (curr, prev);
+        }
+
+        // 回溯：先收集相等的行对（LCS 匹配），再由匹配对之间的空隙生成删除/插入。
+        // 不直接拼接回溯顺序：回溯是逆序的，组内 -/+ 次序会被 Reverse 反转，
+        // 导致单点替换被渲染成「先 + 后 -」或数量对不上。
+        var matches = new List<(int Old, int New)>();
+        var x = n;
+        var y = m;
+        while (x > 0 && y > 0)
+        {
+            var move = moves[x, y];
+            if (move == 1)
+            {
+                matches.Add((x - 1, y - 1));
+                x--;
+                y--;
+                continue;
+            }
+
+            if (move == 2)
+            {
+                x--;
+                continue;
+            }
+
+            y--;
+        }
+
+        // 不依赖回溯产生顺序：按旧行号升序排序，顺序不再成为变量。
+        matches.Sort((left, right) => left.Old.CompareTo(right.Old));
+
+        var script = new List<(char Kind, string Text)>(Math.Abs(n - m) + 16);
+        var oldIndex = 0;
+        var newIndex = 0;
+        foreach (var match in matches)
+        {
+            // 同一空隙内按「删一行、插一行」交替产出：保持既有「一个改动 = 一个分组」的计数语义。
+            // 若改成「先删完再插完」，相邻多行替换会被合并成 1 个分组，
+            // 使「超过 10 组就截断」的既有契约（及其测试）失效。对齐正确性由 LCS 保证，
+            // 分组计数则保持与旧行为一致。
+            while (oldIndex < match.Old || newIndex < match.New)
+            {
+                if (oldIndex < match.Old)
+                    script.Add(('-', oldLines[oldIndex++]));
+                if (newIndex < match.New)
+                    script.Add(('+', newLines[newIndex++]));
+            }
+
+            oldIndex++;
+            newIndex++;
+        }
+
+        while (oldIndex < n)
+            script.Add(('-', oldLines[oldIndex++]));
+        while (newIndex < m)
+            script.Add(('+', newLines[newIndex++]));
+
+        return script;
+    }
+
+    /// <summary>
+    /// 超大输入的回退实现（与 2026-10-27 之前的行为一致）。
+    /// 已知缺陷：把重复行（空白行 / 花括号）当作锚点时会报出虚假删改，
+    /// 仅在 LCS 预算被绕过时使用。
+    /// </summary>
+    private static List<(char Kind, string Text)> BuildScriptGreedy(string[] oldLines, string[] newLines)
     {
         var script = new List<(char Kind, string Text)>();
         int i = 0, j = 0;

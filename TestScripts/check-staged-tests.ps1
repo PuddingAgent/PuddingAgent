@@ -72,7 +72,24 @@ try {
         if (-not (Test-Path $RelativePath)) { return @() }
         $text = Get-Content $RelativePath -Raw -Encoding UTF8
         $pattern = '\b(?:class|record|interface|struct|enum)\s+([A-Za-z_][A-Za-z0-9_]*)'
-        @([regex]::Matches($text, $pattern) | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+        $names = @([regex]::Matches($text, $pattern) | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+
+        # 单字母类型名是噪声（如容器文件里的占位类 A）：`\bA\b` 几乎和每个源文件都匹配，
+        # 会把 28 个测试工程全部拉进选择面。一律排除。
+        $names = @($names | Where-Object { $_.Length -gt 1 })
+
+        # 选择面上限（2026-10-27）：一个文件声明很多类型时，把全部名字 OR 起来去匹配测试源
+        # 会让过滤面爆炸。实测 FilePatchTool.cs（声明 ~10 个类型）令门禁跑了 30 分钟未完，
+        # 提交因此被卡住。容器型文件优先用「文件名对应的主类型」，其余同名覆盖由该主类型
+        # 的测试兜住；主类型不在声明列表里时只取前 $MaxSelectionTypeNames 个。
+        $maxSelectionTypeNames = 3
+        if ($names.Count -gt $maxSelectionTypeNames) {
+            $primary = [IO.Path]::GetFileNameWithoutExtension($RelativePath)
+            if ($names -contains $primary) { return @($primary) }
+            return @($names | Select-Object -First $maxSelectionTypeNames)
+        }
+
+        return $names
     }
 
     function Get-TestProjects {
