@@ -77,6 +77,30 @@ function Measure-Token([string]$path, [string]$token, [switch]$Boundary) {
     return $count
 }
 
+# Read the assembly's TypeDef table directly.
+#
+# Why not just grep the bytes: a type name that happens to be a SUFFIX of an older type
+# shares its storage in the #Strings heap. 'IndexScopeResolver' only exists inside
+# 'ICodeIndexScopeResolver', so a word-boundary-correct byte scan returns 0 hits for a type
+# that IS deployed (2026-10-28: this mis-reported W1 as not deployed). Ask the metadata,
+# do not guess the encoding.
+function Get-TypeDefNames([string]$path) {
+    $fs = [IO.File]::OpenRead($path)
+    try {
+        $pe = [System.Reflection.PortableExecutable.PEReader]::new($fs)
+        $mr = [System.Reflection.Metadata.PEReaderExtensions]::GetMetadataReader($pe)
+        $names = New-Object System.Collections.Generic.List[string]
+        foreach ($handle in $mr.TypeDefinitions) {
+            $typeDef = $mr.GetTypeDefinition($handle)
+            $ns = $mr.GetString($typeDef.Namespace)
+            $n = $mr.GetString($typeDef.Name)
+            if ([string]::IsNullOrEmpty($ns)) { $names.Add($n) } else { $names.Add($ns + '.' + $n) }
+        }
+        return $names.ToArray()
+    }
+    finally { $fs.Close() }
+}
+
 # ---- 0. locate the deployed assemblies -------------------------------------
 $proc = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $proc) { Say 'FATAL: host process not running'; exit 1 }
@@ -103,7 +127,7 @@ if ([string]::IsNullOrWhiteSpace($headIso)) {
 # ---- 2. token table --------------------------------------------------------
 Say '=== 2. landed changes present in binaries ==='
 $expectations = @(
-    @{ Token = 'IndexScopeResolver';                  Asm = 'PuddingRuntime.dll';  What = 'W1 index scope ascension'; Since = 'ed2bfcb'; Boundary = $true },
+    @{ TypeDef = 'PuddingRuntime.Tools.BuiltIns.Search.IndexScopeResolver'; Asm = 'PuddingRuntime.dll'; What = 'W1 index scope ascension'; Since = 'ed2bfcb' },
     @{ Token = 'DropRetriesForMissingFiles';          Asm = 'PuddingCodeIndex.dll'; What = 'F3 prune stale retries'; Since = '3029082'; Boundary = $true },
     @{ Token = 'dropped {Dropped} pending retries';   Asm = 'PuddingCodeIndex.dll'; What = 'F3 prune log line'; Since = '3029082' },
     @{ Token = 'cache_size=-32768';                   Asm = 'PuddingPlatform.dll'; What = 'G4 platform page cache'; Since = '4c2b6b2' },
@@ -128,9 +152,17 @@ if (Test-Path $probePath) {
 foreach ($e in $expectations) {
     $path = Join-Path $baseDir $e.Asm
     if (-not (Test-Path $path)) { Bad ("{0}: assembly missing ({1})" -f $e.What, $e.Asm); continue }
-    $hits = Measure-Token $path $e.Token -Boundary:($e.ContainsKey('Boundary') -and $e.Boundary)
+    if ($e.ContainsKey('TypeDef')) {
+        $hits = if ((Get-TypeDefNames $path) -contains $e.TypeDef) { 1 } else { 0 }
+        $label = $e.TypeDef
+        $kind = 'typedef'
+    } else {
+        $hits = Measure-Token $path $e.Token -Boundary:($e.ContainsKey('Boundary') -and $e.Boundary)
+        $label = $e.Token
+        $kind = 'token'
+    }
     if ($hits -le 0) {
-        Bad ("{0}  token '{1}' NOT in {2}" -f $e.What, $e.Token, $e.Asm)
+        Bad ("{0}  {1} '{2}' NOT in {3}" -f $e.What, $kind, $label, $e.Asm)
         continue
     }
 
@@ -147,7 +179,7 @@ foreach ($e in $expectations) {
         }
     }
 
-    Ok ("{0}  [{1} x{2}]" -f $e.What, $e.Asm, $hits)
+    Ok ("{0}  [{1} x{2} via {3}]" -f $e.What, $e.Asm, $hits, $kind)
 }
 
 # ---- 3. maintenance config --------------------------------------------------
