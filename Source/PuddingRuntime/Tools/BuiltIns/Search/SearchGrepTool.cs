@@ -382,7 +382,12 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             // 永远不可能命中 ⇒ 候选集合实际恒为空，候选优先级等于没做（且不报错，静默失效）。
             // 改成与 index backend 同一套解析：上溯到有索引祖先 + 子目录降为相对前缀。
             var requestedScope = string.IsNullOrWhiteSpace(directory) ? managedDirectory : directory;
-            var candidateScope = IndexScopeResolver.Resolve(requestedScope, _searchEngine.HasIndex, managedDirectory);
+
+            // 边界传 null 而不是 managedDirectory：managedDirectory 是**解析后的目标目录**（可能就是待搜子目录），
+            // 拿它当边界会让上溯一开始就被挡住，候选预取再次变成死代码
+            //（2026-10-28 由 SearchGrepCandidateScopeTests 当场抓到）。
+            // 上溯到更远祖先也不会污染结果：subDirectoryFilter 已经把结果限制在 requestedScope 相对路径下。
+            var candidateScope = IndexScopeResolver.Resolve(requestedScope, _searchEngine.HasIndex);
 
             // 解析不到有索引祖先 ⇒ 不预取候选（不是错误）。后续扫描路径本来就负责覆盖，
             // 这里不得用抛异常来表达“跳过”——那会把正常情形写成故障日志。
