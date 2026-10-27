@@ -230,6 +230,10 @@ public sealed class CodeSourceMaintenanceLedger
     /// <summary>
     /// 记录一条失败路径：连续失败次数递增，下一次允许尝试的时刻按阶梯退避
     /// （<c>base · 2^(attempts-1)</c>，封顶 <see cref="DefaultRetryMax"/>）。
+    /// <para>
+    /// <b>原因只记首次。</b> 后续轮次给的多是症状（例如「本轮没有定论」），覆盖掉首次原因会让
+    /// 整个待办表失去归因能力 —— 2026-10-28 实测的 6739 条 unresolved 就是这样变成一句话的。
+    /// </para>
     /// </summary>
     /// <param name="filePath">失败路径。</param>
     /// <param name="reason">失败原因（执行层给出）。</param>
@@ -247,9 +251,15 @@ public sealed class CodeSourceMaintenanceLedger
                 : 1;
             var firstFailedAt = existing?.FirstFailedAtUtc ?? now;
 
+            // 保留**首次**失败原因。
+            // 2026-10-28 实测：后续轮次只会给出症状（"the round reached no conclusion for this path"），
+            // 一旦覆盖掉首次的真实原因，重试表里就只剩一句症状 —— 6739 条 unresolved 全部无法归因。
+            // 尝试次数与下一次时刻仍然递增，它们是退避所需，与「原因」是两件事。
+            var firstReason = existing?.Reason ?? reason;
+
             var retry = new CodeSourceRetry(
                 filePath,
-                reason,
+                firstReason,
                 attempts,
                 firstFailedAt,
                 now + Backoff(attempts));

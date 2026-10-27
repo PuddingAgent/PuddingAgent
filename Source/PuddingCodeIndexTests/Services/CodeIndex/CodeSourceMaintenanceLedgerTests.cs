@@ -259,6 +259,25 @@ public sealed class CodeSourceMaintenanceLedgerTests
     // ── 快照与边界 ──────────────────────────────────────────────────────────────────────────────
 
     [TestMethod]
+    public void RecordFailure_KeepsTheFirstReason_SoTheRootCauseIsNotOverwritten()
+    {
+        var ledger = Ledger(retryBase: TimeSpan.FromMinutes(1));
+
+        ledger.RecordFailure(@"C:\repo\a.cs", "extract_failed: parser crashed", T0);
+        var second = ledger.RecordFailure(
+            @"C:\repo\a.cs",
+            "the round reached no conclusion for this path",
+            T0.AddMinutes(5));
+
+        Assert.AreEqual(2, second.Attempts, "尝试次数仍要递增（退避需要它）");
+        Assert.AreEqual(T0, second.FirstFailedAtUtc, "首次失败时刻不变");
+        Assert.AreEqual(
+            "extract_failed: parser crashed",
+            second.Reason,
+            "首次失败原因必须保留：后续轮次只会给出症状（no conclusion），被覆写后就再也无法归因");
+    }
+
+    [TestMethod]
     public void Snapshot_IsAnIndependentCopy()
     {
         var ledger = Ledger(retryBase: TimeSpan.FromMinutes(1));

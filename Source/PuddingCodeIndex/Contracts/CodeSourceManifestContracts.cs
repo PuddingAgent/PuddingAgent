@@ -218,7 +218,7 @@ public static class CodeSourceChangeReasons
 
 /// <summary>一个待重试路径的账本记录（持久待办）。</summary>
 /// <param name="FilePath">绝对路径。</param>
-/// <param name="Reason">最近一次失败原因（<see cref="CodeSourceChangeReasons"/> 或执行层给出的原因串）。</param>
+/// <param name="Reason">**首次**失败原因（保留根因）；后续轮次只递增尝试次数与下一次时刻，不再覆写它。最近一次的症状由日志表达。</param>
 /// <param name="Attempts">连续失败次数（成功提交后清零）。</param>
 /// <param name="FirstFailedAtUtc">第一次失败时刻。</param>
 /// <param name="NextAttemptAtUtc">下一次允许尝试的时刻（退避阶梯）。</param>
