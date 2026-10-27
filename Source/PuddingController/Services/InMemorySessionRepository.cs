@@ -32,7 +32,6 @@ public sealed class InMemorySessionRepository : ISessionRepository
 
     public async Task<SessionRecord> CreateAsync(SessionRecord record, CancellationToken ct = default)
     {
-        _sessions[record.SessionId] = record;
         await PersistAsync(record, ct);
         return record;
     }
@@ -114,20 +113,14 @@ public sealed class InMemorySessionRepository : ISessionRepository
             // demoted, FindMainAsync still deterministically selects the newest
             // promoted session.
             await PersistUnlockedAsync(promoted, ct);
-            foreach (var previous in previousMains)
-            {
-                await PersistUnlockedAsync(
-                    previous with { SessionRole = SessionRole.Task },
-                    ct);
-            }
-
             _sessions[successorSessionId] = promoted;
             foreach (var previous in previousMains)
             {
-                _sessions[previous.SessionId] = previous with
-                {
-                    SessionRole = SessionRole.Task,
-                };
+                var demoted = previous with { SessionRole = SessionRole.Task };
+                await PersistUnlockedAsync(demoted, ct);
+                // Publish each durable step. A later demotion failure must not
+                // leave live routing different from routing after restart.
+                _sessions[previous.SessionId] = demoted;
             }
 
             return promoted;
@@ -155,21 +148,21 @@ public sealed class InMemorySessionRepository : ISessionRepository
 
     public async Task UpdateAsync(SessionRecord record, CancellationToken ct = default)
     {
-        _sessions[record.SessionId] = record;
         await PersistAsync(record, ct);
     }
 
     public async Task DeleteAsync(string sessionId, CancellationToken ct = default)
     {
-        _sessions.TryRemove(sessionId, out var existing);
         await _writeLock.WaitAsync(ct);
         try
         {
+            _sessions.TryGetValue(sessionId, out var existing);
             if (existing is not null)
             {
                 var path = SessionFilePath(existing.WorkspaceId, sessionId);
                 if (File.Exists(path))
                     File.Delete(path);
+                _sessions.TryRemove(sessionId, out _);
                 return;
             }
 
@@ -191,6 +184,7 @@ public sealed class InMemorySessionRepository : ISessionRepository
         try
         {
             await PersistUnlockedAsync(record, ct);
+            _sessions[record.SessionId] = record;
         }
         finally
         {
@@ -214,7 +208,8 @@ public sealed class InMemorySessionRepository : ISessionRepository
         {
             try
             {
-                using var stream = File.OpenRead(path);
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete);
                 var record = JsonSerializer.Deserialize<SessionRecord>(stream, JsonOptions);
                 if (record is not null && !string.IsNullOrWhiteSpace(record.SessionId))
                     _sessions[record.SessionId] = record;

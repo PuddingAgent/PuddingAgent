@@ -174,17 +174,14 @@ public sealed class SessionEventsControllerTests
     public async Task Compact_Passes_Runtime_Profile_To_Compaction_Service()
     {
         var capture = new CapturingCompactionService();
-        using var factory = _factory.WithWebHostBuilder(builder =>
+        using var factory = new CustomWebApplicationFactory(services =>
         {
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<IContextCompactionService>();
-                services.AddSingleton<IContextCompactionService>(capture);
-                services.RemoveAll<IAgentRuntimeProfileResolver>();
-                services.AddSingleton<IAgentRuntimeProfileResolver>(new FixedAgentRuntimeProfileResolver());
-                services.RemoveAll<ICompactionSessionSuccessor>();
-                services.AddSingleton<ICompactionSessionSuccessor>(new FixedCompactionSessionSuccessor());
-            });
+            services.RemoveAll<IContextCompactionService>();
+            services.AddSingleton<IContextCompactionService>(capture);
+            services.RemoveAll<IAgentRuntimeProfileResolver>();
+            services.AddSingleton<IAgentRuntimeProfileResolver>(new FixedAgentRuntimeProfileResolver());
+            services.RemoveAll<ICompactionSessionSuccessor>();
+            services.AddSingleton<ICompactionSessionSuccessor>(new FixedCompactionSessionSuccessor());
         });
         using var client = factory.CreateClient();
         JwtHelper.SetBearerToken(client);
@@ -296,23 +293,22 @@ public sealed class SessionEventsControllerTests
                 .GetString());
     }
 
-    [TestMethod]
-    public async Task Compact_Persists_Failed_Terminal_Event()
+    [DataTestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task Compact_Persists_Failed_Terminal_Event(bool afterSummary)
     {
-        using var factory = _factory.WithWebHostBuilder(builder =>
+        using var factory = new CustomWebApplicationFactory(services =>
         {
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<IContextCompactionService>();
-                services.AddSingleton<IContextCompactionService>(
-                    new ThrowingCompactionService());
-                services.RemoveAll<IAgentRuntimeProfileResolver>();
-                services.AddSingleton<IAgentRuntimeProfileResolver>(
-                    new FixedAgentRuntimeProfileResolver());
-                services.RemoveAll<ICompactionSessionSuccessor>();
-                services.AddSingleton<ICompactionSessionSuccessor>(
-                    new FixedCompactionSessionSuccessor());
-            });
+            services.RemoveAll<IContextCompactionService>();
+            services.AddSingleton<IContextCompactionService>(afterSummary
+                ? new CapturingCompactionService() : new ThrowingCompactionService());
+            services.RemoveAll<IAgentRuntimeProfileResolver>();
+            services.AddSingleton<IAgentRuntimeProfileResolver>(
+                new FixedAgentRuntimeProfileResolver());
+            services.RemoveAll<ICompactionSessionSuccessor>();
+            services.AddSingleton<ICompactionSessionSuccessor>(afterSummary
+                ? new ThrowingCompactionSessionSuccessor() : new FixedCompactionSessionSuccessor());
         });
         using var client = factory.CreateClient();
         JwtHelper.SetBearerToken(client);
@@ -339,6 +335,12 @@ public sealed class SessionEventsControllerTests
         Assert.AreEqual(
             HttpStatusCode.InternalServerError,
             compactResp.StatusCode);
+        using var failureResponse = JsonDocument.Parse(await compactResp.Content.ReadAsStringAsync());
+        var failureBody = failureResponse.RootElement;
+        Assert.AreEqual(compactionId, failureBody.GetProperty("compactionId").GetString());
+        Assert.AreEqual(afterSummary, failureBody.GetProperty("summaryCommitted").GetBoolean());
+        Assert.AreEqual(afterSummary ? "session_handoff" : "prepare_summary", failureBody.GetProperty("phase").GetString());
+        Assert.IsFalse(failureBody.GetRawText().Contains("private failure detail"));
         using var sourceEvents = JsonDocument.Parse(
             await client.GetStringAsync(
                 $"/api/sessions/{created.SessionId}/events?from=0&limit=50"));
@@ -351,6 +353,14 @@ public sealed class SessionEventsControllerTests
         Assert.AreEqual(
             compactionId,
             failed.GetProperty("payload").GetProperty("compactionId").GetString());
+        Assert.AreEqual(failureBody.GetProperty("errorId").GetString(),
+            failed.GetProperty("payload").GetProperty("failure").GetProperty("errorId").GetString());
+    }
+
+    private sealed class ThrowingCompactionSessionSuccessor : ICompactionSessionSuccessor
+    {
+        public Task<CompactionSuccessor> CreateAsync(CreateCompactionSuccessorCommand command, CancellationToken ct)
+            => throw new IOException("private failure detail");
     }
 
     private sealed class FixedCompactionSessionSuccessor : ICompactionSessionSuccessor

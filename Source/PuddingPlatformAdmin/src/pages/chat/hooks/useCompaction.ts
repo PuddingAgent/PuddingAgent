@@ -19,6 +19,7 @@ import {
   resolveEventOccurredAtMs,
 } from '../utils/chatStateUtils';
 import { logChatDiag } from '../utils/chatDiagnostics';
+import { compactionHttpFailure, formatCompactionFailure } from '../utils/compactionFailure';
 
 interface CompactionIdentityPort {
   workspaceId?: string;
@@ -454,7 +455,7 @@ export function useCompaction({
       if (closesActive) clearCompactionLivenessTimer();
       if (options?.notify !== false) messageApi.destroy('compaction-status');
       if (event.type === 'context.compaction.failed') {
-        const errorMessage = String(raw.error || '上下文压缩失败');
+        const errorMessage = formatCompactionFailure(raw) ?? '上下文压缩失败';
         updateCompactTurn(
           compactTurnId,
           'error',
@@ -606,13 +607,14 @@ export function useCompaction({
       const responseTurnId =
         compactionTurnIdsRef.current.get(response.compactionId) ??
         compactTurnId;
+      const skipped = response.compaction.outcome && response.compaction.outcome !== 'Applied';
       updateCompactTurn(
         responseTurnId,
         'success',
-        '上下文压缩完成',
+        skipped ? '本次未替换上下文' : '上下文压缩完成',
         response.compaction,
       );
-      setCompactionStatus(`上次压缩：${formatCompactionTime(Date.now())}`);
+      setCompactionStatus(skipped ? '未压缩：原上下文已保留' : `上次压缩：${formatCompactionTime(Date.now())}`);
       activeCompactionTurnIdRef.current = null;
 
       if (
@@ -628,7 +630,18 @@ export function useCompaction({
       if (epoch !== lifecycleEpochRef.current) return;
       clearCompactionLivenessTimer();
       setLoading(false);
-      const message = error instanceof Error ? error.message : '上下文压缩失败';
+      const recorded = compactionLifecycleTurnsRef.current.get(compactTurnId);
+      // A lost HTTP response must not undo a durable success, or replace a
+      // detailed SSE failure with Axios's generic "status code 500" message.
+      if (recorded?.assistant.status === 'success') {
+        activeCompactionTurnIdRef.current = null;
+        return;
+      }
+      const recordedFailure = recorded?.assistant.status === 'error'
+        ? recorded.assistant.timelineItems?.find(item => item.type === 'subconscious_step')?.message
+        : undefined;
+      const message = compactionHttpFailure(error) ?? recordedFailure
+        ?? (error instanceof Error ? error.message : '上下文压缩失败');
       setError(message);
       setCompactionStatus(`压缩失败：${message}`);
       updateCompactTurn(compactTurnId, 'error', message);

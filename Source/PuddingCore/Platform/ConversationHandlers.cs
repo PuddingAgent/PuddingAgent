@@ -114,9 +114,9 @@ public sealed record CompactionResult(
     string? NewConversationTitle);
 
 /// <summary>
-/// 创建压缩后的后继 Conversation，并原子收敛 Agent 主会话身份。
+/// 创建压缩后的后继 Conversation，并按持久步骤收敛 Agent 主会话身份。
 /// 该接口隔离 Session 存储、Agent manifest 与重定向存储，压缩 Handler
-/// 不得直接读取数据库或配置文件。
+/// 不得直接读取数据库或配置文件。切换可能部分完成，失败不能推翻已保存的摘要事实。
 /// </summary>
 public interface ICompactionSessionSuccessor
 {

@@ -749,6 +749,14 @@ public class SessionEventsController : ControllerBase
                 result.NewConversationId,
                 result.NewConversationTitle));
         }
+        catch (CompactionRequestException ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, ex.Failure);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (AgentConfigurationException ex)
         {
             _logger.LogWarning(

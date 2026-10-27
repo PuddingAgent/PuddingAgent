@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { useRef, useState } from 'react';
-import { getCompactionStatus } from '@/services/platform/api';
+import { compactSession, getCompactionStatus } from '@/services/platform/api';
 import { useCompaction } from './useCompaction';
 
 jest.mock('@/services/platform/api', () => ({
@@ -51,6 +51,50 @@ function useCompactionHarness() {
 }
 
 describe('useCompaction', () => {
+  it('shows HTTP handoff diagnostics including the committed summary and correlation IDs', async () => {
+    jest.mocked(compactSession).mockRejectedValueOnce(Object.assign(new Error('Request failed with status code 500'), {
+      response: { data: { message: '摘要已保存，但后续会话切换未完成。', phase: 'session_handoff',
+        summaryCommitted: true, errorCode: 'compaction.session_handoff_failed', nativeErrorCode: 1175,
+        errorId: 'failure-1', upstreamErrorId: 'storage-1', traceId: 'trace-1' } },
+    }));
+    const { result } = renderHook(() => useCompactionHarness());
+    await act(async () => { await result.current.handleCompactCommand(); });
+    expect(result.current.error).toContain('摘要状态：已保存');
+    expect(result.current.error).toContain('失败阶段：切换后续会话');
+    expect(result.current.error).toContain('errorId：failure-1');
+    expect(result.current.error).toContain('上游 errorId：storage-1');
+    expect(result.current.error).not.toContain('status code 500');
+  });
+
+  it.each(['failed', 'completed'])('does not overwrite a durable %s event with a generic HTTP error', async (state) => {
+    let reject!: (reason: Error) => void;
+    jest.mocked(compactSession).mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
+    const { result } = renderHook(() => useCompactionHarness());
+    let pending!: Promise<void>;
+    act(() => { pending = result.current.handleCompactCommand(); });
+    const id = jest.mocked(compactSession).mock.calls.at(-1)![1].compactionId;
+    act(() => result.current.handleCompactionLifecycleEvent(compactionEvent(`context.compaction.${state}`, {
+      compactionId: id, failure: { message: '摘要已保存，切换失败', phase: 'session_handoff', errorId: 'failure-2' },
+    })));
+    await act(async () => { reject(new Error('Request failed with status code 500')); await pending; });
+    expect(result.current.loading).toBe(false);
+    if (state === 'completed') {
+      expect(result.current.turns[0].assistant.status).toBe('success');
+      expect(result.current.error).toBeNull();
+    } else {
+      expect(result.current.error).toContain('errorId：failure-2');
+      expect(result.current.error).not.toContain('status code 500');
+    }
+  });
+
+  it('manual no-op response does not claim a new successful compression', async () => {
+    jest.mocked(compactSession).mockResolvedValueOnce({ compactionId: 'skip', newSessionId: 'session-1',
+      compaction: { outcome: 'SkippedNoCandidate', compactedMessageCount: 0, beforeTokens: 100, afterTokens: 100 } } as never);
+    const { result } = renderHook(() => useCompactionHarness());
+    await act(async () => { await result.current.handleCompactCommand(); });
+    expect(result.current.compactionStatus).toBe('未压缩：原上下文已保留');
+    expect((result.current.turns[0] as any).assistant.timelineItems[0].compaction.state).toBe('skipped');
+  });
   it('records a skipped candidate as unchanged and rejects a late start', () => {
     const { result } = renderHook(() => useCompactionHarness());
     act(() => result.current.handleCompactionLifecycleEvent(compactionEvent('context.compaction.started')));

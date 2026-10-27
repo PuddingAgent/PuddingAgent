@@ -42,20 +42,34 @@ public static class AtomicFileWriter
             // 替换/写入目标文件
             // File.Replace 要求目标已存在（适合更新已有配置）；
             // 若目标不存在则用 File.Move（适合首次创建）。
-            if (File.Exists(filePath))
+            for (var attempt = 0; ; attempt++)
             {
-                if (OperatingSystem.IsWindows())
+                ct.ThrowIfCancellationRequested();
+                try
                 {
-                    File.Replace(tempPath, filePath, null, ignoreMetadataErrors: true);
+                    if (File.Exists(filePath))
+                    {
+                        if (OperatingSystem.IsWindows())
+                            File.Replace(tempPath, filePath, null, ignoreMetadataErrors: true);
+                        else
+                            File.Move(tempPath, filePath, overwrite: true);
+                    }
+                    else
+                        File.Move(tempPath, filePath);
+                    break;
                 }
-                else
+                catch (IOException ex)
                 {
-                    File.Move(tempPath, filePath, overwrite: true);
+                    ex.Data["atomic_write_attempts"] = attempt + 1;
+                    ex.Data["native_error_code"] = ex.HResult & 0xffff;
+                    // Only retry failures for which ReplaceFile preserves both names.
+                    // Never delete/truncate the destination to work around a reader's lock.
+                    if (!OperatingSystem.IsWindows() || attempt >= 6
+                        || (ex.HResult & 0xffff) is not (32 or 33 or 1175)
+                        || !File.Exists(filePath) || !File.Exists(tempPath))
+                        throw;
+                    await Task.Delay(TimeSpan.FromMilliseconds(25 * (1 << attempt)), ct);
                 }
-            }
-            else
-            {
-                File.Move(tempPath, filePath);
             }
         }
         catch
@@ -94,7 +108,8 @@ public static class AtomicFileWriter
         if (!File.Exists(filePath))
             return default;
 
-        await using var stream = File.OpenRead(filePath);
+        await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.Asynchronous);
         return await System.Text.Json.JsonSerializer.DeserializeAsync<T>(stream, options ?? new System.Text.Json.JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,

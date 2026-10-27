@@ -336,3 +336,17 @@ Desktop 本身退出还需查 DesktopHome `logs/desktop.log`、Windows Applicati
 最后一次请求可能仍在途中，须再对照 Gateway 日志。只有持久提交成功才算压缩完成；skipped/cancelled 是原上下文保留。
 已接受分段在同进程内可跨轮复用，Core 重启后缓存重建；不要修改原始会话或伪造成功终态来解除门禁。
 
+## 手动压缩摘要已保存，但后续会话切换失败
+
+先用 `compactionId` 查询 `[ContextCompaction] Full compact completed`，再找 `[Compact] failed`。
+完成摘要持久化之后，还可能在 `session_handoff`（创建/绑定后续会话）或 `publish_result`（发布终态）失败，
+不能仅凭 HTTP 500 判断摘要生成失败。HTTP 与持久失败事件共享 `CompactionFailure`，包含 `phase`、
+`summaryCommitted`、`errorId`、`traceId`；内层存储错误还携带 `upstreamErrorId`、`nativeErrorCode`、`writeAttempts`。
+按上游 ID 找 `[SessionApi] Main binding persistence failed` 的异常栈。不要用通用 HTTP 文案覆盖已收到的 SSE 终态。
+
+Windows `AtomicFileWriter` 对 32/33/1175 做有界重试；内部 JSON 读取共享读写和删除权限，允许旧读取快照与原子替换并存。
+超过重试上限仍失败时检查文件持有者与权限，不删除目标文件绕过占用。1176/1177 的文件状态不同，不在重试集合；
+参见 [ReplaceFileW 错误语义](https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-replacefilew)。
+会话仓储只发布已落盘记录；主会话提升成功、旧角色降级失败时，内存与重新加载均选中已提升的后续会话，
+对同一后续会话重复绑定可完成剩余降级。不要把“摘要已保存”描述成整个切换事务已成功。
+

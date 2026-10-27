@@ -29,9 +29,13 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
     private SqliteConnection? _platformConnection;
     private readonly string? _previousDataRoot;
     private readonly string _dataRoot;
+    private readonly Action<IServiceCollection>? _configureServices;
 
-    public CustomWebApplicationFactory()
+    public CustomWebApplicationFactory() : this(null) { }
+
+    public CustomWebApplicationFactory(Action<IServiceCollection>? configureServices)
     {
+        _configureServices = configureServices;
         _previousDataRoot = Environment.GetEnvironmentVariable("PUDDING_DATA_ROOT");
         _dataRoot = Path.Combine(Path.GetTempPath(), "pudding-webapi-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_dataRoot);
@@ -115,6 +119,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 client.DefaultRequestHeaders.Authorization =
                     new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", JwtHelper.GenerateToken());
             }).ConfigurePrimaryHttpMessageHandler(() => Server.CreateHandler());
+            _configureServices?.Invoke(services);
         });
     }
 

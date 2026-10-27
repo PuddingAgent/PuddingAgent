@@ -148,6 +148,8 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 
 压缩现场链路：`AgentExecutionService` → `BoundedCompactionSummary`（逐段决策、会话级完整分段复用）→ `CompactionDiagnosticJournal`（本地有界脱敏记录）；准备以有效进展续期，提交只在前台安全边界；`compactionId` 连接计划、分段请求/返回、取消原因、最终提交与错误报告，参见 [Runtime 地图](Source/PuddingRuntime/code_map.md)。
 
+手动压缩调用链：`RequestCompactionHandler` → `ContextCompactionService`（保存摘要）→ `CompactionSessionSuccessor`（主会话转移）→ 持久终态。各阶段分别持久化；`CompactionFailure` 分离摘要提交与切换/通知失败，HTTP 和事件共享 errorId；跳过不转移会话。会话 JSON 先持久化再发布内存，Windows 文件占用仅做有界原子替换重试。
+
 ## 4. 关键调用链路
 
 | 层 / 项目 | 符号 | 一句话作用 |

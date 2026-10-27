@@ -93,7 +93,7 @@ public sealed class RequestCompactionHandlerTraceTests
             TraceId = "trace-fail-1",
         };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<CompactionRequestException>(
             () => handler.HandleAsync(command, CancellationToken.None));
 
         Assert.IsFalse(store.Appended.Any(item => item.Event.Type == ConversationEventTypes.ContextCompactionStarted));
@@ -160,6 +160,49 @@ public sealed class RequestCompactionHandlerTraceTests
             "压缩服务调用必须收到与事件相同的 TraceId。");
     }
 
+    [TestMethod]
+    public async Task HandoffFailure_PreservesCommittedSummaryAndCorrelatesHttpWithEvent()
+    {
+        var store = new RecordingConversationEventStore();
+        var compaction = new StubCompactionService();
+        var inner = new HttpRequestException("private detail");
+        inner.Data["upstream_error_id"] = "92f1268954f4";
+        inner.Data["native_error_code"] = 1175;
+        inner.Data["atomic_write_attempts"] = 7;
+        var handler = CreateHandler(store, compaction, new ThrowingSuccessor(inner));
+        var error = await Assert.ThrowsAsync<CompactionRequestException>(() => handler.HandleAsync(
+            new RequestCompactionCommand("conversation-1", "default", "agent-1", ContextCompactionLevel.Full,
+                "manual", "handoff-1", "admin") { TraceId = "trace-handoff" }, CancellationToken.None));
+        Assert.IsTrue(error.Failure.SummaryCommitted);
+        Assert.AreEqual("session_handoff", error.Failure.Phase);
+        Assert.AreEqual(1175, error.Failure.NativeErrorCode);
+        Assert.AreEqual(7, error.Failure.WriteAttempts);
+        Assert.AreEqual("92f1268954f4", error.Failure.UpstreamErrorId);
+        var failed = store.Appended.Single().Event.Payload.GetProperty("failure");
+        Assert.AreEqual(error.Failure.ErrorId, failed.GetProperty("errorId").GetString());
+        Assert.AreEqual("trace-handoff", failed.GetProperty("traceId").GetString());
+        Assert.IsFalse(failed.GetRawText().Contains("private detail"));
+        Assert.HasCount(1, compaction.Requests);
+    }
+
+    [TestMethod]
+    public async Task NoOp_DoesNotCreateOrRebindAnotherSession()
+    {
+        var store = new RecordingConversationEventStore();
+        var handler = CreateHandler(store, new StubCompactionService { Outcome = ContextCompactionOutcome.SkippedNoCandidate },
+            new ThrowingSuccessor(new InvalidOperationException("must not run")));
+        var result = await handler.HandleAsync(new RequestCompactionCommand("conversation-1", "default", "agent-1",
+            ContextCompactionLevel.Full, "manual", "skip-1", "admin"), CancellationToken.None);
+        Assert.AreEqual("conversation-1", result.NewConversationId);
+        Assert.AreEqual(ConversationEventTypes.ContextCompactionSkipped, store.Appended.Single().Event.Type);
+    }
+
+    private sealed class ThrowingSuccessor(Exception error) : ICompactionSessionSuccessor
+    {
+        public Task<CompactionSuccessor> CreateAsync(CreateCompactionSuccessorCommand command, CancellationToken ct)
+            => throw error;
+    }
+
     private static RequestCompactionHandler CreateHandler(
         RecordingConversationEventStore store,
         StubCompactionService compaction,
@@ -193,6 +236,7 @@ public sealed class RequestCompactionHandlerTraceTests
         public ContextCompactionRequest? LastRequest { get; private set; }
 
         public Exception? ThrowOnCompact { get; set; }
+        public ContextCompactionOutcome Outcome { get; set; } = ContextCompactionOutcome.Applied;
 
         public Task<ContextCompactionResult> CompactAsync(
             ContextCompactionRequest request,
@@ -212,7 +256,7 @@ public sealed class RequestCompactionHandlerTraceTests
                 AfterTokens: 240,
                 CompactedMessageCount: 8,
                 SummaryPreview: "preview",
-                SummaryMarkdown: "markdown"));
+                SummaryMarkdown: "markdown") { Outcome = Outcome });
         }
 
         public Task<ContextHealthSnapshot> GetHealthAsync(

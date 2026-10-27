@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Platform;
 
@@ -128,11 +129,40 @@ public sealed class PlatformApiClient
         RebindMainSessionRequest request,
         CancellationToken ct = default)
     {
-        var resp = await _http.PostAsJsonAsync(
+        using var resp = await _http.PostAsJsonAsync(
             "/api/session/main/rebind",
             request,
             ct);
-        if (!resp.IsSuccessStatusCode) return null;
+        if (!resp.IsSuccessStatusCode)
+        {
+            var error = new HttpRequestException("主会话绑定请求失败。", null, resp.StatusCode);
+            // Preserve allowlisted diagnostics, never forward arbitrary server bodies.
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            if (body.Length <= 8192)
+            {
+                try
+                {
+                    using var json = JsonDocument.Parse(body);
+                    if (json.RootElement.ValueKind == JsonValueKind.Object)
+                    foreach (var property in json.RootElement.EnumerateObject())
+                    {
+                        if (property.Name.Equals("errorId", StringComparison.OrdinalIgnoreCase)
+                            && property.Value.ValueKind == JsonValueKind.String
+                            && property.Value.GetString() is { Length: > 0 and <= 64 } id
+                            && id.All(char.IsAsciiHexDigit))
+                            error.Data["upstream_error_id"] = id;
+                        if (property.Name == "nativeErrorCode" && property.Value.ValueKind == JsonValueKind.Number
+                            && property.Value.TryGetInt32(out var code))
+                            error.Data["native_error_code"] = code;
+                        if (property.Name == "writeAttempts" && property.Value.ValueKind == JsonValueKind.Number
+                            && property.Value.TryGetInt32(out var attempts))
+                            error.Data["atomic_write_attempts"] = attempts;
+                    }
+                }
+                catch (JsonException) { }
+            }
+            throw error;
+        }
         return await resp.Content.ReadFromJsonAsync<SessionRecord>(ct);
     }
 

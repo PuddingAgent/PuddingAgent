@@ -17,7 +17,7 @@
 | `LlmProxyController.cs` | LLM 代理转发 |
 | `MessageIngressController.cs` | 消息入口（飞书等） |
 | `RuntimeRegistryController.cs` | 运行时注册 |
-| `SessionController.cs` | 会话管理 |
+| `SessionController.cs` | 会话管理；主会话绑定写入失败输出安全 errorId、系统错误码和尝试次数 |
 | `StorageController.cs` | 存储 |
 | `UserController.cs` | 用户 |
 | `WorkspaceController.cs` | 工作区 |
@@ -29,7 +29,7 @@
 | `SessionRouter.cs` | 会话路由（核心，24KB） |
 | `RuntimeDispatcher.cs` | 运行时调度 |
 | `RuntimeRegistryService.cs` | 运行时注册服务 |
-| `InMemorySessionRepository.cs` | 会话内存存储 |
+| `InMemorySessionRepository.cs` | JSON 会话存储与内存索引；成功落盘才发布内存；主会话转移逐步发布持久事实，部分失败时与重启结果一致 |
 | `InMemoryWorkspaceCatalog.cs` | 工作区目录 |
 | `InMemoryApprovalService.cs` | 审批服务——进程内 `ConcurrentDictionary`；确认码委托 `ApprovalCode`；失败达上限即作废（见下「关键语义」） |
 | `InMemoryAuditEventStore.cs` | 审计存储 |

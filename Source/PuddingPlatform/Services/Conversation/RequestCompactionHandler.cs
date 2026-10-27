@@ -10,9 +10,10 @@ namespace PuddingPlatform.Services.Conversation;
 /// Manual compaction application boundary.
 ///
 /// The HTTP endpoint supplies identity and intent only. This handler owns the
-/// complete application transaction: resolve the immutable Agent runtime
+/// ordered application workflow: resolve the immutable Agent runtime
 /// profile, persist lifecycle facts, compact, create the successor
 /// conversation, and publish the terminal fact to both conversations.
+/// These stages commit independently; a failure must retain earlier committed facts.
 /// </summary>
 public sealed class RequestCompactionHandler(
     IAgentRuntimeProfileResolver profileResolver,
@@ -41,6 +42,8 @@ public sealed class RequestCompactionHandler(
         // 本 Handler 只透传 command.TraceId 到 started/completed/failed/successor 生命周期事件
         // 与压缩服务调用，禁止在此生成或 fallback —— 继承与创建由入口负责并显式区分；
         // 历史 trace_id=null 原样保留，不回填。
+        var phase = "resolve_profile";
+        var summaryCommitted = false;
         try
         {
             var profile = await profileResolver.ResolveAsync(
@@ -66,7 +69,21 @@ public sealed class RequestCompactionHandler(
                 TraceId = command.TraceId,
             };
 
+            phase = "prepare_summary";
             var compacted = await compactionService.CompactAsync(compactRequest, ct);
+            summaryCommitted = compacted.Outcome == ContextCompactionOutcome.Applied;
+            if (!summaryCommitted)
+            {
+                if (compacted.Outcome == ContextCompactionOutcome.Failed)
+                    throw new InvalidOperationException("Compaction preparation returned a failed outcome.");
+                await AppendLifecycleEventAsync(command.ConversationId, command.WorkspaceId, command.CompactionId,
+                    ConversationEventTypes.ContextCompactionSkipped,
+                    new { compactionId = command.CompactionId, sessionId = command.ConversationId,
+                        compaction = compacted, reason = "本次没有替换上下文，继续使用当前会话。" },
+                    "skipped", command.TraceId, ct);
+                return new CompactionResult(command.CompactionId, compacted, command.ConversationId, null);
+            }
+            phase = "session_handoff";
             var next = await successor.CreateAsync(
                 new CreateCompactionSuccessorCommand(
                     command.ConversationId,
@@ -95,6 +112,7 @@ public sealed class RequestCompactionHandler(
                 compaction = completedCompaction,
             };
 
+            phase = "publish_result";
             await AppendLifecycleEventAsync(
                 command.ConversationId,
                 command.WorkspaceId,
@@ -141,12 +159,23 @@ public sealed class RequestCompactionHandler(
         }
         catch (Exception ex)
         {
+            var failure = new CompactionFailure(
+                phase == "publish_result" ? "compaction.result_publication_failed"
+                    : summaryCommitted ? "compaction.session_handoff_failed" : "compaction.preparation_failed",
+                phase == "publish_result" ? "摘要已保存，但整理结果通知未完成。请按记录 ID 检查状态。"
+                    : summaryCommitted ? "摘要已保存，但后续会话切换未完成。请检查会话存储诊断。"
+                    : "上下文整理失败，原始会话仍保留。请按记录 ID 检查诊断。",
+                phase, command.CompactionId, command.TraceId, summaryCommitted,
+                Guid.NewGuid().ToString("N")[..12],
+                ex.Data["upstream_error_id"] as string,
+                ex.Data["native_error_code"] as int?,
+                ex.Data["atomic_write_attempts"] as int?);
             logger.LogWarning(
                 ex,
-                "[Compact] failed compaction={CompactionId} conversation={ConversationId} agent={AgentId}",
+                "[Compact] failed compaction={CompactionId} conversation={ConversationId} agent={AgentId} errorId={ErrorId} phase={Phase} summaryCommitted={SummaryCommitted} upstreamErrorId={UpstreamErrorId}",
                 command.CompactionId,
                 command.ConversationId,
-                command.AgentId);
+                command.AgentId, failure.ErrorId, phase, summaryCommitted, failure.UpstreamErrorId);
             try
             {
                 await AppendLifecycleEventAsync(
@@ -158,8 +187,9 @@ public sealed class RequestCompactionHandler(
                     {
                         compactionId = command.CompactionId,
                         sessionId = command.ConversationId,
-                        error = ex.Message,
+                        error = failure.Message,
                         errorType = ex.GetType().Name,
+                        failure,
                     },
                     "failed",
                     command.TraceId,
@@ -173,7 +203,8 @@ public sealed class RequestCompactionHandler(
                     command.CompactionId);
             }
 
-            throw;
+            if (ex is OperationCanceledException or AgentConfigurationException) throw;
+            throw new CompactionRequestException(failure, ex);
         }
     }
 

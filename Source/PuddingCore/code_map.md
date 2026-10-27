@@ -43,6 +43,7 @@
 | `Platform/IExecutionCommandReader.cs` | ExecutionCommand 只读边界 | `IExecutionCommandReader`、`ExecutionWorkUnitContext` | `Platform/IPlatformRepositories.cs` | 返回由 canonical Goal/Task/Plan 解析的上下文及 rounds/tools/duration/token/cost 冻结预算 |
 | `Platform/AgentProjectionDtos.cs` | Agent 会话读模型 | `AgentProjectionDtos`、`ProcessSummaryItem.Sequence`、`TurnEventWindow` | `Platform/IPlatformRepositories.cs` | Sequence 为 canonical 必填；active/detail 输出携带 TurnEventWindow（through/min/max/hasMoreBefore）供前端识别截断 |
 | `Platform/ExecutionRunContracts.cs` | ExecutionRun 冻结快照合同 | `LlmRouteSnapshot`、`CallerLlmSnapshot` | `Platform/AgentProjectionDtos.cs` | V5：LlmRouteSnapshot 与 CallerLlmSnapshot 新增可选 VisionRequestPolicy? VisionPolicy；CallerLlmSnapshot.SupportsVision 为唯一 vision 能力投影（OrdinalIgnoreCase）。**2026-10-25**：新增可选 `string? ReasoningEffort`——本轮手动思考强度的唯一载体，放在快照而非 agent 请求，避免两套来源 |
+| `Platform/CompactionRequestException.cs` | 手动压缩跨 HTTP/事件的安全失败合同 | `CompactionFailure`、`CompactionRequestException` | `Platform/ConversationHandlers.cs` | 区分失败阶段和摘要提交事实，携带关联 ID 与白名单存储诊断；原异常仅在服务端保留 |
 | `Platform/ApprovalCode.cs` | 待审单确认码生成与校验 | `ApprovalCode` | `Controllers/` | 细节见后注 |
 | `Platform/IRsiTrajectoryDataAccess.cs` | RSI-S3 轨迹数据访问接缝 | `IRsiTrajectoryDataAccess` | `Data/` | 细节见后注 |
 | `Platform/RsiEventTimestamp.cs` | RSI-S3 时间戳契约 | `RsiEventTimestamp` | `Platform/IRsiTrajectoryDataAccess.cs` | 细节见后注 |
@@ -247,7 +248,7 @@ RetrievalGlobMatcher 合同：`public static`，API 为 `Matches/MatchesFileName
 |------|------|
 | `Configuration/` | 配置抽象与 `llm.providers.json` 解析 |
 | `Configuration/PuddingConfigModels.cs` | 系统配置记录；`desktop.guardian` 定义独立主管端口、构建源路径及健康策略，与 `desktop.bootstrap` 内部控制端口分离 |
-| `Configuration/AtomicFileWriter.cs` | 原子配置写入：严格无 BOM UTF-8，磁盘 JSON 默认保留可读中文；保留显式编码器、命名策略与转换器 |
+| `Configuration/AtomicFileWriter.cs` | 原子配置写入：严格无 BOM UTF-8；Windows 可安全重试的文件占用错误有界退避，读取允许替换；失败保留原文件并携带尝试次数/系统错误码 |
 | `Serialization/` | 序列化契约 |
 | `Skills/` | 技能系统抽象 |
 | `Skills/Portfolio/` | G3 组合预算策略（`IVersionedCriterion` 阈值外置） |

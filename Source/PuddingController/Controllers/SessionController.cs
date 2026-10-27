@@ -147,6 +147,20 @@ public class SessionController : ControllerBase
                 req.WorkspaceId, principalKind, req.PrincipalId);
             return NotFound(new { message = "未找到指定的会话或主线。" });
         }
+        catch (IOException ex)
+        {
+            var errorId = Guid.NewGuid().ToString("N")[..12];
+            var nativeErrorCode = ex.HResult & 0xffff;
+            var writeAttempts = ex.Data["atomic_write_attempts"] as int?;
+            _logger.LogError(ex,
+                "[SessionApi] Main binding persistence failed errorId={ErrorId} workspace={Workspace} successor={Successor} nativeErrorCode={NativeErrorCode} writeAttempts={WriteAttempts}",
+                errorId, req.WorkspaceId, req.SuccessorSessionId, nativeErrorCode, writeAttempts);
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                errorCode = "session.persistence_failed", errorId, nativeErrorCode, writeAttempts,
+                message = "主会话绑定保存失败，请检查存储诊断。",
+            });
+        }
     }
 
     private async Task<string?> BuildDefaultTitleAsync(
