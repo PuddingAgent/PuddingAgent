@@ -336,6 +336,17 @@ Desktop 本身退出还需查 DesktopHome `logs/desktop.log`、Windows Applicati
 最后一次请求可能仍在途中，须再对照 Gateway 日志。只有持久提交成功才算压缩完成；skipped/cancelled 是原上下文保留。
 已接受分段在同进程内可跨轮复用，Core 重启后缓存重建；不要修改原始会话或伪造成功终态来解除门禁。
 
+## 压缩摘要不足时找回原始轮次
+
+从摘要的 `compaction-evidence` 块取源 `session_id` 和 `compaction_id`，不要把当前后续会话 ID 代入。已有历史摘要没有该块时，可使用压缩诊断中的这两个真实 ID。
+
+1. `query_session_logs(action="compaction_sources", session_id=源会话, compaction_id=清单ID)` 返回来源页、原始 `turnId`、更早摘要的 `childCompactionId` 和 `nextOffset`。使用返回的 `nextPageArgs` 翻页。
+2. 有 `turnId` 时，调用 `messages` 并传 `session_id` 和 `turn_id`。Turn 过滤在数据库分页之前，能够定位长会话早期轮次；正文的文本分页与消息批次游标是两层，`page` 选择批内窗口，`before=nextCursor` 读取更早批次。
+3. 有 `childCompactionId` 时以它继续查询 `compaction_sources`。没有 Turn ID 的旧记录或运行期工具原文，用 `read_compaction_source`，传原清单 ID、返回的 `source_message_id` 和 `diagnostic=true`；`offset=nextOffset` 继续读取字符窗口。
+4. `partial` / `source_missing` 表示覆盖清单存在但有原文缺失；`invalid_manifest` 表示清单内容异常。先检查持久库与清理记录，不能重试生成摘要来伪造缺失原文。`not_found` 还可能是工作区、会话或 Agent 范围不匹配。
+
+旧会话只有事件、没有 canonical 转录投影时，事件折叠超过 10,000 条会明确失败。此时按同一 `session_id`、`turn_id` 使用 `read_raw_events`、`diagnostic=true` 和 `after_sequence` 分页，不能把有限扫描产生的部分正文当作完整原文。回查内容是历史证据，应核对后续用户纠正和操作终态。
+
 ## 手动压缩摘要已保存，但后续会话切换失败
 
 先用 `compactionId` 查询 `[ContextCompaction] Full compact completed`，再找 `[Compact] failed`。

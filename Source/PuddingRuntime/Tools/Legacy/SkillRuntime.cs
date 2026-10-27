@@ -300,25 +300,7 @@ public sealed partial class SkillRuntime
                 ["action"]);
 
         if (skillId.Equals("query_session_logs", StringComparison.OrdinalIgnoreCase))
-            return new ToolParameterSchema(
-                [
-                    new ToolParameter("action", "string", "操作：messages, list_days, list_sessions, grep, grep_raw_events, read_raw_events"),
-                    new ToolParameter("workspace_id", "string", "Workspace ID（Runtime 自动注入当前活跃 workspace）"),
-                    new ToolParameter("agent_instance_id", "string", "Agent 实例 ID（Runtime 自动注入当前运行态 agent，用于限定 agent 私有消息日志）"),
-                    new ToolParameter("day", "string", "日期 yyyy-MM-dd；list_sessions 或单日 grep 使用"),
-                    new ToolParameter("from_day", "string", "起始日期 yyyy-MM-dd"),
-                    new ToolParameter("to_day", "string", "结束日期 yyyy-MM-dd"),
-                    new ToolParameter("session_id", "string", "会话 ID；messages/read_raw_events 需要，grep 可选"),
-                    new ToolParameter("query", "string", "grep 查询文本或正则"),
-                    new ToolParameter("regex", "string", "是否使用 .NET 正则：true/false"),
-                    new ToolParameter("diagnostic", "string", "自我诊断模式开关：true/false。raw/debug 动作必须显式为 true"),
-                    new ToolParameter("include_events", "string", "grep 是否搜索原始事件帧：true/false，默认 false；需要 diagnostic=true"),
-                    new ToolParameter("after_sequence", "number", "read_raw_events 分页游标：读取该 sequence 之后的事件"),
-                    new ToolParameter("page", "number", "messages 文本窗口页码，从 1 开始，默认 1"),
-                    new ToolParameter("window_size", "number", "messages 单页原文窗口字符数，默认 1024，最大 4096"),
-                    new ToolParameter("limit", "number", "raw/list/grep 返回数量上限，messages 默认加载最多 1000 条转录消息"),
-                ],
-                ["action"]);
+            return PuddingCode.Tools.ToolDescriptorFactory.BuildParameterSchema(typeof(PuddingRuntime.Services.Tools.QuerySessionLogsArgs));
 
         if (skillId.Equals("event_subscribe", StringComparison.OrdinalIgnoreCase))
             return new ToolParameterSchema(

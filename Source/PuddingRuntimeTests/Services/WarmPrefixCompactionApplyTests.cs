@@ -13,6 +13,28 @@ namespace PuddingRuntimeTests.Services;
 [TestClass]
 public sealed class WarmPrefixCompactionApplyTests
 {
+    [TestMethod]
+    public void EvidenceLocator_IsIncludedInPlanningAndActualRequestMeasurement()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(20);
+        var locator = CompactionEvidenceLocator.Build(SessionId, "committed-compaction");
+        Assert.IsTrue(WarmPrefixCompaction.TryCreatePlan(store, SessionId, history, history, null,
+            BuildConfig(), .05, .45, out var plan, evidenceLocator: locator));
+        Assert.IsNotNull(plan);
+        var verification = WarmPrefixCompaction.VerifyApplication(store, SessionId, history, null,
+            BuildConfig(), plan, "User corrections preserved; operation completed.", CurrentValuesFor(plan, history));
+        Assert.IsTrue(verification.CanApply, verification.Reason);
+        var checkpoint = verification.AppliedMessages![plan.ReplacementStart];
+        StringAssert.Contains(checkpoint.Content, locator);
+        Assert.AreEqual(LlmRequestTextBudget.Measure(verification.AppliedMessages, null), verification.AfterTextBytes);
+        Assert.AreEqual(store.MeasureLlmRequest(SessionId, verification.AppliedMessages, null, BuildConfig().ModelId).UsedTokens,
+            verification.AfterSnapshot!.UsedTokens);
+        Assert.IsTrue(verification.ReclaimTokens > 0);
+        Assert.AreEqual("User corrections preserved; operation completed." + locator,
+            WarmPrefixCompaction.WithEvidence(plan, "User corrections preserved; operation completed."));
+    }
+
     private const string SessionId = "session-warm-prefix-apply";
 
     private static LlmConfig BuildConfig() => new()

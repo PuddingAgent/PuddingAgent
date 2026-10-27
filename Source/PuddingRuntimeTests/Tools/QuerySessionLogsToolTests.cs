@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -10,6 +11,65 @@ namespace PuddingRuntimeTests.Tools;
 [TestClass]
 public sealed class QuerySessionLogsToolTests
 {
+    [TestMethod]
+    public async Task CompactionEvidence_UsesRuntimeScope_PreservesCursor_AndRequiresRawOptIn()
+    {
+        var evidence = new Moq.Mock<ICompactionEvidenceReader>(Moq.MockBehavior.Strict);
+        CompactionEvidenceQuery? captured = null;
+        evidence.Setup(r => r.ReadSourcesAsync(Moq.It.IsAny<CompactionEvidenceQuery>(), Moq.It.IsAny<CancellationToken>()))
+            .Callback<CompactionEvidenceQuery, CancellationToken>((q, _) => captured = q)
+            .ReturnsAsync(new CompactionEvidencePage("ok", [new("source-1", "original-session", "user", "original-turn", null, "turn")], 40, 20));
+        var tool = new QuerySessionLogsTool(new CapturingRawSessionLogService(), NullLogger<QuerySessionLogsTool>.Instance, evidence.Object);
+        var result = await ExecuteAsync(tool, new Dictionary<string, string>
+        {
+            ["action"] = "compaction_sources", ["session_id"] = "original-session",
+            ["compaction_id"] = "committed-id", ["workspace_id"] = "foreign", ["offset"] = "10",
+        });
+        Assert.AreEqual("ws-tool", captured?.WorkspaceId);
+        Assert.AreEqual("agent-1", captured?.AgentInstanceId);
+        Assert.AreEqual(10, captured?.Offset);
+        using var json = JsonDocument.Parse(result.Output!);
+        Assert.AreEqual("original-turn", json.RootElement.GetProperty("sources")[0].GetProperty("turnId").GetString());
+        var next = json.RootElement.GetProperty("nextPageArgs");
+        Assert.AreEqual(20, next.GetProperty("offset").GetInt32());
+        Assert.AreEqual("committed-id", next.GetProperty("compaction_id").GetString());
+        Assert.AreEqual("original-session", next.GetProperty("session_id").GetString());
+        var refused = await ExecuteAsync(tool, new Dictionary<string, string>
+        {
+            ["action"] = "read_compaction_source", ["compaction_id"] = "committed-id", ["source_message_id"] = "source-1",
+        });
+        using var error = JsonDocument.Parse(refused.Output!);
+        StringAssert.Contains(error.RootElement.GetProperty("message").GetString(), "diagnostic=true");
+        evidence.Verify(r => r.ReadSourcesAsync(Moq.It.IsAny<CompactionEvidenceQuery>(), Moq.It.IsAny<CancellationToken>()), Moq.Times.Once);
+        evidence.VerifyNoOtherCalls();
+    }
+
+    [TestMethod]
+    public async Task Messages_TurnLookupAndTextPagination_PreserveScopeAndCursor()
+    {
+        var service = new CapturingRawSessionLogService();
+        var tool = new QuerySessionLogsTool(service, NullLogger<QuerySessionLogsTool>.Instance);
+        var result = await ExecuteAsync(tool, new Dictionary<string, string>
+        {
+            ["action"] = "messages", ["session_id"] = "long-session", ["turn_id"] = "original-turn",
+            ["before"] = "10000", ["limit"] = "20", ["window_size"] = "512",
+            ["workspace_id"] = "must-not-override-runtime", ["exclude_heartbeat"] = "true",
+        });
+        Assert.AreEqual("original-turn", service.LastTurnId);
+        Assert.AreEqual(10000L, service.LastBefore);
+        Assert.AreEqual("ws-tool", service.LastReadMessagesWorkspaceId);
+        using var json = JsonDocument.Parse(result.Output!);
+        var transcript = json.RootElement.GetProperty("transcript");
+        StringAssert.Contains(transcript.GetProperty("text").GetString(), "turn_id=original-turn");
+        var next = transcript.GetProperty("nextPageArgs");
+        Assert.AreEqual("original-turn", next.GetProperty("turn_id").GetString());
+        Assert.AreEqual("long-session", next.GetProperty("session_id").GetString());
+        Assert.AreEqual("agent-1", next.GetProperty("agent_instance_id").GetString());
+        Assert.AreEqual(10000L, next.GetProperty("before").GetInt64());
+        Assert.AreEqual(20, next.GetProperty("limit").GetInt32());
+        Assert.AreEqual("true", next.GetProperty("exclude_heartbeat").GetString());
+    }
+
     [TestMethod]
     public void QuerySessionLogsTool_Uses_Strongly_Typed_Tool_Base()
     {
@@ -191,6 +251,8 @@ public sealed class QuerySessionLogsToolTests
 
     private sealed class CapturingRawSessionLogService : IRawSessionLogService
     {
+        public string? LastTurnId { get; private set; }
+        public long? LastBefore { get; private set; }
         public RawSessionLogSearchRequest? LastSearchRequest { get; private set; }
         public string? LastReadMessagesWorkspaceId { get; private set; }
         public string? LastReadMessagesAgentInstanceId { get; private set; }
@@ -243,8 +305,11 @@ public sealed class QuerySessionLogsToolTests
             string? agentInstanceId = null,
             long? before = null,
             int limit = 20,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            string? turnId = null)
         {
+            LastTurnId = turnId;
+            LastBefore = before;
             LastReadMessagesWorkspaceId = workspaceId;
             LastReadMessagesAgentInstanceId = agentInstanceId;
             LastReadMessagesSessionId = sessionId;
@@ -261,7 +326,7 @@ public sealed class QuerySessionLogsToolTests
                             "agent",
                             new string('x', 1500),
                             "2026-06-02T08:00:00.0000000Z",
-                            "session-message:long-session:m-long")
+                            "session-message:long-session:m-long", TurnId: turnId)
                     ],
                     HasMore: false,
                     NextCursor: null));
@@ -308,7 +373,8 @@ public sealed class QuerySessionLogsToolTests
             long? afterSequence = null,
             int limit = 100,
             string? agentInstanceId = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            string? turnId = null)
         {
             LastReadRawAfterSequence = afterSequence;
             return Task.FromResult(new RawSessionLogReadResult(

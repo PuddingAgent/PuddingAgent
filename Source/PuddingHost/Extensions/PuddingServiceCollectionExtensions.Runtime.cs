@@ -521,6 +521,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton(sp => new CompactionCoordinator(
             onHistoryInvalidated: sid => sp.GetRequiredService<ContextWindowManager>().InvalidateHistory(sid)));
         builder.Services.AddSingleton<IContextCompactionService, ContextCompactionService>();
+        builder.Services.AddSingleton<ICompactionEvidenceReader, CompactionEvidenceReader>();
         builder.Services.AddSingleton<ISessionCompactionEventEmitter, PuddingPlatform.Services.SessionCompactionEventEmitter>();
         builder.Services.AddSingleton<IContextAssemblyEventEmitter, PuddingPlatform.Services.ContextAssemblyEventEmitter>();
         builder.Services.AddSingleton<ContextWindowManager>();

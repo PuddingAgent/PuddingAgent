@@ -25,6 +25,21 @@ public sealed class CompactionNoGainSuppressionTests
 
     private const string ShortSummary = "## 用户目标\n压缩后的短摘要。";
 
+    [TestMethod]
+    public async Task ShortSummary_WithEvidenceLocatorButNoNetGain_DoesNotCommit()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await SeedMessagesAsync(options, SessionId, 26, sufficientPayload: false);
+        var service = CreateService(options, new CountingSummaryGenerator(_ => ShortSummary), new CompactionCoordinator(cooldown: TimeSpan.Zero));
+        var result = await service.CompactAsync(CreateRequest(ContextCompactionMode.Auto));
+        Assert.AreEqual(ContextCompactionOutcome.SkippedNoGain, result.Outcome);
+        await using var db = new MemoryDbContext(options);
+        Assert.AreEqual(0, await db.CompactionCoverageManifests.CountAsync());
+        Assert.AreEqual(0, await db.Messages.CountAsync(m => m.CompactedBy != null));
+    }
+
     // ── T1：窗口不变 + 首轮摘要不缩小 → 第二次 Auto 被抑制，摘要模型不再被调用 ──
     [TestMethod]
     public async Task Auto_SameCandidateWindowAfterNoGain_SecondAttemptSkipsWithoutGeneratorCall()
@@ -269,7 +284,8 @@ public sealed class CompactionNoGainSuppressionTests
     private static async Task SeedMessagesAsync(
         DbContextOptions<MemoryDbContext> options,
         string sessionId,
-        int count)
+        int count,
+        bool sufficientPayload = true)
     {
         await using var db = new MemoryDbContext(options);
         await db.Database.EnsureCreatedAsync();
@@ -308,7 +324,8 @@ public sealed class CompactionNoGainSuppressionTests
             else
             {
                 role = i % 2 == 1 ? "user" : "agent";
-                content = $"message {i}";
+                // Success fixtures must cover the full checkpoint including recovery metadata.
+                content = $"message {i}" + (sufficientPayload ? new string('x', 240) : "");
             }
 
             db.Messages.Add(new MessageEntity

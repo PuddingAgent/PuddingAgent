@@ -1,6 +1,6 @@
 # PuddingAgent 代码地图（根索引）
 
-> 源指纹: Source/**=e14f5f25e696, Tests/**=5b0cb30b7cd6, Tools/**=04f6a202d2a2, TestScripts/**=844369deafb7 · 条目数: 125 · 最近整理: 2026-10-25
+> 源指纹: Source/**=4128db41da49, Tests/**=19a07b471379, Tools/**=83d7eb33e1cf, TestScripts/**=9d8c5fa016f7 · 条目数: 125 · 最近整理: 2026-10-25
 > 本文件是**索引**不是日志：只放 概念 · 组件 · 关键文件（相对路径）· 用途；维护规则见 [`Agents.md`](Agents.md)，过程记录写 [`Docs/00_changelog/`](Docs/00_changelog/README.md)；子项目内部的文件级索引在其自己的 `code_map.md` 中，本文件只做跨项目路由。
 
 ## 0. 怎么用（30 秒）
@@ -147,6 +147,8 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文档由驱动签发正数版本；`BrowserWorkspaceTargetBridge.ObserveAgentTarget` 观察 UI 目标快照，空/重复快照不等于用户撤权。显式选页/撤权与页面关闭分别走命令及生命周期端口。
 
 压缩现场链路：`AgentExecutionService` → `BoundedCompactionSummary`（逐段决策、会话级完整分段复用）→ `CompactionDiagnosticJournal`（本地有界脱敏记录）；准备以有效进展续期，提交只在前台安全边界；`compactionId` 连接计划、分段请求/返回、取消原因、最终提交与错误报告，参见 [Runtime 地图](Source/PuddingRuntime/code_map.md)。
+
+压缩原文回查：宿主 `CompactionEvidenceLocator` → `query_session_logs` → `ICompactionEvidenceReader` / `CompactionEvidenceReader` → 已提交覆盖清单 → canonical Turn ID 或旧 checkpoint。`RawSessionLogService` 按源会话与 Turn 读取原始转录；无 Turn ID 的运行期归档按有界窗口读取。来源关系独立于摘要正文，重复压缩不依赖模型记住旧 ID。
 
 手动压缩调用链：`RequestCompactionHandler` → `ContextCompactionService`（保存摘要）→ `CompactionSessionSuccessor`（主会话转移）→ 持久终态。各阶段分别持久化；`CompactionFailure` 分离摘要提交与切换/通知失败，HTTP 和事件共享 errorId；跳过不转移会话。会话 JSON 先持久化再发布内存，Windows 文件占用仅做有界原子替换重试。
 

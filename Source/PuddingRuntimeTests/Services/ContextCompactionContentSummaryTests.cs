@@ -105,6 +105,12 @@ public sealed class ContextCompactionContentSummaryTests
         StringAssert.Contains(result.SummaryMarkdown, "保留早期关键决策");
         Assert.IsNotNull(result.Diagnostics);
         Assert.IsTrue(Guid.TryParse(result.Diagnostics.CompactionId, out _));
+        StringAssert.Contains(result.SummaryMarkdown, CompactionEvidenceLocator.Build("session-1", result.Diagnostics.CompactionId));
+        var evidence = await new CompactionEvidenceReader(new TestMemoryDbContextFactory(options)).ReadSourcesAsync(
+            new CompactionEvidenceQuery("workspace-1", "session-1", result.Diagnostics.CompactionId, "agent-1"));
+        Assert.AreEqual("ok", evidence.Status);
+        Assert.AreEqual(result.CompactedMessageCount, evidence.TotalSources);
+        Assert.IsTrue(evidence.Sources.All(s => s.Availability != "missing"));
         Assert.AreEqual("session-1", result.Diagnostics.PreviousSessionId);
         Assert.AreEqual("msg-10", result.Diagnostics.PreviousLastMessageId);
         Assert.AreEqual(10, result.Diagnostics.ActiveMessageCountBefore);

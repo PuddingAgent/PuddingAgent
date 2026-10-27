@@ -165,13 +165,14 @@ public sealed partial class RawSessionLogService : IRawSessionLogService
         string? agentInstanceId = null,
         long? before = null,
         int limit = 20,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? turnId = null)
     {
         if (string.IsNullOrWhiteSpace(workspaceId) || string.IsNullOrWhiteSpace(sessionId))
             return new RawSessionLogMessagePage(Array.Empty<RawSessionLogMessage>(), HasMore: false, NextCursor: null);
 
         var pageSize = Clamp(limit, 1, MaxMessageLimit);
-        var messages = await LoadMessageTranscriptAsync(workspaceId, sessionId, agentInstanceId, before, pageSize + 1, ct);
+        var messages = await LoadMessageTranscriptAsync(workspaceId, sessionId, agentInstanceId, before, pageSize + 1, ct, turnId);
         var hasMore = messages.Count > pageSize;
         var page = messages
             .Take(pageSize)
@@ -190,7 +191,8 @@ public sealed partial class RawSessionLogService : IRawSessionLogService
         long? afterSequence = null,
         int limit = 100,
         string? agentInstanceId = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? turnId = null)
     {
         if (string.IsNullOrWhiteSpace(workspaceId) || string.IsNullOrWhiteSpace(sessionId))
             return new RawSessionLogReadResult(Array.Empty<RawSessionLogEvent>(), HasMore: false, NextSequence: null);
@@ -200,6 +202,9 @@ public sealed partial class RawSessionLogService : IRawSessionLogService
         var query = db.ConversationEvents
             .AsNoTracking()
             .Where(e => e.WorkspaceId == workspaceId && e.ConversationId == sessionId);
+
+        if (!string.IsNullOrWhiteSpace(turnId))
+            query = query.Where(e => e.TurnId == turnId);
 
         if (!string.IsNullOrWhiteSpace(agentInstanceId))
             query = query.Where(e => e.AgentId == agentInstanceId);
@@ -248,7 +253,8 @@ public sealed partial class RawSessionLogService : IRawSessionLogService
         string? agentInstanceId,
         long? before,
         int limit,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? turnId = null)
     {
         if (string.IsNullOrWhiteSpace(workspaceId))
             return [];
@@ -262,6 +268,10 @@ public sealed partial class RawSessionLogService : IRawSessionLogService
         var query = db.ChatMessages
             .AsNoTracking()
             .Where(m => sessionIds.Contains(m.SessionId));
+
+        // Filter before pagination: an old turn must remain reachable in a long session.
+        if (!string.IsNullOrWhiteSpace(turnId))
+            query = query.Where(m => m.TurnId == turnId);
 
         if (!string.IsNullOrWhiteSpace(agentInstanceId))
             query = query.Where(m => m.AgentInstanceId == agentInstanceId);
@@ -285,7 +295,7 @@ public sealed partial class RawSessionLogService : IRawSessionLogService
         if (string.IsNullOrWhiteSpace(sessionId))
             return [];
 
-        return await BuildFallbackMessagesFromEventLogAsync(db, workspaceId, sessionId, agentInstanceId, before, pageSize, ct);
+        return await BuildFallbackMessagesFromEventLogAsync(db, workspaceId, sessionId, agentInstanceId, before, pageSize, ct, turnId);
     }
 
     /// <summary>
@@ -328,16 +338,21 @@ public sealed partial class RawSessionLogService : IRawSessionLogService
         string? agentInstanceId,
         long? before,
         int limit,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? turnId = null)
     {
         var entities = await db.ConversationEvents
             .AsNoTracking()
             .Where(e => e.WorkspaceId == workspaceId
                 && e.ConversationId == sessionId
+                && (string.IsNullOrWhiteSpace(turnId) || e.TurnId == turnId)
                 && (string.IsNullOrWhiteSpace(agentInstanceId) || e.AgentId == agentInstanceId))
             .OrderBy(e => e.Sequence)
-            .Take(MaxScanRows)
+            .Take(MaxScanRows + 1)
             .ToListAsync(ct);
+
+        if (entities.Count > MaxScanRows)
+            throw new InvalidOperationException("Transcript reconstruction exceeded the bounded event scan. Use read_raw_events with diagnostic=true, session_id, turn_id and after_sequence to page through the original events.");
 
         var events = entities.Select(ToConversationEvent).ToList();
         var transcript = ConversationTranscriptFold.Fold(events);
@@ -392,7 +407,7 @@ public sealed partial class RawSessionLogService : IRawSessionLogService
                     "user",
                     turn.UserMessageText,
                     occurredAt,
-                    $"conversation-log:{day}:{conversationId}:{sequence}"));
+                    $"conversation-log:{day}:{conversationId}:{sequence}", TurnId: turn.TurnId));
             }
 
             var assistantText = !string.IsNullOrWhiteSpace(turn.AssistantText)
@@ -410,7 +425,7 @@ public sealed partial class RawSessionLogService : IRawSessionLogService
                     "agent",
                     assistantText,
                     occurredAt,
-                    $"conversation-log:{day}:{conversationId}:{sequence}"));
+                    $"conversation-log:{day}:{conversationId}:{sequence}", TurnId: turn.TurnId));
             }
         }
 
@@ -519,7 +534,8 @@ public sealed partial class RawSessionLogService : IRawSessionLogService
             row.Role,
             row.Content,
             DateTimeOffset.FromUnixTimeMilliseconds(row.CreatedAt).UtcDateTime.ToString("O"),
-            $"session-message:{GetDay(DateTimeOffset.FromUnixTimeMilliseconds(row.CreatedAt).UtcDateTime.ToString("O"))}:{row.SessionId}:{row.Id}");
+            $"session-message:{GetDay(DateTimeOffset.FromUnixTimeMilliseconds(row.CreatedAt).UtcDateTime.ToString("O"))}:{row.SessionId}:{row.Id}",
+            TurnId: row.TurnId);
 
     private static string BuildEvidenceRef(ConversationEventEntity row)
         => $"conversation-log:{GetDay(row.OccurredAt)}:{row.ConversationId}:{row.Sequence}";
@@ -648,7 +664,8 @@ public sealed partial class RawSessionLogService : IRawSessionLogService
             message.CreatedAt,
             snippet,
             message.EvidenceRef,
-            message.Content);
+            message.Content,
+            message.TurnId);
 
     private static string BuildSnippet(string text, int matchIndex, int matchLength)
     {

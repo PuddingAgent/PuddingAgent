@@ -329,25 +329,7 @@ public sealed class AgentSkillToolAdapter : IPuddingTool
                 ["action"]);
 
         if (skillId.Equals("query_session_logs", StringComparison.OrdinalIgnoreCase))
-            return new ToolParameterSchema(
-                [
-                    new ToolParameter("action", "string", "Operation: messages / list_days / list_sessions / grep / grep_raw_events / read_raw_events."),
-                    new ToolParameter("workspace_id", "string", "Workspace id. Runtime usually injects the active workspace."),
-                    new ToolParameter("agent_instance_id", "string", "Agent instance id. Runtime usually injects the active agent."),
-                    new ToolParameter("day", "string", "Day in yyyy-MM-dd format."),
-                    new ToolParameter("from_day", "string", "Start day in yyyy-MM-dd format."),
-                    new ToolParameter("to_day", "string", "End day in yyyy-MM-dd format."),
-                    new ToolParameter("session_id", "string", "Session id. Required for messages and read_raw_events."),
-                    new ToolParameter("query", "string", "Text or regex query."),
-                    new ToolParameter("regex", "string", "true to use .NET regular expressions."),
-                    new ToolParameter("diagnostic", "string", "true to enable raw/debug actions."),
-                    new ToolParameter("include_events", "string", "true to include raw event frames in grep; requires diagnostic=true."),
-                    new ToolParameter("after_sequence", "number", "Raw event pagination cursor."),
-                    new ToolParameter("page", "number", "Messages transcript page, starting from 1."),
-                    new ToolParameter("window_size", "number", "Transcript window size, default 1024, max 4096."),
-                    new ToolParameter("limit", "number", "Maximum rows to return."),
-                ],
-                ["action"]);
+            return PuddingCode.Tools.ToolDescriptorFactory.BuildParameterSchema(typeof(PuddingRuntime.Services.Tools.QuerySessionLogsArgs));
 
         if (skillId.Equals("search_grep", StringComparison.OrdinalIgnoreCase))
             return new ToolParameterSchema(

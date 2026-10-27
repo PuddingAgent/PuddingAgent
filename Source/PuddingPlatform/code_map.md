@@ -1,5 +1,5 @@
 # PuddingPlatform CodeMAP
-> 源指纹: Source/PuddingPlatform/**=527-b34d301490a8 · 条目数: 205 · 最近整理: 2026-10-23
+> 源指纹: Source/PuddingPlatform/**=529-469c8d9431a5 · 条目数: 205 · 最近整理: 2026-10-23
 
 > 平台层 | Session 管理 · API · EF Core 持久化 · 消息网关
 
@@ -23,6 +23,7 @@
 | `Services/ChatHistoryService.cs` | 聊天历史读写 | `ChatHistoryService` | `Services/ChatMessageRepository.cs` | — |
 | `Controllers/Api/MessageSearchController.cs` | 消息弹窗检索（未走全文/向量索引） | `MessageSearchController`、`RawSessionLogService` | `Services/RawSessionLogService.cs`、`Services/ChatMessageRepository.cs` | POST /api/messages/search；GrepMessagesAsync 从事件表发现会话、取最多 10,000 条后内存筛日期/子串 |
 | `Services/RawSessionLogService.Fts.cs` | Agent Markdown 日志的 Lucene 搜索 | `RawSessionLogService` | `Services/RawSessionLogService.cs` | 要求 agent 与有界日期范围；查询中按日刷新文件索引；区别于消息弹窗检索 |
+| `Services/RawSessionLogService.cs` | 原始转录及事件的范围查询 | `IRawSessionLogService` | `../PuddingPlatformTests/Services/RawSessionLogTurnTests.cs` | session/turn 在分页前过滤；保留工作区与 Agent 边界；事件重建超过扫描上限明确提示原始事件分页 |
 | `Services/ChatMessageRepository.cs` | 消息仓储与 after-Id 增量扫描 | `ChatMessageRepository` | `Services/ChatMessageSchemaBootstrapper.cs` | ChatMessageRow 透传 WorkspaceId/MessageId/TurnId 与 ContentPartsJson canonical 信封；不因空正文越过纯 typed-parts 消息 |
 | `Services/ChatMessageSchemaBootstrapper.cs` | 存量 SQLite 幂等补列 | `ChatMessageSchemaBootstrapper` | `Services/ChatMessageRepository.cs` | 补 ChatMessages.content_parts_json 列 |
 | `Services/AgentChat/ExecutionRunCoordinator.cs` | 执行前预算与身份冻结 | `ExecutionRunCoordinator`、`CallerLlmSnapshot`、`snapshot.VisionPolicy` | `Services/Snapshot/AgentExecutionSnapshotFactory.cs` | 冻结 WorkUnit 最严预算、deadline 与模型价格；宿主停机先保存输出、释放可恢复租约，不提交取消终态。**2026-10-25**：从入站消息 MetadataJson 读 `reasoningEffort` 写入 `LlmRouteSnapshot.ReasoningEffort`（只透传，合法性由 ReasoningEffortPolicy 裁决） |

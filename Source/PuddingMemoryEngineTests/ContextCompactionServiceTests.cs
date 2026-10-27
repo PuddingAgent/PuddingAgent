@@ -203,15 +203,15 @@ public sealed class ContextCompactionServiceTests
             contextWindowTokens: 1_000_000,
             maxOutputTokens: 384_000);
 
-        // 方案 §2.5：有效输入上限 = 模型窗口 − 实际输出预算 − 安全余量，且与出站硬门禁同源。
+        // 登记能力 384K 被单轮请求上限收敛至 64K；健康水位预留实际申请量。
         Assert.AreEqual(
-            1_000_000 - 384_000 - LlmRequestBudgetGuard.DefaultSafetyBufferTokens,
+            1_000_000 - 64_000 - LlmRequestBudgetGuard.DefaultSafetyBufferTokens,
             health.EffectiveWindowTokens);
         Assert.AreEqual(
             LlmRequestBudgetGuard.DefaultSafetyBufferTokens,
             health.SafetyBufferTokens);
         // 容量给出了真实输出预算 ⇒ 来源可归因到「预留输出 + 安全余量」，不是回退值。
-        Assert.AreEqual(384_000, health.RequestedOutputBudgetTokens);
+        Assert.AreEqual(64_000, health.RequestedOutputBudgetTokens);
         Assert.AreEqual(
             ContextEffectiveWindowSources.OutputReserveAndSafetyMargin,
             health.EffectiveWindowSource);
@@ -233,7 +233,7 @@ public sealed class ContextCompactionServiceTests
         usageStore.Set(new ContextUsageSnapshot
         {
             SessionId = "session-abscap-off",
-            UsedTokens = 492_800,
+            UsedTokens = 800_000,
             Confidence = "estimated",
             Source = "llm_request",
             RecordedAt = DateTimeOffset.UtcNow,
@@ -695,9 +695,9 @@ public sealed class ContextCompactionServiceTests
         var options = CreateOptions(connection);
         await using var db = new MemoryDbContext(options);
         await db.Database.EnsureCreatedAsync();
-        await SeedMessagesAsync(db, "session-good", messageCount: 30);
+        await SeedMessagesAsync(db, "session-good", messageCount: 30, contentPaddingChars: 300);
 
-        // Summary is short — should NOT be skipped
+        // The complete checkpoint (summary plus provenance locator) must shrink the source.
         var shortSummary = "short summary";
 
         var compactionOptions = new ContextCompactionOptions
@@ -722,7 +722,8 @@ public sealed class ContextCompactionServiceTests
         // Assert: compaction was NOT skipped
         Assert.IsFalse(result.SkippedDueToTokenIncrease);
         Assert.IsTrue(result.CompactedMessageCount > 0);
-                Assert.IsFalse(string.IsNullOrWhiteSpace(result.SummaryMessageId));
+        Assert.IsFalse(string.IsNullOrWhiteSpace(result.SummaryMessageId));
+        Assert.IsTrue(result.AfterTokens < result.BeforeTokens);
     }
 
     [TestMethod]

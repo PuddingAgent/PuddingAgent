@@ -1,5 +1,5 @@
 # PuddingCore CodeMAP
-> 源指纹: Source/PuddingCore/**=421-96f5558b0e54 · 条目数: 145 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingCore/**=425-6cb5b4ad0098 · 条目数: 145 · 最近整理: 2026-10-22
 
 > 核心抽象与契约 | 接口 · 模型 · 配置 · 序列化 · Agent 定义
 
@@ -140,6 +140,8 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | `Runtime/LlmInvocationContracts.cs` | 统一 LLM invocation 合同；`Purpose` 以非模型可见方式区分 agent/approval/compaction 计费与诊断 |
 | `Runtime/ContextSummaryMarkers.cs` | 压缩摘要的请求侧标记唯一合同 |
 | `Runtime/ContextCompactionContracts.cs` | 压缩终态、`ContextHealthSnapshot` 与容量预测契约；WarmPrefixSourceMessage 携带完整运行期原文与精确持久 ID |
+| `Abstractions/ICompactionEvidenceReader.cs` | 已提交覆盖清单的只读来源页、原始 Turn ID、旧 checkpoint 引用和归档文本窗口契约 |
+| `Abstractions/IRawSessionLogService.cs` | 原始会话转录/事件查询；支持源会话内精确 Turn ID 过滤，转录及文本搜索结果携带 Turn ID |
 | `Runtime/ContextUsageDisplay.cs` | 上下文用量的**唯一**显示口径投影（用户裁定 2026-10-24）：`ContextUsageDisplayProjection.Project` 纯函数给出 percent / remainingPercent / inputUnavailablePercent / segments；`ContextHealthSnapshot.Display` 由快照自身派生，`ExceedsAutoCompactRatio` 同分母 |
 | `Runtime/SubAgentInvocationContracts.cs` | `ContextCompaction` 独立压缩策略；`ToolExposure` 工具 schema 投递预算（默认 48 个/40 KiB） |
 

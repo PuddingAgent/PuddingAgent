@@ -1148,7 +1148,18 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         var restored = restarted.GetOrCreateHistory(SessionId);
         await restarted.TryHydrateStreamHistoryFromDbAsync(SessionId, restored, 1_000_000, CancellationToken.None);
         Assert.IsTrue(restarted.ResolveDurableSpan(SessionId, restored).AllResolved);
-        Assert.IsTrue(restored.Any(m => m.Content == SummaryResponse));
+        var manifest = await verify.CompactionCoverageManifests.SingleAsync();
+        Assert.IsTrue(restored.Any(m => m.Content == SummaryResponse + CompactionEvidenceLocator.Build(SessionId, manifest.CompactionId)));
+        var evidence = await new CompactionEvidenceReader(factory).ReadSourcesAsync(new(WorkspaceId, SessionId, manifest.CompactionId, "agent-1"));
+        Assert.AreEqual("ok", evidence.Status);
+        var sourceIds = evidence.Sources.Select(s => s.SourceMessageId).ToHashSet();
+        while (evidence.NextOffset is { } offset)
+        {
+            evidence = await new CompactionEvidenceReader(factory).ReadSourcesAsync(new(WorkspaceId, SessionId, manifest.CompactionId, "agent-1", Offset: offset));
+            Assert.AreEqual("ok", evidence.Status);
+            sourceIds.UnionWith(evidence.Sources.Select(s => s.SourceMessageId));
+        }
+        Assert.IsTrue(archives.All(a => sourceIds.Contains(a.MessageId)), "Every archived tool source is reachable across evidence pages.");
         Assert.IsFalse(restored.Any(m => m.Content?.Contains("previous-call") == true), "Archived evidence is not replayed after restart.");
     }
 
@@ -1271,7 +1282,11 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         var restored = restarted.GetOrCreateHistory(SessionId);
         Assert.IsTrue((await restarted.TryHydrateStreamHistoryFromDbAsync(SessionId, restored, 1_000_000, CancellationToken.None)).Succeeded);
         Assert.IsTrue(restarted.ResolveDurableSpan(SessionId, restored).AllResolved);
-        Assert.IsTrue(restored.Any(m => m.Content == SummaryResponse));
+        var latest = await verify.CompactionCoverageManifests.OrderByDescending(m => m.TargetGeneration).FirstAsync();
+        Assert.IsTrue(restored.Any(m => m.Content == SummaryResponse + CompactionEvidenceLocator.Build(SessionId, latest.CompactionId)));
+        var evidence = await new CompactionEvidenceReader(factory).ReadSourcesAsync(new(WorkspaceId, SessionId, latest.CompactionId, "agent-1", Limit: 100));
+        Assert.AreEqual("ok", evidence.Status);
+        Assert.IsTrue(evidence.Sources.Any(s => s.ChildCompactionId is not null), "Repeated compaction retains a path to earlier checkpoints.");
         Assert.IsFalse(restored.Any(m => m.Content?.Contains("batch-0-a") == true));
     }
 

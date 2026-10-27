@@ -85,6 +85,7 @@ public sealed class FlashContextCompactionSummaryGenerator : IContextCompactionS
 要求：
 - 精简、事实化、不输出思维链、不编造。
 - 明确保留用户目标、关键决策、未完成任务、工具结果、约束。
+- 区分用户明确要求、助手建议与工具报告；用户后续纠正优先。区分已完成操作和待办，不推断授权。来源定位由宿主添加，不编造 Turn ID，也不复制旧的 <compaction-evidence> 块。
 - 避免寒暄、重复原文、无关 UI 文本。
 - 控制输出长度在 800-1500 tokens 以内。
 - 对信息不足的章节写"无"或"未检测到"。

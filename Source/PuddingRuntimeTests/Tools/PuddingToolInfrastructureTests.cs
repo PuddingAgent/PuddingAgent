@@ -215,7 +215,7 @@ public sealed partial class PuddingToolInfrastructureTests
             ["manage_memory"] = ["action", "book_id", "library_id", "title", "content", "summary", "chapter_id", "source_type", "source_id", "tags", "chapter_order", "source_reference", "reference_type", "workspace_id"],
             ["grep_memory"] = ["action", "query", "mode", "book", "top_k", "workspace_id"],
             ["query_sessions"] = ["action", "session_id", "before", "limit"],
-            ["query_session_logs"] = ["action", "workspace_id", "agent_instance_id", "day", "from_day", "to_day", "session_id", "query", "regex", "diagnostic", "include_events", "after_sequence", "page", "window_size", "limit"],
+            ["query_session_logs"] = ["action", "workspace_id", "agent_instance_id", "day", "from_day", "to_day", "session_id", "turn_id", "before", "compaction_id", "source_message_id", "offset", "query", "regex", "diagnostic", "include_events", "after_sequence", "page", "window_size", "limit", "fts", "mode", "message_id", "exclude_heartbeat"],
             ["search_grep"] = ["query", "pattern", "case_sensitive", "max_results"],
             ["spawn_sub_agent"] = ["task", "tasks", "question", "scope", "already_known", "effort", "stop_condition", "output", "agent_template", "sync", "model", "resume_sub_agent_id", "tools", "permission_mode", "plan_id", "task_node_id", "parent_task_node_id", "depth", "max_depth", "role_in_plan"],
             ["send_message"] = ["to", "content", "audience", "visibility", "room_id", "priority", "reply_to_message_id"],

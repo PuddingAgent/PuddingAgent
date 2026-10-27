@@ -239,7 +239,8 @@ public sealed partial class AgentExecutionService
                 sourceGeneration: sourceGeneration,
                 providerId: request.LlmProfile?.ProviderId,
                 maxRequestTextBytes: LlmRequestTextBudget.ResolveLimit(request),
-                textTriggerRatio: forcePreparation ? .05 : thresholds.Prepare, enforceTarget: forcePreparation)
+                textTriggerRatio: forcePreparation ? .05 : thresholds.Prepare, enforceTarget: forcePreparation,
+                evidenceLocator: CompactionEvidenceLocator.Build(request.SessionId, warmPrefixCompactionId))
             || plan is null)
         {
             return WarmPrefixCompactionOutcome.NotNeeded;
@@ -660,7 +661,7 @@ public sealed partial class AgentExecutionService
                                 CompactionId: warmPrefixCompactionId,
                                 ExpectedSourceGeneration: sourceGeneration,
                                 CoveredMessageIds: spanResolution.MessageIds,
-                                Summary: safeSummary,
+                                Summary: WarmPrefixCompaction.WithEvidence(plan, safeSummary),
                                 MessagesBefore: plan.InitialMessageCount,
                                 MessagesAfter: verification.AppliedMessages!.Count,
                                 TokensBefore: plan.InitialUsedTokens,

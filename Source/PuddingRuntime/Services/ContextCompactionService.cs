@@ -982,6 +982,9 @@ public sealed class ContextCompactionService : IContextCompactionService
         if (string.IsNullOrWhiteSpace(summary))
             throw new InvalidOperationException("Context compaction summary generator returned an empty summary.");
         summary = ApplySummaryInputNotice(summary, summaryInput);
+        // This locator is deterministic and is measured/persisted with the summary. The
+        // existing transaction publishes its coverage manifest before it becomes visible.
+        summary += CompactionEvidenceLocator.Build(request.SessionId, compactionId);
         var summaryMs = sw.ElapsedMilliseconds - summaryStart;
         _logger.LogInformation(
             "[ContextCompaction:Phase] generateSummary session={SessionId} summaryLen={SummaryLen} elapsedMs={ElapsedMs}",

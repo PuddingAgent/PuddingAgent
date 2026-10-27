@@ -1,6 +1,6 @@
 # PuddingRuntime CodeMAP
 
-> 源指纹: Source/PuddingRuntime/**=372-db2696cfc9e3 · 条目数: 353 · 最近整理: 2026-10-24
+> 源指纹: Source/PuddingRuntime/**=379-3e429d6eb496 · 条目数: 353 · 最近整理: 2026-10-24
 > 定位：Agent 运行时核心（Agent Loop / LLM 调用 / 工具系统 / 上下文管线 / 子代理 / 后台学习）；.NET 10 类库，唯一服务注册入口 `DependencyInjection.cs`。
 > 本文件只做本项目文件级索引；跨项目调用链、测试工程索引、架构文档索引、运行时目录与构建入口只在根 [`code_map.md`](../../code_map.md)。
 > 每对象一行；空字段写 `—`。角色 `observe` 的对象只在文末附录列路径。
@@ -94,6 +94,8 @@
 | `Services/CanonicalChatTranscriptSynchronizer.cs` | 平台转录到记忆库的增量镜像 | `CanonicalChatTranscriptSynchronizer` | `../PuddingMemoryEngine/` | 高水位持久化加分页幂等，可重复执行 |
 | `Services/CompactionCoordinator.cs` | 会话压缩的单飞锁与冷却限流 | `CompactionCoordinator` | `Services/ContextCompactionService.cs` | — |
 | `Services/CompactionCoverageFilter.cs` | 压缩覆盖集合的加载与片段过滤 | `CompactionCoverageFilter` | `Services/ContextCompactionService.cs` | 清单缺失或非法时按无覆盖处理 |
+| `Services/CompactionEvidenceReader.cs` | 已提交覆盖清单的分页回查 | `ICompactionEvidenceReader` | `../PuddingRuntimeTests/Services/CompactionEvidenceReaderTests.cs` | 工作区/会话/Agent 范围校验；canonical Turn ID、旧摘要清单与原文窗口；缺失/损坏显式返回 |
+| `Services/CompactionEvidenceLocator.cs` | 宿主生成的固定大小摘要来源定位块 | `CompactionEvidenceLocator` | `Services/WarmPrefixCompaction.cs` | 自动与手动摘要共同使用；事前预留、事后完整计量；不依赖模型生成 ID |
 | `Services/CompositeContextCompactionSummaryGenerator.cs` | 组合式压缩摘要生成器 | `CompositeContextCompactionSummaryGenerator` | `Services/AgentContextCompactionSummaryGenerator.cs` | — |
 | `Services/CompositionRecoveryService.cs` | 由持久化 Composition 水合工具集合 | `CompositionRecoveryService` | `Services/PersistentCompositionVersionRegistry.cs` | 恢复失败须显式报出，不得静默降级为空集合 |
 | `Services/CompositionSnapshot.cs` | 逐请求的提示词与工具投影哈希归因 | `CompositionSnapshot` | `Services/SqliteCompositionStore.cs` | — |
@@ -402,7 +404,7 @@
 | `Tools/BuiltIns/Search/ZhihuGlobalSearchTool.cs` | `zhihu_global_search`：全网检索 | `ZhihuGlobalSearchTool` | `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | — |
 | `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | 知乎检索的共享配置与渲染 | `ZhihuSearchShared` | `Tools/BuiltIns/Search/ZhihuSearchTool.cs` | — |
 | `Tools/BuiltIns/Search/ZhihuSearchTool.cs` | `zhihu_search`：知乎站内检索 | `ZhihuSearchTool` | `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | — |
-| `Tools/BuiltIns/Sessions/QuerySessionLogsTool.cs` | `query_session_logs`：原始会话日志检索 | `QuerySessionLogsTool` | `Services/SessionArchiver.cs` | — |
+| `Tools/BuiltIns/Sessions/QuerySessionLogsTool.cs` | `query_session_logs`：原始转录、精确 Turn 和压缩来源回查 | `QuerySessionLogsTool` | `Services/CompactionEvidenceReader.cs` | 转录窗口保留筛选条件；归档原文需 diagnostic=true；强类型参数是各调用入口 schema 的共同来源 |
 | `Tools/BuiltIns/Sessions/QuerySessionsTool.cs` | `query_sessions`：会话消息转录查询 | `QuerySessionsTool` | `Tools/BuiltIns/Sessions/QuerySessionLogsTool.cs` | — |
 | `Tools/BuiltIns/Shell/HostShellExecutor.cs` | 宿主命令的直执行与输出收集 | `HostShellExecutor` | `Services/TerminalSecurity.cs` | CMD 保留原始引号；PowerShell 拒绝 cd /d 前缀并指明修正参数 |
 | `Tools/BuiltIns/Shell/HostShellTool.cs` | `shell`：短命令的宿主执行 | `HostShellTool` | `Tools/BuiltIns/Shell/HostShellExecutor.cs` | — |

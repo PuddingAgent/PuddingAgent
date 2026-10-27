@@ -43,7 +43,8 @@ public interface IRawSessionLogService
         string? agentInstanceId = null,
         long? before = null,
         int limit = 20,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        string? turnId = null);
 
     /// <summary>按 sequence 游标读取指定会话的原始事件。</summary>
     Task<RawSessionLogReadResult> ReadSessionAsync(
@@ -52,7 +53,8 @@ public interface IRawSessionLogService
         long? afterSequence = null,
         int limit = 100,
         string? agentInstanceId = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        string? turnId = null);
 
     /// <summary>按消息ID查询单条消息（ChatMessages.Id）。</summary>
     Task<RawSessionLogMessage?> GetMessageByIdAsync(
@@ -123,7 +125,8 @@ public sealed record RawSessionLogMatch(
     string RecordedAt,
     string Snippet,
     string EvidenceRef,
-    string? FullContent = null);
+    string? FullContent = null,
+    string? TurnId = null);
 
 /// <summary>面向 Agent 的会话消息转录页。</summary>
 public sealed record RawSessionLogMessagePage(
@@ -140,7 +143,8 @@ public sealed record RawSessionLogMessage(
     string Content,
     string CreatedAt,
     string EvidenceRef,
-    string EventType = "message");
+    string EventType = "message",
+    string? TurnId = null);
 
 /// <summary>原始会话事件读取结果。</summary>
 public sealed record RawSessionLogReadResult(

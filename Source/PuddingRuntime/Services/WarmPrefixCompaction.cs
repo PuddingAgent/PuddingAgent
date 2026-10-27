@@ -16,12 +16,12 @@ internal static class WarmPrefixCompaction
 {
     internal const string CheckpointPreamble =
         "This is an automatically generated checkpoint condensing an earlier span of the conversation " +
-        "to free up context. Treat the captured context as established background and build on it " +
+        "to free up context. Treat it as lossy historical evidence, check later corrections, and build on it " +
         "without restating it. Continue the task directly from the messages that follow, without " +
         "acknowledging this checkpoint.";
 
     internal const string SummaryInstruction = """
-        You are now acting as a compaction engine for this AI coding assistant. Condense the conversation ABOVE into a structured checkpoint that lets the same model resume the work with no loss of essential context.
+        You are a compaction engine for a general-purpose assistant. Condense the conversation ABOVE into a structured checkpoint that lets the same model resume work. Preserve non-coding tasks just as carefully as coding tasks.
 
         Output EXACTLY the Markdown structure below. Keep every section in order, use terse bullets, and write "(none)" for an empty section.
 
@@ -35,6 +35,7 @@ internal static class WarmPrefixCompaction
         ## Critical Context
 
         Preserve exact file paths, commands, error strings, identifiers, numeric values, function signatures, user corrections, and safety constraints. Merge any prior <compacted-summary> instead of copying it verbatim. Do not continue the task, call tools, mention this request, or output anything outside the checkpoint Markdown.
+        Distinguish explicit user requirements from assistant proposals, tool output and unverified claims. Later user corrections supersede earlier statements. Preserve completed versus pending operations; do not turn a past tool action into a new task. Mark uncertainty instead of inventing missing detail. Evidence locators are supplied by the host; never invent Turn IDs or copy nested <compaction-evidence> blocks into the summary.
         """;
 
     internal static bool TryCreatePlan(
@@ -58,7 +59,8 @@ internal static class WarmPrefixCompaction
         string? providerId = null,
         int maxRequestTextBytes = 0,
         double textTriggerRatio = 1.0,
-        bool enforceTarget = false)
+        bool enforceTarget = false,
+        string evidenceLocator = "")
     {
         ArgumentNullException.ThrowIfNull(usageStore);
         ArgumentNullException.ThrowIfNull(durableHistory);
@@ -78,7 +80,8 @@ internal static class WarmPrefixCompaction
             usageStore.MeasureLlmRequest(sessionId, [message], null, config?.ModelId).UsedTokens,
             LlmRequestTextBudget.MeasureMessage(message), message.ToolCalls?.Select(call => call.Id).ToArray(),
             message.ToolCallId)).ToArray();
-        var wrapper = CreateCheckpointMessage("");
+        // Reserve the host-generated recovery link before selecting a span or budgeting the model.
+        var wrapper = CreateCheckpointMessage(evidenceLocator);
         var selection = ContextCandidateSelector.Select(shapes,
             Math.Max(0, initial.UsedTokens - shapes.Sum(m => m.TokenEstimate)),
             ContextCapacityArithmetic.Resolve(new ContextCapacityInputs(limit)),
@@ -127,7 +130,8 @@ internal static class WarmPrefixCompaction
             SourceGeneration: sourceGeneration,
             InitialTextBytes: initialBytes,
             MaxRequestTextBytes: maxRequestTextBytes,
-            SummaryAllowance: allowance);
+            SummaryAllowance: allowance,
+            EvidenceLocator: evidenceLocator);
         return true;
     }
 
@@ -138,6 +142,9 @@ internal static class WarmPrefixCompaction
 
     private static ChatMessage CreateCheckpointMessage(string summary) => ChatMessage.ContextSummary(
         $"{CheckpointPreamble}\n\n{ContextSummaryMarkers.WarmPrefixCheckpoint}\n{summary}\n</compacted-summary>");
+
+    internal static string WithEvidence(WarmPrefixCompactionPlan plan, string summary) =>
+        summary.Trim() + plan.EvidenceLocator;
 
     internal static IReadOnlyList<ChatMessage>? TryCreateCheckpoint(
         WarmPrefixCompactionPlan plan,
@@ -151,7 +158,7 @@ internal static class WarmPrefixCompaction
         if (summaryTokens <= 0 || summaryTokens >= plan.RemovedTokenEstimate)
             return null;
 
-        var checkpoint = CreateCheckpointMessage(summary);
+        var checkpoint = CreateCheckpointMessage(WithEvidence(plan, summary));
         var result = plan.RetainedMessages.ToList();
         result.Insert(plan.ReplacementStart, checkpoint);
         return result;
@@ -267,9 +274,10 @@ internal static class WarmPrefixCompaction
             0,
             plan.InitialUsedTokens - plan.EstimatedRetainedSnapshot.UsedTokens);
         var summaryTokens = ContextUsageSnapshotStore.CountTokens(rawSummary?.Trim() ?? string.Empty);
-        var calibratedSummary = (int)Math.Min(
-            int.MaxValue,
-            Math.Ceiling(summaryTokens * Math.Max(1.0, plan.InitialSnapshot.PromptCalibrationRatio)));
+        // Measure the complete replacement, including wrappers and the evidence locator;
+        // raw model text alone would overstate reclaimed capacity.
+        var calibratedSummary = Math.Max(0,
+            afterSnapshot.UsedTokens - plan.EstimatedRetainedSnapshot.UsedTokens);
         var admission = ContextNetGainAdmission.Evaluate(new NetGainInputs(
             InitialUsedTokens: plan.InitialUsedTokens,
             RemovedTokens: calibratedRemovedSpan,
@@ -499,7 +507,8 @@ internal sealed record WarmPrefixCompactionPlan(
     long SourceGeneration = 0,
     long InitialTextBytes = 0,
     int MaxRequestTextBytes = 0,
-    ContextSummaryAllowance? SummaryAllowance = null)
+    ContextSummaryAllowance? SummaryAllowance = null,
+    string EvidenceLocator = "")
 {
     /// <summary>
     /// 本次请求是否**真的**越过硬输入边界（估算输入 &gt; 有效输入上限，两侧同源：模型窗口 − 实际输出预算 − 安全余量，
