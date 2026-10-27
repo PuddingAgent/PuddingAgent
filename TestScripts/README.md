@@ -1032,3 +1032,64 @@ C-5 复扫: BOM 6→7, NONASCII_NO_BOM 2→1, MOJIBAKE_RISK 1→0
 ```
 
 ⇒ C-5 的失败原因**收窄为唯一一类**：5 个 `#requires -Version 7.0`（本机无 PS 7）。
+
+## 提交前测试门禁（2026-10-27）
+
+### 为什么有这个门禁
+
+commit `967da97`（压缩心跳契约文案）当时唯一的证据是 `dotnet build` exit 0。构建是绿的，
+因为改动本身能编译；但既有测试 `HeartbeatPromptComposerTests`（自 `5199baf` 起就在仓库里）
+被这次改动破坏，直到下一个会话才被发现。
+
+工具层指标同样抓不到：`file_write` / `git_commit` / `dotnet build` 全部报成功，因为它们
+衡量的是"有没有抛错"，不是"内容是否仍然正确"。
+
+### 它做什么
+
+```powershell
+pwsh -File TestScripts\check-staged-tests.ps1              # 检查已暂存的 C# 改动
+pwsh -File TestScripts\check-staged-tests.ps1 -ListOnly    # 只看选中了哪些工程/过滤条件
+pwsh -File TestScripts\check-staged-tests.ps1 -IncludeAllChanged   # CI 用：看全部改动
+```
+
+1. 取 `git diff --cached` 里的 `.cs` 文件；
+2. 从每个文件里抽取声明的类型名（`class` / `record` / `interface` / `struct` / `enum`）；
+3. 在 `Tests/**/*Tests.csproj` 的源码里找提到这些类型的工程，用 `--filter FullyQualifiedName~类型名` 只跑相关测试类；
+4. 用 TRX logger 读结果（不解析控制台文本：Theory 失败会打印 `...Anchors(anchor: "x") [FAIL]`，`\S+` 会误解析）；
+5. 失败名不在基线里 ⇒ **阻断提交**。
+
+### 基线是 ratchet，不是"全绿"
+
+本仓库当前有 **5 个既有失败**（全在 `BrowserBridge`，实测 2026-10-27 / HEAD `51a84e3` / 共 396 个测试）。
+要求全绿的门禁会永远红着，然后被人用 `--no-verify` 绕过——那比没有门禁更糟。
+
+所以基线写在 `TestScripts/staged-test-baseline.json`：**只允许删（修好了就删），不允许随手加**。
+新增基线项必须带日期与理由。
+
+### 已知局限（写在明处）
+
+这是**快速第一道闸**，不是全量回归的替代品：
+
+- 如果一次改动破坏的测试**从不提及**被改的类型名，本门禁抓不到；
+- 选中为空时门禁会打印 `uncovered changed file(s)` 警告并放行，不会假装检查过。
+
+### 安装
+
+pre-commit hook 在 `.git/hooks/`，**不受版本控制**，每个 clone 装一次：
+
+```powershell
+pwsh -File TestScripts\install-git-hooks.ps1     # 安装
+pwsh -File TestScripts\install-git-hooks.ps1 -Remove
+```
+
+### 验证记录（三份证据）
+
+| 场景 | 结果 |
+|---|---|
+| 注入真实回归（契约 `work_summary` -> `workSummary`） | `NEW FAILURE` -> `BLOCKED` -> exit 1 |
+| 改动命中既有失败（`BrowserSnapshotTool`，滤出 2 个已知失败） | `tolerated (baseline)` x2 -> exit 0 |
+| 工作树无 C# 改动 | `no changed C# files` -> exit 0 |
+
+> 环境坑：在 cmd 里写 `pwsh -File x.ps1 *>> log.txt` 是**无效**的。cmd 不认 `*>>`，
+> 会把 `*` 当成脚本的参数传进去（`$BaselinePath` 变成通配符 `*`，`Get-Content '*'` 撞上目录）。
+> 重定向必须写进 `-Command` 字符串里。

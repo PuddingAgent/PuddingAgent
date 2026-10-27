@@ -1,0 +1,18 @@
+{
+  "note": "Known-failing tests tolerated by TestScripts/check-staged-tests.ps1. Ratchet: entries may only be REMOVED (when fixed), never added without a dated reason. Measured by a full `dotnet test Tests/PuddingHost.Tests --no-restore` run.",
+  "measuredAtUtc": "2026-10-27T09:26:00Z",
+  "measuredAtCommit": "51a84e3",
+  "measuredTotals": {
+    "project": "Tests/PuddingHost.Tests/PuddingHost.Tests.csproj",
+    "total": 396,
+    "passed": 391,
+    "failed": 5
+  },
+  "knownFailures": [
+    "PuddingHost.Tests.BrowserBridge.BrowserBridgeServiceCollectionExtensionsTests.DesktopChild_RegistersRemoteRuntimeAndAllBrowserTools",
+    "PuddingHost.Tests.BrowserBridge.ConfiguredAgentBrowserSnapshotPolicyExecutionTests.ConfiguredAgent_BrowserSnapshotTool_TraversesPolicyExecutionAndAuthenticatedBridge",
+    "PuddingHost.Tests.BrowserBridge.BrowserAgentToolBridgeIntegrationTests.PreviewDocumentTool_IsDiscoveredAndFailsHonestlyWithoutCapabilityChannel",
+    "PuddingHost.Tests.BrowserBridge.BrowserAgentToolBridgeIntegrationTests.BrowserContextTool_TraversesAuthenticatedBridgeAndReturnsDesktopResult",
+    "PuddingHost.Tests.BrowserBridge.BrowserAgentToolBridgeIntegrationTests.BrowserSnapshotTool_TraversesAuthenticatedBridgeAndReturnsVersionedRefs"
+  ]
+}
