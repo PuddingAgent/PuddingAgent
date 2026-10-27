@@ -530,6 +530,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddHostedService(sp => sp.GetRequiredService<StorageInventorySampler>());
         builder.Services.AddSingleton<StorageMaintenanceJobStore>();
         builder.Services.AddSingleton<StorageCleanupExecutor>();
+        // 自动清理试运行：只算候选/数行/写日志，不持有作业存储（“不建作业”由构造保证）
+        builder.Services.AddSingleton<StorageAutomaticCleanupDryRun>();
         builder.Services.AddSingleton<StorageMaintenanceCoordinator>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<StorageMaintenanceCoordinator>());
         builder.Services.AddSingleton<IStorageDerivedTargetHandler, CodeIndexScopeCleanupHandler>();
