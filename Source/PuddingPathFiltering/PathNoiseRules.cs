@@ -60,13 +60,45 @@ public static class PathNoiseRules
         "desktop.ini",
     };
 
+    /// <summary>
+    /// 噪声**目录名后缀**（按路径段后缀匹配，忽略大小写）。
+    /// <para>
+    /// 为什么需要后缀规则：本仓库的原子写会创建形如
+    /// <c>.&lt;名字&gt;.&lt;pid&gt;.&lt;guid&gt;.tmpdir</c> 的目录，名字里带随机段，
+    /// <b>无法用精确名单命中</b>。2026-10-28 实测：code index 的重试表里有 2,261 条这样的路径，
+    /// 被当成源文件索引、随后消失，进入永久重试（且确定性不会成功）。
+    /// 2026-10-02 的高磁盘读取诊断也把 <c>*.tmpdir</c> 记为噪声来源。
+    /// </para>
+    /// <para>
+    /// 与 <see cref="DirectoryNames"/> 的「段名精确匹配」是两条不同的规则，**不可互相替代**：
+    /// 精确名单拦不住带随机后缀的名字，后缀规则也不应该去匹配文件扩展名
+    /// （<c>foo.tmpdir.cs</c> 不是噪声）。
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<string> SegmentSuffixes { get; } = [".tmpdir"];
+
     /// <summary>单个目录名/文件名是否为噪声名（与深度无关，供只能拿到裸名字的遍历器使用）。</summary>
     public static bool IsNoiseSegment(string? name)
     {
         if (string.IsNullOrEmpty(name))
             return false;
 
-        return DirectoryNames.Contains(name) || FileNames.Contains(name);
+        return DirectoryNames.Contains(name) || FileNames.Contains(name) || HasNoiseSuffix(name);
+    }
+
+    /// <summary>
+    /// 段名是否以某个噪声后缀结尾（忽略大小写）。
+    /// 用 EndsWith 而不是 Contains：<c>foo.tmpdir.cs</c> 这类把后缀写在中间的普通文件不得被误伤。
+    /// </summary>
+    private static bool HasNoiseSuffix(string name)
+    {
+        foreach (var suffix in SegmentSuffixes)
+        {
+            if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -113,7 +145,7 @@ public static class PathNoiseRules
 
         foreach (var segment in normalized.Split('/', StringSplitOptions.RemoveEmptyEntries))
         {
-            if (DirectoryNames.Contains(segment) || FileNames.Contains(segment))
+            if (IsNoiseSegment(segment))
                 return true;
         }
 

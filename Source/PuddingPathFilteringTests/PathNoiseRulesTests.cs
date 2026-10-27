@@ -21,6 +21,34 @@ public sealed class PathNoiseRulesTests
     }
 
     [TestMethod]
+    public void Atomic_write_temp_directories_are_noise_on_every_entry_point()
+    {
+        // 真实形态（2026-10-28 从 code index 重试表取到的样例）：名字带 pid 与 guid，精确名单命中不了。
+        const string segment = ".PuddingCore.csproj.14388.606dcc67-68bd-412c-a128-7752d159941f.tmpdir";
+
+        Assert.IsTrue(PathNoiseRules.IsNoiseSegment(segment), "裸名字判定也得拦住");
+        Assert.IsTrue(PathNoiseRules.IsNoisePath($"Source/PuddingCore/{segment}/file.cs"), "相对路径判定也得拦住");
+        Assert.IsTrue(
+            PathNoiseRules.IsNoisePathBelow("D:/repo", $"D:/repo/Source/PuddingCore/{segment}"),
+            "绝对路径折算后也得拦住");
+    }
+
+    [TestMethod]
+    public void Suffix_rule_does_not_widen_to_ordinary_files()
+    {
+        // 后缀写在中间的普通文件不得被误伤：规则必须是 EndsWith 而不是 Contains。
+        Assert.IsFalse(PathNoiseRules.IsNoiseSegment("foo.tmpdir.cs"), "普通源文件不能被当成噪声");
+        Assert.IsFalse(PathNoiseRules.IsNoisePath("Source/foo.tmpdir.cs"));
+
+        // 也不得退化成「名字里含 tmpdir」的宽匹配。
+        Assert.IsFalse(PathNoiseRules.IsNoiseSegment("tmpdir"));
+        Assert.IsFalse(PathNoiseRules.IsNoiseSegment("tmpdir-notes.md"));
+
+        // 真正的原子写目录仍然命中（反向对照，防止规则被改没了还全绿）。
+        Assert.IsTrue(PathNoiseRules.IsNoiseSegment("x.tmpdir"));
+    }
+
+    [TestMethod]
     public void Union_of_the_three_documented_rule_sets_is_covered()
     {
         // ADR-089 §2.2 记录的三套现存清单的并集（NoiseDirectoryRules.Segments 的 46 项）必须仍在册，
