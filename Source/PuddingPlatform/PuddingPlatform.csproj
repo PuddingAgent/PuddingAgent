@@ -26,6 +26,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 单测直接验证 internal 纯函数（沿用 PuddingRuntime.csproj 的同约定）。 -->
+    <InternalsVisibleTo Include="PuddingPlatformTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
     <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
     <ProjectReference Include="..\PuddingFullTextIndex\PuddingFullTextIndex.csproj" />
