@@ -1419,7 +1419,7 @@ public sealed partial class AgentExecutionService
                 .Take(8)
                 .Select(pair => $"{pair.Key}:{pair.Value}");
             _logger.LogInformation(
-                "[AgentExec:ToolExposure] Budgeted tool surface session={Session} available={Available} visible={Visible} evicted={Evicted} visibleSchemaBytes={VisibleBytes} maxVisibleTools={MaxTools} maxVisibleToolBytes={MaxBytes} budgetApplied={BudgetApplied} evictedTools={EvictedTools} topTools={TopTools}",
+                "[AgentExec:ToolExposure] Budgeted tool surface session={Session} available={Available} visible={Visible} evicted={Evicted} visibleSchemaBytes={VisibleBytes} maxVisibleTools={MaxTools} maxVisibleToolBytes={MaxBytes} budgetApplied={BudgetApplied} budgetDeferred={BudgetDeferred} evictedTools={EvictedTools} topTools={TopTools}",
                 request.SessionId,
                 manifest.ExposurePlan.AvailableToolCount,
                 manifest.VisibleTools.Count,
@@ -1428,6 +1428,7 @@ public sealed partial class AgentExecutionService
                 exposureBudget.Value.MaxVisibleTools,
                 exposureBudget.Value.MaxVisibleToolBytes,
                 manifest.ExposurePlan.BudgetApplied,
+                manifest.ExposurePlan.BudgetDeferred,
                 SummarizeToolNames(manifest.ExposurePlan.EvictedToolIds ?? []),
                 string.Join(",", topToolBytes));
         }

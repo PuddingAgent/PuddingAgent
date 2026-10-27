@@ -121,6 +121,92 @@ public sealed class ToolExposureStableAppendTests
             "当前实现会破坏前缀关系；若此断言失败说明已改成 append-only（方案 B），请按新语义改写本测试");
     }
 
+    /// <summary>
+    /// S2（2026-10-27）：开启 EvictOnlyAtSessionStart 后，会话内（已有上一轮可见集）不再淘汰。
+    /// 这是把前缀从「可以变短」变成「只能变长」的那个开关。
+    /// </summary>
+    [TestMethod]
+    public void EvictOnlyAtSessionStart_MidSession_DoesNotEvict_AndReportsDeferred()
+    {
+        var catalog = Catalog();
+        var previous = VisibleSelection();
+
+        var plan = ToolExposurePlanner.CreatePlan(
+            catalog,
+            loadedToolIds: previous.ToHashSet(StringComparer.OrdinalIgnoreCase),
+            previousVisibleToolIds: previous,
+            budget: new ToolExposurePlanner.ToolExposureBudget(
+                MaxVisibleTools: 8, EvictOnlyAtSessionStart: true),
+            toolUsageRecency: RecencyFavouringLaterTools());
+
+        Assert.IsTrue(plan.BudgetDeferred, "会话内应报告「预算已推迟」而不是静默跳过");
+        Assert.IsFalse(plan.BudgetApplied, "推迟即未应用淘汰");
+        Assert.AreEqual(0, plan.EvictedToolCount, "会话内不得从可见集里删掉任何东西");
+        Assert.AreEqual(previous.Count, plan.VisibleTools.Count,
+            "可见集应保持上一轮的完整集合（此处 12 个 > 预算 8）");
+        CollectionAssert.AreEquivalent(
+            previous.ToArray(),
+            plan.VisibleTools.Select(tool => tool.Name).ToArray(),
+            "集合必须一致——少一个就意味着前缀被挖了洞");
+        Assert.IsTrue(plan.VisibleToolBytes > 0);
+    }
+
+    /// <summary>会话首个计划（没有上一轮可见集）仍应正常淘汰，把预算在会话边界上执行到底。</summary>
+    [TestMethod]
+    public void EvictOnlyAtSessionStart_FirstPlanOfSession_StillEvicts()
+    {
+        var catalog = Catalog();
+
+        var plan = ToolExposurePlanner.CreatePlan(
+            catalog,
+            loadedToolIds: VisibleSelection().ToHashSet(StringComparer.OrdinalIgnoreCase),
+            previousVisibleToolIds: null,
+            budget: new ToolExposurePlanner.ToolExposureBudget(
+                MaxVisibleTools: 8, EvictOnlyAtSessionStart: true),
+            toolUsageRecency: RecencyFavouringLaterTools());
+
+        Assert.IsTrue(plan.BudgetApplied, "会话起点必须真正执行预算");
+        Assert.IsFalse(plan.BudgetDeferred);
+        Assert.AreEqual(8, plan.VisibleTools.Count);
+        Assert.IsTrue(plan.EvictedToolCount > 0);
+    }
+
+    /// <summary>未开启开关时，行为必须与改动前逐字一致（默认值不变是回滚的前提）。</summary>
+    [TestMethod]
+    public void WithoutFlag_MidSession_StillEvicts_AndNeverReportsDeferred()
+    {
+        var catalog = Catalog();
+        var previous = VisibleSelection();
+
+        var plan = ToolExposurePlanner.CreatePlan(
+            catalog,
+            loadedToolIds: previous.ToHashSet(StringComparer.OrdinalIgnoreCase),
+            previousVisibleToolIds: previous,
+            budget: new ToolExposurePlanner.ToolExposureBudget(MaxVisibleTools: 8),
+            toolUsageRecency: RecencyFavouringLaterTools());
+
+        Assert.IsTrue(plan.BudgetApplied);
+        Assert.IsFalse(plan.BudgetDeferred, "未开开关时不得报告推迟");
+        Assert.AreEqual(8, plan.VisibleTools.Count);
+        Assert.IsTrue(plan.EvictedToolCount > 0);
+    }
+
+    private static List<string> VisibleSelection()
+    {
+        var names = new List<string> { "search_tools", "goal_read" };
+        names.AddRange(Enumerable.Range(0, 10).Select(index => $"deferred_{index:00}"));
+        return names;
+    }
+
+    /// <summary>越靠后的工具越“最近使用”，因此不推迟时预算会优先砍掉前面的。</summary>
+    private static Dictionary<string, long> RecencyFavouringLaterTools()
+    {
+        var recency = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 4; index < 10; index++)
+            recency[$"deferred_{index:00}"] = 100 + index;
+        return recency;
+    }
+
     private static List<LlmToolDefinition> Catalog()
     {
         // deferred_loading 阈值是 24，故必须给足工具数，否则预算路径不会被启用。

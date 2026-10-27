@@ -389,6 +389,20 @@ public sealed record ToolExposureOptions
     public bool Enabled { get; init; } = true;
     public int MaxVisibleTools { get; init; } = DefaultMaxVisibleTools;
     public long MaxVisibleToolBytes { get; init; } = DefaultMaxVisibleToolBytes;
+
+    /// <summary>
+    /// 只在会话起点（首个曝光计划）收缩可见集，会话内不淘汰（S2，2026-10-27）。
+    /// <para>
+    /// 默认 false = 保持既有行为（每轮按预算淘汰）。置 true 后，一旦有了上一轮可见集就跳过淘汰：
+    /// 淘汰会从列表中间删掉元素，使其后所有 token 错位，前缀缓存从该点起全部失效；
+    /// 把这笔收缩推迟到会话边界，前缀就变成单调增长。
+    /// </para>
+    /// <para>
+    /// 代价：长会话内可见 schema 可能超过本预算。超限不会静默——计划里的
+    /// <c>BudgetDeferred</c> 与 <c>VisibleToolBytes</c> 会如实上报。
+    /// </para>
+    /// </summary>
+    public bool EvictOnlyAtSessionStart { get; init; }
 }
 
 /// <summary>Ratios are applied to the registered model window; absolute input/upload limits remain independent.</summary>

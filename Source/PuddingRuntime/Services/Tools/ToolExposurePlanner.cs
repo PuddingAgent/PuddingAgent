@@ -30,7 +30,10 @@ internal static class ToolExposurePlanner
     /// 单次请求可见工具预算（含核心工具）。0 = 该轴不限制。
     /// 核心工具永不淘汰；被淘汰的非核心工具仍留在 catalog，可被 <c>search_tools</c> 重新加载。
     /// </summary>
-    internal readonly record struct ToolExposureBudget(int MaxVisibleTools = 0, long MaxVisibleToolBytes = 0)
+    internal readonly record struct ToolExposureBudget(
+        int MaxVisibleTools = 0,
+        long MaxVisibleToolBytes = 0,
+        bool EvictOnlyAtSessionStart = false)
     {
         internal bool IsEffective => MaxVisibleTools > 0 || MaxVisibleToolBytes > 0;
     }
@@ -45,7 +48,9 @@ internal static class ToolExposurePlanner
 
         var maxTools = Math.Max(0, options.MaxVisibleTools);
         var maxBytes = Math.Max(0, options.MaxVisibleToolBytes);
-        return maxTools == 0 && maxBytes == 0 ? null : new ToolExposureBudget(maxTools, maxBytes);
+        return maxTools == 0 && maxBytes == 0
+            ? null
+            : new ToolExposureBudget(maxTools, maxBytes, options.EvictOnlyAtSessionStart);
     }
 
     /// <summary>曝光排序策略标识：稳定追加序（既有项相对顺序不变，新增项只追加到末尾）。</summary>
@@ -155,13 +160,23 @@ internal static class ToolExposurePlanner
 
         IReadOnlyList<LlmToolDefinition> evictedTools = Array.Empty<LlmToolDefinition>();
         var budgetApplied = false;
+        var budgetDeferred = false;
         // 预算是「投递面」上限而不是权限收缩：只在有 search_tools 恢复路径时启用淘汰，
         // 否则被淘汰的工具将永久不可达。
         if (deferredLoadingEnabled && budget is { IsEffective: true })
         {
-            visible = ApplyBudget(visible, previousVisibleToolIds, toolUsageRecency, budget.Value, out var evicted);
-            evictedTools = evicted;
-            budgetApplied = true;
+            // 会话内 append-only（S2，2026-10-27）：已有上一轮可见集时跳过淘汰。
+            // 淘汰会从列表中间删掉元素，使其后所有 token 错位，前缀缓存从该点起全部失效。
+            // 把这次收缩推到会话边界（首个计划，previousVisibleToolIds 为空）再做，前缀就只增长。
+            // 代价是会话内可见 schema 可能超过预算——用 BudgetDeferred + VisibleToolBytes 如实上报，不静默。
+            budgetDeferred = budget.Value.EvictOnlyAtSessionStart
+                && previousVisibleToolIds is { Count: > 0 };
+            if (!budgetDeferred)
+            {
+                visible = ApplyBudget(visible, previousVisibleToolIds, toolUsageRecency, budget.Value, out var evicted);
+                evictedTools = evicted;
+                budgetApplied = true;
+            }
         }
 
         return BuildPlan(
@@ -172,7 +187,8 @@ internal static class ToolExposurePlanner
             epoch,
             availableIds,
             evictedTools,
-            budgetApplied);
+            budgetApplied,
+            budgetDeferred);
     }
 
     /// <summary>
@@ -335,7 +351,8 @@ internal static class ToolExposurePlanner
         ToolExposureEpoch epoch,
         IReadOnlySet<string> availableIds,
         IReadOnlyList<LlmToolDefinition>? evictedTools = null,
-        bool budgetApplied = false)
+        bool budgetApplied = false,
+        bool budgetDeferred = false)
     {
         var ordered = OrderStableAppend(canonicalVisible, previousVisibleToolIds);
         var orderedNames = ordered.Select(tool => tool.Name).ToArray();
@@ -382,7 +399,8 @@ internal static class ToolExposurePlanner
             MissingToolIds: missingToolIds,
             VisibleToolBytes: visibleToolBytes,
             BudgetApplied: budgetApplied,
-            EvictedToolIds: evictedNames);
+            EvictedToolIds: evictedNames,
+            BudgetDeferred: budgetDeferred);
     }
 
     /// <summary>
@@ -565,7 +583,8 @@ internal sealed record ToolExposurePlan(
     IReadOnlyList<string>? MissingToolIds = null,
     long VisibleToolBytes = 0,
     bool BudgetApplied = false,
-    IReadOnlyList<string>? EvictedToolIds = null)
+    IReadOnlyList<string>? EvictedToolIds = null,
+    bool BudgetDeferred = false)
 {
     internal int DeferredToolCount => Math.Max(0, AvailableToolCount - VisibleTools.Count);
 
