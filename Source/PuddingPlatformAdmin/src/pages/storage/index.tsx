@@ -230,6 +230,16 @@ const StoragePage: React.FC = () => {
     () => (snapshot?.databases ?? []).reduce((sum, db) => sum + db.reusableFreeBytes, 0),
     [snapshot],
   );
+  // 顶部合计里除了 SQLite 库，还含非数据库目录（如全文检索索引）。后端只在 SQLite 打开
+  // 成功时才填 pageSizeBytes（见 StorageInventorySampler.ReadDatabaseSnapshot 的 catch 分支），
+  // 因此 pageSizeBytes <= 0 的条目就是「不是按页计量的目录」。
+  const nonDatabaseTotal = useMemo(
+    () =>
+      (snapshot?.databases ?? [])
+        .filter((db) => db.pageSizeBytes <= 0)
+        .reduce((sum, db) => sum + db.totalBytes, 0),
+    [snapshot],
+  );
   const classBytesTotal = useMemo(
     () => classRows.reduce((sum, row) => sum + (row.estimatedBytes ?? 0), 0),
     [classRows],
@@ -564,17 +574,24 @@ const StoragePage: React.FC = () => {
           <Col xs={24} lg={12}>
             <Card size="small" title="存储空间总览">
               <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                <Typography.Text strong style={{ fontSize: 20 }}>
-                  Pudding 数据约 {formatBytes(databaseTotal)}
-                </Typography.Text>
+                <Tooltip title="口径：该数字 = 全部数据库的主文件 + WAL + 共享内存，加上非数据库目录（如全文检索索引）的合计。下方「数据库占用（按数据类）」里每个库的 GB 只是该库自身的主文件 + WAL + 共享内存，所以那几个库相加会小于这里。">
+                  <Typography.Text strong style={{ fontSize: 20, cursor: 'help' }}>
+                    Pudding 数据约 {formatBytes(databaseTotal)}
+                  </Typography.Text>
+                </Tooltip>
                 <Typography.Text type="secondary">
                   更新于 {formatUtc(snapshot?.updatedAtUtc)}｜状态：
                   {snapshot?.isRefreshing ? '后台估算中' : '空闲'}
                   {snapshot && snapshot.revision > 0 ? `｜revision ${snapshot.revision}` : ''}
                 </Typography.Text>
                 <Typography.Text type="secondary">
-                  数据库主文件 + WAL 合计 {formatBytes(databaseTotal)}｜库内可复用页{' '}
+                  数据库主文件 + WAL + 共享内存 {formatBytes(databaseTotal - nonDatabaseTotal)}｜
+                  非数据库目录（全文检索索引等）{formatBytes(nonDatabaseTotal)}｜库内可复用页{' '}
                   {formatBytes(reusableTotal)}｜可清理分类估算合计 ≈{formatBytes(classBytesTotal)}
+                </Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  顶部合计含非数据库目录，所以「数据库占用（按数据类）」里各库的 GB 相加会小于这里；
+                  单库的 GB = 该库主文件 + WAL + 共享内存（与下表「大小」列同一口径）。
                 </Typography.Text>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   可复用页：已删除数据留下的空闲页，会被后续写入复用，不是可再清理的额度。
@@ -590,7 +607,11 @@ const StoragePage: React.FC = () => {
                   columns={[
                     { title: '数据库', dataIndex: 'displayName' },
                     {
-                      title: '大小',
+                      title: (
+                        <Tooltip title="该库主文件 + WAL + 共享内存；顶部「Pudding 数据约」是这些库与非数据库目录的合计">
+                          <span>大小（含 WAL）</span>
+                        </Tooltip>
+                      ),
                       dataIndex: 'totalBytes',
                       align: 'right' as const,
                       render: (value: number) => formatBytes(value),
@@ -649,7 +670,10 @@ const StoragePage: React.FC = () => {
             </Card>
           </Col>
           <Col span={24}>
-            <DatabaseSpacePanel />
+            <DatabaseSpacePanel
+              databases={snapshot?.databases ?? []}
+              headlineTotalBytes={databaseTotal}
+            />
           </Col>
           <Col xs={24} lg={14}>
             <Card

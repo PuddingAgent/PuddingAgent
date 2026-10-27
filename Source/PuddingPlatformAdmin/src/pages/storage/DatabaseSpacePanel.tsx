@@ -1,8 +1,26 @@
-import { Button, Card, Empty, Progress, Space, Typography } from 'antd';
+import { Button, Card, Empty, Progress, Space, Tag, Tooltip, Typography } from 'antd';
 import * as React from 'react';
 import { useCallback, useState } from 'react';
 import { formatBytes, getDatabaseSpace } from './api';
-import type { StorageDatabaseSpace } from './types';
+import type { StorageDatabaseSpace, StorageInventoryDatabase } from './types';
+import { computeUsageBreakdown, resolveFreeBytes } from './usageBreakdown';
+import type { UsageRow } from './usageBreakdown';
+
+/** 区块里每个库的分母说明（A/B 两条口径要写在界面上，不能只写在代码注释里）。 */
+const DENOMINATOR_NOTE = '各占比以该库文件大小为分母';
+
+/** 跨库口径说明（C）。 */
+const CROSS_DATABASE_NOTE =
+  '各库独立归一：百分比与进度条都是「该项 ÷ 该库文件大小」，100% 表示该库已被这张表完整覆盖；' +
+  '因此跨库的进度条长度不能用来比较体量，比体量请看绝对值。';
+
+/** 面板入参：只把快照里已存在的三件事实（库大小口径 / 空闲页 / 顶部合计）接进来，不新增接口。 */
+export interface DatabaseSpacePanelProps {
+  /** 快照里的数据库元数据：只为取空闲页（freelist）与库大小口径；可以不传。 */
+  databases?: readonly StorageInventoryDatabase[];
+  /** 顶部「Pudding 数据约」的合计，用来解释各库相加为何小于它；可以不传。 */
+  headlineTotalBytes?: number | null;
+}
 
 /**
  * 「数据库占用（按数据类）」面板。
@@ -14,12 +32,15 @@ import type { StorageDatabaseSpace } from './types';
  * </p>
  *
  * <p>
- * 数字口径：文件级总量精确（页统计 + WAL/SHM）；按数据类的字节由每表**精确行数 × 抽样平均行长**得出
- * （或 dbstat 可用时按 B 树精确）。跨类的**相对占比**可用 —— 同一把尺子量所有表。
- * 按用户要求，界面上**不标注「估算」**字样。
+ * 数字口径（见 `usageBreakdown.ts`）：文件级总量精确（主文件 + WAL + SHM）；按数据类的字节由每表
+ * 精确行数 × 抽样平均行长得出（或 dbstat 可用时按 B 树精确）。**每个库的表都补齐到该库文件大小**
+ * ——缺的那部分是索引页与 freelist，用兜底行如实列出，而不是让「各子项之和」自己漂着。
  * </p>
  */
-export const DatabaseSpacePanel: React.FC = () => {
+export const DatabaseSpacePanel: React.FC<DatabaseSpacePanelProps> = ({
+  databases,
+  headlineTotalBytes,
+}) => {
   const [spaces, setSpaces] = useState<StorageDatabaseSpace[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +56,10 @@ export const DatabaseSpacePanel: React.FC = () => {
       setLoading(false);
     }
   }, []);
+
+  const measuredTotal = (spaces ?? []).reduce((sum, item) => sum + (item.fileBytes ?? 0), 0);
+  const headlineGap =
+    headlineTotalBytes && headlineTotalBytes > 0 ? headlineTotalBytes - measuredTotal : null;
 
   return (
     <Card
@@ -60,16 +85,33 @@ export const DatabaseSpacePanel: React.FC = () => {
 
       {spaces?.length ? (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {CROSS_DATABASE_NOTE}
+          </Typography.Text>
+
           {spaces.map((space) => (
-            <DatabaseSpaceBlock key={space.key} space={space} />
+            <DatabaseSpaceBlock key={space.key} space={space} databases={databases} />
           ))}
+
+          {headlineGap === null ? null : (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              这些库合计 {formatBytes(measuredTotal)}（主文件 + WAL + 共享内存）｜顶部「Pudding 数据约」{' '}
+              {formatBytes(headlineTotalBytes ?? 0)}｜
+              {headlineGap >= 0
+                ? `差额 ${formatBytes(headlineGap)} 是顶部合计里的非数据库文件（如全文检索索引目录）与未测量的库`
+                : `各库合计比顶部合计多 ${formatBytes(-headlineGap)}（两处测量时点不同）`}
+            </Typography.Text>
+          )}
         </Space>
       ) : null}
     </Card>
   );
 };
 
-const DatabaseSpaceBlock: React.FC<{ space: StorageDatabaseSpace }> = ({ space }) => {
+const DatabaseSpaceBlock: React.FC<{
+  space: StorageDatabaseSpace;
+  databases?: readonly StorageInventoryDatabase[];
+}> = ({ space, databases }) => {
   if (!space.exists) {
     return (
       <div>
@@ -79,55 +121,82 @@ const DatabaseSpaceBlock: React.FC<{ space: StorageDatabaseSpace }> = ({ space }
     );
   }
 
-  const classified = space.dataClasses ?? [];
-  const total = classified.reduce((sum, item) => sum + item.bytes, 0);
+  const breakdown = computeUsageBreakdown(space, { freeBytes: resolveFreeBytes(space, databases) });
 
   return (
     <div>
       <Space size={8} align="baseline" wrap>
         <Typography.Text strong>{space.displayName}</Typography.Text>
-        <Typography.Text type="secondary">{formatBytes(space.fileBytes)}</Typography.Text>
-        {space.perTableAvailable ? null : (
-          // 只说明"按表怎么来的"这件事本身；不写「估算」字样（用户要求）。
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            按数据类聚合
-          </Typography.Text>
-        )}
+        <Tooltip title="该库主文件 + WAL + 共享内存；与总览表「大小」列同一口径">
+          <Typography.Text type="secondary">{formatBytes(breakdown.denominatorBytes)}</Typography.Text>
+        </Tooltip>
+        {breakdown.denominatorIsFallback ? (
+          <Tooltip title="库文件大小未取到，百分比改用 页大小 × 页数 作分母">
+            <Tag color="orange">分母为页数推算</Tag>
+          </Tooltip>
+        ) : null}
+        {breakdown.estimated ? (
+          <Tooltip title="按数据类的字节由「每表精确行数 × 抽样平均行长」推算，不含索引页">
+            <Tag color="gold">估算</Tag>
+          </Tooltip>
+        ) : null}
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {DENOMINATOR_NOTE}
+        </Typography.Text>
       </Space>
 
-      {classified.length === 0 ? (
+      {breakdown.rows.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有可归类的数据" />
       ) : (
         <Space direction="vertical" size={2} style={{ width: '100%', marginTop: 4 }}>
-          {classified.map((item) => {
-            const percent = total > 0 ? Math.round((item.bytes / total) * 1000) / 10 : 0;
-            return (
-              <div key={item.targetId}>
-                <Space size={8} style={{ width: '100%' }} align="baseline" wrap>
-                  <Typography.Text style={{ minWidth: 140, display: 'inline-block' }}>
-                    {item.displayName}
-                  </Typography.Text>
-                  <Typography.Text type="secondary" style={{ fontSize: 12, minWidth: 90, display: 'inline-block' }}>
-                    {formatBytes(item.bytes)}
-                  </Typography.Text>
-                  <Typography.Text type="secondary" style={{ fontSize: 12, minWidth: 56, display: 'inline-block' }}>
-                    {percent}%
-                  </Typography.Text>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {item.tables?.length ?? 0} 张表
-                  </Typography.Text>
-                </Space>
-                <Progress
-                  percent={percent}
-                  showInfo={false}
-                  size="small"
-                  status={item.targetId === 'unclassified' ? 'normal' : 'active'}
-                />
-              </div>
-            );
-          })}
+          {breakdown.rows.map((row) => (
+            <UsageRowLine key={row.targetId} row={row} />
+          ))}
         </Space>
       )}
+
+      {breakdown.closed ? null : (
+        <Typography.Text type="warning" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+          {breakdown.overflowBytes > 0
+            ? `各数据类与空闲页之和超出该库文件大小 ${formatBytes(breakdown.overflowBytes)}（数据类为估算，或两处测量时点不同）`
+            : '各部分之和与库文件大小未闭合：该库没有取到页统计'}
+        </Typography.Text>
+      )}
+    </div>
+  );
+};
+
+/** 一行占用：名称 / 字节 / 百分比 / 表数 / 进度条。 */
+const UsageRowLine: React.FC<{ row: UsageRow }> = ({ row }) => {
+  const label = (
+    <Typography.Text style={{ minWidth: 180, display: 'inline-block' }}>{row.displayName}</Typography.Text>
+  );
+
+  return (
+    <div>
+      <Space size={8} style={{ width: '100%' }} align="baseline" wrap>
+        {row.hint ? <Tooltip title={row.hint}>{label}</Tooltip> : label}
+        <Typography.Text type="secondary" style={{ fontSize: 12, minWidth: 96, display: 'inline-block' }}>
+          {row.estimated || row.inferred ? '≈' : ''}
+          {formatBytes(row.bytes)}
+        </Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12, minWidth: 56, display: 'inline-block' }}>
+          {row.percent}%
+        </Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {row.kind === 'class'
+            ? `${row.tableCount} 张表`
+            : row.kind === 'free'
+              ? '可复用'
+              : '按差值推算'}
+        </Typography.Text>
+      </Space>
+      <Progress
+        percent={row.percent}
+        showInfo={false}
+        size="small"
+        status={row.kind === 'class' ? 'active' : 'normal'}
+      />
     </div>
   );
 };
