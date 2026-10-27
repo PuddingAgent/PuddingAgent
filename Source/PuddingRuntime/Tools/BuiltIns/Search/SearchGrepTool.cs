@@ -375,21 +375,34 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
             // 有排除目录时多取 5 倍结果，缓冲后置过滤的损耗
             var luceneFetchCount = excludeDirs.Count > 0 ? maxResults * 5 : maxResults;
-            var luceneResults = await _searchEngine.SearchAsync(query, directory ?? "", luceneFetchCount,
-                fileExtensionFilter: extFilter,
-                subDirectoryFilter: directory,
-                ct: cts.Token);
 
-            // Matches 为 null（无索引/异常结果）等同于零候选：不改变后续流程，覆盖由扫描保证。
-            foreach (var r in luceneResults.Matches ?? [])
+            // 2026-10-28 修：这里原本是 `SearchAsync(query, directory ?? "", …, subDirectoryFilter: directory)`。
+            // 两个都错：(a) scope 给的是待搜目录自己，它未必被索引过；(b) subDirectoryFilter 要的是
+            // **相对 scope 的相对路径**，而传的是目录本身，引擎用 GetRelativePath(scope, path) 后再比前缀，
+            // 永远不可能命中 ⇒ 候选集合实际恒为空，候选优先级等于没做（且不报错，静默失效）。
+            // 改成与 index backend 同一套解析：上溯到有索引祖先 + 子目录降为相对前缀。
+            var requestedScope = string.IsNullOrWhiteSpace(directory) ? managedDirectory : directory;
+            var candidateScope = IndexScopeResolver.Resolve(requestedScope, _searchEngine.HasIndex, managedDirectory);
+
+            // 解析不到有索引祖先 ⇒ 不预取候选（不是错误）。后续扫描路径本来就负责覆盖，
+            // 这里不得用抛异常来表达“跳过”——那会把正常情形写成故障日志。
+            if (candidateScope is { } scope)
             {
-                if (IsPathInExcludedDir(r.FilePath, directory, excludeDirs)) continue;
-                var full = Path.IsPathRooted(r.FilePath)
-                    ? Path.GetFullPath(r.FilePath)
-                    : Path.GetFullPath(Path.Combine(
-                        string.IsNullOrWhiteSpace(directory) ? managedDirectory : directory, r.FilePath));
-                if (candidateSeen.Add(full))
-                    candidatePaths.Add(full);
+                var luceneResults = await _searchEngine.SearchAsync(query, scope.IndexRoot, luceneFetchCount,
+                    fileExtensionFilter: extFilter,
+                    subDirectoryFilter: scope.SubDirectoryFilter,
+                    ct: cts.Token);
+
+                // Matches 为 null（无索引/异常结果）等同于零候选：不改变后续流程，覆盖由扫描保证。
+                foreach (var r in luceneResults.Matches ?? [])
+                {
+                    if (IsPathInExcludedDir(r.FilePath, requestedScope, excludeDirs)) continue;
+                    var full = Path.IsPathRooted(r.FilePath)
+                        ? Path.GetFullPath(r.FilePath)
+                        : Path.GetFullPath(Path.Combine(requestedScope, r.FilePath));
+                    if (candidateSeen.Add(full))
+                        candidatePaths.Add(full);
+                }
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

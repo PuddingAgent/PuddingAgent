@@ -54,10 +54,10 @@ internal static class IndexScopeResolver
         var candidate = requested;
         while (candidate is not null)
         {
-            // 边界只约束「不要越界上溯」；请求目录本身就在边界外时直接放弃。
-            if (boundary is not null && !IsSameOrDescendant(candidate, boundary))
-                return null;
-
+            // 先看“这个目录自己有没有索引”，**再**看边界。
+            // 顺序很重要：边界只是限制“向上借用祖先索引”，不应该否定“请求目录自己就有索引”
+            // 这个合法情形——否则工作区外但确实已建索引的目录会被误拒
+            //（2026-10-28：`Backend_Index_Reports_Engine_Failure_Distinctly_From_Not_Indexed` 当场抓到了这个回归）。
             if (hasIndex(candidate))
             {
                 if (string.Equals(candidate, requested, StringComparison.OrdinalIgnoreCase))
@@ -70,6 +70,10 @@ internal static class IndexScopeResolver
 
                 return new IndexScope(candidate, relative);
             }
+
+            // 未命中索引才考虑上溯；上溯不得越过边界。
+            if (boundary is not null && !IsSameOrDescendant(candidate, boundary))
+                return null;
 
             var parent = Path.GetDirectoryName(candidate);
             if (string.IsNullOrEmpty(parent) || string.Equals(parent, candidate, StringComparison.OrdinalIgnoreCase))
