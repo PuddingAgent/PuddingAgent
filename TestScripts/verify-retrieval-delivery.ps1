@@ -52,12 +52,29 @@ function Count-Occ([string]$hay, [string]$needle) {
     return $c
 }
 
-function Measure-Token([string]$path, [string]$token) {
+function Measure-Token([string]$path, [string]$token, [switch]$Boundary) {
     $bytes = [IO.File]::ReadAllBytes($path)
     $latin = Get-Latin1 $bytes
     $u8 = Count-Occ $latin (Get-Latin1 ([Text.Encoding]::UTF8.GetBytes($token)))
     $u16 = Count-Occ $latin (Get-Latin1 ([Text.Encoding]::Unicode.GetBytes($token)))
-    return ($u8 + $u16)
+    if (-not $Boundary) { return ($u8 + $u16) }
+
+    # 标识符必须带词边界：否则 'IndexScopeResolver' 会命中既有类型
+    # 'ICodeIndexScopeResolver' 的子串（2026-10-28 真实误报，导致 W1 被错判成已部署）。
+    $needle = Get-Latin1 ([Text.Encoding]::UTF8.GetBytes($token))
+    $count = 0
+    $i = 0
+    while ($true) {
+        $i = $latin.IndexOf($needle, $i, [StringComparison]::Ordinal)
+        if ($i -lt 0) { break }
+        $before = if ($i -gt 0) { $latin[$i - 1] } else { ' ' }
+        $afterIdx = $i + $needle.Length
+        $after = if ($afterIdx -lt $latin.Length) { $latin[$afterIdx] } else { ' ' }
+        $isIdent = { param($c) ($c -match '[A-Za-z0-9_]') }
+        if (-not (& $isIdent $before) -and -not (& $isIdent $after)) { $count++ }
+        $i++
+    }
+    return $count
 }
 
 # ---- 0. locate the deployed assemblies -------------------------------------
@@ -86,14 +103,14 @@ if ([string]::IsNullOrWhiteSpace($headIso)) {
 # ---- 2. token table --------------------------------------------------------
 Say '=== 2. landed changes present in binaries ==='
 $expectations = @(
-    @{ Token = 'IndexScopeResolver';                  Asm = 'PuddingRuntime.dll';  What = 'W1 index scope ascension'; Since = 'ed2bfcb' },
-    @{ Token = 'DropRetriesForMissingFiles';          Asm = 'PuddingCodeIndex.dll'; What = 'F3 prune stale retries'; Since = '3029082' },
+    @{ Token = 'IndexScopeResolver';                  Asm = 'PuddingRuntime.dll';  What = 'W1 index scope ascension'; Since = 'ed2bfcb'; Boundary = $true },
+    @{ Token = 'DropRetriesForMissingFiles';          Asm = 'PuddingCodeIndex.dll'; What = 'F3 prune stale retries'; Since = '3029082'; Boundary = $true },
     @{ Token = 'dropped {Dropped} pending retries';   Asm = 'PuddingCodeIndex.dll'; What = 'F3 prune log line'; Since = '3029082' },
     @{ Token = 'cache_size=-32768';                   Asm = 'PuddingPlatform.dll'; What = 'G4 platform page cache'; Since = '4c2b6b2' },
-    @{ Token = 'StorageAutomaticCleanupLoop';         Asm = 'PuddingPlatform.dll'; What = 'automatic cleanup loop'; Since = 'de73598' },
+    @{ Token = 'StorageAutomaticCleanupLoop';         Asm = 'PuddingPlatform.dll'; What = 'automatic cleanup loop'; Since = 'de73598'; Boundary = $true },
     @{ Token = 'half-open suspected';                 Asm = 'HarnessAgent.Core.dll'; What = 'Feishu half-open self-heal'; Since = 'b003205' },
     @{ Token = 'Channel skipped: must be referenced'; Asm = 'PuddingHost.dll';     What = 'Feishu orphan channel warning'; Since = 'c045bbc' },
-    @{ Token = 'StorageAutomaticCleanupDryRun';       Asm = 'PuddingPlatform.dll'; What = 'dry-run extraction'; Since = '325e49c' }
+    @{ Token = 'StorageAutomaticCleanupDryRun';       Asm = 'PuddingPlatform.dll'; What = 'dry-run extraction'; Since = '325e49c'; Boundary = $true }
 )
 
 $probeAsm = 'PuddingPlatform.dll'
@@ -111,7 +128,7 @@ if (Test-Path $probePath) {
 foreach ($e in $expectations) {
     $path = Join-Path $baseDir $e.Asm
     if (-not (Test-Path $path)) { Bad ("{0}: assembly missing ({1})" -f $e.What, $e.Asm); continue }
-    $hits = Measure-Token $path $e.Token
+    $hits = Measure-Token $path $e.Token -Boundary:($e.ContainsKey('Boundary') -and $e.Boundary)
     if ($hits -le 0) {
         Bad ("{0}  token '{1}' NOT in {2}" -f $e.What, $e.Token, $e.Asm)
         continue
