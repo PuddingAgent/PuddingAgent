@@ -76,8 +76,13 @@ try {
     }
 
     function Get-TestProjects {
-        @(Get-ChildItem -Path Tests -Recurse -Filter "*Tests.csproj" -File -ErrorAction SilentlyContinue |
-            Sort-Object FullName)
+        # 测试工程分布在两个根：`Tests/`（宿主级集成测试）与 `Source/*Tests`（各组件单体测试）。
+        # 只扫 `Tests/` 会漏掉 Source/PuddingRuntimeTests 这类工程 —— 2026-10-27 实测踩过：
+        # 新增 Source/PuddingRuntimeTests/Tools/... 时本门禁选不到任何测试工程，静默放行。
+        $roots = @("Tests", "Source") | Where-Object { Test-Path $_ }
+        @($roots | ForEach-Object {
+                Get-ChildItem -Path $_ -Recurse -Filter "*Tests.csproj" -File -ErrorAction SilentlyContinue
+            } | Sort-Object FullName -Unique)
     }
 
     function Test-ProjectMentionsAny {
