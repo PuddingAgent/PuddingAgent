@@ -1,4 +1,4 @@
-﻿using PuddingAgent.Connectors;
+using PuddingAgent.Connectors;
 using PuddingCode.Configuration;
 using PuddingCode.Platform;
 using PuddingPlatform.Services;
@@ -82,10 +82,14 @@ public sealed class FeishuConnectorFactory(
                 boundAgents.Count);
             if (boundAgents.Count != 1)
             {
-                logger.LogError(
-                    "[Feishu] Channel must be referenced by exactly one enabled Agent channel={ChannelId} agentCount={AgentCount}",
+                // 跳过（不是致命）：禁用或已删除的 agent 实例会留下孤儿 channel。
+                // 2026-10-28 实测：这里用 Error 会让人误判为「飞书断了」——实际只是该 channel 被跳过，
+                // 其它 enabled 且已绑定的 channel 仍然正常收发。故降为 Warning 并明写 skipped。
+                logger.LogWarning(
+                    "[Feishu] Channel skipped: must be referenced by exactly one enabled Agent channel={ChannelId} agentCount={AgentCount} reason={Reason}",
                     channel.ChannelId,
-                    boundAgents.Count);
+                    boundAgents.Count,
+                    boundAgents.Count == 0 ? "no-enabled-agent-binds-it" : "multiple-enabled-agents-bind-it");
                 continue;
             }
             if (channel.Feishu is not { } settings
