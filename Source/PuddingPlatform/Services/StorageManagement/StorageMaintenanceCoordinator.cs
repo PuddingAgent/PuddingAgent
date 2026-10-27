@@ -16,19 +16,12 @@ public sealed class StorageMaintenanceCoordinator : BackgroundService
 {
     private static readonly TimeSpan PreviewLifetime = TimeSpan.FromMinutes(10);
 
-    /// <summary>
-    /// 自动清理评估周期（S1 第二部分，2026-10-27）。
-    /// 在此之前 automatic 队列只有重启恢复会写入，没有任何周期性生产者 —— 自动清理从未触发。
-    /// 评估成本是每张表的候选计数探测，不宜频繁；默认 6 小时。
-    /// </summary>
-    private static readonly TimeSpan AutomaticEvaluationInterval = TimeSpan.FromHours(6);
-
     private readonly StorageMaintenanceJobStore _jobStore;
     private readonly StorageCleanupExecutor _executor;
     private readonly IEnumerable<IStorageDerivedTargetHandler> _derivedHandlers;
     private readonly PuddingDataPaths _paths;
     private readonly ILogger<StorageMaintenanceCoordinator> _logger;
-    private readonly StorageAutomaticCleanupDryRun _automaticDryRun;
+    private readonly StorageAutomaticCleanupLoop _automaticCleanupLoop;
 
     private readonly Channel<Guid> _manualQueue = Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions
     {
@@ -51,14 +44,14 @@ public sealed class StorageMaintenanceCoordinator : BackgroundService
         StorageCleanupExecutor executor,
         IEnumerable<IStorageDerivedTargetHandler> derivedHandlers,
         PuddingDataPaths paths,
-        StorageAutomaticCleanupDryRun automaticDryRun,
+        StorageAutomaticCleanupLoop automaticCleanupLoop,
         ILogger<StorageMaintenanceCoordinator> logger)
     {
         _jobStore = jobStore;
         _executor = executor;
         _derivedHandlers = derivedHandlers;
         _paths = paths;
-        _automaticDryRun = automaticDryRun;
+        _automaticCleanupLoop = automaticCleanupLoop;
         _logger = logger;
     }
 
@@ -111,6 +104,12 @@ public sealed class StorageMaintenanceCoordinator : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await Task.Yield();
+
+        // 周期评估与队列并行：循环只管节奏，本类型只管队列（见 StorageAutomaticCleanupLoop）。
+        // RunAsync 永不抛出，因此这里不需要观察它的异常；取消由同一个 stoppingToken 传递。
+        var evaluationLoop = _automaticCleanupLoop.RunAsync(stoppingToken);
+        _ = evaluationLoop;
+
         try
         {
             while (!stoppingToken.IsCancellationRequested)
@@ -140,16 +139,7 @@ public sealed class StorageMaintenanceCoordinator : BackgroundService
                 // ExecuteTask 永不完成，宿主 StopAsync 挂死。
                 var manualRead = _manualQueue.Reader.WaitToReadAsync(stoppingToken).AsTask();
                 var autoRead = _automaticQueue.Reader.WaitToReadAsync(stoppingToken).AsTask();
-                // 第三个唤醒源：周期评估。没有它，自动清理就永远没有生产者（S1 第二部分）。
-                var evaluationTick = Task.Delay(AutomaticEvaluationInterval, stoppingToken);
-                var finished = await Task.WhenAny(manualRead, autoRead, evaluationTick);
-                if (finished == evaluationTick)
-                {
-                    await EvaluateAutomaticAsync(stoppingToken);
-                    continue;
-                }
-
-                // 只有队列读任务带 bool 结果；Task.Delay 是非泛型 Task，不能直接取反。
+                var finished = await Task.WhenAny(manualRead, autoRead);
                 if (finished is Task<bool> queueRead && !await queueRead)
                     break;
             }
@@ -160,17 +150,9 @@ public sealed class StorageMaintenanceCoordinator : BackgroundService
     }
 
     /// <summary>
-    /// 周期评估（S1 第二部分，2026-10-27）：按目录保留策略判断哪些数据类应当自动清理。
-    ///
-    /// S1 第三部分把试运行本身抽成 <see cref="StorageAutomaticCleanupDryRun"/>：那里不持有
-    /// 作业存储、也没有任何作业类型可用，所以「试运行不建作业」由构造保证，而不是靠断言。
-    /// 本方法只负责在周期性 tick 上驱动它。
+    /// 周期评估已抽成 <see cref="StorageAutomaticCleanupLoop"/>（S1 第四部分）：本类型只管队列，
+    /// 节奏由循环负责。两者用同一个 stoppingToken，取消时一起退出。
     /// </summary>
-    private async Task EvaluateAutomaticAsync(CancellationToken stoppingToken)
-    {
-        await _automaticDryRun.ExecuteAsync(DateTimeOffset.UtcNow, stoppingToken);
-    }
-
     private async Task RunJobAsync(Guid jobId, CancellationToken stoppingToken)
     {
         var job = _jobStore.Get(jobId);
