@@ -359,7 +359,7 @@ messageId 原地更新与三源去重。**同一条回复只允许一张卡片**
 | 文件 | 职责与边界 |
 |------|------------|
 | `src/pages/chat/utils/chatStateUtils.ts` | 压缩活性/陈旧 started 判定纯函数（见下「关键语义」） |
-| `src/pages/chat/hooks/useCompaction.ts` | 重放判活门控与活性 TTL 收敛（见下「关键语义」） |
+| `src/pages/chat/hooks/useCompaction.ts` | 重放判活门控与活性 TTL 收敛；跳过/取消显示原上下文保留，失败重放保留失败状态，不冒充成功压缩 |
 | `src/pages/chat/hooks/sessionEventCursor.ts` | 会话事件游标身份与开流决策唯一真源（见下「关键语义」） |
 | `src/pages/chat/hooks/useSessionEventReplay.ts` | bootstrap 重放与游标准备合同（见下「关键语义」） |
 | `src/pages/chat/hooks/useSessionEventProjection.ts` | replay 透传与会话域过滤；压缩 started/completed/failed/skipped 在主消息所有权过滤前路由到独立生命周期，按事件 ID 去重 |

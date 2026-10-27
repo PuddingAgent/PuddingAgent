@@ -31,7 +31,8 @@ internal static class BoundedCompactionSummary
         CancellationToken ct,
         int partTextBytes = PartTextBytes,
         ContextSummaryAllowance? allowance = null,
-        Func<CompactionSummaryAttempt, IReadOnlyList<ChatMessage>, LlmResponse?, Task>? observe = null)
+        Func<CompactionSummaryAttempt, IReadOnlyList<ChatMessage>, LlmResponse?, Task>? observe = null,
+        CompactionSummaryCheckpointStore? checkpoints = null, string? checkpointScope = null)
     {
         var attempts = new List<CompactionSummaryAttempt>();
         var calls = 0;
@@ -58,7 +59,11 @@ internal static class BoundedCompactionSummary
                             $"Aim for at most {Math.Max(1, allowance.Tokens / 4)} tokens; " +
                             $"hard limits: {allowance.Tokens} tokens, {allowance.TextBytes} UTF-8 bytes.")) : m).ToArray();
                 var started = System.Diagnostics.Stopwatch.StartNew();
-                var result = await invoke(input, ++calls);
+                var inputHash = WarmPrefixCompaction.ComputeRevisionHash(input);
+                var checkpoint = checkpointScope is null ? null : checkpoints?.Find(checkpointScope, inputHash);
+                calls++;
+                var result = checkpoint is null ? await invoke(input, calls)
+                    : AgentExecutionLlmInvocationResult.CreateSuccess(new LlmResponse(checkpoint, null) { FinishReason = "stop" }, null);
                 var response = result.Response;
                 var tokens = ContextUsageSnapshotStore.CountTokens(response?.Content ?? "");
                 var bytes = LlmRequestTextBudget.MeasureSummary(response?.Content ?? "");
@@ -69,9 +74,11 @@ internal static class BoundedCompactionSummary
                     : null;
                 var attempt = new CompactionSummaryAttempt(calls, stage, partIndex, partCount, depth, retry,
                     LlmRequestTextBudget.Measure(input, []),
-                    WarmPrefixCompaction.ComputeRevisionHash(input), response?.FinishReason,
+                    inputHash, response?.FinishReason,
                     response?.Usage?.PromptTokens, response?.Usage?.CompletionTokens, response?.Usage?.ReasoningTokens,
-                    tokens, bytes, started.ElapsedMilliseconds, rejection ?? "accepted");
+                    tokens, bytes, started.ElapsedMilliseconds, rejection ?? "accepted", checkpoint is not null);
+                if (rejection is null && checkpoint is null && checkpointScope is not null)
+                    checkpoints?.Save(checkpointScope, inputHash, response!.Content!);
                 attempts.Add(attempt);
                 if (observe is not null) await observe(attempt, input, response);
                 if (rejection is null) return result;
@@ -207,7 +214,7 @@ internal sealed record CompactionSummaryAttempt(
     int Call, string Stage, int Part, int PartCount, int Depth, int Regeneration,
     long InputTextBytes, string InputHash, string? FinishReason,
     int? PromptTokens, int? CompletionTokens, int? ReasoningTokens,
-    int SummaryTokens, long SummaryBytes, long DurationMs, string Decision);
+    int SummaryTokens, long SummaryBytes, long DurationMs, string Decision, bool ReusedCheckpoint = false);
 
 internal sealed record CompactionSummaryResult(
     AgentExecutionLlmInvocationResult Invocation,

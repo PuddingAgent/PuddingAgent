@@ -834,8 +834,9 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         history.Insert(0, new ChatMessage(ChatRole.System, "assembled system prompt"));
         var request = CreateDispatchRequest() with
         {
-            MessageText = VariedText(600_000),
-            // 2026-10-23：预算 = 3 B/token × 有效输入窗口；200K 窗口下预算约 563 KB，600 KB 输入仍越界。
+            MessageText = string.Concat(Enumerable.Repeat(" information", (TextBudget(new LlmConfig
+                { ModelId = "test-model", MaxContextTokens = 200_000, MaxOutputTokens = 8192 }) + 8192) / 12 + 1)),
+            // The protected input itself must exceed the currently configured byte budget.
             LlmConfig = new LlmConfig { ModelId = "test-model", MaxContextTokens = 200_000, MaxOutputTokens = 8_192 },
             CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []),
         };
@@ -928,6 +929,10 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     [DataRow(true, true, true)]
     public async Task MegabyteHistory_UsesBoundedSemanticSummary_AndCommitsOnlyCompleteResult(bool truncate, bool streaming, bool largeWindow)
     {
+        // Large registered window with an explicit provider input cap exercises both budget axes
+        // without making the protected last message larger than the entire input allowance.
+        var largeConfig = new LlmConfig { ModelId = "test-model", MaxContextTokens = 1_000_000,
+            MaxInputTokens = 200_000, MaxOutputTokens = 1_000 };
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         var options = CreateOptions(connection);
@@ -935,7 +940,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         {
             await db.Database.EnsureCreatedAsync();
             var seedChars = largeWindow
-                ? (int)(TextBudget(new LlmConfig { ModelId = "test-model", MaxContextTokens = 1_000_000, MaxOutputTokens = 1_000 }) * 1.15 / 48)
+                ? (int)(TextBudget(largeConfig) * 1.25 / 48)
                 : 30_000;
             await SeedAsync(db, messageCount: 48, charsPerMessage: seedChars);
         }
@@ -958,7 +963,7 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         Assert.IsTrue(history.Sum(m => m.Content?.Length ?? 0) >= 1_400_000);
         var request = CreateDispatchRequest() with
         {
-            LlmConfig = new LlmConfig { ModelId = "test-model", MaxContextTokens = largeWindow ? 1_000_000 : 200_000, MaxOutputTokens = 1_000 },
+            LlmConfig = largeWindow ? largeConfig : new LlmConfig { ModelId = "test-model", MaxContextTokens = 200_000, MaxOutputTokens = 1_000 },
             CallerLlmSnapshot = largeWindow ? new("deepseek", "deepseek-flash", "responses", []) : null,
         };
         var paddedMeasure = 0;
@@ -1025,22 +1030,19 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
-    public async Task TextGrowthWithinLargeTokenWindow_CompactsBeforeNextMainRequest(bool streaming)
+    public async Task TokenGrowthCrossesMaintenanceThreshold_CompactsBeforeNextMainRequest(bool streaming)
     {
-        // 2026-10-23：本用例验证「token 用量仍在窗口内、但文本体积越界」时的压缩时机。
-        // 文本预算随输入窗口伸缩（3 B/token）⇒ 夹具必须按预算推导，不能用常量：
-        // 首轮约 70%（只达软维护线，后台准备候选），次轮增长到约 100%（跨过 95% 文本阻塞线），
-        // 阻塞线才会在下一个请求边界同步提交压缩，从而「在下一个主请求之前压缩」。
+        // Measure the fixture in tokens. Byte-budget density is independent of token thresholds.
+        // The first request is below preparation; its result pushes the next boundary past 70%.
         var growthConfig = new LlmConfig { ModelId = "deepseek-flash", MaxContextTokens = 200_000, MaxOutputTokens = 8192 };
-        var growthBudget = TextBudget(growthConfig);
-        var growth = (int)(growthBudget * 0.30);
+        var growth = CharsForTokens(growthConfig, 50_000);
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         var options = CreateOptions(connection);
         await using (var db = new MemoryDbContext(options))
         {
             await db.Database.EnsureCreatedAsync();
-            await SeedAsync(db, messageCount: 36, charsPerMessage: (int)(growthBudget * 0.70 / 36));
+            await SeedAsync(db, messageCount: 36, charsPerMessage: CharsForTokens(growthConfig, 110_000) / 36);
         }
         var factory = new Factory(options);
         var llm = new ScriptedLlmClient(
@@ -1067,6 +1069,8 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
         bool IsSummary(IReadOnlyList<ChatMessage> messages) => messages.Any(m => m.Content?.Contains("compaction engine", StringComparison.Ordinal) == true);
         var main = llm.Requests.Where(m => !IsSummary(m)).ToArray();
         Assert.AreEqual(2, main.Length);
+        Assert.IsFalse(main[0].Any(m => m.IsContextSummary), "The fixture must not compact at task entry.");
+        Assert.IsTrue(main[1].Any(m => m.IsContextSummary), "Growth must be compacted before the next main request.");
         Assert.IsTrue(llm.Requests.Any(IsSummary), "A candidate may be prepared alongside the first request before growth requires it.");
         foreach (var messages in main)
             Assert.IsTrue(LlmRequestTextBudget.Measure(messages, []) <= LlmRequestTextBudget.ResolveLimit(request));
@@ -1083,25 +1087,20 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     public async Task PreviousTurnNativeTools_AreDurableWhenNextTurnCompacts(bool streaming, bool productionDefaults)
     {
         LlmConfig durableConfig;
-        int durableBudgetEarly;
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         var options = CreateOptions(connection);
         await using (var db = new MemoryDbContext(options))
         {
             await db.Database.EnsureCreatedAsync();
-            // 2026-10-23：请求文本预算随窗口伸缩（3 B/token）⇒ 与 RepeatedTranscript 同理，
-            // 必须选预算低于生产 hydrate 上限的窗口；1M 窗口的 3.1 MB 预算在 hydrate 截断后不可达。
             durableConfig = new LlmConfig { ModelId = "deepseek-flash", MaxContextTokens = 200_000, MaxOutputTokens = 8192 };
-            var durableBudget = TextBudget(durableConfig);
-            durableBudgetEarly = durableBudget;
-            // 首轮必须停在软维护准备线（0.60）以下 ⇒ 种 0.50 预算，首轮回复再长 0.05 预算。
-            await SeedAsync(db, messageCount: 24, charsPerMessage: (int)(durableBudget * 0.50 / 24));
+            // Stay below preparation in tokens as well as bytes; asynchronous scheduling must not decide the test.
+            await SeedAsync(db, messageCount: 24, charsPerMessage: CharsForTokens(durableConfig, 80_000) / 24);
         }
         var factory = new Factory(options);
-        // 首轮增长远低于触发线（0.05 预算），次轮增长把它推过 0.70 ⇒ 只有次轮才压缩。
-        var previousGrowth = (int)(durableBudgetEarly * 0.05);
-        var currentGrowth = (int)(durableBudgetEarly * 0.49);
+        // First turn remains below preparation; the next turn grows past the input gate.
+        var previousGrowth = CharsForTokens(durableConfig, 6_000);
+        var currentGrowth = CharsForTokens(durableConfig, 120_000);
         var llm = new ScriptedLlmClient(
             new LlmResponse(VariedText(previousGrowth), [new ToolCall("previous-call", "task_update", "{\"task_id\":\"task-1\",\"status\":\"in_progress\"}")]),
             new LlmResponse(DoneJson, null),
@@ -1186,8 +1185,8 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
             new ContextUsageSnapshotStore(), factory);
         var request = CreateDispatchRequest() with
         {
-            // 2026-10-23：200K 窗口 ⇒ 预算约 563 KB，640 KB 夹具才需要文本压缩。
-            LlmConfig = new() { ModelId = "deepseek-flash", MaxContextTokens = 200_000, MaxOutputTokens = 8192 },
+            // Both the token gate and the independent byte budget must protect this request.
+            LlmConfig = new() { ModelId = "deepseek-flash", MaxContextTokens = 100_000, MaxOutputTokens = 8192 },
             CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []),
         };
         var frames = new List<ServerSentEventFrame>();
@@ -1280,6 +1279,12 @@ public sealed class WarmPrefixMidTurnHardProtectionE2ETests
     /// 2026-10-23：文本上传预算随输入窗口伸缩（3 B/token，下限 512 KiB）。
     /// 夹具体积必须由解析出的预算推导，不能写死，否则窗口变大后夹具不再越界。
     /// </summary>
+    private static int CharsForTokens(LlmConfig config, int tokens)
+    {
+        var sample = new ContextUsageSnapshotStore().MeasureLlmRequest("fixture", [new(ChatRole.User, VariedText(10_000))], [], config.ModelId);
+        return (int)(10_000L * tokens / Math.Max(1, sample.UsedTokens));
+    }
+
     private static int TextBudget(LlmConfig config) => LlmRequestTextBudget.ResolveLimit(
         CreateDispatchRequest() with { LlmConfig = config, CallerLlmSnapshot = new("deepseek", "deepseek-flash", "responses", []) });
 

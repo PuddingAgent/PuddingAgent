@@ -54,7 +54,7 @@ public static class DiagnosticCauseCatalog
     private static readonly DiagnosticCauseDescriptor[] All =
     [
         new(DiagnosticCauseCode.ContextCompactionRequired, false,
-            "上下文整理未能将请求缩小到上传预算，已停止发送；原始会话仍完整保留。",
+            "上下文整理尚未完成，已暂停模型请求；原始会话仍完整保留。",
             "检查压缩失败原因及工具定义、系统提示词或受保护消息体积后重新发起一轮。"),
         new(DiagnosticCauseCode.RequestUploadReset, true,
             "请求体上传阶段连接被对端重置，尚未收到响应头。",

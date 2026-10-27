@@ -29,6 +29,8 @@ namespace PuddingRuntime.Services;
 
 public sealed partial class AgentExecutionService
 {
+    // The singleton retains accepted segments across turns, partitioned by session and route.
+    private readonly CompactionSummaryCheckpointStore _compactionCheckpoints = new();
     private sealed record WarmPrefixCommitBoundary(List<ChatMessage> History,
         IReadOnlyList<ChatMessage> Outbound, IReadOnlyList<LlmToolDefinition> Tools, LlmConfig? Config);
 
@@ -63,10 +65,11 @@ public sealed partial class AgentExecutionService
             options.BlockingRatio, options.TargetRatio, options.MinimumEpochRounds, options.UploadBlockingRatio);
         var inputLimit = LlmRequestBudgetGuard.ResolveEffectiveInputLimit(effectiveLlmConfig, workUnitInputCapacity: request.UsageBudget?.MaxInputTokens);
         var registeredWindow = effectiveLlmConfig?.MaxContextTokens ?? inputLimit;
+        var growthTokens = maintenance.PreviousTokens > 0 ? measured.UsedTokens - maintenance.PreviousTokens : 0;
+        var growthBytes = maintenance.PreviousBytes > 0 ? bytes - maintenance.PreviousBytes : 0;
         var decision = PrefixCompactionPolicy.Decide(measured.UsedTokens, registeredWindow,
             bytes, LlmRequestTextBudget.ResolveLimit(request),
-            maintenance.PreviousTokens > 0 ? measured.UsedTokens - maintenance.PreviousTokens : 0,
-            maintenance.PreviousBytes > 0 ? bytes - maintenance.PreviousBytes : 0,
+            growthTokens, growthBytes,
             round - maintenance.LastAttemptRound, thresholds, inputLimit);
         maintenance.ProtectionRequired = decision.WaitForCandidate;
         maintenance.PreviousTokens = measured.UsedTokens;
@@ -82,7 +85,7 @@ public sealed partial class AgentExecutionService
                 decision.Pressure.ToString("F4", System.Globalization.CultureInfo.InvariantCulture),
                 measured.UsedTokens, registeredWindow, bytes, LlmRequestTextBudget.ResolveLimit(request),
                 inputLimit, request.UsageBudget?.MaxInputTokens,
-                maintenance.PreviousTokens, maintenance.PreviousBytes, decision.Reason,
+                growthTokens, growthBytes, decision.Reason,
                 maintenance.Candidate is not null, maintenance.Candidate?.IsReady);
         else
             _logger.LogDebug(
@@ -90,7 +93,7 @@ public sealed partial class AgentExecutionService
             request.SessionId, round + 1, decision.Prepare, decision.CommitReady, decision.WaitForCandidate,
             decision.Pressure.ToString("F4", System.Globalization.CultureInfo.InvariantCulture),
             measured.UsedTokens, registeredWindow, bytes, LlmRequestTextBudget.ResolveLimit(request),
-            maintenance.PreviousTokens, maintenance.PreviousBytes, maintenance.Candidate is not null,
+            growthTokens, growthBytes, maintenance.Candidate is not null,
             maintenance.Candidate?.IsReady);
         // At most one fresh recovery after an obsolete prepared candidate, never duplicate a summary per round.
         for (var recovery = 0; recovery < 2; recovery++)
@@ -103,20 +106,28 @@ public sealed partial class AgentExecutionService
                 var frozenTools = llmTools.ToArray();
                 var id = $"warm-prefix:{request.ExecutionIdentity?.RunId ?? request.SessionId}:r{round + 1}:{Guid.NewGuid():N}";
                 maintenance.CompactionId = id;
-                maintenance.Candidate = new(async (gate, token) =>
+                maintenance.Candidate = new(async (preparation, token) =>
                 {
                     try
                     {
                         return await GenerateWarmPrefixCandidateAsync(request, agentInstanceId,
                             frozenHistory, frozenOutbound, frozenTools, effectiveLlmConfig, round,
-                            token, !decision.WaitForCandidate, id, gate, thresholds, decision.WaitForCandidate);
+                            token, !decision.WaitForCandidate, id, preparation, thresholds, decision.WaitForCandidate);
                     }
                     catch (OperationCanceledException) when (token.IsCancellationRequested)
                     {
-                        await EmitCandidateStageAsync(request, id, "cancelled", SseEventTypes.ContextCompactionSkipped,
-                            "candidate_cancelled_or_expired", false);
-                        return new(false, null, thresholds.Prepare, thresholds.Target, null, WarmPrefixCompactionDisposition.DeferredSoft,
-                            SkipReason: "candidate_cancelled_or_expired");
+                        var reason = preparation.CancellationReason;
+                        var timedOut = reason == "candidate_preparation_idle_timeout";
+                        var evidence = preparation.GetEvidence();
+                        _logger.LogWarning("[AgentExec:Compaction] Candidate interrupted session={Session} compactionId={Id} reason={Reason} progress={Progress}",
+                            request.SessionId, id, reason, JsonSerializer.Serialize(evidence));
+                        await EmitCandidateStageAsync(request, id, timedOut ? "failed" : "cancelled",
+                            timedOut ? SseEventTypes.ContextCompactionFailed : SseEventTypes.ContextCompactionSkipped,
+                            reason, maintenance.ProtectionRequired);
+                        ct.ThrowIfCancellationRequested();
+                        return new(false, null, thresholds.Prepare, thresholds.Target, null,
+                            timedOut ? WarmPrefixCompactionDisposition.Failed : WarmPrefixCompactionDisposition.DeferredSoft,
+                            SkipReason: reason, DiagnosticEvidence: evidence);
                     }
                     catch (Exception ex)
                     {
@@ -127,7 +138,7 @@ public sealed partial class AgentExecutionService
                             SkipReason: "candidate_preparation_failed");
                     }
                     finally { _contextCompactionService?.EndPreparedCompaction(request.SessionId, id); }
-                }, ct);
+                }, ct, TimeSpan.FromSeconds(options.PreparationIdleTimeoutSeconds));
             }
             var candidate = maintenance.Candidate;
             if (decision.WaitForCandidate && !candidate.IsReady && !candidate.Completion.IsCompleted)
@@ -185,6 +196,7 @@ public sealed partial class AgentExecutionService
         return _contextManager.EmitWarmPrefixCompactionLifecycleAsync(
             request.SessionId, request.WorkspaceId, eventType,
             new { compactionId = id, sessionId = request.SessionId, mode = "WarmPrefix", stage, reason,
+                error = reason == "candidate_preparation_idle_timeout" ? "压缩长时间未取得有效进展，已停止准备；原会话保持完整。" : null,
                 background = !blocking, requiresSynchronousProtection = blocking, applied = false,
                 prefixUnchanged = stage != "applied", historyPreserved = true, durableCheckpoint = false },
             request.ExecutionIdentity?.TraceId, CancellationToken.None);
@@ -201,7 +213,7 @@ public sealed partial class AgentExecutionService
         CancellationToken ct,
         bool background,
         string warmPrefixCompactionId,
-        Func<CancellationToken, Task<WarmPrefixCommitBoundary>> awaitBoundary,
+        BackgroundCompactionCandidate<WarmPrefixCommitBoundary, WarmPrefixCompactionOutcome> preparation,
         PrefixCompactionThresholds thresholds, bool forcePreparation)
     {
         if (_contextUsageSnapshotStore is null)
@@ -336,6 +348,12 @@ public sealed partial class AgentExecutionService
                 requestShape = CompactionDiagnosticJournal.DescribeRequest(exactOutboundHistory),
             }, selectedSource, ct);
         var diagnosticCaptureComplete = diagnosticFile is not null;
+        var checkpointScope = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+        {
+            request.WorkspaceId, request.SessionId,
+            route = WarmPrefixCompaction.ResolveRouteVersion(summaryConfig, request.LlmProfile?.ProviderId),
+            summaryConfig.Endpoint, summaryConfig.ReasoningEffort,
+        }))));
         async Task CaptureAsync(string kind, object detail)
         {
             if (_compactionDiagnostics is not null)
@@ -411,25 +429,28 @@ public sealed partial class AgentExecutionService
                 allowance: plan.SummaryAllowance,
                 observe: async (attempt, input, response) =>
                 {
+                    preparation.ReportProgress(attempt);
                     _logger.LogInformation(
-                        "[AgentExec:CompactionAttempt] compactionId={CompactionId} traceId={TraceId} call={Call} stage={Stage} part={Part}/{Parts} depth={Depth} regeneration={Regeneration} inputBytes={InputBytes} maxOutputTokens={MaxOutputTokens} reasoningEffort={ReasoningEffort} finishReason={FinishReason} completionTokens={CompletionTokens} reasoningTokens={ReasoningTokens} summaryTokens={SummaryTokens} summaryBytes={SummaryBytes} decision={Decision} durationMs={DurationMs}",
+                        "[AgentExec:CompactionAttempt] compactionId={CompactionId} traceId={TraceId} call={Call} stage={Stage} part={Part}/{Parts} depth={Depth} regeneration={Regeneration} inputBytes={InputBytes} maxOutputTokens={MaxOutputTokens} reasoningEffort={ReasoningEffort} finishReason={FinishReason} completionTokens={CompletionTokens} reasoningTokens={ReasoningTokens} summaryTokens={SummaryTokens} summaryBytes={SummaryBytes} decision={Decision} durationMs={DurationMs} reusedCheckpoint={ReusedCheckpoint}",
                         warmPrefixCompactionId, request.ExecutionIdentity?.TraceId, attempt.Call, attempt.Stage,
                         attempt.Part, attempt.PartCount, attempt.Depth, attempt.Regeneration, attempt.InputTextBytes,
                         summaryOutputTokens, summaryConfig.ReasoningEffort, attempt.FinishReason,
                         attempt.CompletionTokens, attempt.ReasoningTokens, attempt.SummaryTokens, attempt.SummaryBytes,
-                        attempt.Decision, attempt.DurationMs);
+                        attempt.Decision, attempt.DurationMs, attempt.ReusedCheckpoint);
                     await CaptureAsync("attempt", new
                     {
                         compactionId = warmPrefixCompactionId, attempt,
-                        invocationId = BuildLlmInvocationId(request, round, "compaction") + $":part-{attempt.Call}",
+                        invocationId = attempt.ReusedCheckpoint ? null : BuildLlmInvocationId(request, round, "compaction") + $":part-{attempt.Call}",
                         summaryOutputTokens, summaryConfig.ReasoningEffort,
                         responseContent = response?.Content,
                     });
-                });
+                }, checkpoints: _compactionCheckpoints, checkpointScope: checkpointScope);
         }
         catch (Exception ex)
         {
-            await CaptureAsync("interrupted", new { errorType = ex.GetType().Name, cancelled = ct.IsCancellationRequested, historyPreserved = true });
+            await CaptureAsync("interrupted", new { errorType = ex.GetType().Name, cancelled = ct.IsCancellationRequested,
+                cancellationReason = ct.IsCancellationRequested ? preparation.CancellationReason : null,
+                progress = preparation.GetEvidence(), historyPreserved = true });
             throw;
         }
         var summaryRejectionReason = summaryResult.FailureCode is null
@@ -567,7 +588,7 @@ public sealed partial class AgentExecutionService
         await CaptureAsync("prepared", new { prefixUnchanged = true, background });
         await EmitCandidateStageAsync(request, warmPrefixCompactionId, "prepared", SseEventTypes.ContextCompactionStarted,
             "candidate_ready_prefix_unchanged", false);
-        var boundary = await awaitBoundary(ct);
+        var boundary = await preparation.AwaitBoundaryAsync(ct);
         durableHistory = boundary.History;
         exactOutboundHistory = boundary.Outbound;
         llmTools = boundary.Tools;
@@ -725,9 +746,10 @@ public sealed partial class AgentExecutionService
         appliedRejectionReason ??= verification.Reason;
         if (!durableApplied)
         {
+            await CaptureAsync("commit_rejection", new { sourceProblems });
             await CaptureAsync("outcome", new { applied = false, reason = appliedRejectionReason, durableSkipReason,
                 measuredAfterTextBytes = verification.AfterTextBytes, afterTokens = verification.AfterSnapshot?.UsedTokens,
-                unresolvedSourceCount, sourceProblems, historyPreserved = true });
+                unresolvedSourceCount, sourceProblemCount = sourceProblems?.Count ?? 0, historyPreserved = true });
 
             _logger.LogWarning(
                 "[AgentExec:Compaction] Warm-prefix apply rejected; history preserved session={Session} round={Round} compactionId={CompactionId} reason={Reason} beforeTokens={BeforeTokens} measuredAfterTokens={MeasuredAfterTokens} planEstimateExcludingSummary={PlanEstimate} reclaim={Reclaim} limit={Limit} durationMs={DurationMs} summarySource={SummarySource}",
@@ -807,10 +829,11 @@ public sealed partial class AgentExecutionService
                 });
         }
 
+        await CaptureAsync("applied_context", new { summaryContent = safeSummary,
+            requestShape = CompactionDiagnosticJournal.DescribeRequest(durableHistory) });
         await CaptureAsync("outcome", new { applied = true, durableCheckpoint, durableSummaryMessageId,
             measuredAfterTextBytes = verification.AfterTextBytes, afterTokens = verification.AfterSnapshot?.UsedTokens,
-            summaryContent = safeSummary, attempts = summaryResult.Attempts.Count,
-            requestShape = CompactionDiagnosticJournal.DescribeRequest(durableHistory) });
+            messageCount = durableHistory.Count, attempts = summaryResult.Attempts.Count });
         // 校验通过：内存历史已在临界区内替换完毕，这里只做日志与生命周期事件。
         var afterUsedTokens = verification.AfterSnapshot!.UsedTokens;
         var appliedDurationMs = verifyDurationMs;

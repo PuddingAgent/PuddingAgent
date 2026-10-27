@@ -16,6 +16,7 @@ public sealed class CompactionDiagnosticJournal(PuddingDataPaths paths, IKeyVaul
 {
     internal const long MaxCaseBytes = 8 * 1024 * 1024;
     internal const int MaxCases = 32;
+    private const int TerminalReserveBytes = 64 * 1024;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly string _directory = Path.Combine(paths.DiagnosticsLogsRoot, "compaction");
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
@@ -76,10 +77,11 @@ public sealed class CompactionDiagnosticJournal(PuddingDataPaths paths, IKeyVaul
                 Directory.CreateDirectory(_directory);
                 var path = Path.Combine(_directory, name);
                 var length = File.Exists(path) ? new FileInfo(path).Length : 0;
-                if (length + Encoding.UTF8.GetByteCount(line) > MaxCaseBytes - 1024)
+                var limit = kind is "outcome" or "interrupted" ? MaxCaseBytes : MaxCaseBytes - TerminalReserveBytes;
+                if (length + Encoding.UTF8.GetByteCount(line) > limit - 1024)
                 {
                     // Reserve one explicit omission marker; don't silently claim a complete snapshot.
-                    if (length < MaxCaseBytes - 1024)
+                    if (length < limit - 1024)
                         await File.AppendAllTextAsync(path, JsonSerializer.Serialize(new
                         { schema = "pudding.compaction-diagnostic/1", kind = "capture_limit", omittedKind = kind, limitBytes = MaxCaseBytes }) + "\n", ct);
                     return false;

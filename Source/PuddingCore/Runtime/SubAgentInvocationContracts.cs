@@ -400,6 +400,8 @@ public sealed record ContextMaintenanceOptions
     public double TargetRatio { get; init; } = .45;
     public int MinimumEpochRounds { get; init; } = 4;
     public double UploadBlockingRatio { get; init; } = .95;
+    /// <summary>Maximum time without an accepted summary segment, not the entire map/reduce duration.</summary>
+    public int PreparationIdleTimeoutSeconds { get; init; } = 300;
 }
 
 /// <summary>读取并补齐运行时执行配置。</summary>

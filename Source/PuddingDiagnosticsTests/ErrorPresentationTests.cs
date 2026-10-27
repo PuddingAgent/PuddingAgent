@@ -14,6 +14,24 @@ namespace PuddingDiagnosticsTests;
 [TestClass]
 public sealed class ErrorPresentationTests
 {
+    [TestMethod]
+    public void CompactionReportPreservesCapacityReason_InsteadOfInventingAnUploadOverflow()
+    {
+        const string reason = "上下文已达到配置的压缩阈值，但整理尚未完成。";
+        var cause = LlmFailureClassifier.Default.Classify(new InvalidOperationException(), new DiagnosticContext
+        { CauseCodeOverride = DiagnosticCauseCode.ContextCompactionRequired }) with { UserMessage = reason };
+        Assert.AreEqual(reason, ErrorPresentationCatalog.Present(cause).ShortCause);
+        var incident = IncidentProjector.Project("turn", [new DiagnosticFact
+        {
+            Kind = DiagnosticFactKinds.Terminal, TurnId = "turn", Status = "failed", OccurredAtUtc = DateTimeOffset.UtcNow,
+            CauseCode = cause.Code, UserMessage = reason,
+        }]);
+        var report = DiagnosticReportDocument.FromIncident(incident, DateTimeOffset.UtcNow);
+        Assert.AreEqual(reason, report.Presentation.ShortCause);
+        StringAssert.Contains(report.RenderText(), reason);
+        Assert.IsFalse(report.RenderText().Contains("上传预算"));
+    }
+
     private static readonly string[] ForbiddenTitleTokens =
         ["Exception", "HttpRequestException", "SocketException", "Error while copying", "IOException"];
 

@@ -44,7 +44,7 @@ public sealed record ErrorPresentation
 /// <summary>码 → 界面呈现的目录（未知码走 category 兜底并保留原码）。</summary>
 public static class ErrorPresentationCatalog
 {
-    public static ErrorPresentation Describe(string? causeCode, bool retryable)
+    public static ErrorPresentation Describe(string? causeCode, bool retryable, string? userMessage = null)
     {
         var category = DiagnosticCauseCode.CategoryOf(causeCode);
         var (title, action, severity) = causeCode switch
@@ -101,7 +101,8 @@ public static class ErrorPresentationCatalog
         return new ErrorPresentation
         {
             Title = title,
-            ShortCause = descriptor.UserMessage,
+            ShortCause = causeCode == DiagnosticCauseCode.ContextCompactionRequired && !string.IsNullOrWhiteSpace(userMessage)
+                ? userMessage : descriptor.UserMessage,
             Severity = severity,
             Retryable = retryable,
             PrimaryAction = action,
@@ -115,6 +116,6 @@ public static class ErrorPresentationCatalog
     public static ErrorPresentation Present(DiagnosticCause cause)
     {
         ArgumentNullException.ThrowIfNull(cause);
-        return Describe(cause.Code, cause.Retryable);
+        return Describe(cause.Code, cause.Retryable, cause.UserMessage);
     }
 }

@@ -129,7 +129,7 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | `Agents/` | Agent 抽象定义 |
 | `SubAgents/` | 子代理抽象 |
 | `Platform/BuiltInAgentTemplates.cs` | 内置 Agent 模板的唯一权威源；V2 Default/Grant 直接决定 Low/High 子代理工具投影，Host 不得复制同全名类 |
-| `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约（单一预算域；含 `RuntimeExecutionOptions.ToolExposure` 工具曝光预算） |
+| `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约；工具曝光预算；`ContextMaintenanceOptions` 的注册窗口比例与摘要无进展期限 |
 | `Runtime/ContextAssemblyContracts.cs` | 上下文装配契约 |
 | `Runtime/ContextSegmentContracts.cs` | ContextSegmentLedger 数据契约（§6.1）+ ContextSegmentTier（T0–T4 分级枚举）|
 | `Runtime/ContextTierPlannerContracts.cs` | T0–T4 分级规划器契约：段输入/分配结果/阈值选项 + IContextTierPlanner |

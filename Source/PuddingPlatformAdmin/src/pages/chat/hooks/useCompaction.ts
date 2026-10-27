@@ -462,7 +462,7 @@ export function useCompaction({
           undefined,
           eventFacts,
         );
-        if (closesActive) {
+        if (!activeCompactionTurnIdRef.current || closesActive) {
           setCompactionStatus(`压缩失败：${errorMessage}`);
           activeCompactionTurnIdRef.current = null;
         }
@@ -484,8 +484,9 @@ export function useCompaction({
         compacted,
         eventFacts,
       );
-      if (!activeCompactionTurnIdRef.current || closesActive) setCompactionStatus(
-        `上次压缩：${formatCompactionTime(
+      if (!activeCompactionTurnIdRef.current || closesActive) setCompactionStatus(skipped
+        ? '未压缩：原上下文已保留'
+        : `上次压缩：${formatCompactionTime(
           eventFacts.occurredAtMs ??
             (options?.notify === false ? undefined : Date.now()),
         )}`,

@@ -28,7 +28,7 @@
 | 写入期脱敏 | `Redaction/DiagnosticEvidenceRedactor.cs` | 键名**子串**匹配（修既有整串相等的穿透）、值形态检查、URL query 剥离；所有证据值必经此处。类型名刻意避开既有 `DiagnosticRedactor`：`PuddingCode.Diagnostics` 命名空间已被 PuddingCore 的 DTO 占用，重名会让同时 import 两个命名空间的消费方编译失败（实测 `PuddingHost` CS0104） |
 | 事故投影 | `Projection/IncidentProjector.cs` + `Projection/DiagnosticFact.cs` | 事实 → `IncidentView`（尝试明细 / 根因 / 阶段 / 体积 / 结论句 / 证据定位）；无证据时报 unknown 而不是 healthy |
 | 查询契约 | `Query/DiagnosticFactQuery.cs` | 过滤维度 + 分页 + **显式截断标记**（修既有「Limit 静默 clamp 后当时间窗结论」） |
-| 界面呈现 | `Presentation/ErrorPresentation.cs` | 标题/大概原因/严重度/可重试/建议动作/原码；标题禁出现异常类型名与英文原文，未知码原样显示 |
+| 界面呈现 | `Presentation/ErrorPresentation.cs` | 标题/大概原因/严重度/可重试/建议动作/原码；上下文保护保留分类器的具体阈值原因；标题禁出现异常类型名与英文原文，未知码原样显示 |
 | 复制现场 | `Presentation/DiagnosticReportDocument.cs` | 版本化 schema + 本地/UTC 捕获时间 + errorId/traceId/turnId/sessionId + 因果码/阶段 + 已记录的尝试明细 + 证据（含异常链）+ 日志定位提示；可重试性沿用分类证据，失败终态不覆盖它；`RenderText()` 人读、`RenderJson()` 机器读；64 KiB 显式截断 |
 | 故障场景资产 | `Scenarios/FaultScenarios.cs` | 「注入的失败 → 期望结论」对照表；新增码缺场景即取红 |
 

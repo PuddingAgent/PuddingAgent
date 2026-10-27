@@ -12,6 +12,24 @@ namespace PuddingRuntimeTests.Services;
 public sealed class CompactionDiagnosticJournalTests
 {
     [TestMethod]
+    public async Task FullBodyCaptureCannotConsumeTerminalEvidenceReserve()
+    {
+        var root = TestRoot();
+        var journal = Create(root);
+        var name = await journal.BeginAsync("capacity", new { }, [], CancellationToken.None);
+        Assert.IsTrue(await journal.AppendAsync(name, "request", new
+        { body = new string('x', (int)CompactionDiagnosticJournal.MaxCaseBytes - 128 * 1024) }, CancellationToken.None));
+        Assert.IsFalse(await journal.AppendAsync(name, "request", new { body = new string('x', 128 * 1024) }, CancellationToken.None));
+        Assert.IsTrue(await journal.AppendAsync(name, "interrupted", new
+        { cancellationReason = "candidate_preparation_idle_timeout", historyPreserved = true }, CancellationToken.None));
+        Assert.IsTrue(await journal.AppendAsync(name, "outcome", new { applied = false }, CancellationToken.None));
+        var path = Path.Combine(root, "logs", "diagnostics", "compaction", name!);
+        Assert.IsTrue(new FileInfo(path).Length <= CompactionDiagnosticJournal.MaxCaseBytes);
+        using var last = JsonDocument.Parse(File.ReadLines(path).Last());
+        Assert.AreEqual("outcome", last.RootElement.GetProperty("kind").GetString());
+    }
+
+    [TestMethod]
     public void RequestShape_RecordsRoleTransitionWithoutExposingBodies()
     {
         ChatMessage[] messages = [new(ChatRole.User, "PRIVATE USER BODY"),

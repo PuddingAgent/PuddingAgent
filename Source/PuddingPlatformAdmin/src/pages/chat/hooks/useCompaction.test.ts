@@ -60,6 +60,16 @@ describe('useCompaction', () => {
     expect(item.compaction.state).toBe('skipped');
     expect(item.message).toBe('boundary_cancelled');
     expect(result.current.loading).toBe(false);
+    expect(result.current.compactionStatus).toBe('未压缩：原上下文已保留');
+  });
+  it('replayed preparation failure is shown even without a live start event', () => {
+    const { result } = renderHook(() => useCompactionHarness());
+    act(() => result.current.handleCompactionLifecycleEvent(compactionEvent('context.compaction.failed', {
+      reason: 'candidate_preparation_idle_timeout', error: '压缩长时间未取得进展',
+    }), { replay: true, notify: false }));
+    expect(result.current.compactionStatus).toBe('压缩失败：压缩长时间未取得进展');
+    expect(result.current.turns[0].assistant.status).toBe('error');
+    expect(messageApi.success).not.toHaveBeenCalled();
   });
   it('does not merge a different compaction into the active identity', () => {
     const { result } = renderHook(() => useCompactionHarness());

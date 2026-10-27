@@ -16,6 +16,23 @@ namespace PuddingRuntimeTests.Services;
 public sealed class RuntimeExecutionConfigBudgetTests
 {
     [TestMethod]
+    [DataRow(0, 300)]
+    [DataRow(-1, 300)]
+    [DataRow(42, 42)]
+    [DataRow(int.MaxValue, 86400)]
+    public void CompactionIdleDeadlineIsConfigurableAndValidForTimers(int configured, int expected)
+    {
+        var root = CreateRoot();
+        try
+        {
+            WriteConfig(root, System.Text.Json.JsonSerializer.Serialize(new
+            { contextCompaction = new { preparationIdleTimeoutSeconds = configured } }));
+            Assert.AreEqual(expected, CreateService(root).GetOptions().ContextCompaction.PreparationIdleTimeoutSeconds);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [TestMethod]
     public void Normalize_ExplicitConfigBudgets_AreRespectedWithoutElevation()
     {
         var root = CreateRoot();

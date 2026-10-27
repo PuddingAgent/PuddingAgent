@@ -2,7 +2,7 @@
 title: 案例：调度与 Token 内核
 author: hyfree
 date: 2026-10-02
-last_reviewed: 2026-10-24
+last_reviewed: 2026-10-27
 status: active
 description: 调度、Goal、Runtime 测试共同引用 Platform/Runtime 产物并会创建 SQLite 夹具。不要并行运行 PuddingRuntimeTests 与 PuddingPlatformTests：并行构建会争用 PuddingPlatform.dll，并可能把临时 SQLite I/O 或外键错误伪装成功能回归。应先完成一次构建，再串行运行聚焦集和全量集；测试夹具必须创建真实 S
 categories: [docs, how-debug]
@@ -316,4 +316,23 @@ Desktop 本身退出还需查 DesktopHome `logs/desktop.log`、Windows Applicati
 `PuddingCoreTests.ExactTokenizerRequestMeasurementTests`，分别通过
 `PUDDING_DEEPSEEK_TOKENIZER_JSON`（文件）及 `PUDDING_TOKENIZER_ASSETS`（目录）指定词表。
 不配置资源时测试会标为跳过，不能据此宣布精确计数已验证。现场材料只保留异常栈、构建与词表哈希，勿记录会话正文。
+
+## 压缩准备中断与预算轴
+
+`local.context_compaction_required` 表示发送前上下文保护未解除，不一定是上传字节超限。先比较
+`estimated_request_tokens / registered_context_window_tokens` 与 `compaction_blocking_ratio`，再核对
+`estimated_request_text_bytes / request_text_budget_bytes`。`request_text_budget_exceeded` 与
+`compaction_protection_required` 分别保留字节超限和维护门禁事实；UI 有效输入窗口已扣输出预留，不能拿它作注册窗口比例的分母。
+
+日志 `[AgentExec:Compaction] Boundary decision` 记录本轮输入、真实增长量与门禁；
+`[AgentExec:CompactionAttempt]` 记录 map/split/merge 阶段、分段序号、输出状态和 `reusedCheckpoint`。
+摘要复用没有新的 Provider 调用或 usage；不要把逻辑分段数当作计费调用数。
+`candidate_preparation_idle_timeout` 表示超过 `contextCompaction.preparationIdleTimeoutSeconds` 没有产出完整且通过预算校验的分段；
+`candidate_turn_cancelled` 来自外层取消，`candidate_owner_disposed` 来自执行结束回收，不能统称网络故障或候选过期。
+
+按 `compactionId` 查看 `logs/diagnostics/compaction/*.jsonl` 的 `plan / attempt / interrupted / prepared / outcome`。
+正文达到记录上限时可出现 `capture_limit`；每案另为中断和终态预留 64 KiB，`applied_context / commit_rejection` 承载大段上下文或来源问题明细。
+中断记录的 `cancellationReason` 和 `progress` 包含累计耗时、无进展时间、期限、最后完成的逻辑分段、决策及复用数；
+最后一次请求可能仍在途中，须再对照 Gateway 日志。只有持久提交成功才算压缩完成；skipped/cancelled 是原上下文保留。
+已接受分段在同进程内可跨轮复用，Core 重启后缓存重建；不要修改原始会话或伪造成功终态来解除门禁。
 

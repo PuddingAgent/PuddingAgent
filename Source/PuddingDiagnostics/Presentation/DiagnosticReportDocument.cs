@@ -81,7 +81,7 @@ public sealed record DiagnosticReportDocument
             && bool.TryParse(evidence.GetValueOrDefault(DiagnosticEvidenceKeys.Retryable), out var recorded)
                 ? recorded
                 : DiagnosticCauseCatalog.Describe(code).RetryableByDefault);
-        var presentation = ErrorPresentationCatalog.Describe(code, canRetry);
+        var presentation = ErrorPresentationCatalog.Describe(code, canRetry, incident.RootCauseMessage);
 
         return new DiagnosticReportDocument
         {

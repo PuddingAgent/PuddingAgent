@@ -102,6 +102,8 @@ internal static class LlmRequestTextBudget
         {
             ["estimated_request_text_bytes"] = bytes.ToString(),
             ["request_text_budget_bytes"] = limit.ToString(),
+            ["request_text_budget_exceeded"] = (limit > 0 && bytes > limit).ToString().ToLowerInvariant(),
+            ["compaction_protection_required"] = contextProtectionRequired.ToString().ToLowerInvariant(),
             ["tool_definition_bytes"] = MeasureTools(tools).ToString(),
             ["system_message_bytes"] = MeasureMessages(messages.Where(m => m.Role == ChatRole.System).ToArray()).ToString(),
             ["compaction_reason"] = compactionFailureReason ?? "no_applicable_compaction_span",

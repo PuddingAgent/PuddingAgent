@@ -9,6 +9,68 @@ namespace PuddingRuntimeTests.Services;
 public sealed class BoundedCompactionSummaryTests
 {
     [TestMethod]
+    public async Task CancelledTurnRetainsAcceptedSegments_ForExactSameSessionAndInputOnly()
+    {
+        var checkpoints = new CompactionSummaryCheckpointStore();
+        ChatMessage[] source = [new(ChatRole.User, new string('x', 300_000))];
+        var calls = 0;
+        await Assert.ThrowsAsync<OperationCanceledException>(() => BoundedCompactionSummary.GenerateAsync(source, (_, _) =>
+        {
+            if (++calls == 2) throw new OperationCanceledException();
+            return Task.FromResult(Success("accepted first segment"));
+        }, CancellationToken.None, checkpoints: checkpoints, checkpointScope: "session/route"));
+        Assert.AreEqual(2, calls);
+
+        var resumed = await BoundedCompactionSummary.GenerateAsync(source, (_, _) => Task.FromResult(Success("complete merged checkpoint")),
+            CancellationToken.None, checkpoints: checkpoints, checkpointScope: "session/route");
+        Assert.IsTrue(resumed.Success);
+        Assert.IsTrue(resumed.Attempts[0].ReusedCheckpoint);
+        Assert.IsNull(resumed.Attempts[0].PromptTokens, "Reused text is not another provider invocation or charge.");
+        Assert.IsTrue(resumed.Attempts.Skip(1).Any(a => !a.ReusedCheckpoint));
+
+        var otherSession = await BoundedCompactionSummary.GenerateAsync(source, (_, _) => Task.FromResult(Success("other session checkpoint")),
+            CancellationToken.None, checkpoints: checkpoints, checkpointScope: "other-session/route");
+        Assert.IsFalse(otherSession.Attempts.Any(a => a.ReusedCheckpoint));
+        var changed = await BoundedCompactionSummary.GenerateAsync([new(ChatRole.User, "changed source")],
+            (_, _) => Task.FromResult(Success("changed checkpoint")), CancellationToken.None,
+            checkpoints: checkpoints, checkpointScope: "session/route");
+        Assert.IsFalse(changed.Attempts.Any(a => a.ReusedCheckpoint));
+    }
+
+    [TestMethod]
+    public void PreparedSegmentCacheIsBoundedByEntryCountAndCharacters()
+    {
+        var checkpoints = new CompactionSummaryCheckpointStore(maxEntries: 2, maxCharacters: 10);
+        checkpoints.Save("s", "1", "first");
+        checkpoints.Save("s", "2", "next");
+        Assert.AreEqual("first", checkpoints.Find("s", "1"));
+        checkpoints.Save("s", "3", "third");
+        Assert.IsNull(checkpoints.Find("s", "2"));
+        Assert.AreEqual("first", checkpoints.Find("s", "1"));
+        checkpoints.Save("s", "oversized", new string('x', 11));
+        Assert.IsNull(checkpoints.Find("s", "oversized"));
+        Assert.AreEqual("third", checkpoints.Find("s", "3"));
+    }
+
+    [TestMethod]
+    public void PreparedSegmentCacheExpiresWithoutExtendingLifetimeOnReads()
+    {
+        var clock = new CheckpointClock();
+        var checkpoints = new CompactionSummaryCheckpointStore(clock: clock);
+        checkpoints.Save("session", "input", "complete checkpoint");
+        clock.Now = clock.Now.AddMinutes(29);
+        Assert.IsNotNull(checkpoints.Find("session", "input"));
+        clock.Now = clock.Now.AddMinutes(1);
+        Assert.IsNull(checkpoints.Find("session", "input"));
+    }
+
+    private sealed class CheckpointClock : TimeProvider
+    {
+        internal DateTimeOffset Now = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [TestMethod]
     public async Task LargeSource_IsBounded_AndAllSegmentsAreMergedBeforeSuccess()
     {
         var source = new[] { new ChatMessage(ChatRole.User, new string('x', 1_450_000)) };

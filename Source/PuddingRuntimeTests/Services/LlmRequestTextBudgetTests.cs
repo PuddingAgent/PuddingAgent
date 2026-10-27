@@ -8,6 +8,21 @@ namespace PuddingRuntimeTests.Services;
 [TestClass]
 public sealed class LlmRequestTextBudgetTests
 {
+    [TestMethod]
+    public void TokenProtectionBelowByteLimit_ExportsTheActualReasonAndBothBudgetAxes()
+    {
+        var error = LlmRequestTextBudget.Validate(Request(config: Config(1_000_000)), [new(ChatRole.User, "small")], [],
+            "candidate_preparation_idle_timeout", new Dictionary<string, string>
+            { ["registered_context_window_tokens"] = "1000000", ["compaction_trigger_tokens"] = "700000" },
+            contextProtectionRequired: true);
+        Assert.IsNotNull(error);
+        Assert.IsTrue(LlmFailureDiagnostics.TryGet(error, out var cause));
+        Assert.AreEqual("false", cause.Evidence["request_text_budget_exceeded"]);
+        Assert.AreEqual("true", cause.Evidence["compaction_protection_required"]);
+        StringAssert.Contains(cause.UserMessage, "压缩阈值");
+        Assert.IsFalse(PuddingCode.Diagnostics.ErrorPresentationCatalog.Present(cause).ShortCause.Contains("上传预算"));
+    }
+
     private static RuntimeDispatchRequest Request(string provider = "deepseek", string protocol = "responses",
         LlmConfig? config = null) => new()
     {

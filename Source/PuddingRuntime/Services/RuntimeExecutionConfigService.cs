@@ -84,6 +84,11 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
             && compaction.BlockingRatio <= 1 && compaction.MinimumEpochRounds >= 0
             && compaction.CommitRatio < compaction.UploadBlockingRatio && compaction.UploadBlockingRatio <= 1))
             compaction = new ContextMaintenanceOptions();
+        compaction = compaction with
+        {
+            PreparationIdleTimeoutSeconds = Math.Clamp(compaction.PreparationIdleTimeoutSeconds > 0
+                ? compaction.PreparationIdleTimeoutSeconds : new ContextMaintenanceOptions().PreparationIdleTimeoutSeconds, 1, 86400),
+        };
         // 工具曝光预算：0 表示该轴不限制；负值夹回 0（不因笔误放大投递面）。
         var toolExposure = options.ToolExposure ?? new ToolExposureOptions();
         toolExposure = toolExposure with

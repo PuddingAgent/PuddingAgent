@@ -172,9 +172,9 @@
 | `Services/LlmProfileResolver.cs` | provider 与 profile 到完整配置的解析 | `ILlmProfileResolver` | `Services/PuddingJsonConfig.cs` | — |
 | `Services/LlmReplyBudget.cs` | 单轮回复输出上限与窗口预留的唯一口径 | `LlmReplyBudget` | `Services/LlmRequestBudgetGuard.cs` | 登记 `MaxOutputTokens`（393,216）是模型输出**能力**上限，不是本轮申请量；请求 `max_tokens` 与窗口预留同取 `min(登记, 64,000)`，未登记或 0 原样透传（不臆造上限、不预留）。1M 窗口有效输入 605,760 → 934,976 |
 | `Services/LlmRequestBudgetGuard.cs` | 请求级预算守卫与软压缩触发；provider 输入上限文案解析 | `LlmRequestBudgetGuard` | `Services/ContextCompactionService.cs` | 上限解析须认两种文案：`Range of input length` / `maximum context length is N tokens`；摘要 raw 不回写主校准（ADR-095 D6）；`Prepare` 仅超限时、`CaptureLlmRequest` 后、删消息前剪枝；未超限不动历史 |
-| `Services/LlmRequestTextBudget.cs` | 路由无关的独立文本上传预算与发送前复核（provider/endpoint 身份存在即按窗口折算，缺身份则不虚构预算） | `LlmRequestTextBudget` | `Services/LlmRequestBudgetGuard.cs` | 每轮检查文本与工具定义；预算=3 B/token × 有效输入窗口（下限 512 KiB），图片另走视觉预算；超限零发送，携带压缩原因及体积分解；`MeasureTool` 与工具曝光预算同序列化口径 |
+| `Services/LlmRequestTextBudget.cs` | 路由无关的独立文本上传预算与发送前复核（provider/endpoint 身份存在即按窗口折算，缺身份则不虚构预算） | `LlmRequestTextBudget` | `Services/LlmRequestBudgetGuard.cs` | 每轮检查文本与工具定义；预算=6 B/token × 有效输入窗口（下限 512 KiB），图片另走视觉预算；超限零发送，携带压缩原因及体积分解；`MeasureTool` 与工具曝光预算同序列化口径 |
 | `Services/BoundedCompactionSummary.cs` | 选中历史的有界分段总结与递归归并 | `BoundedCompactionSummary` | `Services/AgentExecutionService.cs` | 128 KiB 分段、64 次调用与 4 层恢复上限；截断/超额从完整源精简重生成，再拆段归并；返回逐次诊断，部分摘要不提交 |
-| `Services/Diagnostics/CompactionDiagnosticJournal.cs` | 压缩计划、分段请求/返回及提交结果的本地脱敏现场 | `CompactionDiagnosticJournal` | `Services/AgentExecutionService.cs` | 每案 8 MiB、最多 32 案/7 天；记录前后请求角色、摘要类型、续传类型与工具配对形状；成品 Host 显式注册；凭据脱敏，截断/写入失败显式可见 |
+| `Services/Diagnostics/CompactionDiagnosticJournal.cs` | 压缩计划、分段请求/返回及提交结果的本地脱敏现场 | `CompactionDiagnosticJournal` | `Services/AgentExecutionService.cs` | 每案 8 MiB、最多 32 案/7 天；为中断和终态预留 64 KiB，大段提交内容单独记录；记录前后请求形状，凭据脱敏，截断/写入失败显式可见 |
 | `Services/ManagedOggOpusTranscoder.cs` | 频道短音频的纯托管转码 | `IAudioTranscoder` | `Services/DashScopeTtsProvider.cs` | — |
 | `Services/MemoryLlmInvocationClient.cs` | 面向记忆的共享门面 LLM 客户端 | `IMemoryLlmClient` | `Services/LlmInvocationService.cs` | — |
 | `Services/MemoryMaintenancePlanWriteCommandMapper.cs` | 记忆维护方案到写命令的映射 | `MemoryMaintenancePlanWriteCommandMapper` | `Services/SubconsciousPlanGenerationService.cs` | — |
@@ -259,7 +259,8 @@
 | `Services/VolcengineArkImageGenerationProvider.cs` | 火山方舟的图片生成适配 | `VolcengineArkImageGenerationProvider` | `Services/Orchestration/ImageGenerateOrchestrationNodeExecutor.cs` | — |
 | `Services/WarmPrefixCompaction.cs` | 完整历史/已完成执行跨度的压缩预案与检查点契约 | `WarmPrefixCompaction` | `Services/AgentExecution/AgentExecutionService.Compaction.cs` | 显式追加适配保留新尾部；按当前完整出站信封计量摘要；来源、收益、预算及持久代次 CAS |
 | `Services/AgentExecution/AgentExecutionService.Compaction.cs` | Streaming/Buffered 共用的准备与提交边界 | `TryWarmPrefixCompactionAsync` | `PuddingContextPolicy/PrefixCompactionPolicy.cs` | 每次请求评估注册窗口和独立上传预算；后台冻结准备不改前缀，70% 配置阈值等待；失败阻止模型请求 |
-| `Services/BackgroundCompactionCandidate.cs` | 执行内单候选及提交闸门 | `BackgroundCompactionCandidate` | `AgentExecutionService.Compaction.cs` | 前台在安全边界释放闸门并等待提交；结束取消并回收，五分钟准备超时 |
+| `Services/BackgroundCompactionCandidate.cs` | 执行内单候选、进展租约及提交闸门 | `BackgroundCompactionCandidate` | `AgentExecutionService.Compaction.cs` | 完整分段续期无进展期限；就绪后停止准备计时；前台在安全边界释放闸门并等待提交；区分外层取消、释放与无进展超时 |
+| `Services/CompactionSummaryCheckpointStore.cs` | 会话级有界分段成果缓存 | `CompactionSummaryCheckpointStore` | `BoundedCompactionSummary` | 精确输入与会话/路由隔离；跨执行复用完整摘要，不复用 usage；条数、字符量和 TTL 受限；不代替持久检查点 |
 | `Services/WarmPrefixMaintenanceAdmission.cs` | 预算裁剪后的补充保护准入 | `WarmPrefixMaintenanceAdmission` | `Services/AgentExecution/AgentExecutionService.Streaming.cs`、`…Buffered.cs` | 主调度每请求评估并按 round 去重；该辅助器只控制后续预算保护分支的重复调用 |
 | `Services/WarmPrefixSoftReclaimAdmission.cs` | 软维护压缩的「微小回收」准入判定 | `WarmPrefixSoftReclaimAdmission` | `Services/AgentExecution/AgentExecutionService.Compaction.cs` | 见下「关键语义」 |
 | `Services/WikiPageWriteEntry.cs` | 记忆 Wiki 页面的确定性写入入口 | `WikiPageWriteRequest` | `Services/MemoryWikiPageUpdateService.cs` | — |
