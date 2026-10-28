@@ -68,7 +68,10 @@ public sealed class ConversationEventIndexMaintenanceWorker(
             }
             else
             {
-                logger.LogDebug(
+                // 刻意用 Information 而不是 Debug：宿主默认过滤 Debug（实测日志里 [DBG] 计数恒为 0），
+                // 而这一行是运维唯一能确认「worker 真的跑了、索引真的齐了」的凭据。
+                // 每进程仅一行，不构成噪声。
+                logger.LogInformation(
                     "[ConversationEventIndex] All {Count} conversation_events indexes already present",
                     result.AlreadyPresentIndexes.Count);
             }
