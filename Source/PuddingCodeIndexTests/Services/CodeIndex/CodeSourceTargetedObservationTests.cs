@@ -187,6 +187,41 @@ public sealed class CodeSourceTargetedObservationTests : IDisposable
     }
 
     /// <summary>可编程扫描器：是否能按路径观测、各走了几次，全部可断言。</summary>
+    /// <summary>
+    /// 门禁：按路径观测的不完整是**设计如此**，必须带上自己的原因串。
+    /// <para>
+    /// 起因（2026-10-28）：生产日志里每一轮都是 <c>complete=false</c> 而 reason 为空，
+    /// 于是「提示批次没枚举全盘（正常）」与「扫描真的读不到子树（故障）」在日志里
+    /// <b>完全无法区分</b>，而上游正是因为看不清这一点，才无法判断 6663 条 deferred 该不该被处理。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task HintBatchReportsItsOwnReason_InsteadOfAnEmptyOne()
+    {
+        var changed = WriteFile("src/A.cs", "class A { }");
+        var scanner = new FileSystemCodeSourceScanner(new PermissiveIgnoreRules());
+
+        var outcome = await scanner.ObserveAsync([changed]);
+
+        Assert.IsFalse(outcome.Complete, "按路径观测必然不完整（没被问到的路径这一轮没观测）");
+        Assert.AreEqual(
+            CodeSourceScanReasons.HintBatchOnly,
+            outcome.IncompleteReason,
+            "reason 为 null 会与「真的扫描失败」混在一起，无法归因");
+    }
+
+    /// <summary>空提示集合同样要能自证身份，而不是伪装成一次失败的完整扫描。</summary>
+    [TestMethod]
+    public async Task EmptyHintBatchAlsoCarriesTheHintBatchReason()
+    {
+        var scanner = new FileSystemCodeSourceScanner(new PermissiveIgnoreRules());
+
+        var outcome = await scanner.ObserveAsync([]);
+
+        Assert.IsFalse(outcome.Complete);
+        Assert.AreEqual(CodeSourceScanReasons.HintBatchOnly, outcome.IncompleteReason);
+    }
+
     private sealed class FakeScanner : ICodeSourceScanner, ICodeSourcePathProbe
     {
         public bool PathProbe { get; init; }

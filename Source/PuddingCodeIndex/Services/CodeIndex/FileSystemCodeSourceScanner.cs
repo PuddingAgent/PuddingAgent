@@ -166,7 +166,12 @@ public sealed class FileSystemCodeSourceScanner : ICodeSourceScanner, ICodeSourc
             .ToArray();
 
         if (paths.Length == 0)
-            return Task.FromResult(new CodeSourceScanOutcome([], RootUsable: true, Complete: false, null));
+        {
+            // 空的提示集合也是「提示驱动批次」：不完整是设计如此，但必须能自证身份，
+            // 否则日志里的 complete=false 与「某棵子树读不到」完全同形（2026-10-28）。
+            return Task.FromResult(new CodeSourceScanOutcome(
+                [], RootUsable: true, Complete: false, CodeSourceScanReasons.HintBatchOnly));
+        }
 
         var entries = new List<CodeSourceDiskEntry>();
         string? incompleteReason = null;
@@ -252,7 +257,10 @@ public sealed class FileSystemCodeSourceScanner : ICodeSourceScanner, ICodeSourc
         entries.Sort((left, right) => CodePathIdentity.PathComparer.Compare(left.FilePath, right.FilePath));
 
         // 按路径观测**永远不完整**：没被问到的路径这一轮没有事实，绝不允许据此删除任何记录。
-        return Task.FromResult(new CodeSourceScanOutcome(entries, RootUsable: true, Complete: false, incompleteReason));
+        // 提示批次的不完整是设计如此；但若本轮真的撞到读不到的子树/条目上限，
+        // 那个原因优先——真实故障不得被「提示批次」这个正常标签盖掉。
+        return Task.FromResult(new CodeSourceScanOutcome(
+            entries, RootUsable: true, Complete: false, incompleteReason ?? CodeSourceScanReasons.HintBatchOnly));
     }
 
     private bool SafeIsIgnored(string path, bool isDirectory)

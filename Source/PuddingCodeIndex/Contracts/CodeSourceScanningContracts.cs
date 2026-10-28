@@ -68,6 +68,15 @@ public static class CodeSourceScanReasons
 
     /// <summary>条目数达到上限：本轮不完整（宁可下一轮继续，也不把未枚举的路径当删除）。</summary>
     public const string EntryLimitReached = "entry_limit_reached";
+
+    /// <summary>
+    /// 提示驱动批次（按路径观测）：<b>不完整是设计如此</b>，因为没被问到的路径这一轮没被观测。
+    /// <para>
+    /// 这个原因串存在的唯一理由是可观测：此前这类批次返回 <c>Complete=false</c> 而 reason 为 null，
+    /// 日志里与「某棵子树读不到」完全同形，导致无法判断 6663 条 deferred 是正常还是故障（2026-10-28）。
+    /// </para>
+    /// </summary>
+    public const string HintBatchOnly = "hint_batch_only";
 }
 
 /// <summary>
