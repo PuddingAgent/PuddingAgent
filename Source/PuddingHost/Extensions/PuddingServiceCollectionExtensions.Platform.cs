@@ -211,6 +211,11 @@ public static partial class PuddingServiceCollectionExtensions
             builder.Services.AddSingleton<ConversationProjector>();
             builder.Services.AddSingleton<ConversationCatalogBackfillService>();
             builder.Services.AddHostedService<ConversationProjectionWorker>();
+            // G4 读放大修复的可执行入口（2026-10-28）：
+            // conversation_events 的 command_id 索引按设计不在启动期同步创建，
+            // 而 EnsureConversationEventIndexesAsync 此前无生产调用点 ⇒ 已有库永远拿不到索引。
+            // 这个 worker 启动 30s 后在后台补齐，缺什么建什么，已全部就绪则直接结束。
+            builder.Services.AddHostedService<ConversationEventIndexMaintenanceWorker>();
             builder.Services.AddSingleton<ChatTelemetryRecorder>();
 
             // ── Execution Kernel（ADR-059）─────────────────
