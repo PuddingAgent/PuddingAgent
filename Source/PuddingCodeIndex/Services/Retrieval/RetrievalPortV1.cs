@@ -31,6 +31,29 @@ public interface IRetrievalSymbolSource
     Task<IReadOnlyList<CodeSymbolRecord>> SearchSymbolsAsync(
         CodeSymbolSearchRequest request,
         CancellationToken cancellationToken);
+
+    /// <summary>取单个符号（关系面用：把关系边上的 symbolId 解析成可描述的对端符号）。</summary>
+    Task<CodeSymbolRecord?> GetSymbolAsync(
+        string workspaceId,
+        string projectId,
+        string symbolId,
+        CancellationToken cancellationToken);
+
+    /// <summary>指向该符号的关系边（谁调用了它 / 谁引用了它 / 谁实现了它）。</summary>
+    Task<IReadOnlyList<CodeRelationRecord>> ListIncomingRelationsAsync(
+        string workspaceId,
+        string projectId,
+        string symbolId,
+        IReadOnlyList<CodeRelationKind> relationKinds,
+        CancellationToken cancellationToken);
+
+    /// <summary>从该符号出发的关系边（它调用了谁）。</summary>
+    Task<IReadOnlyList<CodeRelationRecord>> ListOutgoingRelationsAsync(
+        string workspaceId,
+        string projectId,
+        string symbolId,
+        IReadOnlyList<CodeRelationKind> relationKinds,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>把既有 <see cref="ICodeIndexStore"/> 适配成窄端口（生产路径唯一实现）。</summary>
@@ -49,22 +72,64 @@ public sealed class CodeIndexStoreSymbolSource(ICodeIndexStore store) : IRetriev
         CodeSymbolSearchRequest request,
         CancellationToken cancellationToken) =>
         _store.SearchSymbolsAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<CodeSymbolRecord?> GetSymbolAsync(
+        string workspaceId,
+        string projectId,
+        string symbolId,
+        CancellationToken cancellationToken) =>
+        _store.GetSymbolAsync(workspaceId, projectId, symbolId, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<CodeRelationRecord>> ListIncomingRelationsAsync(
+        string workspaceId,
+        string projectId,
+        string symbolId,
+        IReadOnlyList<CodeRelationKind> relationKinds,
+        CancellationToken cancellationToken) =>
+        _store.ListIncomingRelationsAsync(
+            workspaceId,
+            projectId,
+            symbolId,
+            relationKind: null,
+            relationKinds: relationKinds,
+            cancellationToken: cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<CodeRelationRecord>> ListOutgoingRelationsAsync(
+        string workspaceId,
+        string projectId,
+        string symbolId,
+        IReadOnlyList<CodeRelationKind> relationKinds,
+        CancellationToken cancellationToken) =>
+        _store.ListRelationsAsync(
+            workspaceId,
+            projectId,
+            symbolId,
+            relationKind: null,
+            relationKinds: relationKinds,
+            cancellationToken: cancellationToken);
 }
 
 /// <summary>
-/// <see cref="IRetrievalPort"/> 的第一个实现（R6 B1 切片一）。
+/// <see cref="IRetrievalPort"/> 的第一个实现。
 /// <para>
-/// <b>已支持</b>：<see cref="RetrievalIntent.Auto"/> / <see cref="RetrievalIntent.Namespace"/> /
+/// <b>符号面</b>：<see cref="RetrievalIntent.Auto"/> / <see cref="RetrievalIntent.Namespace"/> /
 /// <see cref="RetrievalIntent.Type"/> / <see cref="RetrievalIntent.Member"/> / <see cref="RetrievalIntent.Any"/>。
 /// </para>
 /// <para>
+/// <b>关系面</b>（R6 B1 切片二）：<see cref="RetrievalIntent.Callers"/> /
+/// <see cref="RetrievalIntent.Callees"/> / <see cref="RetrievalIntent.References"/> /
+/// <see cref="RetrievalIntent.Implementation"/>。关系种类不在这里定义，
+/// 而是取自冻结契约 <see cref="RetrievalIntentPolicy.RelationFilter"/>。
+/// </para>
+/// <para>
 /// <b>未支持</b>（<see cref="RetrievalIntent.File"/> / <see cref="RetrievalIntent.Comment"/> /
-/// <see cref="RetrievalIntent.Implementation"/> / <see cref="RetrievalIntent.References"/> /
-/// <see cref="RetrievalIntent.Callers"/> / <see cref="RetrievalIntent.Callees"/> /
 /// <see cref="RetrievalIntent.Impact"/>）：返回
 /// <see cref="RetrievalEmptyReason.IntentUnsupported"/> + 替代方案，
-/// <b>不伪装成空命中</b>（ADR-089 §8.3）。
-/// 切片二接关系面（<c>ICodeIndexStore.ListRelationsAsync</c>）后逐个打开。
+/// <b>不伪装成空命中</b>（ADR-089 §8.3）。File/Comment 需要文件与文本面，
+/// Impact 需要多跳遍历（本刀只做深度 1）。
 /// </para>
 /// <para>
 /// <b>ScopeId 语义（v1）</b>：等同于 code index 的 <c>workspaceId</c>。
@@ -104,12 +169,58 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source) : IRetrievalP
     [
         RetrievalIntent.File,
         RetrievalIntent.Comment,
-        RetrievalIntent.Implementation,
-        RetrievalIntent.References,
-        RetrievalIntent.Callers,
-        RetrievalIntent.Callees,
         RetrievalIntent.Impact,
     ];
+
+    /// <summary>关系意图的方向：incoming = 指向目标的边（谁调用了它），outgoing = 从目标出发的边（它调用了谁）。</summary>
+    private enum RelationDirection
+    {
+        Incoming,
+        Outgoing,
+    }
+
+    private readonly record struct RelationIntentSpec(
+        RelationDirection Direction,
+        RetrievalHitKind HitKind,
+        string Label);
+
+    /// <summary>
+    /// 关系面的四个意图（R6 B1 切片二）。
+    /// <para>
+    /// 关系种类<b>不在这里定义</b>，而是取自冻结契约
+    /// <see cref="RetrievalIntentPolicy.RelationFilter"/> —— 两处各写一份必然漂移。
+    /// </para>
+    /// </summary>
+    private static readonly IReadOnlyDictionary<RetrievalIntent, RelationIntentSpec> RelationIntents =
+        new Dictionary<RetrievalIntent, RelationIntentSpec>
+        {
+            [RetrievalIntent.Callers] = new(RelationDirection.Incoming, RetrievalHitKind.CallSite, "调用者"),
+            [RetrievalIntent.Callees] = new(RelationDirection.Outgoing, RetrievalHitKind.CallSite, "被调用者"),
+            [RetrievalIntent.References] = new(RelationDirection.Incoming, RetrievalHitKind.Reference, "引用者"),
+            [RetrievalIntent.Implementation] = new(RelationDirection.Incoming, RetrievalHitKind.Implementation, "实现者"),
+        };
+
+    /// <summary>
+    /// <see cref="RetrievalRelationKind"/> → <see cref="CodeRelationKind"/>（索引层实际写入的边）。
+    /// <para>
+    /// <b>为什么是显式表而不是按名字对拉</b>：两个枚举就不是同一套词表 ——
+    /// <see cref="RetrievalRelationKind.Imports"/> 在索引层没有对应边（<c>CodeRelationKind</c> 无此值），
+    /// 名字对齐会静默把「没有这种边」伪装成「查过但没有」。本表不收录的一律丢弃（并在
+    /// <see cref="RetrieveRelationsAsync"/> 里对“全部丢弃”报 IntentUnsupported）。
+    /// </para>
+    /// </summary>
+    private static readonly IReadOnlyDictionary<RetrievalRelationKind, CodeRelationKind> RelationKindMap =
+        new Dictionary<RetrievalRelationKind, CodeRelationKind>
+        {
+            [RetrievalRelationKind.Calls] = CodeRelationKind.Calls,
+            [RetrievalRelationKind.References] = CodeRelationKind.References,
+            [RetrievalRelationKind.Inherits] = CodeRelationKind.Inherits,
+            [RetrievalRelationKind.Implements] = CodeRelationKind.Implements,
+            [RetrievalRelationKind.Overrides] = CodeRelationKind.Overrides,
+        };
+
+    /// <summary>关系面的起点上限：查询过泛时宁可少展开几个起点，也不要把整张关系图读进内存。</summary>
+    private const int MaxRelationTargets = 20;
 
     /// <inheritdoc />
     public async Task<RetrievalResult> RetrieveAsync(
@@ -147,6 +258,14 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source) : IRetrievalP
                     scopeId),
                 indexVersion,
                 appliedFilters: AppliedFilters(request));
+        }
+
+        // 关系面与符号面是两条路由：关系面的分页游标在“命中”层面生效（全量展开后切片），
+        // 符号面的游标直接下推到 SQL 的 Skip。共用同一个 skip:N 编码，但不共用分页时机。
+        if (RelationIntents.ContainsKey(request.Intent))
+        {
+            return await RetrieveRelationsAsync(request, scopeId, indexVersion, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var offset = DecodeCursor(request.Cursor);
@@ -232,6 +351,231 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source) : IRetrievalP
             appliedFilters: AppliedFilters(request),
             nextCursor: EncodeCursor(offset.Value + hits.Count));
     }
+
+    /// <summary>
+    /// 关系面检索（<see cref="RetrievalIntent.Callers"/> / <see cref="RetrievalIntent.Callees"/> /
+    /// <see cref="RetrievalIntent.References"/> / <see cref="RetrievalIntent.Implementation"/>）。
+    /// <para>
+    /// <b>两段式</b>：查询词只描述“名字”，而关系边挂在 symbolId 上 ⇒ 先把查询解析成目标符号，
+    /// 再沿边展开。目标上限 <see cref="MaxRelationTargets"/>。
+    /// </para>
+    /// <para>
+    /// <b>去重先于分页</b>：同一调用者在多处调用同一目标会产生多条边，按对端符号去重后
+    /// 每个符号只留一条代表证据 —— 否则 10 个调用点会把 1 个调用者顶成 10 条命中。
+    /// </para>
+    /// </summary>
+    private async Task<RetrievalResult> RetrieveRelationsAsync(
+        RetrievalRequest request,
+        string scopeId,
+        string indexVersion,
+        CancellationToken cancellationToken)
+    {
+        var spec = RelationIntents[request.Intent];
+
+        var offset = DecodeCursor(request.Cursor);
+        if (offset is null)
+        {
+            return RetrievalResult.Empty(
+                request,
+                RetrievalEmptyReason.FilteredOut,
+                RetrievalNextStep.Narrow(
+                    RetrievalSuggestionKind.CompositeFilter,
+                    "分页游标无效（非本端口签发）；去掉 cursor 重新检索。"),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        var policyKinds = RetrievalIntentPolicy.RelationFilter(request.Intent);
+        var relationKinds = policyKinds is null
+            ? []
+            : policyKinds.Where(RelationKindMap.ContainsKey).Select(k => RelationKindMap[k]).Distinct().ToList();
+
+        if (relationKinds.Count == 0)
+        {
+            // 冻结契约给出的关系种类在索引层一条边都没有 ⇒ 是“能力没接”，不是“没有数据”。
+            return RetrievalResult.Empty(
+                request,
+                RetrievalEmptyReason.IntentUnsupported,
+                RetrievalNextStep.UseAlternativeFace(
+                    $"意图 {request.Intent} 需要的关系边类型在索引层尚不存在；改用符号面检索。",
+                    "RetrievalIntent.Type / Member / Any"),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        var targets = await _source.SearchSymbolsAsync(
+            new CodeSymbolSearchRequest(
+                WorkspaceId: scopeId,
+                Query: request.Query,
+                ProjectId: null,
+                Kind: null,
+                Limit: MaxRelationTargets,
+                Skip: 0,
+                MatchTarget: MapMatchTarget(request),
+                FileExtensions: null,
+                Kinds: null),
+            cancellationToken).ConfigureAwait(false);
+
+        if (targets.Count == 0)
+        {
+            var reason = RetrievalEmptyReasonPolicy.ClassifyForZeroHits(
+                request.Filter,
+                RetrievalIndexAvailability.Available,
+                RetrievalCapabilityLevel.Semantic,
+                intentSupported: true);
+
+            return RetrievalResult.Empty(
+                request,
+                reason,
+                BuildEmptyStep(reason, request),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        var collected = new List<RetrievalHit>();
+        foreach (var target in targets)
+        {
+            var relations = spec.Direction == RelationDirection.Incoming
+                ? await _source
+                    .ListIncomingRelationsAsync(scopeId, target.ProjectId, target.SymbolId, relationKinds, cancellationToken)
+                    .ConfigureAwait(false)
+                : await _source
+                    .ListOutgoingRelationsAsync(scopeId, target.ProjectId, target.SymbolId, relationKinds, cancellationToken)
+                    .ConfigureAwait(false);
+
+            foreach (var relation in relations)
+            {
+                var otherSymbolId = spec.Direction == RelationDirection.Incoming
+                    ? relation.SourceSymbolId
+                    : relation.TargetSymbolId;
+
+                var other = await _source
+                    .GetSymbolAsync(scopeId, relation.ProjectId, otherSymbolId, cancellationToken)
+                    .ConfigureAwait(false);
+
+                collected.Add(MapRelationHit(scopeId, target, relation, otherSymbolId, other, spec));
+            }
+        }
+
+        var hits = Deduplicate(
+            collected.Where(h => request.Filter is null || request.Filter.Matches(h)).ToList(),
+            request.Intent);
+
+        if (hits.Count == 0)
+        {
+            var reason = RetrievalEmptyReasonPolicy.ClassifyForZeroHits(
+                request.Filter,
+                RetrievalIndexAvailability.Available,
+                RetrievalCapabilityLevel.Semantic,
+                intentSupported: true);
+
+            return RetrievalResult.Empty(
+                request,
+                reason,
+                BuildEmptyStep(reason, request),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        if (offset.Value >= hits.Count)
+        {
+            return RetrievalResult.Empty(
+                request,
+                RetrievalEmptyReason.FilteredOut,
+                RetrievalNextStep.Narrow(
+                    RetrievalSuggestionKind.CompositeFilter,
+                    $"分页游标越界（关系面已全量展开，共 {hits.Count} 条）；去掉 cursor 重新检索。"),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        var page = hits.Skip(offset.Value).Take(request.PageSize).ToList();
+        var hasMore = offset.Value + page.Count < hits.Count;
+
+        if (!hasMore)
+        {
+            return RetrievalResult.Create(
+                request,
+                page,
+                hits.Count,
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        return RetrievalResult.Create(
+            request,
+            page,
+            hits.Count,
+            indexVersion,
+            nextSteps:
+            [
+                RetrievalNextStep.Narrow(
+                    RetrievalSuggestionKind.CompositeFilter,
+                    "关系结果超出页大小；用更明确的符号名或关系过滤收窄后重试。"),
+            ],
+            overflow: RetrievalOverflow.Create(SpillPage(page, request), page.Count, RetrievalBudgetKind.ItemCount),
+            distribution: RetrievalDistribution.FromHits(page),
+            appliedFilters: AppliedFilters(request),
+            nextCursor: EncodeCursor(offset.Value + page.Count));
+    }
+
+    /// <summary>
+    /// 把一条关系边映射成命中。
+    /// <para>
+    /// <b>身份与证据刻意分开</b>：身份 = 对端符号的<b>声明处</b>（同一声明被多处调用 ⇒ 身份相同 ⇒
+    /// 先去重），证据 = 关系边<b>所在处</b>（调用点 / 引用点），这样命中既能回答“是谁”，
+    /// 也能回答“凭什么说”。
+    /// </para>
+    /// </summary>
+    private static RetrievalHit MapRelationHit(
+        string scopeId,
+        CodeSymbolRecord target,
+        CodeRelationRecord relation,
+        string otherSymbolId,
+        CodeSymbolRecord? other,
+        RelationIntentSpec spec)
+    {
+        var evidencePath = relation.SourceFilePath ?? other?.FilePath ?? target.FilePath;
+        var evidenceLine = relation.SourceLine ?? other?.StartLine ?? target.StartLine;
+        var evidenceEnd = relation.SourceLine is { } sourceLine
+            ? sourceLine
+            : other?.EndLine ?? evidenceLine;
+
+        var symbolId = other?.SymbolId ?? otherSymbolId;
+        var name = other?.Name ?? $"(未索引符号 {otherSymbolId})";
+        var kind = other?.Kind ?? CodeSymbolKind.Unknown;
+        var declarationLine = other?.StartLine ?? target.StartLine;
+
+        var why = other is null
+            ? $"通过 {relation.Kind} 关系从「{target.Name}」到达 {otherSymbolId}，但对端符号未在索引中（索引不一致）"
+            : $"通过 {relation.Kind} 关系从「{target.Name}」到达的{spec.Label}（深度 1）";
+
+        return new RetrievalHit(
+            SymbolIdentity.Create(symbolId, other?.FilePath ?? evidencePath, declarationLine),
+            name,
+            kind,
+            spec.HitKind,
+            new RetrievalEvidence(evidencePath, evidenceLine, evidenceEnd),
+            other is null ? RetrievalConfidence.Unknown : RetrievalConfidence.Semantic,
+            1.0,
+            why,
+            RetrievalMatchTarget.SymbolName,
+            MapRelationKind(relation.Kind),
+            languageRawKind: null,
+            container: other?.Container ?? target.Container,
+            scopeIds: [scopeId]);
+    }
+
+    /// <summary>索引层关系边 → 检索面关系类型（<see cref="CodeRelationKind.Uses"/> 归入 References）。</summary>
+    private static RetrievalRelationKind MapRelationKind(CodeRelationKind kind) => kind switch
+    {
+        CodeRelationKind.Calls => RetrievalRelationKind.Calls,
+        CodeRelationKind.References or CodeRelationKind.Uses => RetrievalRelationKind.References,
+        CodeRelationKind.Inherits => RetrievalRelationKind.Inherits,
+        CodeRelationKind.Implements => RetrievalRelationKind.Implements,
+        CodeRelationKind.Overrides => RetrievalRelationKind.Overrides,
+        _ => RetrievalRelationKind.Unknown,
+    };
 
     /// <summary>把索引记录映射成命中。命中层恒为声明处（索引只描述声明）。</summary>
     private static RetrievalHit MapHit(CodeSymbolRecord record, RetrievalRequest request, string scopeId)

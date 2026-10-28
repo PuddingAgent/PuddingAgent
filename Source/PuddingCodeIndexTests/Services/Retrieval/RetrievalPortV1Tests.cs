@@ -23,9 +23,16 @@ public sealed class RetrievalPortV1Tests
 {
     private sealed class FakeSource(
         IReadOnlyList<CodeProjectRecord> projects,
-        IReadOnlyList<CodeSymbolRecord> symbols) : IRetrievalSymbolSource
+        IReadOnlyList<CodeSymbolRecord> symbols,
+        IReadOnlyList<CodeRelationRecord>? relations = null) : IRetrievalSymbolSource
     {
         public List<CodeSymbolSearchRequest> Requests { get; } = [];
+
+        public List<IReadOnlyList<CodeRelationKind>> RelationKindRequests { get; } = [];
+
+        public int ListIncomingCalls { get; private set; }
+
+        public int ListOutgoingCalls { get; private set; }
 
         public Task<IReadOnlyList<CodeProjectRecord>> ListProjectsAsync(
             string scopeId,
@@ -47,6 +54,47 @@ public sealed class RetrievalPortV1Tests
                 .ToList();
 
             return Task.FromResult<IReadOnlyList<CodeSymbolRecord>>(filtered);
+        }
+
+        public Task<CodeSymbolRecord?> GetSymbolAsync(
+            string workspaceId,
+            string projectId,
+            string symbolId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(symbols.FirstOrDefault(s => s.SymbolId == symbolId));
+
+        public Task<IReadOnlyList<CodeRelationRecord>> ListIncomingRelationsAsync(
+            string workspaceId,
+            string projectId,
+            string symbolId,
+            IReadOnlyList<CodeRelationKind> relationKinds,
+            CancellationToken cancellationToken)
+        {
+            ListIncomingCalls++;
+            RelationKindRequests.Add(relationKinds);
+
+            var filtered = (relations ?? [])
+                .Where(r => r.TargetSymbolId == symbolId && relationKinds.Contains(r.Kind))
+                .ToList();
+
+            return Task.FromResult<IReadOnlyList<CodeRelationRecord>>(filtered);
+        }
+
+        public Task<IReadOnlyList<CodeRelationRecord>> ListOutgoingRelationsAsync(
+            string workspaceId,
+            string projectId,
+            string symbolId,
+            IReadOnlyList<CodeRelationKind> relationKinds,
+            CancellationToken cancellationToken)
+        {
+            ListOutgoingCalls++;
+            RelationKindRequests.Add(relationKinds);
+
+            var filtered = (relations ?? [])
+                .Where(r => r.SourceSymbolId == symbolId && relationKinds.Contains(r.Kind))
+                .ToList();
+
+            return Task.FromResult<IReadOnlyList<CodeRelationRecord>>(filtered);
         }
     }
 
@@ -92,8 +140,9 @@ public sealed class RetrievalPortV1Tests
         var source = new FakeSource([ActiveProject()], [Symbol("OrderService", CodeSymbolKind.Class, "sym-1")]);
         var port = new RetrievalPortV1(source);
 
+        // Impact 需要多跳遍历，本刀（切片二）仍是显式不支持项；文件面板走文件面。
         var result = await port.RetrieveAsync(
-            new RetrievalRequest("Order", "ws-1", RetrievalIntent.Callers),
+            new RetrievalRequest("Order", "ws-1", RetrievalIntent.Impact),
             CancellationToken.None);
 
         Assert.AreEqual(0, result.Hits.Count);
@@ -160,5 +209,142 @@ public sealed class RetrievalPortV1Tests
         Assert.IsFalse(result.Distribution.IsEmpty);
         Assert.AreEqual(1, result.NextSteps.Count);
         Assert.AreEqual(RetrievalNextStepKind.NarrowQuery, result.NextSteps[0].Kind);
+    }
+
+    private static CodeRelationRecord Rel(
+        string sourceId,
+        string targetId,
+        CodeRelationKind kind,
+        int line = 20,
+        string file = @"D:\repo\Caller.cs") =>
+        new("ws-1", "proj-1", sourceId, targetId, kind, line, file);
+
+    [TestMethod]
+    public async Task Callers_ReturnsIncomingCallers_WithCallSiteEvidence()
+    {
+        var source = new FakeSource(
+            [ActiveProject()],
+            [
+                Symbol("OrderService", CodeSymbolKind.Class, "sym-target", line: 10, file: @"D:\repo\OrderService.cs"),
+                Symbol("CheckoutFlow", CodeSymbolKind.Class, "sym-caller", line: 3, file: @"D:\repo\CheckoutFlow.cs"),
+            ],
+            [Rel("sym-caller", "sym-target", CodeRelationKind.Calls, line: 42, file: @"D:\repo\CheckoutFlow.cs")]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("OrderService", "ws-1", RetrievalIntent.Callers),
+            CancellationToken.None);
+
+        Assert.IsNull(result.EmptyReason);
+        Assert.AreEqual(1, result.Hits.Count);
+
+        var hit = result.Hits[0];
+        Assert.AreEqual("CheckoutFlow", hit.SymbolName);
+        Assert.AreEqual(RetrievalHitKind.CallSite, hit.HitKind);
+        Assert.AreEqual(RetrievalRelationKind.Calls, hit.Relation);
+
+        // 证据在调用点，身份在声明处 —— 两者分开是“能解释为什么”的前提。
+        Assert.AreEqual(42, hit.Evidence.Line);
+        Assert.AreEqual(@"D:\repo\CheckoutFlow.cs", hit.Evidence.FilePath);
+        Assert.AreEqual(3, hit.Identity.Line);
+
+        // 关系种类来自冻结契约（CallRelations = Calls），不是本类自己拍脑袋。
+        Assert.AreEqual(1, source.RelationKindRequests.Count);
+        CollectionAssert.AreEqual(
+            new List<CodeRelationKind> { CodeRelationKind.Calls },
+            source.RelationKindRequests[0].ToList());
+        Assert.AreEqual(1, source.ListIncomingCalls);
+        Assert.AreEqual(0, source.ListOutgoingCalls);
+    }
+
+    [TestMethod]
+    public async Task Callees_UsesOutgoingEdges()
+    {
+        var source = new FakeSource(
+            [ActiveProject()],
+            [
+                Symbol("CheckoutFlow", CodeSymbolKind.Class, "sym-source", line: 3, file: @"D:\repo\CheckoutFlow.cs"),
+                Symbol("OrderService", CodeSymbolKind.Class, "sym-target", line: 10, file: @"D:\repo\OrderService.cs"),
+            ],
+            [Rel("sym-source", "sym-target", CodeRelationKind.Calls, line: 44, file: @"D:\repo\CheckoutFlow.cs")]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("CheckoutFlow", "ws-1", RetrievalIntent.Callees),
+            CancellationToken.None);
+
+        Assert.AreEqual(1, result.Hits.Count);
+        Assert.AreEqual("OrderService", result.Hits[0].SymbolName);
+        Assert.AreEqual(RetrievalHitKind.CallSite, result.Hits[0].HitKind);
+        Assert.AreEqual(0, source.ListIncomingCalls);
+        Assert.AreEqual(1, source.ListOutgoingCalls);
+    }
+
+    [TestMethod]
+    public async Task Implementation_RequestsExactlyThePolicyRelationKinds()
+    {
+        var source = new FakeSource(
+            [ActiveProject()],
+            [
+                Symbol("IRepository", CodeSymbolKind.Interface, "sym-iface"),
+                Symbol("SqlRepository", CodeSymbolKind.Class, "sym-impl", file: @"D:\repo\SqlRepository.cs"),
+            ],
+            [Rel("sym-impl", "sym-iface", CodeRelationKind.Implements, line: 7, file: @"D:\repo\SqlRepository.cs")]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("IRepository", "ws-1", RetrievalIntent.Implementation),
+            CancellationToken.None);
+
+        Assert.AreEqual(1, result.Hits.Count);
+        Assert.AreEqual(RetrievalHitKind.Implementation, result.Hits[0].HitKind);
+        Assert.AreEqual(RetrievalRelationKind.Implements, result.Hits[0].Relation);
+
+        // 冻结契约 ImplementationRelations = [Implements, Overrides]；多写一条 Inherits 就算漂移。
+        var requested = source.RelationKindRequests[0].ToList();
+        CollectionAssert.AreEquivalent(
+            new List<CodeRelationKind> { CodeRelationKind.Implements, CodeRelationKind.Overrides },
+            requested);
+    }
+
+    [TestMethod]
+    public async Task Callers_MultipleCallSitesOfSameCaller_CollapseToOneHit()
+    {
+        var source = new FakeSource(
+            [ActiveProject()],
+            [
+                Symbol("OrderService", CodeSymbolKind.Class, "sym-target", file: @"D:\repo\OrderService.cs"),
+                Symbol("CheckoutFlow", CodeSymbolKind.Class, "sym-caller", line: 3, file: @"D:\repo\CheckoutFlow.cs"),
+            ],
+            [
+                Rel("sym-caller", "sym-target", CodeRelationKind.Calls, line: 42, file: @"D:\repo\CheckoutFlow.cs"),
+                Rel("sym-caller", "sym-target", CodeRelationKind.Calls, line: 77, file: @"D:\repo\CheckoutFlow.cs"),
+            ]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("OrderService", "ws-1", RetrievalIntent.Callers),
+            CancellationToken.None);
+
+        // 两个调用点 = 一个调用者；不得把 1 个调用者顶成 2 条命中。
+        Assert.AreEqual(1, result.Hits.Count);
+        Assert.AreEqual(1, result.TotalCount);
+    }
+
+    [TestMethod]
+    public async Task Callers_TargetExistsButNoEdges_ReportsGenuinelyAbsent()
+    {
+        var source = new FakeSource(
+            [ActiveProject()],
+            [Symbol("OrderService", CodeSymbolKind.Class, "sym-target")]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("OrderService", "ws-1", RetrievalIntent.Callers),
+            CancellationToken.None);
+
+        Assert.AreEqual(0, result.Hits.Count);
+        Assert.AreEqual(RetrievalEmptyReason.GenuinelyAbsent, result.EmptyReason);
+        Assert.AreEqual(RetrievalNextStepKind.AcceptAbsence, result.NextSteps[0].Kind);
     }
 }
