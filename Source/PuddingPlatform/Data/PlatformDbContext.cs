@@ -602,6 +602,11 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
                 .HasDatabaseName(ConversationReadModelSchema.ConversationEventsConversationMessageSequenceIndex);
             e.HasIndex(x => new { x.ConversationId, x.TurnId, x.Sequence })
                 .HasDatabaseName(ConversationReadModelSchema.ConversationEventsConversationTurnSequenceIndex);
+            // G4 读放大修复（2026-10-28）：流式投影按 command_id 拉事件，此前该列无索引，
+            // 3.7M 行表被全表扫 + TEMP B-TREE 排序（EXPLAIN 实测）；正对照：同样的 sequence>?
+            // 换成 conversation_id 过滤即可走 covering index。
+            e.HasIndex(x => new { x.CommandId, x.Sequence })
+                .HasDatabaseName(ConversationReadModelSchema.ConversationEventsCommandIdSequenceIndex);
         });
 
         modelBuilder.Entity<ConversationHeadEntity>(e =>

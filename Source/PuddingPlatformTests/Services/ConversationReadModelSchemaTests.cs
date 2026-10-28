@@ -95,7 +95,7 @@ public sealed class ConversationReadModelSchemaTests
     }
 
     [TestMethod]
-    public async Task EnsureConversationEventIndexes_CreatesBothIndexesAndUsesThem()
+    public async Task EnsureConversationEventIndexes_CreatesAllIndexesAndUsesThem()
     {
         await using var temp = TempPlatformDb.Create();
         await CreateLegacyConversationEventsAsync(temp.DbPath);
@@ -106,27 +106,32 @@ public sealed class ConversationReadModelSchemaTests
             var result = await ConversationReadModelSchemaBootstrapper.EnsureConversationEventIndexesAsync(db);
             created = result.CreatedIndexes.ToArray();
 
-            Assert.HasCount(2, result.CreatedIndexes);
+            Assert.HasCount(3, result.CreatedIndexes);
             CollectionAssert.Contains(
                 result.CreatedIndexes.ToArray(),
                 ConversationReadModelSchema.ConversationEventsConversationMessageSequenceIndex);
             CollectionAssert.Contains(
                 result.CreatedIndexes.ToArray(),
                 ConversationReadModelSchema.ConversationEventsConversationTurnSequenceIndex);
+            CollectionAssert.Contains(
+                result.CreatedIndexes.ToArray(),
+                ConversationReadModelSchema.ConversationEventsCommandIdSequenceIndex);
             Assert.IsEmpty(result.AlreadyPresentIndexes);
 
             var second = await ConversationReadModelSchemaBootstrapper.EnsureConversationEventIndexesAsync(db);
             Assert.IsEmpty(second.CreatedIndexes);
-            Assert.HasCount(2, second.AlreadyPresentIndexes);
+            Assert.HasCount(3, second.AlreadyPresentIndexes);
         }
 
-        Assert.HasCount(2, created);
+        Assert.HasCount(3, created);
         await using (var db = new PlatformDbContext(temp.Options))
         {
             Assert.IsTrue(await IndexExistsAsync(
                 db, ConversationReadModelSchema.ConversationEventsConversationMessageSequenceIndex));
             Assert.IsTrue(await IndexExistsAsync(
                 db, ConversationReadModelSchema.ConversationEventsConversationTurnSequenceIndex));
+            Assert.IsTrue(await IndexExistsAsync(
+                db, ConversationReadModelSchema.ConversationEventsCommandIdSequenceIndex));
 
             var messagePlan = await ExplainAsync(
                 db,
@@ -151,6 +156,24 @@ public sealed class ConversationReadModelSchemaTests
                 turnPlan,
                 ConversationReadModelSchema.ConversationEventsConversationTurnSequenceIndex,
                 "turn 维度查询必须按 turn_id 等值收敛（不能用 conversation_id 全扫）");
+
+            // G4 读放大回归防护（2026-10-28）：流式投影按 command_id 拉事件。
+            // 在加索引前，这条形状在 3.7M 行的真实表上是 SCAN + TEMP B-TREE，
+            // 实测造成约 800 MiB/s 持续逻辑读。这里守着“不能退化成全表扫”。
+            var commandPlan = await ExplainAsync(
+                db,
+                """
+                SELECT sequence FROM conversation_events
+                WHERE command_id = 'cmd-1'
+                ORDER BY sequence;
+                """);
+            StringAssert.Contains(
+                commandPlan,
+                ConversationReadModelSchema.ConversationEventsCommandIdSequenceIndex,
+                "command 维度查询必须按 command_id 等值收敛（G4：3.7M 行全表扫曾导致约 800 MiB/s）");
+            Assert.IsFalse(
+                commandPlan.Contains("TEMP B-TREE", StringComparison.Ordinal),
+                "command_id + sequence 索引应同时消除排序的临时 B 树（G4：全表扫 + 临时排序代价翻倍）");
         }
     }
 
@@ -225,6 +248,7 @@ public sealed class ConversationReadModelSchemaTests
                     workspace_id TEXT NOT NULL,
                     turn_id TEXT NOT NULL,
                     message_id TEXT NULL,
+                    command_id TEXT NULL,
                     type TEXT NOT NULL,
                     payload TEXT NOT NULL DEFAULT '{}',
                     occurred_at TEXT NOT NULL DEFAULT '',
@@ -240,8 +264,8 @@ public sealed class ConversationReadModelSchemaTests
         insert.CommandText =
             """
             INSERT INTO conversation_events
-                (conversation_id, sequence, event_id, workspace_id, turn_id, message_id, type)
-            VALUES ($conv, $seq, $event, 'ws', $turn, $message, 'message.content.appended');
+                (conversation_id, sequence, event_id, workspace_id, turn_id, message_id, command_id, type)
+            VALUES ($conv, $seq, $event, 'ws', $turn, $message, $command, 'message.content.appended');
             """;
         var conv = insert.CreateParameter();
         conv.ParameterName = "$conv";
@@ -253,7 +277,9 @@ public sealed class ConversationReadModelSchemaTests
         turn.ParameterName = "$turn";
         var message = insert.CreateParameter();
         message.ParameterName = "$message";
-        foreach (var parameter in new[] { conv, seq, eventId, turn, message })
+        var command = insert.CreateParameter();
+        command.ParameterName = "$command";
+        foreach (var parameter in new[] { conv, seq, eventId, turn, message, command })
             insert.Parameters.Add(parameter);
 
         for (var i = 1; i <= 200; i++)
@@ -263,6 +289,7 @@ public sealed class ConversationReadModelSchemaTests
             eventId.Value = $"evt-{i}";
             turn.Value = $"turn-{(i % 20) + 1}";
             message.Value = i % 5 == 0 ? DBNull.Value : $"msg-{(i % 10) + 1}";
+            command.Value = $"cmd-{(i % 8) + 1}";
             await insert.ExecuteNonQueryAsync();
         }
 

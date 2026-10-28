@@ -31,10 +31,23 @@ public static class ConversationReadModelSchema
     public const string ConversationEventsConversationTurnSequenceIndex =
         "IX_conversation_events_conversation_id_turn_id_sequence";
 
+    /// <summary>
+    /// 命令级事件摄取：按 command_id + sequence 收敛。
+    /// <para>
+    /// G4 读放大修复（2026-10-28）：流式投影（FeishuStreamingProjectionWorker.ProjectContentAsync /
+    /// initialEvents）按 command_id 拉取事件。在此之前 conversation_events 没有 command_id 索引，
+    /// 该表 3.7M 行每次都是全表扫 + TEMP B-TREE 排序（EXPLAIN 实测），造成约 800 MiB/s 的持续逻辑读。
+    /// 属于存量库显式维护索引，不在每次启动时创建。
+    /// </para>
+    /// </summary>
+    public const string ConversationEventsCommandIdSequenceIndex =
+        "IX_conversation_events_command_id_sequence";
+
     /// <summary>存量库需要显式补齐的两条事件查询索引（维护窗口执行；顺序用于进度/日志）。</summary>
     public static readonly IReadOnlyList<string> ConversationEventLookupIndexes =
     [
         ConversationEventsConversationMessageSequenceIndex,
         ConversationEventsConversationTurnSequenceIndex,
+        ConversationEventsCommandIdSequenceIndex,
     ];
 }

@@ -165,6 +165,13 @@ public static class ConversationReadModelSchemaBootstrapper
              ON "{ConversationEventsTable}" ("conversation_id", "turn_id", "sequence");
              """
         ),
+        new(
+            ConversationReadModelSchema.ConversationEventsCommandIdSequenceIndex,
+            $"""
+             CREATE INDEX IF NOT EXISTS "{ConversationReadModelSchema.ConversationEventsCommandIdSequenceIndex}"
+             ON "{ConversationEventsTable}" ("command_id", "sequence");
+             """
+        ),
     ];
 
     private static async Task<bool> TableExistsAsync(
