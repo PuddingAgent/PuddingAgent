@@ -247,6 +247,47 @@ public sealed class CodeSourceMaintenanceIoProfileTests : IDisposable
             "本用例里两条提取都应成功，失败数必须为 0");
     }
 
+    /// <summary>
+    /// 门禁（2026-10-28）：stat 变了、内容没变 ⇒ 复用分支必须把**本轮读到的** stat 写回 manifest。
+    /// <para>
+    /// 曾经的写法是把 manifest 里那份**旧**指纹原样写回去，于是下一轮扫描又判 StatChanged。
+    /// 现场：全仓 2528 条陈旧行，每次校准都把它们的内容重读一遍（reindex=2540 永不收敛）。
+    /// 断言的就是「回写值 == 当下磁盘值」——旧实现下它必然等于那份更早的时刻。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task ReusedPathRefreshesTheCommittedStatSoTheDetectorStopsFlaggingIt()
+    {
+        var path = WriteFile("A.cs", "class A { }");
+
+        var (coordinator, _, _) = Arrange();
+        await coordinator.RunAsync(WorkspaceId, ScopeId, _scopeRoot, Options(targeted: false));
+
+        var before = await _store.LoadSourceMaintenanceAsync(WorkspaceId, ScopeId);
+        var committed = before.Manifest[path].Fingerprint!;
+
+        // 只动 stat、不动内容（等价于现场：git/build 触碰文件后 mtime 变了）。
+        // 刻意取 +2h 而不是「现在」：与已提交值拉开距离，避免文件系统精度把两者拉平。
+        File.SetLastWriteTimeUtc(path, committed.LastWriteTimeUtc.AddHours(2).UtcDateTime);
+        var diskStat = new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero);
+        Assert.AreNotEqual(committed.LastWriteTimeUtc, diskStat, "前提不成立：stat 没拉开距离");
+
+        var round = await coordinator.RunAsync(WorkspaceId, ScopeId, _scopeRoot, Options(targeted: true, path));
+        Assert.AreEqual(0, round.ExtractedFileCount, "内容没变就不该重新提取（否则每轮白跑语言侧）");
+
+        var after = await _store.LoadSourceMaintenanceAsync(WorkspaceId, ScopeId);
+        var refreshed = after.Manifest[path].Fingerprint!;
+
+        Assert.AreEqual(
+            committed.ContentHash,
+            refreshed.ContentHash,
+            "内容没变，已提交的 hash 不得被改动");
+        Assert.AreEqual(
+            diskStat,
+            refreshed.LastWriteTimeUtc,
+            "回写的必须是本轮读到的 stat；写回旧值会让检测器每轮重判 StatChanged（原地跑步机）");
+    }
+
     private sealed class CountingScanner : ICodeSourceScanner, ICodeSourcePathProbe
     {
         private readonly FileSystemCodeSourceScanner _inner;

@@ -221,6 +221,10 @@ public sealed class CodeSourceMaintenanceCoordinator
         //    那正是「提示 ⇒ 必须核验内容」这条不变量的代价。
         var fingerprints = new Dictionary<string, SourceFingerprint>(CodePathIdentity.PathComparer);
         var reusedPaths = new List<string>();
+
+        // 复用路径**本轮真的读到的**指纹（含当前 stat）。回写 manifest 必须用它，
+        // 不能用 manifest 里那份旧的（详见下方 ② 的注释）。
+        var refreshedFingerprints = new Dictionary<string, SourceFingerprint>(CodePathIdentity.PathComparer);
         var failures = new List<(string FilePath, string Reason)>();
 
         foreach (var path in candidates)
@@ -238,6 +242,7 @@ public sealed class CodeSourceMaintenanceCoordinator
             if (IsUnchangedSinceLastCommit(path, read.Fingerprint!, snapshot.Manifest, consumerInputs))
             {
                 reusedPaths.Add(path);
+                refreshedFingerprints[path] = read.Fingerprint!;
                 continue;
             }
 
@@ -375,9 +380,21 @@ public sealed class CodeSourceMaintenanceCoordinator
                     continue;
                 }
 
-                var fingerprint = snapshot.Manifest.TryGetValue(path, out var existing)
-                    ? existing.Fingerprint
-                    : null;
+                // 口径（2026-10-28 修正）：优先用**本轮读到的**指纹。
+                //
+                // 曾经这里只用 manifest 里那份旧的，后果是「stat 变了、内容没变」的路径每一轮
+                // 都把旧 stat 原样写回去 ⇒ 下一轮扫描又判 StatChanged ⇒ **原地跑步机**。
+                // 现场证据：Source\PuddingCodeIndex\…\CodeSourceUpdatePlanner.cs 内容 hash 与
+                // manifest 完全一致（C861A4FB…），而 manifest 的 mtime 停在 10-02、磁盘已是 10-28；
+                // 全仓 2528 条同样的陈旧行，每次校准都重读一遍内容。
+                //
+                // 写回本轮观测值是诚实的：内容 hash 与已提交一致（这正是走复用分支的前提），
+                // stat 则是刚刚读到的真实值。下一轮扫描据此判「没变」，跑步机才停得下来。
+                var fingerprint = refreshedFingerprints.TryGetValue(path, out var observed)
+                    ? observed
+                    : snapshot.Manifest.TryGetValue(path, out var existing)
+                        ? existing.Fingerprint
+                        : null;
 
                 if (fingerprint is null)
                 {
