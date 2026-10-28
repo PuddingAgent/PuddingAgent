@@ -40,7 +40,14 @@ $counters = @(
     ($inst + 'IO Read Operations/sec'),
     ($inst + '% Privileged Time'),
     ($inst + '% User Time'),
-    ($inst + 'Handle Count')
+    ($inst + 'Handle Count'),
+    # GC-vs-IO discriminator (2026-10-28, after the user suggested the anomaly "looks like GC"):
+    # a managed GC storm shows up as User Time + sawtoothing Private Bytes. Recording these at
+    # the instant of the anomaly lets the next occurrence settle the question by data instead
+    # of by argument. System-wide context switches add the scheduler-pressure view.
+    ($inst + 'Private Bytes'),
+    ($inst + 'Working Set'),
+    '\System\Context Switches/sec'
 )
 
 # Candidate data files. Their size+mtime at the instant of the anomaly is what lets a later
@@ -89,17 +96,22 @@ Add-Content -Path $ReportPath -Value $header -Encoding UTF8
 
 $busyHits = 0
 $maxSeen = 0.0
+$prevPrivate = 0.0
 
 for ($i = 0; $i -lt $Intervals; $i++) {
     Start-Sleep -Seconds $IntervalSeconds
     $v = Read-CounterSet -Paths $counters -Instance $proc.ProcessName
 
     $bytes = 0.0; $ops = 0.0; $priv = 0.0; $user = 0.0; $handles = 0.0
+    $privateBytes = 0.0; $workingSet = 0.0; $ctxSwitches = 0.0
     if ($v.ContainsKey('io read bytes/sec')) { $bytes = $v['io read bytes/sec'] }
     if ($v.ContainsKey('io read operations/sec')) { $ops = $v['io read operations/sec'] }
     if ($v.ContainsKey('% privileged time')) { $priv = $v['% privileged time'] }
     if ($v.ContainsKey('% user time')) { $user = $v['% user time'] }
     if ($v.ContainsKey('handle count')) { $handles = $v['handle count'] }
+    if ($v.ContainsKey('private bytes')) { $privateBytes = $v['private bytes'] }
+    if ($v.ContainsKey('working set')) { $workingSet = $v['working set'] }
+    if ($v.ContainsKey('context switches/sec')) { $ctxSwitches = $v['context switches/sec'] }
 
     if ($handles -le 0) {
         Write-Output 'PROBE-FAILED: handle count read 0; counter binding broke (a live process cannot have 0 handles)'
@@ -113,7 +125,23 @@ for ($i = 0; $i -lt $Intervals; $i++) {
         $busyHits++
         $block = 0
         if ($ops -gt 0) { $block = [int][Math]::Round($bytes / $ops) }
-        $line = "ANOMALY " + (Get-Date -Format 'o') + "  MBps=" + $mbps + "  ops=" + [Math]::Round($ops, 0) + "  blockBytes=" + $block + "  priv=" + [Math]::Round($priv, 1) + "  user=" + [Math]::Round($user, 1) + "  handles=" + [int]$handles
+
+        # Sawtooth detector: a managed GC storm drops Private Bytes in steps. A stable value
+        # across a busy second rules GC out. First sample has no baseline, so skip the delta.
+        $privateDropMB = 0.0
+        if ($prevPrivate -gt 0 -and $privateBytes -lt $prevPrivate) {
+            $privateDropMB = [Math]::Round(($prevPrivate - $privateBytes) / 1MB, 1)
+        }
+        $prevPrivate = $privateBytes
+
+        # Shape verdict, so the next round does not have to argue about it:
+        #   privileged dominated => the cost is kernel/IO path
+        #   user dominated       => the cost is managed computation (GC is one such case)
+        $shape = 'IO-SHAPED'
+        if ($user -gt $priv) { $shape = 'COMPUTE-SHAPED' }
+        if ($block -ne 4096) { $shape = $shape + '/BLOCK-NOT-4096' }
+
+        $line = "ANOMALY " + (Get-Date -Format 'o') + "  MBps=" + $mbps + "  ops=" + [Math]::Round($ops, 0) + "  blockBytes=" + $block + "  priv=" + [Math]::Round($priv, 1) + "  user=" + [Math]::Round($user, 1) + "  handles=" + [int]$handles + "  privateMB=" + [Math]::Round($privateBytes / 1MB, 1) + "  privateDropMB=" + $privateDropMB + "  workSetMB=" + [Math]::Round($workingSet / 1MB, 1) + "  ctxSw=" + [Math]::Round($ctxSwitches, 0) + "  shape=" + $shape
         Write-Output $line
         Add-Content -Path $ReportPath -Value $line -Encoding UTF8
 
