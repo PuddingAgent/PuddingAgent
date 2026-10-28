@@ -62,6 +62,27 @@ public interface IRetrievalSymbolSource
         CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// 文本面数据源（注释面用）：把查询词匹配到文件行。
+/// <para>
+/// <b>为什么不直接依赖 PuddingFullTextIndex</b>：依赖方向必须由编译期强制 ——
+/// 代码索引不该知道全文索引用的是 Lucene 还是别的。本接口只有“给定 scope + 查询词，
+/// 返回文件行”，把 scopeId → 目录 的解析留给 Host。
+/// </para>
+/// </summary>
+public interface IRetrievalTextSource
+{
+    /// <summary>在指定 scope 内检索文本，最多返回 <paramref name="maxMatches"/> 条文件行匹配。</summary>
+    Task<IReadOnlyList<RetrievalTextMatch>> SearchAsync(
+        string scopeId,
+        string query,
+        int maxMatches,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>文本面的一条匹配：文件 + 行号 + 该行文本。</summary>
+public sealed record RetrievalTextMatch(string FilePath, int Line, string LineText);
+
 /// <summary>把既有 <see cref="ICodeIndexStore"/> 适配成窄端口（生产路径唯一实现）。</summary>
 public sealed class CodeIndexStoreSymbolSource(ICodeIndexStore store) : IRetrievalSymbolSource
 {
@@ -143,19 +164,26 @@ public sealed class CodeIndexStoreSymbolSource(ICodeIndexStore store) : IRetriev
 /// 身份用 <see cref="SymbolIdentity.ForTextAt"/>（不归属任何符号）。
 /// </para>
 /// <para>
-/// <b>未支持</b>（<see cref="RetrievalIntent.Comment"/> / <see cref="RetrievalIntent.Impact"/>）：返回
+/// <b>注释面</b>（R6 B1 切片三）：<see cref="RetrievalIntent.Comment"/> —— 走注入的
+/// <see cref="IRetrievalTextSource"/>；未注入时<b>显式不支持</b>，而不是先查再报空。
+/// 每行按首字符判定是否注释行，分别归入 DocMention / TextHit。
+/// </para>
+/// <para>
+/// <b>未支持</b>（<see cref="RetrievalIntent.Impact"/>）：返回
 /// <see cref="RetrievalEmptyReason.IntentUnsupported"/> + 替代方案，
-/// <b>不伪装成空命中</b>（ADR-089 §8.3）。Comment 需要文本/全文面（本端口只接代码索引，
-/// 索引里没有注释文本表）；Impact 需要多跳遍历（本刀只做深度 1）。
+/// <b>不伪装成空命中</b>（ADR-089 §8.3）。Impact 需要多跳遍历（本刀只做深度 1）。
 /// </para>
 /// <para>
 /// <b>ScopeId 语义（v1）</b>：等同于 code index 的 <c>workspaceId</c>。
 /// </para>
 /// </summary>
-public sealed class RetrievalPortV1(IRetrievalSymbolSource source) : IRetrievalPort
+public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTextSource? textSource = null) : IRetrievalPort
 {
     private readonly IRetrievalSymbolSource _source =
         source ?? throw new ArgumentNullException(nameof(source));
+
+    /// <summary>文本数据面。为 <c>null</c> 时注释面报 IntentUnsupported，而不是先查再报空。</summary>
+    private readonly IRetrievalTextSource? _textSource = textSource;
 
     /// <summary>意图 → 符号种类集合（ADR-089 §2.1；<c>null</c> = 不筛 kind）。</summary>
     private static readonly IReadOnlyDictionary<RetrievalIntent, IReadOnlyList<CodeSymbolKind>> IntentKinds =
@@ -184,9 +212,11 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source) : IRetrievalP
     /// <summary>v1 不支持的意图（显式列出，避免"忘了实现"被当成"确实没有"）。</summary>
     private static readonly RetrievalIntent[] UnsupportedIntents =
     [
-        RetrievalIntent.Comment,
         RetrievalIntent.Impact,
     ];
+
+    /// <summary>注释面向文本面索要的匹配上限（到达上限时结果标 degraded，不声称完整）。</summary>
+    private const int MaxTextMatches = 200;
 
     /// <summary>关系意图的方向：incoming = 指向目标的边（谁调用了它），outgoing = 从目标出发的边（它调用了谁）。</summary>
     private enum RelationDirection
@@ -276,7 +306,13 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source) : IRetrievalP
                 appliedFilters: AppliedFilters(request));
         }
 
-        // 文件面走文件表，符号面走符号表，关系面走关系表 —— 三条路由各自分页。
+        // 四条路由各自分页：注释面走文本表，文件面走文件表，符号面走符号表，关系面走关系表。
+        if (request.Intent == RetrievalIntent.Comment)
+        {
+            return await RetrieveCommentsAsync(request, scopeId, indexVersion, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         if (request.Intent == RetrievalIntent.File)
         {
             return await RetrieveFilesAsync(request, scopeId, indexVersion, projects, cancellationToken)
@@ -374,6 +410,168 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source) : IRetrievalP
             appliedFilters: AppliedFilters(request),
             nextCursor: EncodeCursor(offset.Value + hits.Count));
     }
+
+    /// <summary>
+    /// 注释面检索（<see cref="RetrievalIntent.Comment"/>）：查询词匹配文件行。
+    /// <para>
+    /// <b>未注入文本面时直接报 IntentUnsupported</b>：先去查、再报空，会把“没接数据面”
+    /// 读成“确实没提过”——这正是 ADR-089 §8.3 禁止的空洞否定。
+    /// </para>
+    /// <para>
+    /// <b>到达上限时标 degraded</b>：文本面最多返回 <see cref="MaxTextMatches"/> 条，
+    /// 这时 totalCount 只能当下限用，不能声称“就这么多”。
+    /// </para>
+    /// </summary>
+    private async Task<RetrievalResult> RetrieveCommentsAsync(
+        RetrievalRequest request,
+        string scopeId,
+        string indexVersion,
+        CancellationToken cancellationToken)
+    {
+        if (_textSource is null)
+        {
+            return RetrievalResult.Empty(
+                request,
+                RetrievalEmptyReason.IntentUnsupported,
+                RetrievalNextStep.UseAlternativeFace(
+                    "注释面需要文本/全文数据面；当前端口未注入 IRetrievalTextSource。改用 File 或符号面检索。",
+                    "RetrievalIntent.File / Type / Member"),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        var offset = DecodeCursor(request.Cursor);
+        if (offset is null)
+        {
+            return RetrievalResult.Empty(
+                request,
+                RetrievalEmptyReason.FilteredOut,
+                RetrievalNextStep.Narrow(
+                    RetrievalSuggestionKind.CompositeFilter,
+                    "分页游标无效（非本端口签发）；去掉 cursor 重新检索。"),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        var matches = await _textSource
+            .SearchAsync(scopeId, request.Query, MaxTextMatches, cancellationToken)
+            .ConfigureAwait(false);
+
+        var reachedCap = matches.Count >= MaxTextMatches;
+
+        var hits = Deduplicate(
+            matches
+                .Select(m => MapTextHit(m, scopeId))
+                .Where(h => request.Filter is null || request.Filter.Matches(h))
+                .ToList(),
+            request.Intent);
+
+        if (hits.Count == 0)
+        {
+            var reason = RetrievalEmptyReasonPolicy.ClassifyForZeroHits(
+                request.Filter,
+                RetrievalIndexAvailability.Available,
+                RetrievalCapabilityLevel.Semantic,
+                intentSupported: true);
+
+            return RetrievalResult.Empty(
+                request,
+                reason,
+                BuildEmptyStep(reason, request),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        if (offset.Value >= hits.Count)
+        {
+            return RetrievalResult.Empty(
+                request,
+                RetrievalEmptyReason.FilteredOut,
+                RetrievalNextStep.Narrow(
+                    RetrievalSuggestionKind.CompositeFilter,
+                    $"分页游标越界（文本面已返回 {hits.Count} 条匹配）；去掉 cursor 重新检索。"),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        var page = hits.Skip(offset.Value).Take(request.PageSize).ToList();
+        var hasMore = offset.Value + page.Count < hits.Count;
+
+        var degraded = reachedCap;
+        var degradedReason = reachedCap
+            ? $"文本面已按上限 {MaxTextMatches} 条返回，totalCount 只能当下限；结果可能不完整。"
+            : null;
+
+        if (!hasMore)
+        {
+            return RetrievalResult.Create(
+                request,
+                page,
+                hits.Count,
+                indexVersion,
+                degraded: degraded,
+                degradedReason: degradedReason,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        return RetrievalResult.Create(
+            request,
+            page,
+            hits.Count,
+            indexVersion,
+            degraded: degraded,
+            degradedReason: degradedReason,
+            nextSteps:
+            [
+                RetrievalNextStep.Narrow(
+                    RetrievalSuggestionKind.CompositeFilter,
+                    "文本匹配超出页大小；加上目录、扩展名或更精确的词后重试。"),
+            ],
+            overflow: RetrievalOverflow.Create(SpillPage(page, request), page.Count, RetrievalBudgetKind.ItemCount),
+            distribution: RetrievalDistribution.FromHits(page),
+            appliedFilters: AppliedFilters(request),
+            nextCursor: EncodeCursor(offset.Value + page.Count));
+    }
+
+    /// <summary>
+    /// 文本行 ⇒ 命中。按行首字符区分注释行与代码正文：
+    /// 注释归 <see cref="RetrievalHitKind.DocMention"/>，正文归 <see cref="RetrievalHitKind.TextHit"/>，
+    /// 并把“到底是哪一种”写进 Why —— 否则调用方分不清“提到过”和“只是同名代码”。
+    /// </summary>
+    private static RetrievalHit MapTextHit(RetrievalTextMatch match, string scopeId)
+    {
+        var line = Math.Max(match.Line, 1);
+        var text = (match.LineText ?? string.Empty).Trim();
+        var isComment = LooksLikeComment(text);
+
+        var display = text.Length == 0
+            ? $"{Path.GetFileName(match.FilePath)}:{line}"
+            : text.Length > 120 ? text[..120] : text;
+
+        return new RetrievalHit(
+            SymbolIdentity.ForTextAt(match.FilePath, line),
+            display,
+            CodeSymbolKind.Unknown,
+            isComment ? RetrievalHitKind.DocMention : RetrievalHitKind.TextHit,
+            new RetrievalEvidence(match.FilePath, line, line),
+            RetrievalConfidence.Lexical,
+            isComment ? 1.0 : 0.5,
+            isComment
+                ? "注释/文档行命中查询词"
+                : "代码正文行命中查询词（不是注释）",
+            isComment ? RetrievalMatchTarget.DocComment : RetrievalMatchTarget.Body,
+            RetrievalRelationKind.Unknown,
+            languageRawKind: null,
+            container: null,
+            scopeIds: [scopeId]);
+    }
+
+    /// <summary>行首注释标记判定（只认确定的几种；不认识的宁可当正文，也不假装是注释）。</summary>
+    private static bool LooksLikeComment(string text) =>
+        text.StartsWith("//", StringComparison.Ordinal)
+        || text.StartsWith("/*", StringComparison.Ordinal)
+        || text.StartsWith("*", StringComparison.Ordinal)
+        || text.StartsWith("<!--", StringComparison.Ordinal);
 
     /// <summary>
     /// 文件面检索（<see cref="RetrievalIntent.File"/>）：查询词匹配已索引文件的路径。

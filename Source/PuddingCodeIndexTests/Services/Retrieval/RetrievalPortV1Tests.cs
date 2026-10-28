@@ -115,6 +115,25 @@ public sealed class RetrievalPortV1Tests
         }
     }
 
+    private sealed class FakeTextSource(params RetrievalTextMatch[] matches) : IRetrievalTextSource
+    {
+        public int Calls { get; private set; }
+
+        public int LastMaxMatches { get; private set; }
+
+        public Task<IReadOnlyList<RetrievalTextMatch>> SearchAsync(
+            string scopeId,
+            string query,
+            int maxMatches,
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            LastMaxMatches = maxMatches;
+
+            return Task.FromResult<IReadOnlyList<RetrievalTextMatch>>(matches.Take(maxMatches).ToList());
+        }
+    }
+
     private static CodeProjectRecord ActiveProject(string id = "proj-1", string path = @"D:\repo") =>
         new("ws-1", id, path, CodeProjectStatus.Active);
 
@@ -465,8 +484,58 @@ public sealed class RetrievalPortV1Tests
         Assert.AreEqual(0, result.Hits.Count);
         Assert.AreEqual(RetrievalEmptyReason.IntentUnsupported, result.EmptyReason);
 
-        // 注释面背后没有文本/全文数据面；不得先枚举文件表再报“没有”。
+        // 注释面没有注入文本数据面；不得先枚举文件表再报“没有”。
         Assert.AreEqual(0, source.ListFilesCalls);
         Assert.AreEqual(0, source.Requests.Count);
+    }
+
+    [TestMethod]
+    public async Task CommentIntent_WithTextSource_SplitsCommentAndBodyHits()
+    {
+        var source = new FakeSource([ActiveProject()], []);
+        var text = new FakeTextSource(
+            new RetrievalTextMatch(@"D:\repo\B.cs", 30, "var orderService = new OrderService();"),
+            new RetrievalTextMatch(@"D:\repo\A.cs", 12, "// OrderService 负责下单"));
+        var port = new RetrievalPortV1(source, text);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("Order", "ws-1", RetrievalIntent.Comment),
+            CancellationToken.None);
+
+        Assert.IsNull(result.EmptyReason);
+        Assert.AreEqual(1, text.Calls);
+        Assert.AreEqual(2, result.Hits.Count);
+
+        // CommentLayers 把 DocMention 排在 TextHit 前面 —— 真正的“提到过”优先于
+        // “只是同名代码”。
+        Assert.AreEqual(RetrievalHitKind.DocMention, result.Hits[0].HitKind);
+        Assert.AreEqual(RetrievalMatchTarget.DocComment, result.Hits[0].MatchTargets);
+        Assert.AreEqual(12, result.Hits[0].Evidence.Line);
+
+        Assert.AreEqual(RetrievalHitKind.TextHit, result.Hits[1].HitKind);
+        Assert.AreEqual(RetrievalMatchTarget.Body, result.Hits[1].MatchTargets);
+
+        // 文本命中不归属符号。
+        Assert.IsFalse(result.Hits[0].Identity.HasSymbol);
+    }
+
+    [TestMethod]
+    public async Task CommentIntent_TextSourceReachesCap_MarksDegraded()
+    {
+        var many = Enumerable.Range(1, 200)
+            .Select(i => new RetrievalTextMatch($@"D:\repo\F{i}.cs", i, "// OrderService note"))
+            .ToArray();
+        var source = new FakeSource([ActiveProject()], []);
+        var text = new FakeTextSource(many);
+        var port = new RetrievalPortV1(source, text);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("Order", "ws-1", RetrievalIntent.Comment),
+            CancellationToken.None);
+
+        // 到达上限时必须标 degraded：totalCount 只能当下限用，不能声称“就这么多”。
+        Assert.IsTrue(result.Degraded);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(result.DegradedReason));
+        Assert.AreEqual(200, text.LastMaxMatches);
     }
 }
