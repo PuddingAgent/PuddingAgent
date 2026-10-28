@@ -120,7 +120,24 @@ internal sealed class RoslynWorkspaceBootstrapper
             return workspace;
         }
 
-        foreach (var csproj in csprojFiles)
+        // MSBuild 会把被引用项目作为依赖一并装载：按列表逐个显式打开时，
+        // 后出现的被引用项目已经在工作区里，OpenProjectAsync 必定抛 ArgumentException，
+        // 而那份 MSBuild 评估是纯浪费（读整套引用程序集 + 重新求值）。
+        // 先在候选里去掉重复项、再剔除已装载项，只对真正缺的项目调用。
+        var alreadyLoaded = workspace.CurrentSolution.Projects
+            .Select(project => project.FilePath)
+            .ToArray();
+        var planned = ProjectOpenPlanner.PlanOpenOrder(csprojFiles, alreadyLoaded);
+
+        if (planned.Count < csprojFiles.Length)
+        {
+            _logger.LogInformation(
+                "Skipping {Skipped} of {Total} project(s) already present in the workspace (loaded as dependencies or listed twice).",
+                csprojFiles.Length - planned.Count,
+                csprojFiles.Length);
+        }
+
+        foreach (var csproj in planned)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
