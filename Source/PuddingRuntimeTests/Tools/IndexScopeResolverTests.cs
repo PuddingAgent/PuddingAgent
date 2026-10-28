@@ -65,6 +65,47 @@ public sealed class IndexScopeResolverTests
             "子目录过滤必须是相对索引根的相对路径，引擎按相对路径做前缀比较");
     }
 
+    /// <summary>
+    /// 生产部署形态：索引 scope 在工作区之外（本仓：scope=D:\CodeProject\...，工作区=D:\Data\workspaces\default）。
+    /// 两者互不包含 ⇒ 边界对本次请求无意义，上溯必须照常工作。
+    /// 缺陷形态（2026-10-28 宿主实测）：缺“边界归属判断”，第一次迭代就 return null，
+    /// 仓库根可查（engineMs=12）而其子目录 Source/PuddingPlatform 仍报 has no index yet。
+    /// </summary>
+    [TestMethod]
+    public void Resolve_RequestOutsideBoundary_StillResolvesIndexedAncestor()
+    {
+        var indexedRoot = Path.Combine(Root, "code", "Repo");
+        var requested = Path.Combine(indexedRoot, "Source", "PuddingPlatform");
+        var boundary = Path.Combine(Root, "workspaces", "default");
+        Directory.CreateDirectory(boundary);
+
+        var scope = IndexScopeResolver.Resolve(requested, HasIndex(indexedRoot), boundary);
+
+        Assert.IsNotNull(scope, "请求目录在边界之外时边界应失效；否则索引 scope 配在工作区外的部署上溯永远拿不到作用域");
+        Assert.AreEqual(Normalize(indexedRoot), scope!.Value.IndexRoot);
+        Assert.AreEqual(
+            Path.Combine("Source", "PuddingPlatform"),
+            scope.Value.SubDirectoryFilter,
+            "子目录过滤仍必须是相对索引根的相对路径");
+    }
+
+    /// <summary>
+    /// 边界在「它确实是请求目录的祖先」时仍然生效：不得借用边界之上的索引。
+    /// 与上一条成对，防止为了修上一条而把边界彻底删掉。
+    /// </summary>
+    [TestMethod]
+    public void Resolve_RequestInsideBoundary_DoesNotBorrowIndexAboveBoundary()
+    {
+        var above = Path.Combine(Root, "outside");
+        var boundary = Path.Combine(above, "workspaces", "default");
+        var requested = Path.Combine(boundary, "proj", "src");
+        Directory.CreateDirectory(requested);
+
+        var scope = IndexScopeResolver.Resolve(requested, HasIndex(above), boundary);
+
+        Assert.IsNull(scope, "边界之下的请求不得借用边界之上的索引（否则跨界召回）");
+    }
+
     [TestMethod]
     public void Resolve_NoIndexAnywhere_ReturnsNull()
     {

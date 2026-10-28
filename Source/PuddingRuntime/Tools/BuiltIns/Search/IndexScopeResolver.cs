@@ -32,8 +32,10 @@ internal static class IndexScopeResolver
     /// <param name="requestedDirectory">请求检索的目录（绝对或相对，内部会 <see cref="Path.GetFullPath(string)"/>）。</param>
     /// <param name="hasIndex">索引存在性谓词；由调用方绑定到具体引擎。</param>
     /// <param name="workspaceRoot">
-    /// 上溯边界（含）。超出边界的候选一律不考虑——避免把「外部目录」误判成
-    /// 「某个更大范围的索引恰好覆盖它」。为空则不设边界。
+    /// 上溯边界（含），**仅在它确实是 <paramref name="requestedDirectory"/> 的祖先时生效**。
+    /// 请求目录不在边界内（例如索引 scope 配在工作区之外）时，边界对该请求无意义，
+    /// 上溯照常进行——否则上溯会在第一次迭代就返回 null，等于没修。
+    /// 为空则不设边界。
     /// </param>
     /// <returns>解析成功返回作用域；请求目录及其所有边界内祖先都没有索引时返回 null。</returns>
     internal static IndexScope? Resolve(
@@ -72,7 +74,18 @@ internal static class IndexScopeResolver
             }
 
             // 未命中索引才考虑上溯；上溯不得越过边界。
-            if (boundary is not null && !IsSameOrDescendant(candidate, boundary))
+            //
+            // ★ 边界只在「它确实是请求目录的祖先」时才成立。
+            //   反例（2026-10-28 宿主实测）：本部署的索引 scope 是 `D:\CodeProject\PuddingAgent\PuddingAgent`
+            //   （配置在 FullTextIndex:Scopes 里），而工作区根是 `D:\Data\workspaces\default` ——
+            //   两者是**互不包含的两棵树**。此时若无条件执行边界检查，第一次上溯就 return null，
+            //   上溯等于完全没修：实测仓库根可查（engineMs=12）而其子目录 `Source/PuddingPlatform`
+            //   仍报 "has no index yet, and neither does any ancestor"。
+            //   安全性不靠边界保证：返回的 SubDirectoryFilter 是相对路径，引擎按前缀过滤，
+            //   结果无论借用多远的祖先都必然落在请求目录之内，不会产生跨树的假阳性召回。
+            if (boundary is not null
+                && IsSameOrDescendant(requested, boundary)
+                && !IsSameOrDescendant(candidate, boundary))
                 return null;
 
             var parent = Path.GetDirectoryName(candidate);
