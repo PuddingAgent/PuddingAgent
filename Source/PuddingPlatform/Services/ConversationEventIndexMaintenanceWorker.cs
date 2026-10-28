@@ -36,9 +36,20 @@ public sealed class ConversationEventIndexMaintenanceWorker(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!configuration.GetValue(EnabledConfigurationKey, true))
+        var enabled = configuration.GetValue(EnabledConfigurationKey, true);
+
+        // 入口即记 Information：这是判别「worker 根本没被调用」与「被调用但卡在后面的 DB 调用」的唯一凭据。
+        // 2026-10-28 实测：只有结束态日志时，宿主启动后数分钟内这两种情形在日志里完全同形。
+        logger.LogInformation(
+            "[ConversationEventIndex] worker entered; first index check in {DelaySeconds}s ({Key}={Enabled})",
+            InitialDelay.TotalSeconds,
+            EnabledConfigurationKey,
+            enabled);
+
+        if (!enabled)
         {
-            logger.LogDebug(
+            // 与结束态日志同理：宿主默认过滤 Debug，静默禁用会被误读成「worker 没实现」。
+            logger.LogInformation(
                 "[ConversationEventIndex] Disabled by configuration ({Key}=false)",
                 EnabledConfigurationKey);
             return;
