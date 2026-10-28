@@ -190,6 +190,37 @@ public sealed class ConversationReadModelSchemaTests
         Assert.IsEmpty(result.AlreadyPresentIndexes);
     }
 
+    [TestMethod]
+    public async Task EnsureCreated_FreshInstall_CreatesCommandIdSequenceIndex()
+    {
+        // 全新安装路径：生产库由 PuddingApplicationInitializer 调 Database.EnsureCreatedAsync，
+        // 即从 EF 模型建库（本项目不使用 EF Migrations，已有库靠各 SchemaBootstrapper 增量演进）。
+        // 这条测试守住“新用户开箱即得”，不依赖任何存量库维护动作。
+        await using var temp = TempPlatformDb.Create();
+        await using var db = new PlatformDbContext(temp.Options);
+        await db.Database.EnsureCreatedAsync();
+
+        Assert.IsTrue(
+            await IndexExistsAsync(
+                db, ConversationReadModelSchema.ConversationEventsCommandIdSequenceIndex),
+            "全新库必须由 EF 模型直接建出 command_id 索引（否则新安装拿不到 G4 修复）");
+
+        var plan = await ExplainAsync(
+            db,
+            """
+            SELECT sequence FROM conversation_events
+            WHERE command_id = 'cmd-1'
+            ORDER BY sequence;
+            """);
+        StringAssert.Contains(
+            plan,
+            ConversationReadModelSchema.ConversationEventsCommandIdSequenceIndex,
+            "全新库的 command 维度查询也必须走索引，不能回退成全表扫");
+        Assert.IsFalse(
+            plan.Contains("TEMP B-TREE", StringComparison.Ordinal),
+            "全新库不应为 command_id + sequence 排序建临时 B 树");
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────
 
     private static ConversationTurnSummaryEntity NewTurnSummary(string conversationId, string turnId) => new()
