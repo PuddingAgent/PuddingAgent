@@ -66,7 +66,18 @@ public sealed record CodeSymbolSearchRequest(
     /// （如 <c>cs</c> / <c>.cs</c> / <c>ts</c>）。前导点可选、大小写不敏感；
     /// <c>null</c> 或空集合 = 不过滤（既有行为不变）。
     /// </summary>
-    IReadOnlyList<string>? FileExtensions = null);
+    IReadOnlyList<string>? FileExtensions = null,
+
+    /// <summary>
+    /// 多值 kind 过滤（ADR-089 R6 前置）：<c>RetrievalIntent.Type</c> 需要
+    /// Class/Interface/Struct/Enum/Delegate 五种、<c>RetrievalIntent.Member</c> 需要
+    /// Method/Constructor/Property/Field/Event/Operator 六种，而 <see cref="Kind"/> 只能表达单值。
+    /// <para>
+    /// <b>语义</b>：非空时<b>优先于 <see cref="Kind"/></b>（两者同给以本项为准）；null 或空集合 =
+    /// 回到 <see cref="Kind"/> 的既有语义。重复值会被去重。
+    /// </para>
+    /// </summary>
+    IReadOnlyList<CodeSymbolKind>? Kinds = null);
 
 public sealed record CodeSymbolDetail(
     CodeSymbolRecord Symbol,

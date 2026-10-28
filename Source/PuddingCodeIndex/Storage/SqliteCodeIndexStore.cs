@@ -469,6 +469,7 @@ public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceM
         // kind 与 FilePath（扩展名）都不在索引里，skip 需要稳定分页语义 —— 任一项出现就回退宽表 SQL。
         if (skip == 0
             && request.Kind is null
+            && NormalizeKinds(request).Count == 0
             && !string.IsNullOrEmpty(request.Query)
             && NormalizeFileExtensions(request.FileExtensions).Count == 0)
         {
@@ -492,12 +493,18 @@ public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceM
         var extensionClause = fileExtensions.Count == 0
             ? "1 = 1"
             : string.Join(" OR ", fileExtensions.Select((_, i) => $"FilePath LIKE $ext{i} ESCAPE '\\'"));
+        // ADR-089 R6：Kinds 非空时优先于 Kind 单值 —— Type/Member 需要一次查完多个 kind，
+        // 否则只能拆 5–6 次查询，而跨次去重会失效（硬约束 9/10 要求去重优先于过载判定）。
+        var kinds = NormalizeKinds(request);
+        var kindClause = kinds.Count == 0
+            ? "($kind IS NULL OR Kind = $kind)"
+            : string.Join(" OR ", kinds.Select((_, i) => $"Kind = $kind{i}"));
         command.CommandText = $"""
             SELECT WorkspaceId, ProjectId, FilePath, SymbolId, Name, Kind, StartLine, EndLine, Signature, Container
             FROM CodeSymbols
             WHERE WorkspaceId = $workspaceId
               AND ($projectId IS NULL OR ProjectId = $projectId)
-              AND ($kind IS NULL OR Kind = $kind)
+              AND ({kindClause})
               AND ($query = ''
                    OR ($matchName = 1 AND Name LIKE $likeQuery ESCAPE '\')
                    OR ($matchSignature = 1 AND Signature LIKE $likeQuery ESCAPE '\')
@@ -512,7 +519,15 @@ public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceM
             """;
         command.Parameters.AddWithValue("$workspaceId", request.WorkspaceId);
         command.Parameters.AddWithValue("$projectId", (object?)request.ProjectId ?? DBNull.Value);
-        command.Parameters.AddWithValue("$kind", request.Kind?.ToString() is { } kind ? kind : DBNull.Value);
+        if (kinds.Count == 0)
+        {
+            command.Parameters.AddWithValue("$kind", request.Kind?.ToString() is { } kind ? kind : DBNull.Value);
+        }
+        else
+        {
+            for (var i = 0; i < kinds.Count; i++)
+                command.Parameters.AddWithValue($"kind{i}", kinds[i].ToString());
+        }
         command.Parameters.AddWithValue("$query", request.Query ?? string.Empty);
         command.Parameters.AddWithValue("$likeQuery", $"%{EscapeLike(request.Query ?? string.Empty)}%");
         // ADR-089 §2.3 匹配域：None 无意义（会退化成"返回全部"），按 All 处理以保持既有语义。
@@ -659,6 +674,29 @@ public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceM
         }
 
         return records;
+    }
+
+    /// <summary>
+    /// ADR-089 R6：把 <see cref="CodeSymbolSearchRequest.Kinds"/> 去重后作为有效 kind 过滤面。
+    /// <para>
+    /// 返回空列表表示“不用多值过滤”（回退到 <see cref="CodeSymbolSearchRequest.Kind"/> 单值语义），
+    /// 与 <see cref="NormalizeFileExtensions"/> 的“空 = 不过滤”约定保持一致。
+    /// </para>
+    /// </summary>
+    private static IReadOnlyList<CodeSymbolKind> NormalizeKinds(CodeSymbolSearchRequest request)
+    {
+        if (request.Kinds is not { Count: > 0 })
+            return [];
+
+        var seen = new HashSet<CodeSymbolKind>();
+        var normalized = new List<CodeSymbolKind>(request.Kinds.Count);
+        foreach (var kind in request.Kinds)
+        {
+            if (seen.Add(kind))
+                normalized.Add(kind);
+        }
+
+        return normalized;
     }
 
     /// <summary>
