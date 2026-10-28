@@ -491,11 +491,24 @@ public static partial class PuddingServiceCollectionExtensions
         var memoryConnStr = builder.Configuration.GetConnectionString("Memory")
             ?? $"Data Source={Path.Combine(dataPaths.DatabasesRoot, "pudding_memory.db")}";
         builder.Services.AddSingleton<PlatformSqliteConnectionInterceptor>();
+
+        // 语句级统计（DB 层探针）：**默认关闭**。
+        // 用途：直接回答"哪条 SQL 被跑了几百万次"。文件级观测（句柄 / IO 计数器 / ETW）
+        // 只能说明在读哪个文件，这一层才说明是哪条查询在读它。
+        // 关闭时不挂拦截器，热路径零开销；开启后容器是单例，可被诊断端点读取快照。
+        var sqlStatementMetricsEnabled = false;
+        if (bool.TryParse(builder.Configuration["Diagnostics:SqlStatementMetrics:Enabled"], out var metricsSwitch))
+            sqlStatementMetricsEnabled = metricsSwitch;
+        builder.Services.AddSingleton<PuddingPlatform.Data.Diagnostics.SqlStatementMetrics>();
+        builder.Services.AddSingleton<PuddingPlatform.Data.Diagnostics.SqlStatementMetricsInterceptor>();
+
         builder.Services.AddSingleton<DbContextOptions<PlatformDbContext>>(sp =>
         {
             var opt = new DbContextOptionsBuilder<PlatformDbContext>();
             opt.UseSqlite(connStr);
             opt.AddInterceptors(sp.GetRequiredService<PlatformSqliteConnectionInterceptor>());
+            if (sqlStatementMetricsEnabled)
+                opt.AddInterceptors(sp.GetRequiredService<PuddingPlatform.Data.Diagnostics.SqlStatementMetricsInterceptor>());
             opt.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
             return opt.Options;
         });

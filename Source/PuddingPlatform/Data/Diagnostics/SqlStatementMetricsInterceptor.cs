@@ -29,13 +29,13 @@ namespace PuddingPlatform.Data.Diagnostics;
 /// <c>Scalar</c>（有值即 1 行）与 <c>NonQuery</c>（有确切影响行数）才记数。
 /// </para>
 /// </remarks>
-internal sealed class SqlStatementMetricsInterceptor : DbCommandInterceptor
+public sealed class SqlStatementMetricsInterceptor : DbCommandInterceptor
 {
     private readonly SqlStatementMetrics _metrics;
 
     /// <summary>用给定的统计容器创建拦截器。</summary>
     /// <param name="metrics">目标统计容器（由调用方持有，便于外部读取快照）。</param>
-    internal SqlStatementMetricsInterceptor(SqlStatementMetrics metrics)
+    public SqlStatementMetricsInterceptor(SqlStatementMetrics metrics)
     {
         ArgumentNullException.ThrowIfNull(metrics);
         _metrics = metrics;

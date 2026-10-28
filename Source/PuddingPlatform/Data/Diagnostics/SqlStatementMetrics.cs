@@ -36,7 +36,7 @@ internal sealed record SqlStatementSnapshot(
 /// <see cref="OverflowKey"/>，既不丢总数，也不让字典继续长。
 /// </para>
 /// </remarks>
-internal sealed class SqlStatementMetrics
+public sealed class SqlStatementMetrics
 {
     /// <summary>超出 <see cref="MaxTrackedStatements"/> 后所有新形状归入的 key。</summary>
     internal const string OverflowKey = "<overflow>";
@@ -49,7 +49,7 @@ internal sealed class SqlStatementMetrics
 
     private readonly int _maxTracked;
 
-    internal SqlStatementMetrics(int maxTrackedStatements = DefaultMaxTrackedStatements)
+    public SqlStatementMetrics(int maxTrackedStatements = DefaultMaxTrackedStatements)
     {
         if (maxTrackedStatements <= 0)
             throw new ArgumentOutOfRangeException(
