@@ -428,6 +428,17 @@
 - `Tools/BuiltIns/Search/SearchGrepTool.cs`
   索引只产候选，匹配以磁盘当前内容为准；`backend=index` 未建索引报 `dependency_wait`（环境前置），引擎故障报 `contract_error`；可选注入 `IFullTextIndexFreshnessProbe`，未注册时输出逐字不变，注册后摘要追加 `indexFreshness/lastIndexed/indexAge/indexDirMtime`，且 0 命中而新鲜度不可核实时报「不是不存在的证据」
 
+### 代码智能：outline 输入解析已抽出（2026-10-29）
+
+- `Services/Tools/CodeOutlineTargetResolver.cs` — `code_outline` 的 `file_path` 校验、工作目录基准、
+  绝对/相对路径规范化、文件存在性、小写扩展名。**纯输入解析，不读文件内容**。
+  抽出动机：`workspace_open` 需要同一套路径语义，两份拷贝必然漂移。
+- `Tools/BuiltIns/CodeIntelligence/CodeOutlineTool.cs` — 开头只调该 resolver；
+  **源码读取、Roslyn 解析、严重语法错误判定、截断、两种树形格式化与 JSON 投影仍留在工具内**，
+  尚未抽成 `ICodeOutlineService`（下一步）。
+- 约束：旧 `ResolveFullPath` 的注释曾声称「校验其在工作区范围内」，代码实际**没有**子树校验。
+  行为未改、只改注释，并用特征测试 `AbsolutePathOutsideWorkingDirectory_IsAccepted` 钉住；
+  将来真要加沙箱，会先让该测试红掉，从而暴露「这是行为变更」。
 ## 工具平台与展示投影
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
