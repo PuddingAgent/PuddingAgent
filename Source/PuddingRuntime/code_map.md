@@ -433,9 +433,16 @@
 - `Services/Tools/CodeOutlineTargetResolver.cs` — `code_outline` 的 `file_path` 校验、工作目录基准、
   绝对/相对路径规范化、文件存在性、小写扩展名。**纯输入解析，不读文件内容**。
   抽出动机：`workspace_open` 需要同一套路径语义，两份拷贝必然漂移。
-- `Tools/BuiltIns/CodeIntelligence/CodeOutlineTool.cs` — 开头只调该 resolver；
-  **源码读取、Roslyn 解析、严重语法错误判定、截断、两种树形格式化与 JSON 投影仍留在工具内**，
-  尚未抽成 `ICodeOutlineService`（下一步）。
+- `Services/Tools/CodeOutlineService.cs` — `ICodeOutlineService` / `CodeOutlineService`：
+  读源码、选解析路径、严重语法错误判定（有 Error 诊断且可解析节点 < 5）、截断（上限 30 顶层类型）。
+  **返回结构化节点，不返回 JSON** —— 排版留在工具层，`workspace_open` 才能复用同一份数据。
+- `Tools/BuiltIns/CodeIntelligence/CodeOutlineTool.cs` — 现在只剩两段：调 resolver + 调 service，
+  再按 `Origin` 选格式化器（`AppendTree`/`ToJson` 或 `AppendOutlinerNode`/`OutlinerNodeToJson`）。
+  服务在构造里 `new`，**不走构造注入**：`AddPuddingToolsFromAssembly` 会解析每个工具，
+  多一个构造参数就多一个"没注册就启动失败"的坑；DI 接线留到 S5。
+- **两个 OutlineNode 类型不是重复代码**：C# 侧是 `PuddingRuntime.Services.Tools.OutlineNode`，
+  outliner 侧是 `PuddingCodeIntelligence.Contracts.OutlineNode`。这解释了为何有两个格式化器。
+  合并类型属单独决定，未做。
 - 约束：旧 `ResolveFullPath` 的注释曾声称「校验其在工作区范围内」，代码实际**没有**子树校验。
   行为未改、只改注释，并用特征测试 `AbsolutePathOutsideWorkingDirectory_IsAccepted` 钉住；
   将来真要加沙箱，会先让该测试红掉，从而暴露「这是行为变更」。

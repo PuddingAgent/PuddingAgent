@@ -26,11 +26,13 @@ public sealed class CodeOutlineTool : PuddingToolBase<CodeOutlineArgs>
     private const int MaxTopLevelTypes = 30;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    private readonly IFileOutlinerRegistry? _outlinerRegistry;
+    private readonly ICodeOutlineService _outlineService;
 
     public CodeOutlineTool(IFileOutlinerRegistry? outlinerRegistry = null)
     {
-        _outlinerRegistry = outlinerRegistry;
+        // 服务在内部构造而不是构造注入：AddPuddingToolsFromAssembly 会解析**每个**工具，
+        // 多一个构造参数就多一个"没注册就启动失败"的坑。DI 接线留到 S5 一并做。
+        _outlineService = new CodeOutlineService(outlinerRegistry);
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -45,120 +47,52 @@ public sealed class CodeOutlineTool : PuddingToolBase<CodeOutlineArgs>
         // 回显用用户原样给的路径（target.DisplayPath），读文件用绝对路径（target.FullPath）。
         var filePath = target.DisplayPath;
         var fullPath = target.FullPath;
-        var ext = target.Extension;
+        // 扩展名判定在 CodeOutlineService 内部按同一规则计算（resolver 仍返回它，供其他调用方使用）。
 
-        // ── C# 路径（Roslyn）──
-        if (ext == ".cs")
+        var outcome = await _outlineService.OutlineAsync(fullPath, filePath, ct);
+        if (!outcome.Success)
+            return Fail(outcome.Error!);
+
+        if (outcome.Origin == CodeOutlineOrigin.CSharp)
         {
-            // 3. 读取源码
-            string sourceText;
-            try
-            {
-                sourceText = await File.ReadAllTextAsync(fullPath, ct);
-            }
-            catch (Exception ex)
-            {
-                return Fail($"(无法读取文件: {ex.Message})");
-            }
-
-            // 4. Roslyn 语法分析
-            var syntaxTree = CSharpSyntaxTree.ParseText(sourceText);
-            var root = await syntaxTree.GetRootAsync(ct);
-
-            // 5. 严重语法错误检测（节点极少 + 有 Error 诊断）
-            var errors = root.GetDiagnostics()
-                .Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
-            if (errors.Count > 0 && root.DescendantNodes().Count() < 5)
-            {
-                var diagLines = errors.Select(d => $"  - {d}");
-                return Fail($"(文件包含严重语法错误，无法生成结构预览)\n语法错误诊断:\n{string.Join("\n", diagLines)}");
-            }
-
-            // 6. 遍历提取结构
-            var visitor = new OutlineSyntaxVisitor();
-            visitor.Visit(root);
-
-            // 7. 空结果检查
-            if (visitor.RootNodes.Count == 0)
-                return Fail("(文件中没有发现 C# 类型声明，可能是非代码文件或仅包含 using 语句)");
-
-            // 检查节点数量，过大文件截断
-            var truncated = false;
-            var displayNodes = visitor.RootNodes;
-            if (displayNodes.Count > MaxTopLevelTypes)
-            {
-                displayNodes = displayNodes.Take(MaxTopLevelTypes).ToList();
-                truncated = true;
-            }
-
-            // 构建树形文本
+            // 排版留在工具层：树形文本与 JSON 投影回答的是"怎么显示"，不是"是什么"。
             var sb = new StringBuilder();
             sb.AppendLine($"File: {filePath}");
-            foreach (var node in displayNodes)
+            foreach (var node in outcome.CSharpNodes)
                 AppendTree(sb, node, 0);
 
-            if (truncated)
-                sb.AppendLine($"(File is large, only showing first {MaxTopLevelTypes} top-level types)");
-            if (visitor.HasSyntaxErrors)
+            if (outcome.Truncated)
+                sb.AppendLine($"(File is large, only showing first {CodeOutlineService.MaxTopLevelTypes} top-level types)");
+            if (outcome.HasSyntaxErrors)
                 sb.AppendLine("(File contains syntax errors — outline may be incomplete)");
 
-            // 构建结构化 JSON
-            var treeJson = displayNodes.Select(ToJson).ToList();
+            var symbols = outcome.CSharpNodes.Select(ToJson).ToList();
 
             return Ok(Json(new
             {
                 file_path = filePath,
-                count = visitor.RootNodes.Count,
+                count = outcome.TotalCount,
                 tree = sb.ToString().TrimEnd(),
-                symbols = treeJson,
-                has_syntax_errors = visitor.HasSyntaxErrors,
+                symbols,
+                has_syntax_errors = outcome.HasSyntaxErrors,
             }));
         }
 
-        // ── 多语言路径（IFileOutlinerRegistry）──
-        if (_outlinerRegistry is not null && _outlinerRegistry.IsSupported(fullPath))
+        var sb2 = new StringBuilder();
+        sb2.AppendLine($"File: {filePath}");
+        foreach (var node in outcome.OutlinerNodes)
+            AppendOutlinerNode(sb2, node, 0);
+
+        var symbols2 = outcome.OutlinerNodes.Select(OutlinerNodeToJson).ToList();
+
+        return Ok(Json(new
         {
-            // 3. 读取源码
-            string sourceText;
-            try
-            {
-                sourceText = await File.ReadAllTextAsync(fullPath, ct);
-            }
-            catch (Exception ex)
-            {
-                return Fail($"(无法读取文件: {ex.Message})");
-            }
-
-            var outliner = _outlinerRegistry.GetOutliner(fullPath);
-            var result = await outliner.OutlineAsync(fullPath, sourceText, ct);
-
-            if (!result.Success)
-                return Fail($"Outline failed for {filePath}: {result.Error}");
-
-            if (result.Nodes.Count == 0)
-                return Fail($"(文件中没有发现结构声明: {filePath})");
-
-            // 构建树形文本
-            var sb2 = new StringBuilder();
-            sb2.AppendLine($"File: {filePath}");
-            foreach (var node in result.Nodes)
-                AppendOutlinerNode(sb2, node, 0);
-
-            // 构建结构化 JSON
-            var treeJson2 = result.Nodes.Select(OutlinerNodeToJson).ToList();
-
-            return Ok(Json(new
-            {
-                file_path = filePath,
-                count = result.Nodes.Count,
-                tree = sb2.ToString().TrimEnd(),
-                symbols = treeJson2,
-                has_syntax_errors = false,
-            }));
-        }
-
-        // ── Fallback ──
-        return Fail($"code_outline 不支持此文件类型: {ext}");
+            file_path = filePath,
+            count = outcome.OutlinerNodes.Count,
+            tree = sb2.ToString().TrimEnd(),
+            symbols = symbols2,
+            has_syntax_errors = false,
+        }));
     }
 
     // ── 路径解析已移至 CodeOutlineTargetResolver（可独立测试，workspace_open 复用）──
