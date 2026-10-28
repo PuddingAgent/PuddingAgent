@@ -802,6 +802,15 @@ public sealed class LuceneFullTextIndexMaintenance : IFullTextIndexMaintenance
         }
         finally
         {
+            // ★ 必须在这里把「下一次周期扫描」推到 future，否则 RecoveryDue 会**永远为 true**：
+            //   NextRecoveryDueUtc 只在 CreateScopeRuntime 里设过一次（now + RecoveryScanInterval），
+            //   从不推进 ⇒ 启动 RecoveryScanInterval 之后，泵任务每一轮都先命中 RecoveryDue，
+            //   QueueRecovery(Interval) + continue，flush 分支**永远轮不到**。
+            //   实测症状（2026-10-28，接上宿主后 15 分钟起）：watcher 事件积压在折叠缓冲里不被 flush，
+            //   索引只能靠补偿扫描追赶（checkpoint 每 ~30 s 推进一次），增量延迟从 ~0.6 s 退化到 30 s+，
+            //   且泵任务变成无间隙的扫描循环（持续 CPU / 页缓存热读）。
+            //   放在 finally：失败也要重新排期，否则一次异常就会把热循环永久钉住。
+            scope.NextRecoveryDueUtc = _time.GetUtcNow() + _options.RecoveryScanInterval;
             scope.ExitWork();
         }
     }
