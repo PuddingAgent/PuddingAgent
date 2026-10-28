@@ -9,7 +9,7 @@
 
 | 目录 | 语言 | 说明 |
 |------|------|------|
-| `CSharp/` | C# | `RoslynCSharpIndexer`（`ICodeIndexer` + `ICodeIndexFileUpdater` + **`ICodeIndexFileBatchUpdater`**）· `RoslynSymbolId` · `RoslynWorkspaceBootstrapper` |
+| `CSharp/` | C# | `RoslynCSharpIndexer`（`ICodeIndexer` + `ICodeIndexFileUpdater` + **`ICodeIndexFileBatchUpdater`**）· `RoslynSymbolId` · `RoslynWorkspaceBootstrapper` · `ProjectOpenPlanner`（显式打开前去重 + 剔除已作为依赖装载项，避免白做的 MSBuild 评估） |
 | `TypeScript/` | TypeScript | `TypeScriptIndexer`（`ICodeIndexer` + `ICodeIndexFileUpdater` + **`ICodeIndexFileBatchUpdater`**）· `TypeScriptFileOutliner`；批量路径：一次项目级提取进程、逐文件 payload、只读投影、`NotApplicable`/`Retryable` 路由与 `SessionKey` 退化置空 （见下「关键语义」） |
 | `Python/` | Python | `PythonIndexer`（`ICodeIndexer` + `ICodeIndexFileUpdater` + **`ICodeIndexFileBatchUpdater`**）· `PythonFileOutliner`；批量路径与 TS 同形状：一次项目级提取、只读投影、`SessionKey` 退化置空 （见下「关键语义」） |
 | `Cpp/` | C++ | outliner |
