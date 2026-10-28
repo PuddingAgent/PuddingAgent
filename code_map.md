@@ -136,6 +136,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | **认证与外部 API** | `Source/PuddingPlatform/Security/` | 看板 Access Token（`pdt_v1_` opaque、摘要存储）、External API v1（ETag/幂等/`202 + Location`）、Loopback ControlToken 双通道鉴权 |
 | **前端构建与版本** | `Source/PuddingPlatformAdmin/package.json` | 版本号以 `version` 字段为准，构建期注入 `__PUDDING_FRONTEND__`；改前端必须递增版本并重新构建部署 `wwwroot/admin` |
 | **可诊断基础设施** | `Source/PuddingDiagnostics/` + [设计](Docs/12_features/可诊断基础设施设计-2026-10-07.md) | 失败必须收敛为稳定因果码 + 阶段 + 有界证据（脱敏、键≤32/值≤512/总≤8KiB）+ 显式截断标记；分类器是纯函数，故障场景「注入 → 期望结论」是门禁；新组件不得反向引用消费方 |
+| **数据库语句级统计探针** | `Source/PuddingPlatform/Data/Diagnostics/` + `Source/PuddingHost/Services/SqlStatementMetricsReportService.cs` | 回答"哪条 SQL 被跑了几百万次"——文件级观测（句柄/IO 计数器/ETW）只能说明在读哪个文件，这一层才说明是哪条查询。EF `DbCommandInterceptor` 按**归一化 SQL 形状**累计 calls/avg/max/rows；`SqlStatementKey` 只替换字符串字面量、参数、数字字面量，且数字必须先检查是否属于标识符（否则 table1/table2 会被错合并），字符串必须先于参数（否则字符串里的 @x 被误当参数）；`SqlStatementMetrics` 有界 512、溢出归 `<overflow>` 且继续计数；行数未知记 `unknown` 而非 0；**默认关闭**，配置 `Diagnostics:SqlStatementMetrics:Enabled=true` 才挂拦截器并每分钟落 Top10 日志 |
 | **会话失败报告链路** | `TurnExecutorAdapter` → `TurnTerminalInfo.Diagnostic` → `ExecutionRunCoordinator` → `SqliteExecutionJournal` → `ErrorDiagnosticPanel` | 脱敏报告随 canonical turn.failed 持久化；实时透传，历史通过 ConversationOpenQueryService 按 conversation/turn 显式点查；报告与日志共用 Error ID |
 
 **关键语义（§3「关键概念与组件」表·要点/不变量列逐字原文）**
