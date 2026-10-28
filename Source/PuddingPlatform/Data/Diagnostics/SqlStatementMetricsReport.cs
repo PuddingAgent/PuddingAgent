@@ -15,7 +15,7 @@ namespace PuddingPlatform.Data.Diagnostics;
 /// 输出刻意保持单行一条语句：日志系统按行切分，跨行的记录会被切成互不相干的碎片。
 /// </para>
 /// </remarks>
-internal static class SqlStatementMetricsReport
+public static class SqlStatementMetricsReport
 {
     /// <summary>单条 SQL 在报告里最多显示多少字符；超出截断并标注原长。</summary>
     internal const int MaxSqlDisplayChars = 160;
@@ -52,7 +52,7 @@ internal static class SqlStatementMetricsReport
     /// <param name="top">最多输出多少条；必须为正。</param>
     /// <param name="windowLabel">窗口描述，例如 <c>60s</c>。</param>
     /// <returns>多行文本，行间用 <see cref="Environment.NewLine"/> 分隔。</returns>
-    internal static string Format(SqlStatementMetrics metrics, int top, string windowLabel)
+    public static string Format(SqlStatementMetrics metrics, int top, string windowLabel)
     {
         ArgumentNullException.ThrowIfNull(metrics);
         if (top <= 0)

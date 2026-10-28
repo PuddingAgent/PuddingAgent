@@ -501,6 +501,11 @@ public static partial class PuddingServiceCollectionExtensions
             sqlStatementMetricsEnabled = metricsSwitch;
         builder.Services.AddSingleton<PuddingPlatform.Data.Diagnostics.SqlStatementMetrics>();
         builder.Services.AddSingleton<PuddingPlatform.Data.Diagnostics.SqlStatementMetricsInterceptor>();
+        if (sqlStatementMetricsEnabled)
+        {
+            // 采集到的数据必须有出口，否则等于没采。用日志而不是新端点：日志已经在跑、已经会被收集。
+            builder.Services.AddHostedService<PuddingHost.Services.SqlStatementMetricsReportService>();
+        }
 
         builder.Services.AddSingleton<DbContextOptions<PlatformDbContext>>(sp =>
         {
