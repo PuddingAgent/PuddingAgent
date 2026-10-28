@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCodeIndex.Contracts;
 using PuddingCodeIndex.Services.CodeIndex;
@@ -212,6 +213,38 @@ public sealed class CodeSourceMaintenanceIoProfileTests : IDisposable
             afterTargeted.Ledger.PendingRetries.Count,
             "提示轮不得把未观测路径写成失败重试（否则每轮白写数千行，且真故障无法归因）");
         Assert.AreEqual(0, targeted.RetryableFileCount, "未观测 ≠ 未解决");
+    }
+
+    /// <summary>
+    /// 门禁（2026-10-28）：校准轮必须报出「请求了多少条提取」与「多少条提取失败」。
+    /// <para>
+    /// 依据：当时只看到 reindex=2540 / reuse=4229，却无法回答「那些提取是失败了还是没写回」，
+    /// 只能翻已轮转掉的日志考古。这两个计数把该问题变成可读的事实。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task CalibrationLogsExtractionRequestedAndFailedCounts()
+    {
+        WriteFile("A.cs", "class A { }");
+        WriteFile("B.cs", "class B { }");
+
+        var scanner = new CountingScanner(new FileSystemCodeSourceScanner(new PermissiveIgnoreRules()));
+        var reader = new CountingReader();
+        var logger = new RecordingLogger<CodeSourceMaintenanceCoordinator>();
+        var scanService = new CodeSourceScanService(
+            scanner, _store, new FixedTimeProvider(() => _now), logger: NullLogger<CodeSourceScanService>.Instance);
+        var coordinator = new CodeSourceMaintenanceCoordinator(
+            scanService, _store, _store, new ScriptedBatchUpdater(), _store, reader,
+            new FixedTimeProvider(() => _now), logger);
+
+        await coordinator.RunAsync(WorkspaceId, ScopeId, _scopeRoot, Options(targeted: false));
+
+        Assert.IsTrue(
+            logger.Contains(LogLevel.Information, "2 extract-requested"),
+            "必须报出本轮请求了多少条提取，否则无法区分「提取失败」与「没写回」");
+        Assert.IsTrue(
+            logger.Contains(LogLevel.Information, "0 extract-failed"),
+            "本用例里两条提取都应成功，失败数必须为 0");
     }
 
     private sealed class CountingScanner : ICodeSourceScanner, ICodeSourcePathProbe

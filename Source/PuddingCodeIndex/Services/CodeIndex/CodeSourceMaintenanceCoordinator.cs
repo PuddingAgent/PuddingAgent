@@ -245,11 +245,17 @@ public sealed class CodeSourceMaintenanceCoordinator
         }
 
         // ② 只对真正需要重新提取的路径调用语言批量接缝（一批一次）。
+        // extract-requested 与 extract-failed 是 2026-10-28 补上的可观测点：
+        // 当时只看到「2540 reindex」与「reuse 4229」，却无法回答
+        // 「请求了多少条提取、实际写下多少条指纹」——而那正是判断「提取失败还是没写回」的关键。
+        var extractRequested = fingerprints.Count;
+
         var extraction = await ExtractAsync(
                 workspaceId, projectId, rootPath, options, fingerprints.Keys.ToArray(), scanRun.CapturedVersion, cancellationToken)
             .ConfigureAwait(false);
 
         var outcomes = extraction.Outcomes;
+        var extractFailed = 0;
 
         // ③ 旧符号差异 + 组装替换批次（指纹用①里读到的那一份）。
         var replacements = new List<CodeSourceFileReplacement>();
@@ -278,6 +284,7 @@ public sealed class CodeSourceMaintenanceCoordinator
 
             if (outcome.Status != CodeIndexConsumerStatus.Applied || outcome.Payload is null)
             {
+                extractFailed++;
                 failures.Add((outcome.FilePath, outcome.Reason ?? "the language provider did not apply the file"));
                 continue;
             }
@@ -549,8 +556,8 @@ public sealed class CodeSourceMaintenanceCoordinator
         var unresolved = failures.Count + deferredByPlan;
 
         _logger?.LogInformation(
-            "[CodeSourceMaintenance] Scope {ScopeId}: {Extract} extracted, {Rebind} rebound, {Delete} deleted, {NotApplicable} not-applicable, {Unresolved} unresolved, {Deferred} deferred, {NotObserved} not-observed; ledger {Outcome}, watermark advanced={Watermark}.",
-            projectId, replacements.Count, rebindPaths.Length, deletePaths.Length, notApplicable.Count,
+            "[CodeSourceMaintenance] Scope {ScopeId}: {ExtractRequested} extract-requested, {ExtractFailed} extract-failed, {Extract} extracted, {Rebind} rebound, {Delete} deleted, {NotApplicable} not-applicable, {Unresolved} unresolved, {Deferred} deferred, {NotObserved} not-observed; ledger {Outcome}, watermark advanced={Watermark}.",
+            projectId, extractRequested, extractFailed, replacements.Count, rebindPaths.Length, deletePaths.Length, notApplicable.Count,
             unresolved, deferred, notObservedByPlan, commitOutcome, commitOutcome == CodeSourceCommitOutcome.Committed);
 
         return new CodeSourceMaintenanceRunResult(
