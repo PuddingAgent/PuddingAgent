@@ -20,6 +20,7 @@
 | `CodeRelationContracts.cs` | 符号关系的契约类型 | `CodeRelationKind` / `CodeRelationRecord` | — | — |
 | `CodeWorkspaceDescriptor.cs` | 索引器输入的工作区描述符 | `CodeWorkspaceDescriptor` | — | — |
 | `ICodeIndexStore.cs` | 索引存储端口 | `ICodeIndexStore` / `RemoveFilesAsync` | — | 按文件清除必须与文件记录、符号及其关联图/引用同事务；幂等且回报真实删除数 |
+| `Services/Retrieval/RetrievalPortV1.cs` | `IRetrievalPort` 首个实现（切片一：Auto / Namespace / Type / Member / Any） | `RetrievalPortV1` / `IRetrievalSymbolSource` / `CodeIndexStoreSymbolSource` | `Contracts/Retrieval/IRetrievalPort.cs` | 未支持意图必须报 `IntentUnsupported` 并给替代方案（不得伪装空命中）；跨 scope 去重先于过载判定；超页必须落盘 + 给游标 |
 | `ICodeIndexer.cs` | 工作区级索引器端口 | `ICodeIndexer` / `IndexWorkspaceAsync` / `RemoveWorkspaceIndexAsync` | `Source/PuddingCodeIntelligence/code_map.md` | 只含全量操作；给共享端口加成员会破坏每个实现者（含组件外替身），增量能力必须另开端口 |
 | `ICodeIndexFileUpdater.cs` | 按文件增量的可选能力端口 | `ICodeIndexFileUpdater` / `IndexFileAsync` | `ICodeIndexer.cs` | 实现方未提供该能力时，调用方必须升级为 scope 级重索引，不得静默跳过文件 |
 | `ICodeIndexScheduler.cs` | 后台索引调度端口 | `ICodeIndexScheduler` | — | — |
