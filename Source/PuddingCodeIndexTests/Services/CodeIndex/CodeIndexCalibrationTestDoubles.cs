@@ -256,10 +256,11 @@ internal sealed class RecordingCodeIndexStore : ICodeIndexStore
         string projectId,
         string symbolId,
         CodeRelationKind? relationKind = null,
+        IReadOnlyList<CodeRelationKind>? relationKinds = null,
         CancellationToken cancellationToken = default)
     {
         Record(nameof(ListRelationsAsync));
-        return _inner.ListRelationsAsync(workspaceId, projectId, symbolId, relationKind, cancellationToken);
+        return _inner.ListRelationsAsync(workspaceId, projectId, symbolId, relationKind, relationKinds, cancellationToken);
     }
 
     public Task<IReadOnlyList<CodeRelationRecord>> ListIncomingRelationsAsync(
@@ -267,10 +268,11 @@ internal sealed class RecordingCodeIndexStore : ICodeIndexStore
         string projectId,
         string symbolId,
         CodeRelationKind? relationKind = null,
+        IReadOnlyList<CodeRelationKind>? relationKinds = null,
         CancellationToken cancellationToken = default)
     {
         Record(nameof(ListIncomingRelationsAsync));
-        return _inner.ListIncomingRelationsAsync(workspaceId, projectId, symbolId, relationKind, cancellationToken);
+        return _inner.ListIncomingRelationsAsync(workspaceId, projectId, symbolId, relationKind, relationKinds, cancellationToken);
     }
 
     public Task ClearRelationsAsync(

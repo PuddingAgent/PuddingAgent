@@ -102,6 +102,7 @@ public interface ICodeIndexStore
         string projectId,
         string symbolId,
         CodeRelationKind? relationKind = null,
+        IReadOnlyList<CodeRelationKind>? relationKinds = null,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<CodeRelationRecord>> ListIncomingRelationsAsync(
@@ -109,6 +110,7 @@ public interface ICodeIndexStore
         string projectId,
         string symbolId,
         CodeRelationKind? relationKind = null,
+        IReadOnlyList<CodeRelationKind>? relationKinds = null,
         CancellationToken cancellationToken = default);
 
     Task ClearRelationsAsync(

@@ -677,6 +677,27 @@ public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceM
     }
 
     /// <summary>
+    /// ADR-089 R6：把 relationKinds 去重后作为有效关系类型过滤面。
+    /// 返回空列表表示“不用多值过滤”（回退到单值 relationKind 语义）。
+    /// </summary>
+    private static IReadOnlyList<CodeRelationKind> NormalizeRelationKinds(
+        IReadOnlyList<CodeRelationKind>? relationKinds)
+    {
+        if (relationKinds is not { Count: > 0 })
+            return [];
+
+        var seen = new HashSet<CodeRelationKind>();
+        var normalized = new List<CodeRelationKind>(relationKinds.Count);
+        foreach (var kind in relationKinds)
+        {
+            if (seen.Add(kind))
+                normalized.Add(kind);
+        }
+
+        return normalized;
+    }
+
+    /// <summary>
     /// ADR-089 R6：把 <see cref="CodeSymbolSearchRequest.Kinds"/> 去重后作为有效 kind 过滤面。
     /// <para>
     /// 返回空列表表示“不用多值过滤”（回退到 <see cref="CodeSymbolSearchRequest.Kind"/> 单值语义），
@@ -916,16 +937,18 @@ public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceM
         string projectId,
         string symbolId,
         CodeRelationKind? relationKind = null,
+        IReadOnlyList<CodeRelationKind>? relationKinds = null,
         CancellationToken cancellationToken = default) =>
-        ListRelationsCoreAsync(workspaceId, projectId, "SourceSymbolId", symbolId, relationKind, cancellationToken);
+        ListRelationsCoreAsync(workspaceId, projectId, "SourceSymbolId", symbolId, relationKind, relationKinds, cancellationToken);
 
     public Task<IReadOnlyList<CodeRelationRecord>> ListIncomingRelationsAsync(
         string workspaceId,
         string projectId,
         string symbolId,
         CodeRelationKind? relationKind = null,
+        IReadOnlyList<CodeRelationKind>? relationKinds = null,
         CancellationToken cancellationToken = default) =>
-        ListRelationsCoreAsync(workspaceId, projectId, "TargetSymbolId", symbolId, relationKind, cancellationToken);
+        ListRelationsCoreAsync(workspaceId, projectId, "TargetSymbolId", symbolId, relationKind, relationKinds, cancellationToken);
 
     public async Task ClearRelationsAsync(
         string workspaceId,
@@ -1057,6 +1080,7 @@ public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceM
         string symbolColumn,
         string symbolId,
         CodeRelationKind? relationKind,
+        IReadOnlyList<CodeRelationKind>? relationKinds,
         CancellationToken cancellationToken)
     {
         await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
@@ -1065,19 +1089,34 @@ public sealed partial class SqliteCodeIndexStore : ICodeIndexStore, ICodeSourceM
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
+        // ADR-089 R6：relationKinds 非空时优先于单值 relationKind。
+        // Implementation intent 需要一次覆盖 Inherits/Implements/Overrides 三种边，
+        // 拆 3 次查询会让「哪些类型实现了这个接口」变成一个需要调用方自己拼的活儿。
+        var kinds = NormalizeRelationKinds(relationKinds);
+        var kindClause = kinds.Count == 0
+            ? "($kind IS NULL OR Kind = $kind)"
+            : string.Join(" OR ", kinds.Select((_, i) => $"Kind = $relKind{i}"));
         command.CommandText = $"""
             SELECT WorkspaceId, ProjectId, SourceSymbolId, TargetSymbolId, Kind, SourceLine, SourceFilePath, CreatedAtUtc
             FROM CodeRelations
             WHERE WorkspaceId = $workspaceId
               AND ProjectId = $projectId
               AND {symbolColumn} = $symbolId
-              AND ($kind IS NULL OR Kind = $kind)
+              AND ({kindClause})
             ORDER BY SourceFilePath, SourceLine, SourceSymbolId, TargetSymbolId, Kind;
             """;
         command.Parameters.AddWithValue("$workspaceId", workspaceId);
         command.Parameters.AddWithValue("$projectId", projectId);
         command.Parameters.AddWithValue("$symbolId", symbolId);
-        command.Parameters.AddWithValue("$kind", relationKind?.ToString() is { } kind ? kind : DBNull.Value);
+        if (kinds.Count == 0)
+        {
+            command.Parameters.AddWithValue("$kind", relationKind?.ToString() is { } kind ? kind : DBNull.Value);
+        }
+        else
+        {
+            for (var i = 0; i < kinds.Count; i++)
+                command.Parameters.AddWithValue($"relKind{i}", kinds[i].ToString());
+        }
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
