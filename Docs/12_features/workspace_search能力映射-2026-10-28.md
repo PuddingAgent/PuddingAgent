@@ -101,10 +101,22 @@ Implementation=6, References=7, Callers=8, Callees=9, Impact=10, Any=11
 
 设计文档 §8.4 要求的是"**验收阶段**删除无调用者入口"，与 B 方案不冲突。
 
-## 5. 未核实项（不得当成已知）
+## 5. 已核实（2026-10-28 补读，取代原「未核实」）
 
-- `CodeRelationRecord` 是否已含 `implements/overrides/references` 三种 kind —— **未读**，仅从 R1-04 的提交标题推断。
-- `SearchSymbolsAsync` 的 kind 过滤面是否足够区分 `Namespace/Type/Member` —— **未读签名**。
-- `code_outline` / `code_summary` / `project_map` 各自的服务入口 —— **未定位**（不在 `CodeQueryService` 里）。
+- **`CodeRelationKind` 已含** `Unknown/Contains/Calls/References/Inherits/Implements/Overrides/Overloads/Uses`
+  （`Source/PuddingCodeIndex/Contracts/CodeRelationContracts.cs`）
+  ⇒ `References` 与 `Callers` 在图上**确实区分**；`Implementation` 可沿 `Inherits/Implements/Overrides` 实现。
+  **⇒ §2.1 第 2 条要求的「降级声明」在 v1 不需要**（但仍要在返回里报 coverage，以防某项目没写过这些边）。
+- **`CodeSymbolSearchRequest.Kind` 是单值 `CodeSymbolKind?`**；`CodeSymbolKind` 含
+  `Namespace/Type/Struct/Class/Interface/Enum/Delegate/Method/Constructor/Property/Field/Event/…`
+  ⇒ `Type` 需要 5 个 kind、`Member` 需要 6 个 kind，**而合同只接受单值**。
+  **⇒ B1 必须把它扩展为 `Kinds` 集合**（可选、默认 null、不破坏现有调用），否则 `Type`/`Member`
+  只能拆成 5–6 次查询，且去重跨次失效。
+- `code_outline` / `code_summary` / `project_map` 的服务入口 —— **仍未定位**（不在 `CodeQueryService`），
+  B4（`workspace_open`）开工前补。
 
-以上三项在 B1 开工前必须补读，不能按推断动手。
+### 5.1 B1 由此确定的两条实现约束
+
+1. **不新写检索引擎**：`IRetrievalPort` 的实现只做「意图 → 现有服务」的路由 + 融合 + 覆盖声明。
+2. **扩展必须向后兼容**：`CodeSymbolSearchRequest` 加 `Kinds` 时保留 `Kind`（单值），
+   两者同时给出时以 `Kinds` 为准并在结果里回显实际使用的过滤面。
