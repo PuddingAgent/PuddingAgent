@@ -181,9 +181,9 @@ public sealed class CodeIndexStoreSymbolSource(ICodeIndexStore store) : IRetriev
 /// 每行按首字符判定是否注释行，分别归入 DocMention / TextHit。
 /// </para>
 /// <para>
-/// <b>未支持</b>（<see cref="RetrievalIntent.Impact"/>）：返回
-/// <see cref="RetrievalEmptyReason.IntentUnsupported"/> + 替代方案，
-/// <b>不伪装成空命中</b>（ADR-089 §8.3）。Impact 需要多跳遍历（本刀只做深度 1）。
+/// <b>影响面</b>（R6 B1 切片四）：<see cref="RetrievalIntent.Impact"/> —— 沿<b>入向</b>影响边
+/// 做多跳 BFS（深度上限 <c>MaxImpactDepth</c>），按符号去重并保留最短深度；
+/// 到达深度或数量上限时<b>标 degraded</b>，不把「只看到两层」说成「影响就这些」。
 /// </para>
 /// <para>
 /// <b>ScopeId 语义（v1）</b>：等同于 code index 的 <c>workspaceId</c>。
@@ -222,10 +222,11 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
         };
 
     /// <summary>v1 不支持的意图（显式列出，避免"忘了实现"被当成"确实没有"）。</summary>
-    private static readonly RetrievalIntent[] UnsupportedIntents =
-    [
-        RetrievalIntent.Impact,
-    ];
+    /// <remarks>
+    /// 2026-10-29 起为空：12 个意图全部接入。保留这个清单本身，是为了让<b>将来新增的意图</b>
+    /// 必须显式登记为“不支持”，而不是掉进符号面被当成“查过但没有”。
+    /// </remarks>
+    private static readonly RetrievalIntent[] UnsupportedIntents = [];
 
     /// <summary>注释面向文本面索要的匹配上限（到达上限时结果标 degraded，不声称完整）。</summary>
     private const int MaxTextMatches = 200;
@@ -280,6 +281,12 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
     /// <summary>关系面的起点上限：查询过泛时宁可少展开几个起点，也不要把整张关系图读进内存。</summary>
     private const int MaxRelationTargets = 20;
 
+    /// <summary>影响面的最大遍历深度（1 = 只看直接上游）。超过即标 degraded。</summary>
+    private const int MaxImpactDepth = 2;
+
+    /// <summary>影响面的命中上限（到达即标 degraded，不声称完整）。</summary>
+    private const int MaxImpactHits = 200;
+
     /// <inheritdoc />
     public async Task<RetrievalResult> RetrieveAsync(
         RetrievalRequest request,
@@ -328,6 +335,13 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
         if (request.Intent == RetrievalIntent.File)
         {
             return await RetrieveFilesAsync(request, scopeId, indexVersion, projects, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // Impact 与其余三个关系意图分两条路由：它们展开一层，影响面要穿过中间层做 BFS。
+        if (request.Intent == RetrievalIntent.Impact)
+        {
+            return await RetrieveImpactAsync(request, scopeId, indexVersion, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -922,6 +936,221 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
     }
 
     /// <summary>
+    /// 传递影响检索（<see cref="RetrievalIntent.Impact"/>）：沿<b>入向</b>影响边做多跳 BFS。
+    /// <para>
+    /// <b>为什么不复用关系面</b>：一层关系回答“谁直接用了它”，影响面要回答“改动它会波及谁” ——
+    /// 后者必须穿过中间层，只展开一层会把间接影响者全部漏掉。
+    /// </para>
+    /// <para>
+    /// <b>两种截断都必须声明</b>：到达 <see cref="MaxImpactDepth"/> 仍有未展开节点，
+    /// 或命中到达 <see cref="MaxImpactHits"/>，一律标 degraded 并写明是因为深度还是数量。
+    /// “我只看到两层”不能被读成“影响就这些”。
+    /// </para>
+    /// <para>
+    /// <b>环用 visited 挡</b>：A→B→A 会让 BFS 无限展开；同一符号在更浅层已命中时，
+    /// 深层那条<b>不再生成命中</b> —— 否则一个符号会在多个深度重复出现。
+    /// </para>
+    /// </summary>
+    private async Task<RetrievalResult> RetrieveImpactAsync(
+        RetrievalRequest request,
+        string scopeId,
+        string indexVersion,
+        CancellationToken cancellationToken)
+    {
+        var offset = DecodeCursor(request.Cursor);
+        if (offset is null)
+        {
+            return RetrievalResult.Empty(
+                request,
+                RetrievalEmptyReason.FilteredOut,
+                RetrievalNextStep.Narrow(
+                    RetrievalSuggestionKind.CompositeFilter,
+                    "分页游标无效（非本端口签发）；去掉 cursor 重新检索。"),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        var policyKinds = RetrievalIntentPolicy.RelationFilter(RetrievalIntent.Impact);
+        var relationKinds = policyKinds is null
+            ? []
+            : policyKinds.Where(RelationKindMap.ContainsKey).Select(k => RelationKindMap[k]).Distinct().ToList();
+
+        if (relationKinds.Count == 0)
+        {
+            // 索引层没有这些边 ⇒ 是“能力没接”，不是“没有影响者”。
+            return RetrievalResult.Empty(
+                request,
+                RetrievalEmptyReason.IntentUnsupported,
+                RetrievalNextStep.UseAlternativeFace(
+                    "影响面需要的关系边类型在索引层尚不存在；改用符号面检索。",
+                    "RetrievalIntent.Type / Member / Any"),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        var roots = await _source.SearchSymbolsAsync(
+            new CodeSymbolSearchRequest(
+                WorkspaceId: scopeId,
+                Query: request.Query,
+                ProjectId: null,
+                Kind: null,
+                Limit: MaxRelationTargets,
+                Skip: 0,
+                MatchTarget: MapMatchTarget(request),
+                FileExtensions: null,
+                Kinds: null),
+            cancellationToken).ConfigureAwait(false);
+
+        if (roots.Count == 0)
+        {
+            var reason = RetrievalEmptyReasonPolicy.ClassifyForZeroHits(
+                request.Filter,
+                RetrievalIndexAvailability.Available,
+                RetrievalCapabilityLevel.Semantic,
+                intentSupported: true);
+
+            return RetrievalResult.Empty(
+                request,
+                reason,
+                BuildEmptyStep(reason, request),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        var collected = new List<RetrievalHit>();
+        var visited = new HashSet<string>(roots.Select(r => r.SymbolId), StringComparer.Ordinal);
+        var frontier = roots.ToList();
+        var hitCapReached = false;
+        var depthLimitReached = false;
+
+        for (var depth = 1; depth <= MaxImpactDepth && frontier.Count > 0; depth++)
+        {
+            var next = new List<CodeSymbolRecord>();
+
+            foreach (var node in frontier)
+            {
+                var relations = await _source
+                    .ListIncomingRelationsAsync(scopeId, node.ProjectId, node.SymbolId, relationKinds, cancellationToken)
+                    .ConfigureAwait(false);
+
+                foreach (var relation in relations)
+                {
+                    if (!visited.Add(relation.SourceSymbolId))
+                    {
+                        continue;
+                    }
+
+                    var other = await _source
+                        .GetSymbolAsync(scopeId, relation.ProjectId, relation.SourceSymbolId, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    collected.Add(MapImpactHit(scopeId, node, relation, other, depth));
+
+                    if (other is not null)
+                    {
+                        next.Add(other);
+                    }
+
+                    if (collected.Count >= MaxImpactHits)
+                    {
+                        hitCapReached = true;
+                        break;
+                    }
+                }
+
+                if (hitCapReached)
+                {
+                    break;
+                }
+            }
+
+            if (hitCapReached)
+            {
+                break;
+            }
+
+            frontier = next;
+
+            // 最后一层还展开出了新节点 ⇒ 更上游还有影响者没算进来。
+            if (depth == MaxImpactDepth && frontier.Count > 0)
+            {
+                depthLimitReached = true;
+            }
+        }
+
+        var hits = collected
+            .Where(h => request.Filter is null || request.Filter.Matches(h))
+            .ToList();
+
+        if (hits.Count == 0)
+        {
+            var reason = RetrievalEmptyReasonPolicy.ClassifyForZeroHits(
+                request.Filter,
+                RetrievalIndexAvailability.Available,
+                RetrievalCapabilityLevel.Semantic,
+                intentSupported: true);
+
+            return RetrievalResult.Empty(
+                request,
+                reason,
+                BuildEmptyStep(reason, request),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        if (offset.Value >= hits.Count)
+        {
+            return RetrievalResult.Empty(
+                request,
+                RetrievalEmptyReason.FilteredOut,
+                RetrievalNextStep.Narrow(
+                    RetrievalSuggestionKind.CompositeFilter,
+                    $"分页游标越界（影响面已全量展开，共 {hits.Count} 条）；去掉 cursor 重新检索。"),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        var page = hits.Skip(offset.Value).Take(request.PageSize).ToList();
+        var hasMore = offset.Value + page.Count < hits.Count;
+        var degraded = hitCapReached || depthLimitReached;
+        var degradedReason = hitCapReached
+            ? $"影响面命中到达上限 {MaxImpactHits} 条，已截断；结果不完整。"
+            : depthLimitReached
+                ? $"影响面只展开到深度 {MaxImpactDepth}，更上游仍有影响者未计入；结果不完整。"
+                : null;
+
+        if (!hasMore && !degraded)
+        {
+            return RetrievalResult.Create(
+                request,
+                page,
+                hits.Count,
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        return RetrievalResult.Create(
+            request,
+            page,
+            hits.Count,
+            indexVersion,
+            nextSteps:
+            [
+                RetrievalNextStep.Narrow(
+                    RetrievalSuggestionKind.CompositeFilter,
+                    "影响面结果超出一页；用更明确的符号名收窄后重试。"),
+            ],
+            degraded: degraded,
+            degradedReason: degradedReason,
+            overflow: hasMore
+                ? RetrievalOverflow.Create(SpillPage(page, request), page.Count, RetrievalBudgetKind.ItemCount)
+                : null,
+            distribution: RetrievalDistribution.FromHits(page),
+            appliedFilters: AppliedFilters(request),
+            nextCursor: hasMore ? EncodeCursor(offset.Value + page.Count) : null);
+    }
+
+    /// <summary>
     /// 把一条关系边映射成命中。
     /// <para>
     /// <b>身份与证据刻意分开</b>：身份 = 对端符号的<b>声明处</b>（同一声明被多处调用 ⇒ 身份相同 ⇒
@@ -977,6 +1206,58 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
         CodeRelationKind.Implements => RetrievalRelationKind.Implements,
         CodeRelationKind.Overrides => RetrievalRelationKind.Overrides,
         _ => RetrievalRelationKind.Unknown,
+    };
+
+    /// <summary>
+    /// 影响面命中：身份 = 影响者的<b>声明处</b>，证据 = 关系边<b>所在处</b>。
+    /// <para>
+    /// <b>深度必须写进 why</b>：命中结构没有 depth 字段，而“隔了两层”与“直接调用”
+    /// 的风险等级完全不同 ⇒ 不写清楚，调用方会把间接影响当成直接依赖。
+    /// </para>
+    /// </summary>
+    private static RetrievalHit MapImpactHit(
+        string scopeId,
+        CodeSymbolRecord from,
+        CodeRelationRecord relation,
+        CodeSymbolRecord? other,
+        int depth)
+    {
+        var evidencePath = relation.SourceFilePath ?? other?.FilePath ?? from.FilePath;
+        var evidenceLine = relation.SourceLine ?? other?.StartLine ?? from.StartLine;
+        var evidenceEnd = relation.SourceLine ?? other?.EndLine ?? evidenceLine;
+
+        var symbolId = other?.SymbolId ?? relation.SourceSymbolId;
+        var name = other?.Name ?? $"(未索引符号 {relation.SourceSymbolId})";
+        var kind = other?.Kind ?? CodeSymbolKind.Unknown;
+
+        var why = other is null
+            ? $"经 {relation.Kind} 关系在深度 {depth} 从「{from.Name}」走到 {symbolId}，但对端符号未在索引中（索引不一致）"
+            : $"经 {relation.Kind} 关系在深度 {depth} 从「{from.Name}」到达的受影响符号";
+
+        return new RetrievalHit(
+            SymbolIdentity.Create(symbolId, other?.FilePath ?? evidencePath, other?.StartLine ?? from.StartLine),
+            name,
+            kind,
+            MapImpactHitKind(relation.Kind),
+            new RetrievalEvidence(evidencePath, evidenceLine, evidenceEnd),
+            other is null ? RetrievalConfidence.Unknown : RetrievalConfidence.Semantic,
+            Math.Max(0.1, 1.0 - (0.25 * (depth - 1))),
+            why,
+            RetrievalMatchTarget.SymbolName,
+            MapRelationKind(relation.Kind),
+            languageRawKind: null,
+            container: other?.Container ?? from.Container,
+            scopeIds: [scopeId]);
+    }
+
+    /// <summary>影响面命中的层：按边类型判定（调用 / 引用 / 实现），判不出来就 Unknown，不猜。</summary>
+    private static RetrievalHitKind MapImpactHitKind(CodeRelationKind kind) => kind switch
+    {
+        CodeRelationKind.Calls => RetrievalHitKind.CallSite,
+        CodeRelationKind.References or CodeRelationKind.Uses => RetrievalHitKind.Reference,
+        CodeRelationKind.Inherits or CodeRelationKind.Implements or CodeRelationKind.Overrides
+            => RetrievalHitKind.Implementation,
+        _ => RetrievalHitKind.Unknown,
     };
 
     /// <summary>把索引记录映射成命中。命中层恒为声明处（索引只描述声明）。</summary>

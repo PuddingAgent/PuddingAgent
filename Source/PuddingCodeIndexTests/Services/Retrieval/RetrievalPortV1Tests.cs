@@ -171,24 +171,112 @@ public sealed class RetrievalPortV1Tests
     }
 
     [TestMethod]
-    public async Task UnsupportedIntent_ReportsIntentUnsupported_NotFakeEmptyHit()
+    public async Task Impact_Depth1_ReturnsDirectUpstreamOnly()
     {
-        var source = new FakeSource([ActiveProject()], [Symbol("OrderService", CodeSymbolKind.Class, "sym-1")]);
+        var source = new FakeSource(
+            [ActiveProject()],
+            [
+                Symbol("OrderService", CodeSymbolKind.Class, "sym-1"),
+                Symbol("CheckoutFlow", CodeSymbolKind.Class, "sym-a", line: 3),
+            ],
+            [
+                new CodeRelationRecord(
+                    "ws-1", "proj-1", "sym-a", "sym-1", CodeRelationKind.Calls,
+                    SourceLine: 42, SourceFilePath: @"D:\repo\CheckoutFlow.cs"),
+            ]);
         var port = new RetrievalPortV1(source);
 
-        // Impact 需要多跳遍历，本刀（切片二）仍是显式不支持项；文件面板走文件面。
         var result = await port.RetrieveAsync(
-            new RetrievalRequest("Order", "ws-1", RetrievalIntent.Impact),
+            new RetrievalRequest("OrderService", "ws-1", RetrievalIntent.Impact),
             CancellationToken.None);
 
-        Assert.AreEqual(0, result.Hits.Count);
-        Assert.AreEqual(RetrievalEmptyReason.IntentUnsupported, result.EmptyReason);
-        Assert.AreEqual(1, result.NextSteps.Count);
-        Assert.AreEqual(RetrievalNextStepKind.UseAlternativeFace, result.NextSteps[0].Kind);
-        Assert.IsFalse(string.IsNullOrWhiteSpace(result.NextSteps[0].Alternative));
+        Assert.IsNull(result.EmptyReason);
+        Assert.AreEqual(1, result.Hits.Count);
+        Assert.AreEqual("CheckoutFlow", result.Hits[0].SymbolName);
+        Assert.AreEqual(RetrievalHitKind.CallSite, result.Hits[0].HitKind);
 
-        // 不支持的能力不应先打数据面 —— 否则"没实现"会被读成"查过但没有"。
-        Assert.AreEqual(0, source.Requests.Count);
+        // 深度必须写进 why —— 命中结构没有 depth 字段，不写就被当成直接依赖。
+        StringAssert.Contains(result.Hits[0].Why, "深度 1");
+        Assert.IsFalse(result.Degraded);
+    }
+
+    [TestMethod]
+    public async Task Impact_Depth2_CrossesIntermediateSymbol()
+    {
+        var source = new FakeSource(
+            [ActiveProject()],
+            [
+                Symbol("OrderService", CodeSymbolKind.Class, "sym-1"),
+                Symbol("OrderRepository", CodeSymbolKind.Class, "sym-b", line: 5),
+                Symbol("CheckoutFlow", CodeSymbolKind.Class, "sym-a", line: 3),
+            ],
+            [
+                new CodeRelationRecord("ws-1", "proj-1", "sym-b", "sym-1", CodeRelationKind.Calls, SourceLine: 12),
+                new CodeRelationRecord("ws-1", "proj-1", "sym-a", "sym-b", CodeRelationKind.Calls, SourceLine: 42),
+            ]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("OrderService", "ws-1", RetrievalIntent.Impact),
+            CancellationToken.None);
+
+        Assert.AreEqual(2, result.Hits.Count, "只展开一层的话，CheckoutFlow 会被漏掉。");
+        Assert.IsTrue(result.Hits.Any(h => h.SymbolName == "OrderRepository" && h.Why.Contains("深度 1")));
+        Assert.IsTrue(result.Hits.Any(h => h.SymbolName == "CheckoutFlow" && h.Why.Contains("深度 2")));
+    }
+
+    [TestMethod]
+    public async Task Impact_CycleBackToRoot_DoesNotReEmitRoot()
+    {
+        var source = new FakeSource(
+            [ActiveProject()],
+            [
+                Symbol("OrderService", CodeSymbolKind.Class, "sym-1"),
+                Symbol("CheckoutFlow", CodeSymbolKind.Class, "sym-a", line: 3),
+            ],
+            [
+                new CodeRelationRecord("ws-1", "proj-1", "sym-a", "sym-1", CodeRelationKind.Calls, SourceLine: 42),
+                // 反向边：BFS 如果不记 visited，会从 a 再走回 1，无限循环。
+                new CodeRelationRecord("ws-1", "proj-1", "sym-1", "sym-a", CodeRelationKind.Calls, SourceLine: 7),
+            ]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("OrderService", "ws-1", RetrievalIntent.Impact),
+            CancellationToken.None);
+
+        Assert.AreEqual(1, result.Hits.Count, "起点自己不得作为它的影响者被返回。");
+        Assert.AreEqual("CheckoutFlow", result.Hits[0].SymbolName);
+    }
+
+    [TestMethod]
+    public async Task Impact_DepthLimitReached_MarksDegraded()
+    {
+        // 链式三层：OrderService <- Repository <- CheckoutFlow <- Controller
+        var source = new FakeSource(
+            [ActiveProject()],
+            [
+                Symbol("OrderService", CodeSymbolKind.Class, "sym-1"),
+                Symbol("OrderRepository", CodeSymbolKind.Class, "sym-b"),
+                Symbol("CheckoutFlow", CodeSymbolKind.Class, "sym-a"),
+                Symbol("OrderController", CodeSymbolKind.Class, "sym-c"),
+            ],
+            [
+                new CodeRelationRecord("ws-1", "proj-1", "sym-b", "sym-1", CodeRelationKind.Calls),
+                new CodeRelationRecord("ws-1", "proj-1", "sym-a", "sym-b", CodeRelationKind.Calls),
+                new CodeRelationRecord("ws-1", "proj-1", "sym-c", "sym-a", CodeRelationKind.Calls),
+            ]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("OrderService", "ws-1", RetrievalIntent.Impact),
+            CancellationToken.None);
+
+        Assert.AreEqual(2, result.Hits.Count);
+        Assert.IsTrue(
+            result.Degraded,
+            "深度封顶且仍有未展开节点时必须标 degraded —— 否则调用方会以为影响就这些。");
+        StringAssert.Contains(result.DegradedReason, "深度 2");
     }
 
     [TestMethod]
