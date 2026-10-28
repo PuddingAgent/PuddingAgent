@@ -38,20 +38,14 @@ public sealed class CodeOutlineTool : PuddingToolBase<CodeOutlineArgs>
         ToolExecutionContext context,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(args.FilePath))
-            return Fail("file_path is required.");
+        var target = CodeOutlineTargetResolver.Resolve(args.FilePath, context.WorkingDirectory, out var resolveError);
+        if (target is null)
+            return Fail(resolveError!);
 
-        var filePath = args.FilePath.Trim();
-
-        // 解析为绝对路径
-        var fullPath = ResolveFullPath(filePath, context.WorkingDirectory);
-
-        // 1. 文件存在性检查
-        if (!File.Exists(fullPath))
-            return Fail($"(文件不存在: {filePath})");
-
-        // 2. 扩展名检查
-        var ext = Path.GetExtension(fullPath).ToLowerInvariant();
+        // 回显用用户原样给的路径（target.DisplayPath），读文件用绝对路径（target.FullPath）。
+        var filePath = target.DisplayPath;
+        var fullPath = target.FullPath;
+        var ext = target.Extension;
 
         // ── C# 路径（Roslyn）──
         if (ext == ".cs")
@@ -167,24 +161,7 @@ public sealed class CodeOutlineTool : PuddingToolBase<CodeOutlineArgs>
         return Fail($"code_outline 不支持此文件类型: {ext}");
     }
 
-    // ── 路径解析 ──
-
-    /// <summary>
-    /// 将用户输入的路径解析为规范化绝对路径，并校验其在工作区范围内。
-    /// 当前以工作目录为沙箱边界——解析后的路径必须在工作目录子树内。
-    /// </summary>
-        private static string ResolveFullPath(string filePath, string? workingDirectory)
-    {
-        var cwd = Path.GetFullPath(workingDirectory ?? Directory.GetCurrentDirectory());
-        string resolved;
-
-        if (Path.IsPathRooted(filePath))
-            resolved = Path.GetFullPath(filePath);
-        else
-            resolved = Path.GetFullPath(Path.Combine(cwd, filePath));
-
-        return resolved;
-    }
+    // ── 路径解析已移至 CodeOutlineTargetResolver（可独立测试，workspace_open 复用）──
 
     // ── C# 树形格式化（PuddingCode.Models.OutlineNode）──
 
