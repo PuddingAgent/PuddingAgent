@@ -2,7 +2,7 @@
 title: workspace_search 能力映射与实现顺序
 author: hyfree
 date: 2026-10-28
-last_reviewed: 2026-10-28
+last_reviewed: 2026-10-29
 status: active
 description: "R6 施工前置调研：把 ADR-089 冻结的 12 个 RetrievalIntent 逐一映射到现有服务（CodeQueryService / search_grep / FileSearchTool 等），标出哪些可直接复用、哪些真缺失、哪些需融合层新写；并给出按可独立验收切分的实现顺序。"
 categories: [docs, features]
@@ -120,3 +120,37 @@ Implementation=6, References=7, Callers=8, Callees=9, Impact=10, Any=11
 1. **不新写检索引擎**：`IRetrievalPort` 的实现只做「意图 → 现有服务」的路由 + 融合 + 覆盖声明。
 2. **扩展必须向后兼容**：`CodeSymbolSearchRequest` 加 `Kinds` 时保留 `Kind`（单值），
    两者同时给出时以 `Kinds` 为准并在结果里回显实际使用的过滤面。
+---
+
+## 6. B4 `workspace_open` 的权威规格（2026-10-29 补）
+
+### 6.1 规格在哪里（此前「开工前补」的答案）
+
+| 内容 | 位置 |
+|---|---|
+| 当前有效技术合同 | `Docs/12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md` §8.3（第 260 行起） |
+| 历史入口（不作并行规范） | `Docs/90_archive/adr_089_legacy_20261018/Agent统一检索与渐进展开工具链设计-2026-09-13.md` |
+
+### 6.2 规格要点（逐条摘自 §8.3）
+
+- 请求 `ref` 或 `{project_id,path}` **二选一**
+- `view = excerpt | outline | summary | relations | map | status`
+- 可选 `lines` / `depth` / `cursor`，共用同一输出预算
+- `map` 默认 `depth=2`、上限 5；节点默认 100 / 上限 500；边默认 200 / 上限 1000，且仍受 byte/token 上限约束
+- `relations` 必须给 symbol ref 与 `relation=references|callers|callees|implementation|impact`，语义同 §8.2；**不按文件名猜符号**
+- `ref` 绑定身份、源版本、scope、provider generation；**本身不授予权限**
+- 源码变化后不得沿旧行号打开当前代码：能读历史快照则回显版本，否则 `stale_ref` + 重新定位建议
+- `summary` / `outline` / `map` 的头部**必须携带能力与覆盖**；缺语义解析不得假装有完整引用图
+
+### 6.3 现状核对（2026-10-29 实测）
+
+- `IRetrievalPort` **只有 `RetrieveAsync` 一个成员** ⇒ `workspace_open` / `workspace_projects_load` /
+  `workspace_index_status` 都**尚无冻结合同**。它们不是「S5 未完成」，而是**合同待冻结**：
+  先冻结再实现，不先写工具再补契约。
+- `code_outline` / `code_summary` / `project_map` 的服务入口**仍未定位**（不在 `CodeQueryService`）。
+
+### 6.4 一条搜索口径教训
+
+本轮先在 `Docs/15_tasks` 搜 `workspace_open` 得 **0 命中**，差点据此写下「设计文档没提过」。
+**正对照**（同目录搜 `workspace_search`）同样 0 命中；而全 `Docs/` 搜 `workspace_open` 命中 14 处 ——
+规格实际在 `Docs/12_features/`。**⇒ 目录范围选错时，0 命中是范围产物，不是缺席证据。**
