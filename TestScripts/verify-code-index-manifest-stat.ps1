@@ -2,11 +2,19 @@
 #
 # Why this exists (2026-10-28): a full calibration re-extracted 2540 files while reusing 4229.
 # A read-only probe of code_index.db showed EXACT=4234 / MTIME_DIFF=2528 -- i.e. the detector
-# was RIGHT and roughly 2528 files' fingerprints really are stale. The open question is why a
-# calibration that re-extracts them does not persist their new fingerprint.
+# was RIGHT and roughly 2528 files' fingerprints really are stale.
 #
-# This script makes that question answerable without archaeology: run it before and after a
-# calibration; MTIME_DIFF must drop towards 0 if fingerprints are being persisted.
+# Root cause (established 2026-10-28, commit d95be42): it was NOT "the calibration failed to
+# persist". The calibration DID persist -- it persisted the OLD fingerprint. The reuse branch
+# wrote back snapshot.Manifest[path].Fingerprint (stale stat) instead of the stat it had just
+# read, so the next scan flagged StatChanged again: a treadmill that never converges.
+# Proof for a single row: content hash identical (C861A4FB...) while manifest mtime stayed at
+# 2026-10-02 and the disk was already 2026-10-28.
+#
+# So treat a FAIL here as: "the committed stat does not match the disk". Two known causes:
+#   (a) pre-d95be42 builds -- reuse wrote the old stat back; one round after deploying it converges;
+#   (b) genuine content changes that no round has processed yet (in which case MTIME_DIFF dropping
+#       to ~0 after a calibration is the acceptance signal).
 #
 # Strictly read-only (Mode=ReadOnly). WAL caveat: if <db>-wal is non-zero this read can be a
 # stale snapshot -- the script prints the WAL size and refuses to give a verdict when it is big.
@@ -109,5 +117,5 @@ if ($ratio -le $MaxMismatchRatio) {
     exit 0
 }
 
-Write-Output 'RESULT: FAIL - manifest fingerprints are stale; a calibration did not persist them'
+Write-Output 'RESULT: FAIL - committed stat does not match the disk for the rows counted above'
 exit 2
