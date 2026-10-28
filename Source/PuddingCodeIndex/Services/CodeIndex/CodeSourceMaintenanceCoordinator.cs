@@ -186,6 +186,15 @@ public sealed class CodeSourceMaintenanceCoordinator
             .ConfigureAwait(false);
         var ledger = CodeSourceMaintenanceLedger.FromState(snapshot.Ledger, _timeProvider);
 
+        // F3（2026-10-28）：剪掉「源文件已不存在」的历史遗留待办（实测 11,624 条里 4,684 条）。
+        // 文件仍在但一直失败的不动——那是真实故障，必须留在表里可归因。
+        //
+        // ⚠ 必须在本轮记录失败**之前**执行：它治理的是「历史遗留」，不是「本轮刚记下的」。
+        // 放在后面会把「提取期间文件被删」这种本轮刚产生的待办一起剪掉，直接破坏
+        // 「工作不得静默丢失」——路径既不在索引、也不在重试表，只能等下一次 watcher 提示。
+        // 实测证据：AFileDeletedDuringExtractionKeepsTheOldStateAndStaysPending 在 F3 之后变红。
+        DropStaleRetries(projectId, ledger);
+
         var now = _timeProvider.GetUtcNow();
         var duePaths = ledger.DueRetries(now)
             .Select(retry => retry.FilePath)
@@ -468,12 +477,49 @@ public sealed class CodeSourceMaintenanceCoordinator
         var pendingRetryPaths = snapshot.Ledger.PendingRetries.Keys.ToHashSet(CodePathIdentity.PathComparer);
         var deferredByPlan = 0;
 
+        // 「本轮没被观测到」不等于「本轮没定论」。
+        //
+        // 提示驱动轮（以及任何不完整扫描）只观测被提示的路径，manifest 里其余路径在检测层
+        // 只能落成 Deferred + scan_incomplete。把它们当成失败写进重试表，后果是：
+        //   ① 每轮新增约 6760 行记录（2026-10-28 实测：retry 表 6756 条、Attempts 全为 1）；
+        //   ② unresolved 计数被污染成像「6666 个文件有毛病」，其实是「本轮没问到」；
+        //   ③ 待办表失去归因能力——真故障与没问到混在一起。
+        // 这些路径上一轮的状态本来就该原样保留，所以这里直接跳过：不记重试、不计入 unresolved。
+        // 只认「**本轮根本没被问到**」的那一类路径。
+        // 判别不能用原因串：被提示了却消失/失败的文件，检测层同样只能给 scan_incomplete
+        // （它确实没拿到可用观测），原因串上一模一样。真正的区分是「本轮有没有被问过」：
+        //   ① 在 WatcherHints 里 ⇒ 本轮主动问过它，没定论就是 unresolved，必须留待办；
+        //   ② 不在 WatcherHints 里、且只带 scan_incomplete ⇒ 本轮压根没问过它，状态原样保留。
+        // 实测教训：只判原因串会把
+        // AFileDeletedDuringExtractionKeepsTheOldStateAndStaysPending 与
+        // AHintedPathThatVanishedIsNotDeletedAndStaysPending 两条用例弄红。
+        var requestedPaths = options.WatcherHints is { Count: > 0 } hints
+            ? hints.Where(path => !string.IsNullOrWhiteSpace(path)).ToHashSet(CodePathIdentity.PathComparer)
+            : new HashSet<string>(CodePathIdentity.PathComparer);
+
+        var notObservedPaths = scanRun.ChangeSet.Changes
+            .Where(change => change.Action == CodeSourceAction.Deferred
+                && !requestedPaths.Contains(change.FilePath)
+                && change.Reasons.Contains(CodeSourceChangeReasons.ScanIncomplete)
+                && change.Reasons.All(reason =>
+                    reason == CodeSourceChangeReasons.ScanIncomplete
+                    || reason == CodeSourceChangeReasons.RootUnusable))
+            .Select(change => change.FilePath)
+            .ToHashSet(CodePathIdentity.PathComparer);
+        var notObservedByPlan = 0;
+
         foreach (var item in secondPlan.Items)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             if (item.Action != CodeSourceUpdateAction.RetryLater)
                 continue;
+
+            if (notObservedPaths.Contains(item.FilePath))
+            {
+                notObservedByPlan++;
+                continue;
+            }
 
             deferredByPlan++;
 
@@ -494,17 +540,6 @@ public sealed class CodeSourceMaintenanceCoordinator
             ScanComplete: scanRun.ChangeSet.ScanComplete,
             UnresolvedPathCount: failures.Count + deferredByPlan));
 
-        // F3（2026-10-28）：丢弃「源文件已不存在」的重试记录。
-        // 实测 11,624 条重试里 4,684 条属于此类 —— 重试不可能成功，却永久占住待办表。
-        // 文件仍在但一直失败的不动：那是真实故障，必须留在表里可归因。
-        var droppedStaleRetries = ledger.DropRetriesForMissingFiles(File.Exists);
-        if (droppedStaleRetries > 0)
-        {
-            _logger?.LogInformation(
-                "[CodeSourceMaintenance] Scope {ScopeId}: dropped {Dropped} pending retries whose source file no longer exists; {Remaining} remain.",
-                projectId, droppedStaleRetries, ledger.Snapshot().PendingRetries.Count);
-        }
-
         await _maintenanceStore.SaveMaintenanceLedgerAsync(workspaceId, projectId, ledger.Snapshot(), cancellationToken)
             .ConfigureAwait(false);
 
@@ -514,9 +549,9 @@ public sealed class CodeSourceMaintenanceCoordinator
         var unresolved = failures.Count + deferredByPlan;
 
         _logger?.LogInformation(
-            "[CodeSourceMaintenance] Scope {ScopeId}: {Extract} extracted, {Rebind} rebound, {Delete} deleted, {NotApplicable} not-applicable, {Unresolved} unresolved, {Deferred} deferred; ledger {Outcome}, watermark advanced={Watermark}.",
+            "[CodeSourceMaintenance] Scope {ScopeId}: {Extract} extracted, {Rebind} rebound, {Delete} deleted, {NotApplicable} not-applicable, {Unresolved} unresolved, {Deferred} deferred, {NotObserved} not-observed; ledger {Outcome}, watermark advanced={Watermark}.",
             projectId, replacements.Count, rebindPaths.Length, deletePaths.Length, notApplicable.Count,
-            unresolved, deferred, commitOutcome, commitOutcome == CodeSourceCommitOutcome.Committed);
+            unresolved, deferred, notObservedByPlan, commitOutcome, commitOutcome == CodeSourceCommitOutcome.Committed);
 
         return new CodeSourceMaintenanceRunResult(
             CapabilityMissing: false,
@@ -582,6 +617,27 @@ public sealed class CodeSourceMaintenanceCoordinator
 
         return orphanPaths.Count;
     }
+    /// <summary>
+    /// 剪掉「源文件已不存在」的历史遗留待办。
+    /// <para>
+    /// 实测 11,624 条重试里 4,684 条属于此类：重试永远不可能成功，却永久占住待办表。
+    /// 文件仍在但一直失败的不动——那是真实故障，必须留在表里可归因。
+    /// </para>
+    /// <para>
+    /// <b>只在本轮记录失败之前调用</b>：它治理历史遗留，不是治理本轮刚产生的待办。
+    /// </para>
+    /// </summary>
+    private void DropStaleRetries(string projectId, CodeSourceMaintenanceLedger ledger)
+    {
+        var dropped = ledger.DropRetriesForMissingFiles(File.Exists);
+        if (dropped <= 0)
+            return;
+
+        _logger?.LogInformation(
+            "[CodeSourceMaintenance] Scope {ScopeId}: dropped {Dropped} pending retries whose source file no longer exists; {Remaining} remain.",
+            projectId, dropped, ledger.Snapshot().PendingRetries.Count);
+    }
+
     /// <summary>提交前确认文件的 stat 仍与读到的那份指纹一致（提取可能耗时，期间文件可能被改写）。</summary>
     private static bool StillMatches(SourceFingerprint fingerprint, string filePath)
     {

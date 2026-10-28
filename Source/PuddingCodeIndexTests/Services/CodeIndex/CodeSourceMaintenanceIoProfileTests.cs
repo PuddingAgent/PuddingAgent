@@ -176,6 +176,44 @@ public sealed class CodeSourceMaintenanceIoProfileTests : IDisposable
     }
 
     /// <summary>计数装饰器：分别记录「全树枚举」与「按路径观测」的次数，并转发给真实扫描器。</summary>
+    /// <summary>
+    /// 门禁（2026-10-28）：「本轮没被观测到」不得被写成失败重试。
+    /// <para>
+    /// 现场依据：提示驱动轮日志每轮 `deferred≈6760`，而 retry 表里正好 6756 条
+    /// reason="the round reached no conclusion for this path"、Attempts 全为 1 —— 即每轮
+    /// 把未观测路径当失败新写一遍。后果是写放大 + unresolved 被污染成「一堆坏文件」+ 真故障无法归因。
+    /// </para>
+    /// <para>
+    /// 断言两端：① 提示轮过后重试表仍为空；② 未观测路径不计入 RetryableFileCount。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task TargetedRoundDoesNotRecordUnobservedPathsAsRetries()
+    {
+        var a = WriteFile("A.cs", "class A { }");
+        WriteFile("B.cs", "class B { }");
+        WriteFile("C.cs", "class C { }");
+
+        var (coordinator, _, _) = Arrange();
+
+        var full = await coordinator.RunAsync(WorkspaceId, ScopeId, _scopeRoot, Options(targeted: false));
+        Assert.IsTrue(full.ScanComplete, "完整校准必须完整，否则本用例的前提不成立");
+
+        var afterFull = await _store.LoadSourceMaintenanceAsync(WorkspaceId, ScopeId);
+        Assert.AreEqual(3, afterFull.Manifest.Count, "三条路径都应进 manifest");
+        Assert.AreEqual(0, afterFull.Ledger.PendingRetries.Count, "完整校准后不应有待重试");
+
+        // 只提示 A：B、C 本轮「没被观测到」。它们不是失败，状态应原样保留。
+        var targeted = await coordinator.RunAsync(WorkspaceId, ScopeId, _scopeRoot, Options(targeted: true, a));
+
+        var afterTargeted = await _store.LoadSourceMaintenanceAsync(WorkspaceId, ScopeId);
+        Assert.AreEqual(
+            0,
+            afterTargeted.Ledger.PendingRetries.Count,
+            "提示轮不得把未观测路径写成失败重试（否则每轮白写数千行，且真故障无法归因）");
+        Assert.AreEqual(0, targeted.RetryableFileCount, "未观测 ≠ 未解决");
+    }
+
     private sealed class CountingScanner : ICodeSourceScanner, ICodeSourcePathProbe
     {
         private readonly FileSystemCodeSourceScanner _inner;
