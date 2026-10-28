@@ -5,7 +5,9 @@ namespace PuddingPlatform.Data.Diagnostics;
 /// <summary>一条语句的累计统计（快照，不可变）。</summary>
 /// <param name="Key">归一化后的语句 key。</param>
 /// <param name="Calls">执行次数。</param>
-/// <param name="TotalTicks">累计耗时（<see cref="System.Diagnostics.Stopwatch"/> tick）。</param>
+/// <param name="TotalTicks">累计耗时，单位是 <see cref="TimeSpan"/> tick（100 纳秒）。
+/// 注意这与 <see cref="System.Diagnostics.Stopwatch"/> tick 不同；指标层只做累加与比较，
+/// 不解释绝对时间，所以只要写入方与读取方对单位一致即可。</param>
 /// <param name="MaxTicks">单次最大耗时。</param>
 /// <param name="Rows">累计返回行数（对非查询为 <c>null</c>）。</param>
 internal sealed record SqlStatementSnapshot(
@@ -107,7 +109,12 @@ internal sealed class SqlStatementMetrics
         }
 
         if (rowCount is { } rows && rows > 0)
+        {
             Interlocked.Add(ref entry.Rows, rows);
+            // 必须显式标记“收到过行数”，否则快照无法区分“未知”与“0 行”。
+            // 这正是本类最容易被写错的地方：long 默认 0 看起来像“0 行”，但它其实是“没有数据”。
+            Interlocked.Exchange(ref entry.RowsKnown, 1);
+        }
     }
 
     /// <summary>
@@ -123,7 +130,7 @@ internal sealed class SqlStatementMetrics
                 Interlocked.Read(ref kvp.Value.Calls),
                 Interlocked.Read(ref kvp.Value.TotalTicks),
                 Interlocked.Read(ref kvp.Value.MaxTicks),
-                kvp.Value.Rows));
+                kvp.Value.RowsKnown != 0 ? kvp.Value.Rows : null));
         }
 
         list.Sort(static (a, b) =>
@@ -141,5 +148,8 @@ internal sealed class SqlStatementMetrics
         internal long TotalTicks;
         internal long MaxTicks;
         internal long Rows;
+
+        /// <summary>0 = 从未收到行数（快照报 null）；1 = 至少收到过一次。</summary>
+        internal long RowsKnown;
     }
 }
