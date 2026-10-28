@@ -116,14 +116,18 @@ public sealed class CodeQueryService : ICodeQueryService
         string projectId,
         string symbolId,
         CancellationToken cancellationToken = default) =>
-        _store.ListIncomingRelationsAsync(workspaceId, projectId, symbolId, CodeRelationKind.Calls, cancellationToken);
+        _store.ListIncomingRelationsAsync(workspaceId, projectId, symbolId,
+            relationKind: CodeRelationKind.Calls,
+            cancellationToken: cancellationToken);
 
     public Task<IReadOnlyList<CodeRelationRecord>> GetCalleesAsync(
         string workspaceId,
         string projectId,
         string symbolId,
         CancellationToken cancellationToken = default) =>
-        _store.ListRelationsAsync(workspaceId, projectId, symbolId, CodeRelationKind.Calls, cancellationToken);
+        _store.ListRelationsAsync(workspaceId, projectId, symbolId,
+            relationKind: CodeRelationKind.Calls,
+            cancellationToken: cancellationToken);
 
     public async Task<IReadOnlyList<CodeSymbolRecord>> GetImpactAsync(
         string workspaceId,

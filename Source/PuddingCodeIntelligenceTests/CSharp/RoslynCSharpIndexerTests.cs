@@ -71,7 +71,7 @@ public sealed class RoslynCSharpIndexerTests : IDisposable
         Assert.IsNotNull(computeMethod, "Should find Compute method");
 
         var callees = await _store.ListRelationsAsync("ws-1", "proj-1", computeMethod!.SymbolId,
-            CodeRelationKind.Calls, CancellationToken.None);
+            relationKind: CodeRelationKind.Calls, cancellationToken: CancellationToken.None);
         Assert.IsTrue(callees.Count >= 1, $"Compute should call at least one method, found {callees.Count}");
 
         var addSymbol = allSymbols.FirstOrDefault(s => s.Name == "Add" && s.Kind == CodeSymbolKind.Method);
