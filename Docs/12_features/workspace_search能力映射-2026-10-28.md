@@ -147,7 +147,14 @@ Implementation=6, References=7, Callers=8, Callees=9, Impact=10, Any=11
 - `IRetrievalPort` **只有 `RetrieveAsync` 一个成员** ⇒ `workspace_open` / `workspace_projects_load` /
   `workspace_index_status` 都**尚无冻结合同**。它们不是「S5 未完成」，而是**合同待冻结**：
   先冻结再实现，不先写工具再补契约。
-- `code_outline` / `code_summary` / `project_map` 的服务入口**仍未定位**（不在 `CodeQueryService`）。
+- **`code_outline` / `code_summary` / `project_map` 没有「服务层」**（2026-10-29 实测，解释此前的「仍未定位」）：
+  三者都是 `PuddingRuntime\Tools\BuiltIns\CodeIntelligence\` 下的 `PuddingToolBase<T>` 工具类，
+  逻辑直接写在 `ExecuteCoreAsync` 里（`CodeOutlineTool` 282 行：路径解析 → 存在性 → 扩展名 →
+  `.cs` 走 Roslyn / 其他走 `IFileOutlinerRegistry`，全在方法体内）。
+  **⇒ `workspace_open` 不能靠「组合现有服务」实现**：没有可注入的服务可组合。
+  先决条件是**从工具类里抽出服务**（`ICodeOutlineService` / `ICodeSummaryService` / `IProjectMapService`），
+  再把 `code_*` 工具退化成薄壳、`workspace_open` 复用同一服务。这属于 S1 抽取，
+  不能反过来让 `workspace_open` 去调工具（依赖方向反了），也不能复制一份逻辑（必然漂移）。
 
 ### 6.4 一条搜索口径教训
 
