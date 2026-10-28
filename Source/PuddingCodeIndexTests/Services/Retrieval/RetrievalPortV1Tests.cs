@@ -538,4 +538,55 @@ public sealed class RetrievalPortV1Tests
         Assert.IsFalse(string.IsNullOrWhiteSpace(result.DegradedReason));
         Assert.AreEqual(200, text.LastMaxMatches);
     }
+
+    private sealed class ThrowingTextSource(Exception error) : IRetrievalTextSource
+    {
+        public Task<IReadOnlyList<RetrievalTextMatch>> SearchAsync(
+            string scopeId,
+            string query,
+            int maxMatches,
+            CancellationToken cancellationToken) =>
+            Task.FromException<IReadOnlyList<RetrievalTextMatch>>(error);
+    }
+
+    [TestMethod]
+    public async Task CommentIntent_TextSourceUnavailable_ReportsNotIndexed_NotAbsent()
+    {
+        var source = new FakeSource([ActiveProject()], []);
+        var text = new ThrowingTextSource(
+            new RetrievalTextSourceUnavailableException("全文索引未建立"));
+        var port = new RetrievalPortV1(source, text);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("Order", "ws-1", RetrievalIntent.Comment),
+            CancellationToken.None);
+
+        // “没法查” 不得被读成 “确实没有”。
+        Assert.AreEqual(RetrievalEmptyReason.NotIndexed, result.EmptyReason);
+        Assert.AreNotEqual(RetrievalEmptyReason.GenuinelyAbsent, result.EmptyReason);
+        Assert.AreEqual(RetrievalNextStepKind.RebuildIndex, result.NextSteps[0].Kind);
+    }
+
+    [TestMethod]
+    public async Task CommentIntent_TextSourceThrowsOtherException_Propagates()
+    {
+        var source = new FakeSource([ActiveProject()], []);
+        var text = new ThrowingTextSource(new InvalidOperationException("引擎炸了"));
+        var port = new RetrievalPortV1(source, text);
+
+        // 只捕“不可用”一种；其余异常必须上抛 —— 吞错同样会造出空洞否定。
+        var threw = false;
+        try
+        {
+            await port.RetrieveAsync(
+                new RetrievalRequest("Order", "ws-1", RetrievalIntent.Comment),
+                CancellationToken.None);
+        }
+        catch (InvalidOperationException)
+        {
+            threw = true;
+        }
+
+        Assert.IsTrue(threw, "非“不可用”异常必须上抛，不得被吞成空结果");
+    }
 }

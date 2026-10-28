@@ -83,6 +83,18 @@ public interface IRetrievalTextSource
 /// <summary>文本面的一条匹配：文件 + 行号 + 该行文本。</summary>
 public sealed record RetrievalTextMatch(string FilePath, int Line, string LineText);
 
+/// <summary>
+/// 文本数据面<b>不可用</b>（未建索引 / 引擎自身报错）。
+/// <para>
+/// <b>为什么需要这个异常</b>：文本面返回空列表有且只有一种含义——“查了，没匹配”。
+/// “索引没建”必须能被区分出来，否则会被端口当成 <see cref="RetrievalEmptyReason.GenuinelyAbsent"/>，
+/// 把“没法查”读成“确实没有”。端口捕获本异常后转成
+/// <see cref="RetrievalEmptyReason.NotIndexed"/> + 重建建议；其他异常不捕获（不吞错）。
+/// </para>
+/// </summary>
+public sealed class RetrievalTextSourceUnavailableException(string message, Exception? innerException = null)
+    : Exception(message, innerException);
+
 /// <summary>把既有 <see cref="ICodeIndexStore"/> 适配成窄端口（生产路径唯一实现）。</summary>
 public sealed class CodeIndexStoreSymbolSource(ICodeIndexStore store) : IRetrievalSymbolSource
 {
@@ -453,9 +465,24 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
                 appliedFilters: AppliedFilters(request));
         }
 
-        var matches = await _textSource
-            .SearchAsync(scopeId, request.Query, MaxTextMatches, cancellationToken)
-            .ConfigureAwait(false);
+        IReadOnlyList<RetrievalTextMatch> matches;
+        try
+        {
+            matches = await _textSource
+                .SearchAsync(scopeId, request.Query, MaxTextMatches, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (RetrievalTextSourceUnavailableException ex)
+        {
+            // “没法查”不得伪装成“没匹配”：转成 NotIndexed + 重建建议。
+            // 其余异常不捕获 —— 吞错同样会造出空洞否定。
+            return RetrievalResult.Empty(
+                request,
+                RetrievalEmptyReason.NotIndexed,
+                RetrievalNextStep.RebuildIndex($"文本数据面不可用：{ex.Message}", scopeId),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
 
         var reachedCap = matches.Count >= MaxTextMatches;
 
