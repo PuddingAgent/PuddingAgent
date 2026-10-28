@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using Serilog.Core;
 using Serilog.Events;
 using Serilog.Formatting.Display;
@@ -170,12 +170,19 @@ public sealed class SizeRollingFileSink : ILogEventSink, IDisposable
         if (allFiles.Length <= _retainedFileCountLimit)
             return;
 
-        // 按序号数值降序（新→旧）保留最新的 N 个；
-        // 旧实现用文件名字典序，序号位数不一致时（999 → 10000）顺序错乱。
+        // 保留最新的 N 个：先按**日期**降序（yyyyMMdd 定宽，序数比较即时间序），再按当日序号降序。
+        //
+        // 旧实现只按序号降序，而序号是**按日重置**的（FindNextSequence(datePrefix)）。
+        // 于是今天的 _020 会排在历史日期的 _060 之后，被当成「最旧」删掉。
+        // 现场证据（2026-10-28）：D:\Data\logs\system 下 pudding-20261028_001.._020 全部消失，
+        // 而 pudding-20261009_043.._060 全部还在 —— 当天排障要用的日志被自己的清理删了。
         var toDelete = allFiles
-            .OrderByDescending(ParseSequenceOrZero)
-            .ThenByDescending(f => f, StringComparer.Ordinal)
-            .Skip(_retainedFileCountLimit);
+            .Select(file => (File: file, Key: ParseDateAndSequence(file)))
+            .OrderByDescending(x => x.Key.Date, StringComparer.Ordinal)
+            .ThenByDescending(x => x.Key.Sequence)
+            .ThenByDescending(x => x.File, StringComparer.Ordinal)
+            .Skip(_retainedFileCountLimit)
+            .Select(x => x.File);
 
         foreach (var file in toDelete)
         {
@@ -194,11 +201,27 @@ public sealed class SizeRollingFileSink : ILogEventSink, IDisposable
         }
     }
 
-    private static int ParseSequenceOrZero(string filePath)
+    /// <summary>
+    /// 从 {baseName}-{yyyyMMdd}_{seq}.log 里取出（日期前缀, 序号）。
+    /// <para>
+    /// 必须同时返回日期：序号按日重置，只比序号会把「今天刚建的 _002」判成比「上个月的 _060」更旧。
+    /// 解析失败时返回空日期 + 0，这类文件会排在最末，优先被清理。
+    /// </para>
+    /// </summary>
+    private static (string Date, int Sequence) ParseDateAndSequence(string filePath)
     {
         var fileName = Path.GetFileNameWithoutExtension(filePath);
-        var underscoreIdx = fileName.LastIndexOf('_');
-        return underscoreIdx > 0 && int.TryParse(fileName[(underscoreIdx + 1)..], out var seq) ? seq : 0;
+        var dashIdx = fileName.LastIndexOf('-');
+        if (dashIdx < 0 || dashIdx + 1 >= fileName.Length)
+            return (string.Empty, 0);
+
+        var tail = fileName[(dashIdx + 1)..];
+        var underscoreIdx = tail.LastIndexOf('_');
+        if (underscoreIdx <= 0)
+            return (string.Empty, 0);
+
+        var date = tail[..underscoreIdx];
+        return int.TryParse(tail[(underscoreIdx + 1)..], out var seq) ? (date, seq) : (date, 0);
     }
 
     private void CloseWriter()
