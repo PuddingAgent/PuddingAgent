@@ -161,3 +161,41 @@ Implementation=6, References=7, Callers=8, Callees=9, Impact=10, Any=11
 本轮先在 `Docs/15_tasks` 搜 `workspace_open` 得 **0 命中**，差点据此写下「设计文档没提过」。
 **正对照**（同目录搜 `workspace_search`）同样 0 命中；而全 `Docs/` 搜 `workspace_open` 命中 14 处 ——
 规格实际在 `Docs/12_features/`。**⇒ 目录范围选错时，0 命中是范围产物，不是缺席证据。**
+---
+
+## 7. B4 前置清单（2026-10-29 06:05 补）
+
+三个服务抽取的实际成本差别很大，别按「都是抽服务」一概而论：
+
+| 目标 | 依赖 | 写特征测试的成本 |
+|---|---|---|
+| `ICodeOutlineService` | 无（只读文件 + Roslyn） | **低** —— 已交付，4 条特征测试即可 |
+| `ICodeSummaryService` | `ICodeQueryService` + `ICodeIndexScopeResolver` | **中** —— 需要两个 fake |
+| `IProjectMapService` | 同上 | **中** |
+
+好消息：`ICodeQueryService` / `ICodeIndexScopeResolver` 的 fake **仓库里已有 6 处实现**，
+可直接照抄形状，不必从零设计：
+
+```text
+Tools/CodeIndexStatusRegistryGateTests.cs      RecordingQueryService / FixedScopeResolver
+Tools/CodeSymbolSearchMatchTargetTests.cs      RecordingQueryService
+Tools/CodeSymbolSearchStalePathGateTests.cs    SearchQueryService
+Tools/CodeSymbolSearchIndexFreshnessTests.cs   SearchQueryService
+Tools/CodeCallersImpactFreshnessTests.cs       ICodeQueryService 实现
+```
+
+但它们是**各测试类内部的 private 嵌套类**，不能跨文件复用 —— 也就是说每个新测试文件仍要自带一份。
+若将来出现第三处需要，应把这两个 fake 提到 `PuddingRuntimeTests/TestDoubles/` 共享，
+**现在只有两处需求，先不提前抽象**。
+
+### 7.1 冻结 `workspace_open` 合同的推荐切法
+
+先冻结**能验证的部分**，其余显式未支持（而不是先冻结全套再慢慢实现）：
+
+- `view=excerpt` —— 复用 `CodeOutlineTargetResolver` 的路径语义 + 文件读取
+- `view=outline` —— 复用 `ICodeOutlineService`
+- `view=summary` / `map` / `relations` / `status` —— 首版返回**显式未支持 + 替代方案**，
+  等对应服务抽出来再逐个打开
+
+理由：§8.3 要求 `summary`/`outline`/`map` 的头部必须携带能力与覆盖。能力声明这件事
+**在「只有一个视图能跑」时最容易说真话**，等全都实现了反而容易含糊。
