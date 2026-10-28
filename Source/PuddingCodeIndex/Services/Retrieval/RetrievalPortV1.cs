@@ -39,6 +39,12 @@ public interface IRetrievalSymbolSource
         string symbolId,
         CancellationToken cancellationToken);
 
+    /// <summary>列出该项目下已索引的文件（文件面用：查询词匹配路径）。</summary>
+    Task<IReadOnlyList<CodeFileRecord>> ListFilesAsync(
+        string workspaceId,
+        string projectId,
+        CancellationToken cancellationToken);
+
     /// <summary>指向该符号的关系边（谁调用了它 / 谁引用了它 / 谁实现了它）。</summary>
     Task<IReadOnlyList<CodeRelationRecord>> ListIncomingRelationsAsync(
         string workspaceId,
@@ -80,6 +86,13 @@ public sealed class CodeIndexStoreSymbolSource(ICodeIndexStore store) : IRetriev
         string symbolId,
         CancellationToken cancellationToken) =>
         _store.GetSymbolAsync(workspaceId, projectId, symbolId, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<CodeFileRecord>> ListFilesAsync(
+        string workspaceId,
+        string projectId,
+        CancellationToken cancellationToken) =>
+        _store.ListFilesAsync(workspaceId, projectId, cancellationToken);
 
     /// <inheritdoc />
     public Task<IReadOnlyList<CodeRelationRecord>> ListIncomingRelationsAsync(
@@ -125,11 +138,15 @@ public sealed class CodeIndexStoreSymbolSource(ICodeIndexStore store) : IRetriev
 /// 而是取自冻结契约 <see cref="RetrievalIntentPolicy.RelationFilter"/>。
 /// </para>
 /// <para>
-/// <b>未支持</b>（<see cref="RetrievalIntent.File"/> / <see cref="RetrievalIntent.Comment"/> /
-/// <see cref="RetrievalIntent.Impact"/>）：返回
+/// <b>文件面</b>（R6 B1 切片三）：<see cref="RetrievalIntent.File"/> ——
+/// 查询词匹配已索引文件的<b>路径</b>，命中层为 <see cref="RetrievalHitKind.TextHit"/>、
+/// 身份用 <see cref="SymbolIdentity.ForTextAt"/>（不归属任何符号）。
+/// </para>
+/// <para>
+/// <b>未支持</b>（<see cref="RetrievalIntent.Comment"/> / <see cref="RetrievalIntent.Impact"/>）：返回
 /// <see cref="RetrievalEmptyReason.IntentUnsupported"/> + 替代方案，
-/// <b>不伪装成空命中</b>（ADR-089 §8.3）。File/Comment 需要文件与文本面，
-/// Impact 需要多跳遍历（本刀只做深度 1）。
+/// <b>不伪装成空命中</b>（ADR-089 §8.3）。Comment 需要文本/全文面（本端口只接代码索引，
+/// 索引里没有注释文本表）；Impact 需要多跳遍历（本刀只做深度 1）。
 /// </para>
 /// <para>
 /// <b>ScopeId 语义（v1）</b>：等同于 code index 的 <c>workspaceId</c>。
@@ -167,7 +184,6 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source) : IRetrievalP
     /// <summary>v1 不支持的意图（显式列出，避免"忘了实现"被当成"确实没有"）。</summary>
     private static readonly RetrievalIntent[] UnsupportedIntents =
     [
-        RetrievalIntent.File,
         RetrievalIntent.Comment,
         RetrievalIntent.Impact,
     ];
@@ -260,6 +276,13 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source) : IRetrievalP
                 appliedFilters: AppliedFilters(request));
         }
 
+        // 文件面走文件表，符号面走符号表，关系面走关系表 —— 三条路由各自分页。
+        if (request.Intent == RetrievalIntent.File)
+        {
+            return await RetrieveFilesAsync(request, scopeId, indexVersion, projects, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         // 关系面与符号面是两条路由：关系面的分页游标在“命中”层面生效（全量展开后切片），
         // 符号面的游标直接下推到 SQL 的 Skip。共用同一个 skip:N 编码，但不共用分页时机。
         if (RelationIntents.ContainsKey(request.Intent))
@@ -350,6 +373,160 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source) : IRetrievalP
             distribution: RetrievalDistribution.FromHits(hits),
             appliedFilters: AppliedFilters(request),
             nextCursor: EncodeCursor(offset.Value + hits.Count));
+    }
+
+    /// <summary>
+    /// 文件面检索（<see cref="RetrievalIntent.File"/>）：查询词匹配已索引文件的路径。
+    /// <para>
+    /// <b>为什么是不是“列目录再过滤”</b>：本端口只接代码索引，索引里的文件表就是
+    /// “已索引文件”的权威集合；未索引的文件本来就不该出现在检索结果里
+    /// （否则会把“没索引”读成“没搜到”）。
+    /// </para>
+    /// <para>
+    /// <b>代价是每次查询枚举全部项目下的全部文件记录</b>。v1 接受：文件记录只有
+    /// path / language / lastIndexed 三列，不碰符号表。若将来文件规模成为瓶颈，
+    /// 应在 store 层把路径匹配下推到 SQL，而不是在这一层加缓存。
+    /// </para>
+    /// </summary>
+    private async Task<RetrievalResult> RetrieveFilesAsync(
+        RetrievalRequest request,
+        string scopeId,
+        string indexVersion,
+        IReadOnlyList<CodeProjectRecord> projects,
+        CancellationToken cancellationToken)
+    {
+        var offset = DecodeCursor(request.Cursor);
+        if (offset is null)
+        {
+            return RetrievalResult.Empty(
+                request,
+                RetrievalEmptyReason.FilteredOut,
+                RetrievalNextStep.Narrow(
+                    RetrievalSuggestionKind.CompositeFilter,
+                    "分页游标无效（非本端口签发）；去掉 cursor 重新检索。"),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        var collected = new List<RetrievalHit>();
+        foreach (var project in projects)
+        {
+            var files = await _source
+                .ListFilesAsync(scopeId, project.ProjectId, cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var file in files)
+            {
+                var hit = MapFileHit(file, request, scopeId);
+                if (hit is null || (request.Filter is not null && !request.Filter.Matches(hit)))
+                    continue;
+
+                collected.Add(hit);
+            }
+        }
+
+        var hits = Deduplicate(collected, request.Intent);
+
+        if (hits.Count == 0)
+        {
+            var reason = RetrievalEmptyReasonPolicy.ClassifyForZeroHits(
+                request.Filter,
+                RetrievalIndexAvailability.Available,
+                RetrievalCapabilityLevel.Semantic,
+                intentSupported: true);
+
+            return RetrievalResult.Empty(
+                request,
+                reason,
+                BuildEmptyStep(reason, request),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        if (offset.Value >= hits.Count)
+        {
+            return RetrievalResult.Empty(
+                request,
+                RetrievalEmptyReason.FilteredOut,
+                RetrievalNextStep.Narrow(
+                    RetrievalSuggestionKind.CompositeFilter,
+                    $"分页游标越界（文件面已全量枚举，共 {hits.Count} 个匹配文件）；去掉 cursor 重新检索。"),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        var page = hits.Skip(offset.Value).Take(request.PageSize).ToList();
+        var hasMore = offset.Value + page.Count < hits.Count;
+
+        if (!hasMore)
+        {
+            return RetrievalResult.Create(
+                request,
+                page,
+                hits.Count,
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
+
+        return RetrievalResult.Create(
+            request,
+            page,
+            hits.Count,
+            indexVersion,
+            nextSteps:
+            [
+                RetrievalNextStep.Narrow(
+                    RetrievalSuggestionKind.CompositeFilter,
+                    "匹配文件超出页大小；加上目录或扩展名限定后重试。"),
+            ],
+            overflow: RetrievalOverflow.Create(SpillPage(page, request), page.Count, RetrievalBudgetKind.ItemCount),
+            distribution: RetrievalDistribution.FromHits(page),
+            appliedFilters: AppliedFilters(request),
+            nextCursor: EncodeCursor(offset.Value + page.Count));
+    }
+
+    /// <summary>
+    /// 路径匹配 ⇒ 文件命中；不匹配返回 <c>null</c>。
+    /// <para>
+    /// 因为文件表是<b>全量枚举</b>，“哪些文件算命中”必须在这里收口；否则每个已索引文件
+    /// 都会变成一条命中，把“全量”伪装成“搜到很多”。
+    /// </para>
+    /// </summary>
+    private static RetrievalHit? MapFileHit(CodeFileRecord file, RetrievalRequest request, string scopeId)
+    {
+        var query = request.Query;
+        if (string.IsNullOrWhiteSpace(query) || string.IsNullOrWhiteSpace(file.FilePath))
+            return null;
+
+        var path = file.FilePath;
+        if (!path.Contains(query, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var fileName = Path.GetFileName(path);
+        var nameEquals = string.Equals(fileName, query, StringComparison.OrdinalIgnoreCase);
+        var nameContains = fileName.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+        var score = nameEquals ? 2.0 : nameContains ? 1.5 : 1.0;
+        var why = nameEquals
+            ? "文件名与查询完全相同（最高置信）"
+            : nameContains
+                ? "文件名包含查询词"
+                : "文件路径包含查询词（不是文件名）";
+
+        return new RetrievalHit(
+            SymbolIdentity.ForTextAt(path, 1),
+            string.IsNullOrWhiteSpace(fileName) ? path : fileName,
+            CodeSymbolKind.Unknown,
+            RetrievalHitKind.TextHit,
+            new RetrievalEvidence(path, 1, 1),
+            RetrievalConfidence.Lexical,
+            score,
+            why,
+            RetrievalMatchTarget.Path,
+            RetrievalRelationKind.Unknown,
+            languageRawKind: file.Language,
+            container: null,
+            scopeIds: [scopeId]);
     }
 
     /// <summary>

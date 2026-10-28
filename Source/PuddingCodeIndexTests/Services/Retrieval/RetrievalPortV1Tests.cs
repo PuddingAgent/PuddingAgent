@@ -24,7 +24,8 @@ public sealed class RetrievalPortV1Tests
     private sealed class FakeSource(
         IReadOnlyList<CodeProjectRecord> projects,
         IReadOnlyList<CodeSymbolRecord> symbols,
-        IReadOnlyList<CodeRelationRecord>? relations = null) : IRetrievalSymbolSource
+        IReadOnlyList<CodeRelationRecord>? relations = null,
+        IReadOnlyList<CodeFileRecord>? files = null) : IRetrievalSymbolSource
     {
         public List<CodeSymbolSearchRequest> Requests { get; } = [];
 
@@ -33,6 +34,8 @@ public sealed class RetrievalPortV1Tests
         public int ListIncomingCalls { get; private set; }
 
         public int ListOutgoingCalls { get; private set; }
+
+        public int ListFilesCalls { get; private set; }
 
         public Task<IReadOnlyList<CodeProjectRecord>> ListProjectsAsync(
             string scopeId,
@@ -62,6 +65,20 @@ public sealed class RetrievalPortV1Tests
             string symbolId,
             CancellationToken cancellationToken) =>
             Task.FromResult(symbols.FirstOrDefault(s => s.SymbolId == symbolId));
+
+        public Task<IReadOnlyList<CodeFileRecord>> ListFilesAsync(
+            string workspaceId,
+            string projectId,
+            CancellationToken cancellationToken)
+        {
+            ListFilesCalls++;
+
+            var filtered = (files ?? [])
+                .Where(f => f.ProjectId == projectId)
+                .ToList();
+
+            return Task.FromResult<IReadOnlyList<CodeFileRecord>>(filtered);
+        }
 
         public Task<IReadOnlyList<CodeRelationRecord>> ListIncomingRelationsAsync(
             string workspaceId,
@@ -346,5 +363,110 @@ public sealed class RetrievalPortV1Tests
         Assert.AreEqual(0, result.Hits.Count);
         Assert.AreEqual(RetrievalEmptyReason.GenuinelyAbsent, result.EmptyReason);
         Assert.AreEqual(RetrievalNextStepKind.AcceptAbsence, result.NextSteps[0].Kind);
+    }
+
+    private static CodeFileRecord File(string path, string projectId = "proj-1") =>
+        new("ws-1", projectId, path);
+
+    [TestMethod]
+    public async Task FileIntent_MatchesPath_ReturnsTextHitWithPathTarget()
+    {
+        var source = new FakeSource(
+            [ActiveProject()],
+            [],
+            files:
+            [
+                File(@"D:\repo\src\OrderService.cs"),
+                File(@"D:\repo\src\Cart.cs"),
+            ]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("Order", "ws-1", RetrievalIntent.File),
+            CancellationToken.None);
+
+        Assert.IsNull(result.EmptyReason);
+        Assert.AreEqual(1, result.Hits.Count);
+
+        var hit = result.Hits[0];
+        Assert.AreEqual("OrderService.cs", hit.SymbolName);
+        Assert.AreEqual(RetrievalHitKind.TextHit, hit.HitKind);
+        Assert.AreEqual(RetrievalMatchTarget.Path, hit.MatchTargets);
+        Assert.AreEqual(RetrievalConfidence.Lexical, hit.Confidence);
+        Assert.AreEqual(@"D:\repo\src\OrderService.cs", hit.Evidence.FilePath);
+
+        // 文件命中不归属任何符号 —— 身份必须走 ForTextAt（HasSymbol=false）。
+        Assert.IsFalse(hit.Identity.HasSymbol);
+
+        // 文件表是逐个项目全量枚举的，不是“已经只来了一个文件”。
+        Assert.AreEqual(1, source.ListFilesCalls);
+        Assert.AreEqual(0, source.Requests.Count);
+    }
+
+    [TestMethod]
+    public async Task FileIntent_UnmatchedFilesAreNotHits()
+    {
+        var source = new FakeSource(
+            [ActiveProject()],
+            [],
+            files:
+            [
+                File(@"D:\repo\src\OrderService.cs"),
+                File(@"D:\repo\src\Cart.cs"),
+                File(@"D:\repo\src\Payment.cs"),
+            ]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("Cart", "ws-1", RetrievalIntent.File),
+            CancellationToken.None);
+
+        // 枚举了三个文件，但只能返回匹配的那一个 —— 否则“全量”会被伪装成“搜到很多”。
+        Assert.AreEqual(1, result.Hits.Count);
+        Assert.AreEqual("Cart.cs", result.Hits[0].SymbolName);
+        Assert.AreEqual(1, source.ListFilesCalls);
+    }
+
+    [TestMethod]
+    public async Task FileIntent_PartialPage_SpillsAndProvidesCursor()
+    {
+        var source = new FakeSource(
+            [ActiveProject()],
+            [],
+            files:
+            [
+                File(@"D:\repo\Order1.cs"),
+                File(@"D:\repo\Order2.cs"),
+                File(@"D:\repo\Order3.cs"),
+            ]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("Order", "ws-1", RetrievalIntent.File, pageSize: 2),
+            CancellationToken.None);
+
+        Assert.AreEqual(2, result.Hits.Count);
+        Assert.AreEqual(3, result.TotalCount);
+        Assert.IsNotNull(result.Overflow);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(result.NextCursor));
+        Assert.AreEqual(RetrievalNextStepKind.NarrowQuery, result.NextSteps[0].Kind);
+    }
+
+    [TestMethod]
+    public async Task CommentIntent_RemainsUnsupported_WithoutTouchingData()
+    {
+        var source = new FakeSource([ActiveProject()], [], files: [File(@"D:\repo\Order.cs")]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("Order", "ws-1", RetrievalIntent.Comment),
+            CancellationToken.None);
+
+        Assert.AreEqual(0, result.Hits.Count);
+        Assert.AreEqual(RetrievalEmptyReason.IntentUnsupported, result.EmptyReason);
+
+        // 注释面背后没有文本/全文数据面；不得先枚举文件表再报“没有”。
+        Assert.AreEqual(0, source.ListFilesCalls);
+        Assert.AreEqual(0, source.Requests.Count);
     }
 }
