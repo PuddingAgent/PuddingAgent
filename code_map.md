@@ -2,7 +2,7 @@
 
 > 源指纹: Source/**=4128db41da49, Tests/**=19a07b471379, Tools/**=83d7eb33e1cf, TestScripts/**=9d8c5fa016f7 · 条目数: 125 · 最近整理: 2026-10-25
 >
-> ⚠️ 2026-10-28：`TestScripts/**` 指纹已**陈旧**——本轮新增 5 个验收/采样脚本（verify-retrieval-delivery / verify-fulltext-incremental-latency / sample-host-io-shape / correlate-host-read-io / measure-retrieval-resources），而仓库内无 code_map 指纹自检器可重算。**不编造新指纹**，只登记为待刷新；拿到算法后一次算清。
+> ⚠️ 2026-10-28：`TestScripts/**` 与 `Source/**` 指纹均已**陈旧**——本轮新增 9 个验收/采样/运维脚本（verify-retrieval-delivery / verify-fulltext-incremental-latency / sample-host-io-shape / correlate-host-read-io / measure-retrieval-resources / watch-read-io-anomaly / verify-storage-vacuum-readiness / swap-compacted-platform-db / probe-read-io-shape），并在 `Source/PuddingPlatform/Services/StorageManagement/` 新增 `PlatformStorageReclaimPolicy.cs`（纯决策核心 + 其测试），故 `Source/**` 同样需重算。而仓库内无 code_map 指纹自检器可重算。**不编造新指纹**，只登记为待刷新；拿到算法后一次算清。
 > 本文件是**索引**不是日志：只放 概念 · 组件 · 关键文件（相对路径）· 用途；维护规则见 [`Agents.md`](Agents.md)，过程记录写 [`Docs/00_changelog/`](Docs/00_changelog/README.md)；子项目内部的文件级索引在其自己的 `code_map.md` 中，本文件只做跨项目路由。
 
 ## 0. 怎么用（30 秒）
@@ -205,6 +205,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | `Source/PuddingDesktop.GuardianTests/` · `Tests/PuddingDesktop.GuardianIntegrationTests/` · `TestScripts/test-pudding-guardian.ps1` | Guardian 独立事务/认证测试 · 真实 WinUI 控制端点 · 隔离产品的构建/故障注入/回滚/停止验收；[运行手册](Docs/13_runbooks/Desktop-Guardian.md) |
 | `Tests/PuddingAgent.IntegrationTests/` · `Tests/PuddingNativeChat.IntegrationTests/` · `Tests/e2e/` · `TestScripts/` · `Tests/PuddingBrowser.TestSite/` | 集成测试 · 端到端脚本 · 生命周期/部署/smoke/性能探针 · 测试站点与门禁脚本（见下「关键语义」） |
 | `TestScripts/verify-retrieval-delivery.ps1` · `TestScripts/verify-fulltext-incremental-latency.ps1` · `TestScripts/sample-host-io-shape.ps1` · `TestScripts/correlate-host-read-io.ps1` · `TestScripts/measure-retrieval-resources.ps1` | 检索交付验收三件套（2026-10-28）：**部署门禁**（进程新鲜度 + 程序集 token 双编码探 + 正负对照 + SUSPECT 判据 + 配置）；**G2 增量延迟**（PASS/FAIL/**INCONCLUSIVE** 三态，不把「没跑」写成「不达标」）；**宿主资源/IO 采样**（稳定/突发判形，采样循环不递归扫盘） |
+| `TestScripts/watch-read-io-anomaly.ps1` · `TestScripts/verify-storage-vacuum-readiness.ps1` · `TestScripts/swap-compacted-platform-db.ps1` · `TestScripts/probe-read-io-shape.ps1` | 宿主读 IO 异常捕获与存储回收（2026-10-28）：**异常现场捕获**（超阈值当场写 MBps / ops / blockBytes / priv / user / privateDropMB / shape，退出码 3 表示抓到；`blockBytes≠4096` 追加 `BLOCK-NOT-4096`，表示那是另一个现象、不得混谈）；**VACUUM 可行性预检**（READY / BLOCKED / UNKNOWN 三态，只读，BLOCKED 属正常态）；**停机窗口换库**（VACUUM INTO → 设 INCREMENTAL → 恢复 WAL → 全量校验 → rename 备份 → 换入 → 复检；每步失败都明确"什么都没替换"，并打印回滚命令）；**读 IO 形态采样**（按 4096 字节/页判 PAGE-READ / BULK-READ / MIXED） |
 
 **关键语义（§5「测试工程索引」表·覆盖列逐字原文）**
 
