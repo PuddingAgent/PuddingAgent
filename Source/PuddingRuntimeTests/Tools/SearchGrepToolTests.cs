@@ -2339,6 +2339,53 @@ public sealed class SearchGrepToolTests
     }
 
     [TestMethod]
+    public async Task Backend_Index_Subdirectory_Scope_Probes_Freshness_At_The_Index_Root()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var rootDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-root-{Guid.NewGuid():N}");
+        var subDir = Path.Combine(rootDir, "sub");
+        Directory.CreateDirectory(subDir);
+        var hit = Path.Combine(subDir, "hit.txt");
+        await File.WriteAllTextAsync(hit, "NEEDLE\n");
+
+        try
+        {
+            // 真实部署的形状：索引只建在注册项目根上，所以子目录 HasIndex=false、祖先 true。
+            var engine = new RecordingFullTextSearchEngine(
+                new FullTextSearchResult(true, [new FullTextSearchMatch(hit, 1, "NEEDLE")], null, 1, 9),
+                hasIndexPredicate: d => string.Equals(
+                    Path.GetFullPath(d).TrimEnd(Path.DirectorySeparatorChar),
+                    Path.GetFullPath(rootDir).TrimEnd(Path.DirectorySeparatorChar),
+                    StringComparison.OrdinalIgnoreCase));
+            var stamp = new DateTimeOffset(2026, 10, 6, 22, 57, 38, TimeSpan.Zero);
+            var probe = new StubIndexFreshnessProbe(new FullTextIndexFreshness(
+                FullTextIndexFreshnessState.Available, stamp, "abc123def456", stamp.AddMinutes(5)));
+            var tool = new SearchGrepTool(
+                NullLogger<SearchGrepTool>.Instance, engine, freshnessProbe: probe);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = subDir,
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            // 关键断言：探针读的必须是**实际查询的索引根**。读请求子目录会恒报 missing
+            //（子目录本身没有索引），与“这次确实从索引查到了命中”自相矛盾——
+            // 这正是 2026-10-28 宿主实测到的 indexFreshness=missing 失真。
+            Assert.AreEqual(Path.GetFullPath(rootDir), probe.LastCorpusRootPath);
+            StringAssert.Contains(result.Output, "indexFreshness=available");
+            // 请求侧事实与上溯结果必须同时可见，否则日志读者无法解释二者差异。
+            StringAssert.Contains(result.Output, "indexScope=" + Path.GetFullPath(rootDir));
+            StringAssert.Contains(result.Output, "scope=" + Path.GetFullPath(subDir));
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, rootDir);
+        }
+    }
+
+    [TestMethod]
     public async Task Backend_Index_Without_Probe_Omits_Freshness_Facts()
     {
         var previousCwd = Directory.GetCurrentDirectory();
@@ -2460,11 +2507,13 @@ public sealed class SearchGrepToolTests
         private readonly FullTextSearchResult? _result;
         private readonly Func<string, int, FullTextSearchResult>? _selector;
         private readonly bool _hasIndex;
+        private readonly Func<string, bool>? _hasIndexPredicate;
 
-        public RecordingFullTextSearchEngine(FullTextSearchResult result, bool hasIndex = true)
+        public RecordingFullTextSearchEngine(FullTextSearchResult result, bool hasIndex = true, Func<string, bool>? hasIndexPredicate = null)
         {
             _result = result;
             _hasIndex = hasIndex;
+            _hasIndexPredicate = hasIndexPredicate;
         }
 
         /// <summary>按 (query, 调用序号) 选择结果——用于断言降级重试真的发生了不同的调用。</summary>
@@ -2479,7 +2528,9 @@ public sealed class SearchGrepToolTests
         public int LastMaxResults { get; private set; }
         public string? LastExtensionFilter { get; private set; }
 
-        public bool HasIndex(string d) => _hasIndex;
+        // 谓词优先：真实部署里索引只存在注册项目根上，子目录 HasIndex=false 且祖先 true。
+        // 固定布尔值无法表达这个形状，也就无法检验“上溯后 freshness 读的是根还是子目录”。
+        public bool HasIndex(string d) => _hasIndexPredicate?.Invoke(d) ?? _hasIndex;
 
         public Task<FullTextSearchResult> SearchAsync(
             string q,

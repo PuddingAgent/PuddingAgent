@@ -464,6 +464,11 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         // 这里向上找一个有索引的祖先，把请求目录当相对子目录过滤前缀——引擎已支持该参数。
         var workspaceRoot = Path.GetFullPath(HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory));
         var indexScope = IndexScopeResolver.Resolve(scopeDirectory, _searchEngine.HasIndex, workspaceRoot);
+        // 实际查询的索引根：上溯到有索引的祖先时用它，否则退回请求目录。
+        // freshness 探针与 summary 都必须用这个值——用请求目录会让子目录 scope 恒报
+        // indexFreshness=missing（索引建在祖先上，子目录本身没有索引），
+        // 与“这次查询其实读到了哪个索引”直接矛盾（2026-10-28 宿主实测）。
+        var engineScope = indexScope?.IndexRoot ?? scopeDirectory;
 
         // 扩展名过滤与旧路径同源：file_ext 优先，其次 pattern 为 "*.ext" 形态时的等价扩展名。
         var filter = fileExt?.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -481,7 +486,6 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         {
             // maxResults + 1：多取一条用于判定“是否被 max_results 截断”，不改变返回语义。
             // 作用域用解析出的有索引祖先；请求目录降为子目录过滤前缀（相对路径）。
-            var engineScope = indexScope?.IndexRoot ?? scopeDirectory;
             engineResult = await _searchEngine.SearchAsync(
                 query, engineScope, maxResults + 1,
                 fileExtensionFilter: extFilter,
@@ -609,10 +613,17 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         // A23 S5：索引新鲜度读数（只读事实）。backend=index 查的是**索引快照**——
         // 索引缺失或构建时刻读不出时，0 命中与「语料里确实没有」在输出上同形，
         // 故必须把「这次查询读的索引有多旧 / 新鲜度是否可核实」一并给出。
-        var (freshnessFragment, freshnessVerified) = ProbeIndexFreshness(scopeDirectory, DateTimeOffset.UtcNow);
+        var (freshnessFragment, freshnessVerified) = ProbeIndexFreshness(engineScope, DateTimeOffset.UtcNow);
 
+        // scope= 是**请求侧**事实（调用方用它核对自己传的目录）；indexScope= 只在两者不同时出现，
+        // 表明这次实际查的是哪个索引——否则读日志的人无法解释
+        // “请求子目录、freshness 却是根索引的读数”。
+        var indexScopeFragment = string.Equals(engineScope, scopeDirectory, StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : $", indexScope={engineScope}";
         var summary = $"(backend=index: scope={scopeDirectory}, lines={lines.Count}, engineMatches={engineMatchCount}, "
             + $"engineTotalMatches={engineResult.TotalMatches}, engineMs={engineResult.ElapsedMs}, totalMs={total.ElapsedMilliseconds}"
+            + indexScopeFragment
             + $", complete={indexComplete.ToString().ToLowerInvariant()}, limit_reason={indexLimitReason}"
             + (truncated ? ", truncated=max_results" : string.Empty)
             + (staleSkipped > 0 ? $", staleSkipped={staleSkipped}" : string.Empty)
