@@ -26,6 +26,9 @@ using PuddingRuntime.Services.TaskPlanning;
 using PuddingRuntime.Services.Tools;
 using PuddingCodeIntelligence;
 using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts.Retrieval;
+using PuddingCodeIndex.Services.Retrieval;
+using PuddingFullTextIndex.Contracts;
 
 using System.Threading.Channels;
 using PuddingCodeIndex.Contracts;
@@ -255,6 +258,23 @@ public static class RuntimeServiceExtensions
             return new SqliteCodeIndexStore(dbPath);
         });
         services.TryAddSingleton<ICodeIndexStore>(sp => sp.GetRequiredService<SqliteCodeIndexStore>());
+
+        // ADR-089 R6 B1：检索端口的组合根。
+        // 端口自身只依赖窄端口（符号面/文本面）；跨依赖（全文引擎）在 PuddingRuntime 这一层解。
+        // 文本面用 GetService 取：宿主未注册 IFullTextSearchEngine 时，工厂返回 null，
+        // 端口据此让 Comment 面显式报 IntentUnsupported —— 缺能力不等于起不来。
+        services.TryAddSingleton<IRetrievalScopeDirectories, WorkspaceRootScopeDirectories>();
+        services.TryAddSingleton<IRetrievalTextSource>(sp =>
+        {
+            var engine = sp.GetService<IFullTextSearchEngine>();
+            return engine is null
+                ? null!
+                : new FullTextRetrievalTextSource(
+                    engine, sp.GetRequiredService<IRetrievalScopeDirectories>());
+        });
+        services.TryAddSingleton<IRetrievalPort>(sp => new RetrievalPortV1(
+            new CodeIndexStoreSymbolSource(sp.GetRequiredService<ICodeIndexStore>()),
+            sp.GetService<IRetrievalTextSource>()));
 
         // Batched free-page reclamation. Never runs a full VACUUM; that stays an explicit
         // operator action through SqliteCodeIndexStore.RunFullMaintenanceAsync.
