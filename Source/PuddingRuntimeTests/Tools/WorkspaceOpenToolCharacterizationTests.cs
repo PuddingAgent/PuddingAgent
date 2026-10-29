@@ -3,6 +3,7 @@ using PuddingCodeIndex.Contracts.Retrieval;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PuddingCode.Tools;
 using PuddingCodeIndex.Contracts;
+using PuddingCodeIndex.Services.Retrieval;
 using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntimeTests.Tools;
@@ -205,6 +206,102 @@ public sealed class WorkspaceOpenToolCharacterizationTests
         Assert.IsFalse(result.Success);
         StringAssert.Contains(result.Error, "不是合法的符号引用");
         StringAssert.Contains(result.Error, SymbolRefV1.TokenPrefix);
+    }
+
+    /// <summary>
+    /// ref 请求在**没有事实源**时必须显式拒绝，而不是回落到 path。
+    /// <para>
+    /// 回落是最坏的一类错误：调用方以为自己拿到的是那个符号，实际拿到的是另一个文件的内容，
+    /// 而且结果看起来完全正常。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task Ref_WithoutRefSource_IsRejectedNotFallingBackToPath()
+    {
+        WriteRows("Source/A.cs", 30);
+
+        var result = await RunAsync(NewTool, ("ref", ValidRefToken()), ("view", "excerpt"));
+
+        Assert.IsFalse(result.Success, "没有事实源时 ref 必须失败。");
+        StringAssert.Contains(result.Error, "尚未接线");
+        Assert.IsFalse(
+            (result.Output ?? string.Empty).Contains("ROW-01", StringComparison.Ordinal),
+            "绝不能静默回落到 path 把文件内容返回。");
+    }
+
+    /// <summary>
+    /// <b>本轮修的真实缺陷的守卫</b>（2026-10-30）：工具层曾无条件拒绝 ref，而服务层早已支持，
+    /// 于是适配器与三态判定全部就绪、二进制里也在，线上却一条 ref 都走不通。
+    /// 本用例走工具自己的 ExecuteCoreAsync，断言 ref 真的被拿去打开了。
+    /// </summary>
+    [TestMethod]
+    public async Task Ref_Fresh_OpensExactlyTheRefRange()
+    {
+        WriteRows("Source/A.cs", 30);
+
+        // ref 记的是 10..20；Fresh 判定通过后必须**只**返回这一段。
+        var result = await RunAsync(
+            root => NewToolWithRef(root, new FixedRefSource("abc123", ("Source/A.cs", 10, 20))),
+            ("ref", ValidRefToken()),
+            ("view", "excerpt"));
+
+        Assert.IsTrue(result.Success, result.Error);
+
+        using var doc = JsonDocument.Parse(result.Output!);
+        var excerpt = doc.RootElement.GetProperty("excerpt");
+        Assert.AreEqual(10, excerpt.GetProperty("start_line").GetInt32());
+        Assert.AreEqual(11, excerpt.GetProperty("line_count").GetInt32());
+
+        var lines = excerpt.GetProperty("lines").EnumerateArray().Select(e => e.GetString()).ToList();
+        Assert.AreEqual("ROW-10", lines[0], "ref 的首行必须是 ref 记录的起始行，不是文件第一行。");
+        Assert.AreEqual("ROW-20", lines[^1]);
+    }
+
+    /// <summary>
+    /// STALE 一律报 <c>stale_ref</c>，即使重定位成功也不代替打开（§8.3）。
+    /// 断言里必须同时出现「stale”与候选提示，否则调用方无法决定下一步。
+    /// </summary>
+    [TestMethod]
+    public async Task Ref_Stale_ReturnsStaleRefWithRelocationHint()
+    {
+        WriteRows("Source/A.cs", 60);
+
+        var result = await RunAsync(
+            root => NewToolWithRef(root, new FixedRefSource("changed-hash", ("Source/A.cs", 40, 42))),
+            ("ref", ValidRefToken()),
+            ("view", "excerpt"));
+
+        Assert.IsFalse(result.Success, "STALE 的 ref 不得直接打开。");
+        StringAssert.Contains(result.Error, "stale_ref");
+        StringAssert.Contains(result.Error, "候选:", "有唯一候选时必须给出重定位提示。");
+        Assert.IsFalse(
+            (result.Output ?? string.Empty).Contains("ROW-40", StringComparison.Ordinal),
+            "候选仅供参考，不能代替打开。");
+    }
+
+    private void WriteRows(string relativePath, int count)
+    {
+        var full = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllLines(full, Enumerable.Range(1, count).Select(i => $"ROW-{i:00}"));
+    }
+
+    private WorkspaceOpenTool NewToolWithRef(string root, ISymbolRefSource refSource) =>
+        new(outlinerRegistry: null, resolver: new FixedScopeResolver(root), refSource: refSource);
+
+    /// <summary>只回答两个事实的测试替身：当前 hash 与候选位置。</summary>
+    private sealed class FixedRefSource(
+        string? currentHash,
+        params (string FilePath, int Start, int End)[] candidates) : ISymbolRefSource
+    {
+        public Task<string?> GetFileContentHashAsync(
+            string workspaceId, string projectId, string filePath, CancellationToken cancellationToken) =>
+            Task.FromResult(currentHash);
+
+        public Task<IReadOnlyList<SymbolRefRelocation>> FindSymbolCandidatesAsync(
+            string workspaceId, string projectId, string symbolId, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<SymbolRefRelocation>>(
+                candidates.Select(c => new SymbolRefRelocation(c.FilePath, c.Start, c.End)).ToList());
     }
 
     private static string ValidRefToken() => SymbolRefV1

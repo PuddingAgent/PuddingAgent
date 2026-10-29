@@ -38,20 +38,24 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
         IFileOutlinerRegistry? outlinerRegistry = null,
         ICodeIndexScopeResolver? resolver = null,
         ICodeIndexStore? indexStore = null,
-        ICodeSourceMaintenanceStore? maintenanceStore = null)
+        ICodeSourceMaintenanceStore? maintenanceStore = null,
+        ISymbolRefSource? refSource = null)
     {
         // 三个服务都在内部构造：工具程序集扫描只要求工具本身可解析，不需要 DI 认识这些服务。
         // ref 分支的两个事实来源（content_hash / 符号位置）同样带默认值：未注册时保持 null
         // ⇒ ref 请求会得到「尚未接线」的显式拒绝，而不是静默回落到 path。
-        var refSource = indexStore is null
-            ? null
-            : new CodeIndexSymbolRefSource(indexStore, maintenanceStore);
+        //
+        // 2026-10-30：`refSource` 单独开放一个参数，为的是**能测工具自己的 ref 分支**。
+        // 只暴露 indexStore 时，测试要么实现整个 ICodeIndexStore，要么就测不到这一层 ——
+        // 上一版正是因此把工具层的 ref 短路（见 ExecuteCoreAsync 里的历史注释）当成「已完成」。
+        var effectiveRefSource = refSource
+            ?? (indexStore is null ? null : new CodeIndexSymbolRefSource(indexStore, maintenanceStore));
 
         _openService = new WorkspaceOpenService(
             new CodeOutlineService(outlinerRegistry),
             resolver,
             new CodeProjectMapService(),
-            refSource);
+            effectiveRefSource);
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -82,16 +86,9 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
             return Fail(shapeError);
         }
 
-        if (!string.IsNullOrWhiteSpace(args.Ref))
-        {
-            // ref 分支需要先做 FRESH/STALE 判定（SymbolRefFreshness 已就绪，但取 content_hash 与
-            // 候选位置需要索引侧接线）。这里必须**显式拒绝**而不是静默回落到 path：
-            // 回落会让调用方以为自己拿到的是那个符号，实际拿到的是另一个文件的内容。
-            return Fail(
-                "ref 打开尚未接线：需要先用索引版本做 FRESH/STALE 判定（§8.3 不得沿旧行号打开当前代码）。" +
-                "请改用 project_id+path，或先用 workspace_search 拿到当前行号再按 path 打开。");
-        }
-
+        // ref 与 path 都交给服务：三态判定（FRESH/STALE）与「不得沿旧行号打开」的落实就在那里。
+        // 2026-10-30 缺陷：这里曾**无条件**拒绝 ref，而服务层早已支持 —— 于是适配器与判定函数
+        // 全部就绪、二进制里也在，线上却一条 ref 都走不通。修法不是加断言，是把短路删掉。
         var result = await _openService.OpenAsync(request, ct).ConfigureAwait(false);
         if (!result.Success)
         {
