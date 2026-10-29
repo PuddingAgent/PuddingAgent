@@ -13,7 +13,8 @@ namespace PuddingRuntime.Services.Tools;
 /// </summary>
 public sealed class WorkspaceOpenService(
     ICodeOutlineService? outlineService,
-    ICodeIndexScopeResolver? resolver) : IWorkspaceOpenService
+    ICodeIndexScopeResolver? resolver,
+    ICodeProjectMapService? mapService = null) : IWorkspaceOpenService
 {
     /// <summary>excerpt 未给行数时默认取多少行。</summary>
     public const int DefaultExcerptLines = 80;
@@ -56,6 +57,11 @@ public sealed class WorkspaceOpenService(
                 $"路径不在工作区内: {request.Path}（工作区根: {root}）");
         }
 
+        if (request.View == WorkspaceOpenView.Map)
+        {
+            return await OpenMapAsync(request, root, fullPath, cancellationToken).ConfigureAwait(false);
+        }
+
         if (request.View == WorkspaceOpenView.Outline)
         {
             return await OpenOutlineAsync(request, fullPath, cancellationToken).ConfigureAwait(false);
@@ -67,6 +73,32 @@ public sealed class WorkspaceOpenService(
         }
 
         return await OpenExcerptAsync(request, fullPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<WorkspaceOpenResult> OpenMapAsync(
+        WorkspaceOpenRequest request,
+        string root,
+        string fullPath,
+        CancellationToken cancellationToken)
+    {
+        if (mapService is null)
+        {
+            return WorkspaceOpenResult.Failed(request.View, "ICodeProjectMapService is not registered.");
+        }
+
+        var outcome = await mapService
+            .BuildAsync(fullPath, root, request.Depth, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!outcome.Success)
+        {
+            return WorkspaceOpenResult.Failed(request.View, outcome.Error ?? "(map 失败但没有原因)");
+        }
+
+        return WorkspaceOpenResult.Ok(
+            request.View,
+            outcome.RootPath ?? fullPath,
+            WorkspaceOpenMapping.FromProjectMap(outcome));
     }
 
     private async Task<WorkspaceOpenResult> OpenOutlineAsync(
@@ -143,10 +175,20 @@ public sealed class WorkspaceOpenService(
     private static bool IsWithin(string root, string candidate)
     {
         var normalizedRoot = Path.GetFullPath(root)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-            + Path.DirectorySeparatorChar;
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-        var normalizedCandidate = Path.GetFullPath(candidate);
-        return normalizedCandidate.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
+        var normalizedCandidate = Path.GetFullPath(candidate)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        // 工作区根本身是合法的打开目标（例如 view=map 直接看根目录）。
+        // 原先只比前缀，导致 "." 解析成根后被判为“不在工作区内” —— 测试先抓到了这个。
+        if (string.Equals(normalizedCandidate, normalizedRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return normalizedCandidate.StartsWith(
+            normalizedRoot + Path.DirectorySeparatorChar,
+            StringComparison.OrdinalIgnoreCase);
     }
 }

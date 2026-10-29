@@ -10,6 +10,9 @@ public enum WorkspaceOpenView
 
     /// <summary>结构预览：给路径，拿回顶层类型树。</summary>
     Outline = 1,
+
+    /// <summary>目录地图：给目录路径，拿回目录树与每个文件的核心类型。</summary>
+    Map = 2,
 }
 
 /// <summary>
@@ -60,6 +63,19 @@ public sealed record OutlinePayload(
     IReadOnlyList<OutlineEntry> Nodes,
     int TotalCount,
     bool Truncated) : WorkspaceOpenPayload;
+
+/// <summary>目录地图里的一个文件。</summary>
+public sealed record MapFileEntry(string Name, IReadOnlyList<string> Types);
+
+/// <summary>目录地图里的一个目录。</summary>
+public sealed record MapEntry(
+    string Name,
+    IReadOnlyList<MapFileEntry> Files,
+    IReadOnlyList<MapEntry> Children,
+    int TotalFileCount);
+
+/// <summary>目录地图负载。</summary>
+public sealed record MapPayload(MapEntry Root, int TotalFileCount) : WorkspaceOpenPayload;
 
 /// <summary>
 /// <c>workspace_open</c> 的结果。构造即自校验：
@@ -152,6 +168,20 @@ public static class WorkspaceOpenMapping
         var nodes = outcome.OutlinerNodes.Select(MapRegistry).ToList();
         return new OutlinePayload(nodes, outcome.TotalCount, outcome.Truncated);
     }
+
+    /// <summary>目录树 → <see cref="MapPayload"/>。</summary>
+    public static MapPayload FromProjectMap(ProjectMapOutcome outcome)
+    {
+        ArgumentNullException.ThrowIfNull(outcome);
+
+        return new MapPayload(MapEntryOf(outcome.Root!), outcome.Root!.TotalFileCount);
+    }
+
+    private static MapEntry MapEntryOf(ProjectMapNode node) => new(
+        node.Name,
+        node.Files.Select(f => new MapFileEntry(f.Name, f.Types)).ToList(),
+        node.Children.Select(MapEntryOf).ToList(),
+        node.TotalFileCount);
 
     private static OutlineEntry MapCSharp(OutlineNode node) => new(
         node.Name ?? "(anonymous)",

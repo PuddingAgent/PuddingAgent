@@ -134,6 +134,48 @@ public sealed class WorkspaceOpenServiceTests
         StringAssert.Contains(result.Error, "path is required");
     }
 
+    [TestMethod]
+    public async Task PathEqualToWorkspaceRoot_IsAllowed()
+    {
+        // 回归守卫：路径等于工作区根本身时必须放行。
+        // 早期版本只比前缀（root + 分隔符），"." 解析成根后被误判为「不在工作区内」。
+        var service = new WorkspaceOpenService(null, new FixedScopeResolver(_root), new CodeProjectMapService());
+
+        var result = await service.OpenAsync(
+            new WorkspaceOpenRequest("ws-1", null, ".", WorkspaceOpenView.Map, Depth: 1),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Error);
+    }
+
+    [TestMethod]
+    public async Task Map_ReturnsDirectoryTreeFromService()
+    {
+        var dir = Path.Combine(_root, "src");
+        Directory.CreateDirectory(dir);
+        await File.WriteAllTextAsync(Path.Combine(dir, "A.cs"), "public class A { }");
+
+        var service = new WorkspaceOpenService(null, new FixedScopeResolver(_root), new CodeProjectMapService());
+
+        var result = await service.OpenAsync(
+            new WorkspaceOpenRequest("ws-1", null, "src", WorkspaceOpenView.Map, Depth: 2),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Error);
+        var payload = (MapPayload)result.Payload!;
+        Assert.IsTrue(payload.TotalFileCount >= 1, "目录里有一个 .cs，总文件数不能是 0。");
+    }
+
+    [TestMethod]
+    public async Task Map_WithoutService_IsExplicitNotRegistered()
+    {
+        var result = await NewService(null)
+            .OpenAsync(new WorkspaceOpenRequest("ws-1", null, ".", WorkspaceOpenView.Map), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "ICodeProjectMapService is not registered");
+    }
+
     private WorkspaceOpenService NewService(ICodeOutlineService? outline) =>
         new(outline, new FixedScopeResolver(_root));
 
