@@ -160,9 +160,14 @@ public sealed class CodeProjectMapService : ICodeProjectMapService
             var visitor = new OutlineSyntaxVisitor();
             visitor.Visit(root);
 
-            totalTypeCount = visitor.RootNodes.Count;
+            // OutlineSyntaxVisitor 把命名空间也记为根节点：现代 C# 文件普遍使用文件作用域命名空间，
+            // 直接取 RootNodes 会得到「每个文件只有一个类型，而且那个类型是 namespace」——
+            // 与本字段语义（文件的核心类型）正好相反，且 MaxTopLevelTypes 截断永远不会触发。
+            // 这里把命名空间容器展开成它的成员，嵌套命名空间递归展开。
+            var typeNodes = FlattenNamespaces(visitor.RootNodes);
+            totalTypeCount = typeNodes.Count;
 
-            foreach (var node in visitor.RootNodes.Take(MaxTopLevelTypes))
+            foreach (var node in typeNodes.Take(MaxTopLevelTypes))
             {
                 var kind = node.Kind switch
                 {
@@ -181,6 +186,23 @@ public sealed class CodeProjectMapService : ICodeProjectMapService
             // 解析失败跳过
         }
         return (types, totalTypeCount);
+    }
+
+    /// <summary>
+    /// 展平命名空间容器：<c>namespace X { class A {} }</c> 与文件作用域命名空间都会被展开成其成员。
+    /// 只跳过命名空间这一层，其余节点（含 enum / record）原样保留并维持出现顺序。
+    /// </summary>
+    private static List<OutlineNode> FlattenNamespaces(IReadOnlyList<OutlineNode> roots)
+    {
+        var result = new List<OutlineNode>();
+        foreach (var node in roots)
+        {
+            if (string.Equals(node.Kind, "namespace", StringComparison.Ordinal) && node.Children.Count > 0)
+                result.AddRange(FlattenNamespaces(node.Children));
+            else
+                result.Add(node);
+        }
+        return result;
     }
 
     /// <summary>

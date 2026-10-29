@@ -91,6 +91,27 @@ public sealed class ProjectMapToolCharacterizationTests
         Assert.AreEqual(1, doc.RootElement.GetProperty("depth").GetInt32(), "depth 下限是 1。");
     }
 
+    [TestMethod]
+    public async Task FileScopedNamespace_ReportsTypesNotNamespaceWrapper()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "src"));
+        await File.WriteAllTextAsync(Path.Combine(_root, "src", "A.cs"),
+            "namespace Demo.Inner;\n\npublic sealed class Alpha { }\npublic enum Beta { X }\n");
+
+        var result = await RunAsync(_root, depth: 2);
+
+        Assert.IsTrue(result.Success, result.Error);
+
+        // 文件作用域命名空间在 Roslyn 里是**根节点**：若直接拿根节点当“顶层类型”，
+        // 每个现代 C# 文件都会变成“只有一个类型，而且那个类型是 namespace”，
+        // 实际有几个类型完全看不出来，MaxTopLevelTypes 截断也永远不会触发。
+        // 这条断言钉住“报的是类型、不是命名空间壳”。
+        StringAssert.Contains(result.Output, "class Alpha");
+        StringAssert.Contains(result.Output, "enum Beta");
+        Assert.IsFalse(result.Output.Contains("namespace Demo.Inner"),
+            "types 不得回退成命名空间名 —— 那等于什么都没说。");
+    }
+
     private static Task<ToolExecutionResult> RunAsync(string? projectPath, int? depth)
     {
         var tool = new ProjectMapTool();

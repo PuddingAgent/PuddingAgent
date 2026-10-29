@@ -478,6 +478,11 @@
 - 两个上限常量**单一定义点**在服务里（`public const`），工具通过 `CodeProjectMapService.MaxFilesPerDir/MaxTopLevelTypes` 引用，
   避免"服务按 50 截断、工具按另一个数显示"的漂移。
 - 服务在工具里 `new`，不走构造注入（同 outline/summary，理由见上）。
+- **2026-10-30 修：`types` 曾退化成命名空间名。** `OutlineSyntaxVisitor` 把 `namespace` 也记为根节点，
+  而现代 C# 普遍用文件作用域命名空间 ⇒ 直接取 `RootNodes` 时“每个文件只有一个类型，且那个类型是 namespace”，
+  `MaxTopLevelTypes` 截断永不触发。现由 `FlattenNamespaces` 展开命名空间容器（递归）。
+  回归守卫：`ProjectMapToolCharacterizationTests.FileScopedNamespace_ReportsTypesNotNamespaceWrapper`。
+  注：`code_outline` 仍以 namespace 为根，那是**结构树**语义（子节点展开），与本字段的“类型清单”语义不同，勿顺手统一。
 ### workspace_open v1 已实现（2026-10-29）
 
 - `Services/Tools/WorkspaceOpenContract.cs` — 冻结的类型：`WorkspaceOpenRequest/Result`、
