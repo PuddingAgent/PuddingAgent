@@ -488,7 +488,26 @@
   与 `outline`（委派 `ICodeOutlineService` 后映射）。
   **路径边界校验在本层**：路径必须落在 workspace scope 根的子树内（`IsWithin`），
   比 `code_outline` 严 —— open 属于检索面。
-- 尚未做：`summary`/`map` 视图、`symbol_ref` 体系、工具外壳与 DI（S5）。
+- 已补 `map` 视图（bbf3aec）：`MapPayload`/`MapEntry`/`MapFileEntry` 委派 `ICodeProjectMapService`，
+  `WorkspaceOpenResult` 定义未变（当初留的判别容器生效）。
+- 尚未做：`summary`/`relations`/`status` 视图、`symbol_ref` 体系、工具外壳与 DI（S5）。
+
+### 检索端口组合根单点化（2026-10-29，修复启动期崩溃）
+
+- `RetrievalServiceCollectionExtensions.cs` — `AddPuddingRetrievalPort()`：登记
+  `IRetrievalScopeDirectories` / `IRetrievalTextSource` / `IRetrievalPort`（全部 `TryAdd`，幂等）。
+- **为什么必须单点**：产品宿主**不调用** `AddPuddingRuntime()`，它直接
+  `AddPuddingToolsFromAssembly` 扫描工具 ⇒ 谁扫描工具，谁就必须同时登记工具依赖。
+  漏登记的后果不是“工具不可用”，而是 `BuildServiceProvider` 的 `ValidateOnBuild` 抛
+  `AggregateException`，进程 exit **-532462766**，健康检查超时后自动回滚。
+- 实测事故链（2026-10-29）：`WorkspaceSearchTool(IRetrievalPort)` 被扫描到 → 端口未登记 →
+  连续三次部署（`build-restart` ×2 + `prebuilt-artifact` ×1）全部 `phase=rolled-back`、
+  `error=Deployment rejected: TimeoutException`。此前归因“复制段坏死”**是错的**：
+  拷贝、重启、回滚三者都正常工作，坏的是候选包自身起不来。
+- 测试口径同步：`WorkspaceSearchToolCompositionTests` 原先用 `AddPuddingRuntime()` 组装，
+  **与生产组合根不同源**，所以全绿而宿主崩。现改为复用 `AddPuddingRetrievalPort()`，
+  并新增 `ToolActivatesFromSharedCompositionExtension`（`ValidateOnBuild=true` 下解析工具本身）。
+- 残留缺口：宿主侧**是否调用**该扩展仍无测试看守（需宿主级组合冒烟），当前靠部署验收兜底。
 ## 工具平台与展示投影
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |

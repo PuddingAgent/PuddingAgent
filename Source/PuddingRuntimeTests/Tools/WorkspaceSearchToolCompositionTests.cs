@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using PuddingCodeIndex.Contracts;
 using PuddingCodeIndex.Contracts.Retrieval;
 using PuddingCodeIndex.Services.Retrieval;
+using PuddingCodeIndex.Storage;
 using PuddingRuntime;
 using PuddingRuntime.Services.Tools;
 
@@ -16,31 +18,60 @@ namespace PuddingRuntimeTests.Tools;
 /// 所以"依赖注册齐全"必须由一条会失败的测试来证明，而不是靠人工核对注册表。
 /// </para>
 /// <para>
-/// 只解析 <see cref="IRetrievalPort"/>：WorkspaceSearchTool 的唯一依赖就是它，
-/// 端口能解析 ⇒ 工具能构造。不去全量枚举 IPuddingTool，避免把无关工具的外部依赖
-/// （Everything SDK、浏览器桥等）拖进这条测试。
+/// <b>2026-10-29 实测教训</b>：本类原先用 <c>AddPuddingRuntime()</c> 组装容器，而产品宿主
+/// <b>不调用</b> AddPuddingRuntime —— 它直接扫描工具程序集。于是测试全绿而宿主启动即崩
+/// （ValidateOnBuild 抛 AggregateException，exit -532462766，连续三次部署回滚）。
+/// 现在一律使用 <see cref="RetrievalServiceCollectionExtensions.AddPuddingRetrievalPort"/>：
+/// 那是宿主真正调用的那个方法，测试与生产共用同一份登记。
 /// </para>
 /// </summary>
 [TestClass]
 public sealed class WorkspaceSearchToolCompositionTests
 {
-    [TestMethod]
-    public void RetrievalPortResolvesFromRuntimeContainer()
+    /// <summary>组装宿主同款最小容器：索引存储 + 检索端口（宿主用 Platform 组合根补前者）。</summary>
+    private static ServiceCollection CreateHostLikeServices()
     {
-        var services = new ServiceCollection();
-        // 宿主会在更早的阶段注册它；测试里手工补上，否则校验的就不是检索链而是环境本身。
-        services.AddSingleton(PuddingCode.Configuration.PuddingDataPaths.FromRoot(
-            Path.Combine(Path.GetTempPath(), "pudding-retrieval-composition")));
-        services.AddPuddingRuntime();
+        var root = Path.Combine(Path.GetTempPath(), "pudding-retrieval-composition", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
 
-        using var provider = services.BuildServiceProvider();
+        var services = new ServiceCollection();
+        services.AddSingleton<ICodeIndexStore>(
+            new SqliteCodeIndexStore(Path.Combine(root, "code_index.db")));
+        // 宿主在 PuddingServiceCollectionExtensions.Runtime.cs 里登记它（WorkspaceRootScopeDirectories 的依赖）。
+        // 宿主同样先登记 StartupEnvironmentInfo（见 PuddingServiceCollectionExtensions.Runtime.cs）。
+        services.AddSingleton(new PuddingRuntime.Services.StartupEnvironmentInfo());
+        services.AddSingleton<PuddingCode.Runtime.IExecutionEnvironmentProvider,
+            PuddingRuntime.Services.DefaultExecutionEnvironmentProvider>();
+        services.AddPuddingRetrievalPort();
+        return services;
+    }
+
+    [TestMethod]
+    public void RetrievalPortResolvesFromSharedCompositionExtension()
+    {
+        using var provider = CreateHostLikeServices().BuildServiceProvider();
 
         var port = provider.GetService<IRetrievalPort>();
 
         Assert.IsNotNull(
             port,
-            "IRetrievalPort 必须能从运行时容器解析 —— 否则 workspace_search 会让宿主在启动期失败。");
+            "IRetrievalPort 必须能从 AddPuddingRetrievalPort 解析 —— 否则 workspace_search 会让宿主在启动期失败。");
         Assert.IsInstanceOfType<RetrievalPortV1>(port);
+    }
+
+    [TestMethod]
+    public void ToolActivatesFromSharedCompositionExtension()
+    {
+        // 直接解析工具本身：这才是 PuddingToolRegistry 在启动期做的事（扫描器把工具登记为 IPuddingTool）。
+        var services = CreateHostLikeServices();
+        services.AddSingleton<WorkspaceSearchTool>();
+
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true });
+
+        var tool = provider.GetRequiredService<WorkspaceSearchTool>();
+
+        Assert.IsNotNull(tool);
     }
 
     [TestMethod]

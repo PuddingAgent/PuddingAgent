@@ -368,6 +368,9 @@ public static partial class PuddingServiceCollectionExtensions
         // ── 统一 Tool 注册表：Agent 工具统一通过 IPuddingTool/native registry 暴露 ──────────
         // 产品 Host 不调用 AddPuddingRuntime；扫描工具前显式注册其共享配额/缓存运行时。
         builder.Services.AddSingleton<BiyingFinanceRuntime>();
+        // 同一条规矩：workspace_search 的构造参数就是 IRetrievalPort，漏登记会让
+        // BuildServiceProvider 的 ValidateOnBuild 在启动期抛 AggregateException。
+        builder.Services.AddPuddingRetrievalPort();
         builder.Services.AddPuddingToolsFromAssembly(typeof(PuddingHost.PuddingHostAssemblyMarker).Assembly);
         builder.Services.AddPuddingToolsFromAssembly(typeof(PuddingRuntime.RuntimeServiceExtensions).Assembly);
         builder.Services.AddSingleton<McpConnectionManager>();
