@@ -1,0 +1,181 @@
+using PuddingCodeIntelligence.Contracts;
+
+namespace PuddingRuntime.Services.Tools;
+
+/// <summary>workspace_open 支持的视图（v1 只有两个）。</summary>
+public enum WorkspaceOpenView
+{
+    /// <summary>文件切片：给路径 + 行范围，拿回那几行。</summary>
+    Excerpt = 0,
+
+    /// <summary>结构预览：给路径，拿回顶层类型树。</summary>
+    Outline = 1,
+}
+
+/// <summary>
+/// <c>workspace_open</c> 的请求。
+/// <para>
+/// <b>v1 只做「文件切片」式 excerpt</b>：不做 <c>symbol_ref</c> 上下文 —— 那需要身份/版本/授权体系。
+/// </para>
+/// </summary>
+public sealed record WorkspaceOpenRequest(
+    string WorkspaceId,
+    string? ProjectId,
+    string? Path,
+    WorkspaceOpenView View,
+    int? StartLine = null,
+    int? LineCount = null,
+    int? Depth = null,
+    int MaxBytes = 64 * 1024);
+
+/// <summary>
+/// 结构预览的节点 —— <b>open 契约自己的词汇</b>。
+/// <para>
+/// 为什么不直接用上游类型：outline 服务有**两个**不同的节点类型
+/// （C# 路径的 <c>PuddingRuntime.Services.Tools.OutlineNode</c> 与注册表路径的
+/// <c>PuddingCodeIntelligence.Contracts.OutlineNode</c>），
+/// 而 open 的结果只能有一个 `Nodes` 列表。在这一层做一次归一，比让调用方按来源分支便宜。
+/// </para>
+/// </summary>
+public sealed record OutlineEntry(
+    string Name,
+    string Kind,
+    int StartLine,
+    int EndLine,
+    string? Signature = null,
+    string? Container = null,
+    IReadOnlyList<OutlineEntry>? Children = null);
+
+/// <summary>视图负载的判别容器：以后加 summary / map 只是加子类，结果外形不变。</summary>
+public abstract record WorkspaceOpenPayload;
+
+/// <summary>文件切片负载。</summary>
+public sealed record ExcerptPayload(
+    IReadOnlyList<string> Lines,
+    int StartLine,
+    int TotalLineCount) : WorkspaceOpenPayload;
+
+/// <summary>结构预览负载。</summary>
+public sealed record OutlinePayload(
+    IReadOnlyList<OutlineEntry> Nodes,
+    int TotalCount,
+    bool Truncated) : WorkspaceOpenPayload;
+
+/// <summary>
+/// <c>workspace_open</c> 的结果。构造即自校验：
+/// 成功必须有负载、失败必须有原因、截断必须说明理由 —— 这三条都是<b>能失败的断言</b>，
+/// 而不是文档里的约定。
+/// </summary>
+public sealed record WorkspaceOpenResult
+{
+    private WorkspaceOpenResult(
+        bool success,
+        string? error,
+        WorkspaceOpenView view,
+        string? resolvedPath,
+        WorkspaceOpenPayload? payload,
+        bool truncated,
+        string? truncatedReason)
+    {
+        Success = success;
+        Error = error;
+        View = view;
+        ResolvedPath = resolvedPath;
+        Payload = payload;
+        Truncated = truncated;
+        TruncatedReason = truncatedReason;
+    }
+
+    public bool Success { get; }
+
+    public string? Error { get; }
+
+    public WorkspaceOpenView View { get; }
+
+    public string? ResolvedPath { get; }
+
+    public WorkspaceOpenPayload? Payload { get; }
+
+    public bool Truncated { get; }
+
+    public string? TruncatedReason { get; }
+
+    /// <summary>成功结果。</summary>
+    public static WorkspaceOpenResult Ok(
+        WorkspaceOpenView view,
+        string resolvedPath,
+        WorkspaceOpenPayload payload,
+        bool truncated = false,
+        string? truncatedReason = null)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+
+        if (truncated && string.IsNullOrWhiteSpace(truncatedReason))
+        {
+            throw new ArgumentException(
+                "截断必须给原因：只说「被截断」调用方无法决定下一步看哪里。",
+                nameof(truncatedReason));
+        }
+
+        return new WorkspaceOpenResult(true, null, view, resolvedPath, payload, truncated, truncatedReason);
+    }
+
+    /// <summary>失败结果。</summary>
+    public static WorkspaceOpenResult Failed(WorkspaceOpenView view, string error)
+    {
+        if (string.IsNullOrWhiteSpace(error))
+        {
+            throw new ArgumentException("失败必须给原因。", nameof(error));
+        }
+
+        return new WorkspaceOpenResult(false, error, view, null, null, false, null);
+    }
+}
+
+/// <summary>把服务结果映射成 open 契约的投影（解耦形状，不解耦数值来源）。</summary>
+public static class WorkspaceOpenMapping
+{
+    /// <summary>C# 路径（<c>PuddingRuntime.Services.Tools.OutlineNode</c>）→ <see cref="OutlinePayload"/>。</summary>
+    public static OutlinePayload FromCSharpOutline(CodeOutlineOutcome outcome)
+    {
+        ArgumentNullException.ThrowIfNull(outcome);
+
+        var nodes = outcome.CSharpNodes.Select(MapCSharp).ToList();
+        return new OutlinePayload(nodes, outcome.TotalCount, outcome.Truncated);
+    }
+
+    /// <summary>注册表路径（<c>PuddingCodeIntelligence.Contracts.OutlineNode</c>）→ <see cref="OutlinePayload"/>。</summary>
+    public static OutlinePayload FromRegistryOutline(CodeOutlineOutcome outcome)
+    {
+        ArgumentNullException.ThrowIfNull(outcome);
+
+        var nodes = outcome.OutlinerNodes.Select(MapRegistry).ToList();
+        return new OutlinePayload(nodes, outcome.TotalCount, outcome.Truncated);
+    }
+
+    private static OutlineEntry MapCSharp(OutlineNode node) => new(
+        node.Name ?? "(anonymous)",
+        node.Kind,
+        node.Line,
+        node.EndLine,
+        node.Signature,
+        null,
+        node.Children is { Count: > 0 } ? node.Children.Select(MapCSharp).ToList() : null);
+
+    private static OutlineEntry MapRegistry(PuddingCodeIntelligence.Contracts.OutlineNode node) => new(
+        node.Name,
+        node.Kind.ToString(),
+        node.StartLine,
+        node.EndLine,
+        node.Signature,
+        node.Container,
+        node.Children is { Count: > 0 } ? node.Children.Select(MapRegistry).ToList() : null);
+}
+
+/// <summary>
+/// <c>workspace_open</c> 的端口。实现负责路径解析、workspace 边界校验、读取与截断。
+/// </summary>
+public interface IWorkspaceOpenService
+{
+    Task<WorkspaceOpenResult> OpenAsync(WorkspaceOpenRequest request, CancellationToken cancellationToken);
+}
