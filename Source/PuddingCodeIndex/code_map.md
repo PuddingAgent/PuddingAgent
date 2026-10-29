@@ -5,7 +5,7 @@
 > 依赖倒置：`ICodeIndexer` 定义在本工程，Roslyn/TS 等**实现留在** `PuddingCodeIntelligence`。
 > 命名空间：`PuddingCodeIndex.Contracts` / `PuddingCodeIndex.Services` / `PuddingCodeIndex.Services.CodeIndex` / `PuddingCodeIndex.Storage`
 > 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingCodeIndex-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingCodeIndex-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
-> 源指纹: Source/PuddingCodeIndex/**=93-9ee1160178d0 · 条目数: 58 · 最近整理: 2026-10-24
+> 源指纹: Source/PuddingCodeIndex/**=95-1a76e0d26bac · 条目数: 58 · 最近整理: 2026-10-24
 
 ## 契约（Contracts/ → `PuddingCodeIndex.Contracts`）
 
@@ -16,6 +16,7 @@
 | `CodeIndexScopeContracts.cs` | 索引范围的定义类型 | `ScopeSource` / `ScopeState` / `CodeIndexScope` | — | — |
 | `CodeProjectContracts.cs` | 项目注册记录与增删请求的类型定义 | `CodeProjectStatus` / `CodeProjectRecord` / 增删请求 | — | `CodeProjectRecord.StatusMessage` 追加在**末尾**（可选参数）—— 插到中间会迫使全部 5 个构造点改签名；它承载「最近一次状态变更的原因」（如索引被中断），此前只写不读 |
 | `CodeSymbolContracts.cs` | 符号与搜索请求的契约类型 | `CodeSymbolKind` / `CodeSymbolRecord` / 搜索请求 | — | — |
+| `Contracts/Retrieval/SymbolRefV1.cs` | 跨请求符号引用（`workspace_open` 的 `ref`；绑定身份/源版本/scope/代际） | `SymbolRefV1` / `SymbolIdStability` / `ClassifySymbolId` | `Contracts/Retrieval/SymbolIdentity.cs` · `Docs/12_features/symbol_ref-v1-合同提案-2026-10-30.md` | 载体为不透明 token `pmsym1.<base64url>`（可读串会被 docId 的 `: . ( ) ,` 与路径的 `\` `:` 击穿）；创建与解析共用同一条不变量校验 ⇒ 伪造 ref 与非法参数同路径；无 `content_hash` 不得签发；`PositionDependent` 形态只能判陈旧、不得重定位 |
 | `CodeReferenceRecord.cs` | 引用记录的契约类型 | `CodeReferenceRecord` | — | — |
 | `CodeRelationContracts.cs` | 符号关系的契约类型 | `CodeRelationKind` / `CodeRelationRecord` | — | — |
 | `CodeWorkspaceDescriptor.cs` | 索引器输入的工作区描述符 | `CodeWorkspaceDescriptor` | — | — |
