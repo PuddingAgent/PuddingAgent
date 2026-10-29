@@ -554,6 +554,18 @@
   组合冒烟只验「空容器能构造出工具」 ⇒ **两层各自绿、中间那条短路没人碰**。
   凡「外壳转发到服务」的分层，必须有一条用例**走外壳的执行路径**，否则测的是服务、不是线上。
 
+### ref 打开按**项目根**解析（2026-10-30）
+
+- `ISymbolRefSource` 增 `GetProjectRootAsync`（`CodeIndexSymbolRefSource` 用注册表 `ProjectPath` 回答）；
+  `WorkspaceOpenService.ResolveRefFilePathAsync` 以**项目根**为基准解析 `SymbolRefV1.FilePath`。
+- 为什么不能用工作区根：ref 存的是**项目内相对路径**，而工作区根 != 项目根（实测工作区根 `D:\Data\workspaces\default`、
+  项目根 `D:\...\Source\PuddingRuntime`）。用工作区根拼出来的位置**仍在工作区内**，边界检查照样通过，
+  只在 `File.Exists` 处失败并报「文件不存在」—— 看起来像文件被删了。
+- 项目无记录时**显式失败**（`没有可用的根目录记录…`），**不回落工作区根**：那会把另一个同名文件当成 ref 指向的文件。
+- 不重复做 `..` / 绝对路径检查：`SymbolRefV1.Parse` 已拒绝，边界在契约层，同一件事实现两份只会让两份慢慢不一致。
+- 守卫用例：`Fresh_ProjectRootUnknown_IsRejectedInsteadOfUsingWorkspaceRoot`（工作区根下同名文件真实存在）、
+  `Fresh_ResolvesAgainstProjectRoot_NotWorkspaceRoot`（工作区根放同名干扰文件，断言读到项目根那份）。
+
 ## 工具平台与展示投影
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
