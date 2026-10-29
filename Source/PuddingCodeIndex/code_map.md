@@ -5,7 +5,7 @@
 > 依赖倒置：`ICodeIndexer` 定义在本工程，Roslyn/TS 等**实现留在** `PuddingCodeIntelligence`。
 > 命名空间：`PuddingCodeIndex.Contracts` / `PuddingCodeIndex.Services` / `PuddingCodeIndex.Services.CodeIndex` / `PuddingCodeIndex.Storage`
 > 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingCodeIndex-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingCodeIndex-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
-> 源指纹: Source/PuddingCodeIndex/**=95-1a76e0d26bac · 条目数: 58 · 最近整理: 2026-10-24
+> 源指纹: Source/PuddingCodeIndex/**=96-27cb6e69b8a5 · 条目数: 58 · 最近整理: 2026-10-24
 
 ## 契约（Contracts/ → `PuddingCodeIndex.Contracts`）
 
@@ -78,6 +78,7 @@
 | `IndexExcludePatterns.cs` | 索引排除模式 | `IndexExcludePatterns` | — | — |
 | `DefaultCodeWorkspaceResolver.cs` | 工作区解析（sln/slnx/csproj 描述符） | `DefaultCodeWorkspaceResolver` / `ICodeWorkspaceResolver` | `Contracts/ICodeWorkspaceResolver.cs` | — |
 | `DefaultProjectRootDetector.cs` | 项目根检测（向上遍历 + 标记文件） | `DefaultProjectRootDetector` / `ICodeProjectRootDetector` | `Contracts/ICodeProjectRootDetector.cs` | — |
+| `Retrieval/SymbolRefFreshness.cs` | `symbol_ref` 的 FRESH / STALE 判定（纯函数，不读盘不查库） | `SymbolRefFreshness` / `SymbolRefFreshnessResult` / `SymbolRefState` / `SymbolRefRelocation` | `Contracts/Retrieval/SymbolRefV1.cs` · `Docs/12_features/symbol_ref-v1-合同提案-2026-10-30.md` | 只有 content_hash 相等才 Fresh（§8.3 禁令收成唯一入口）；重定位成功**仍是 Stale**（找到候选 ≠ 旧 ref 仍有效）；位置相关/未知形态 id 一律不可重定位；零候选措辞不得暗示符号不存在；版本未知不得当 Fresh |
 
 ## 存储（Storage/ → `PuddingCodeIndex.Storage`）
 
