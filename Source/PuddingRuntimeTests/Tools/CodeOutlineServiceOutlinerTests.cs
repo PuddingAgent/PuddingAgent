@@ -56,6 +56,7 @@ public sealed class CodeOutlineServiceOutlinerTests
         Assert.IsTrue(outcome.Success, outcome.Error);
         Assert.AreEqual(CodeOutlineOrigin.RegisteredOutliner, outcome.Origin);
         Assert.AreEqual(1, outcome.OutlinerNodes.Count);
+        Assert.AreEqual(1, outcome.TotalCount, "outliner 路径的 TotalCount 必须是真实节点数，不能顺手写 0。");
         Assert.AreEqual(0, outcome.CSharpNodes.Count, "outliner 分支不得往 C# 节点里塞东西。");
         Assert.IsFalse(outcome.Truncated, "outliner 分支不做截断 —— 截断是 C# 路径的历史行为。");
     }
@@ -88,6 +89,21 @@ public sealed class CodeOutlineServiceOutlinerTests
         StringAssert.Contains(outcome.Error, "没有发现结构声明");
     }
 
+    [TestMethod]
+    public async Task RegistryPresentButUnsupported_ReportsUnsupportedType()
+    {
+        // 注册表存在、但对该文件类型说不支持 —— 必须走到 Fallback，
+        // 而不是“有注册表就一定能 outline”。旧夹具 IsSupported 恒 true，这条分支零覆盖。
+        var path = Write("doc.zzz", "whatever");
+        var service = new CodeOutlineService(
+            new FakeRegistry(new FakeOutliner(new OutlineResult(true, path, [])), isSupported: false));
+
+        var outcome = await service.OutlineAsync(path, "doc.zzz", CancellationToken.None);
+
+        Assert.IsFalse(outcome.Success);
+        StringAssert.Contains(outcome.Error, "不支持此文件类型");
+    }
+
     private string Write(string name, string content)
     {
         var path = Path.Combine(_root, name);
@@ -95,11 +111,11 @@ public sealed class CodeOutlineServiceOutlinerTests
         return path;
     }
 
-    private sealed class FakeRegistry(IFileOutliner outliner) : IFileOutlinerRegistry
+    private sealed class FakeRegistry(IFileOutliner outliner, bool isSupported = true) : IFileOutlinerRegistry
     {
         public IFileOutliner? GetOutliner(string filePath) => outliner;
 
-        public bool IsSupported(string filePath) => true;
+        public bool IsSupported(string filePath) => isSupported;
     }
 
     private sealed class FakeOutliner(OutlineResult result) : IFileOutliner

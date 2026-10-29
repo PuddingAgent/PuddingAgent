@@ -62,6 +62,24 @@ public sealed class CodeOutlineServiceTests
     }
 
     [TestMethod]
+    public async Task SyntaxErrorsPresent_ButEnoughNodes_ReturnsOutlineWithFlag()
+    {
+        // 有 Error 诊断、但可解析节点 >= 5 ⇒ 不应走「严重语法错误」分支，
+        // 而应给出 outline 并置 HasSyntaxErrors=true。
+        // 这条同时覆盖两个盲区：Count() < 5 的子条件、以及 HasSyntaxErrors 恒 false 的变异。
+        var path = Path.Combine(_root, "PartiallyBroken.cs");
+        await File.WriteAllTextAsync(path, """
+            public class A { }
+            public class B { void M() { int x = ; } }
+            """);
+
+        var outcome = await new CodeOutlineService().OutlineAsync(path, "PartiallyBroken.cs", CancellationToken.None);
+
+        Assert.IsTrue(outcome.Success, outcome.Error);
+        Assert.IsTrue(outcome.HasSyntaxErrors, "有语法错误却没标记，等于告诉调用方结果可信。");
+    }
+
+    [TestMethod]
     public async Task FewTopLevelTypes_IsNotTruncated()
     {
         var path = Path.Combine(_root, "Few.cs");
