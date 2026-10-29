@@ -188,11 +188,13 @@ public sealed class WorkspaceOpenServiceTests
     [TestMethod]
     public async Task MissingPathArgument_IsRejected()
     {
+        // 2026-10-30：ref 与 path 二选一后，两者都空才是「缺参数」，文案随之改为
+        // “必须给 ref 或 path 之一。”（原为 “path is required（v1 只支持按路径打开）”）。
         var result = await NewService(null)
             .OpenAsync(Request(path: null, WorkspaceOpenView.Excerpt), CancellationToken.None);
 
         Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.Error, "path is required");
+        StringAssert.Contains(result.Error, "ref 或 path");
     }
 
     [TestMethod]

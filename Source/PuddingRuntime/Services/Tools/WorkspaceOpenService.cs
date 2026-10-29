@@ -1,5 +1,7 @@
 using System.Text;
 using PuddingCodeIndex.Contracts;
+using PuddingCodeIndex.Contracts.Retrieval;
+using PuddingCodeIndex.Services.Retrieval;
 using PuddingCodeIntelligence.Contracts;
 
 namespace PuddingRuntime.Services.Tools;
@@ -14,7 +16,8 @@ namespace PuddingRuntime.Services.Tools;
 public sealed class WorkspaceOpenService(
     ICodeOutlineService? outlineService,
     ICodeIndexScopeResolver? resolver,
-    ICodeProjectMapService? mapService = null) : IWorkspaceOpenService
+    ICodeProjectMapService? mapService = null,
+    ISymbolRefSource? refSource = null) : IWorkspaceOpenService
 {
     /// <summary>excerpt 未给行数时默认取多少行。</summary>
     public const int DefaultExcerptLines = 80;
@@ -31,10 +34,10 @@ public sealed class WorkspaceOpenService(
             return WorkspaceOpenResult.Failed(request.View, "ICodeIndexScopeResolver is not registered.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.Path))
+        if (string.IsNullOrWhiteSpace(request.Path) && string.IsNullOrWhiteSpace(request.Ref))
         {
-            // v1 只支持按路径打开；symbol_ref 需要身份/版本/授权体系，不在本版。
-            return WorkspaceOpenResult.Failed(request.View, "path is required（v1 只支持按路径打开）。");
+            // ref 与 path 二选一：两者都空才报缺参数（ref 分支在下面单独走）。
+            return WorkspaceOpenResult.Failed(request.View, "必须给 ref 或 path 之一。");
         }
 
         var resolution = await resolver
@@ -47,6 +50,12 @@ public sealed class WorkspaceOpenService(
         }
 
         var root = resolution.Scope.RootPath;
+
+        if (!string.IsNullOrWhiteSpace(request.Ref))
+        {
+            return await OpenByRefAsync(request, root, cancellationToken).ConfigureAwait(false);
+        }
+
         var fullPath = Path.GetFullPath(
             Path.IsPathRooted(request.Path) ? request.Path : Path.Combine(root, request.Path));
 
@@ -73,6 +82,84 @@ public sealed class WorkspaceOpenService(
         }
 
         return await OpenExcerptAsync(request, fullPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// ref 分支：先做 FRESH / STALE 判定，**Fresh 是唯一允许按 ref 行号打开的状态**。
+    /// <para>
+    /// Stale 一律报 <c>stale_ref</c>，即使重定位成功也不代替打开 ——「找到候选」与「旧 ref 仍有效」
+    /// 是两件事，混起来就是又一次 hollow negation。
+    /// </para>
+    /// </summary>
+    private async Task<WorkspaceOpenResult> OpenByRefAsync(
+        WorkspaceOpenRequest request,
+        string root,
+        CancellationToken cancellationToken)
+    {
+        if (!SymbolRefV1.TryParse(request.Ref, out var parsed, out var refError))
+        {
+            return WorkspaceOpenResult.Failed(request.View, "ref 不是合法的符号引用：" + refError);
+        }
+
+        if (refSource is null)
+        {
+            return WorkspaceOpenResult.Failed(
+                request.View,
+                "ref 打开尚未接线：需要先用索引版本做 FRESH/STALE 判定（§8.3 不得沿旧行号打开当前代码）。" +
+                "请改用 project_id+path，或先用 workspace_search 拿到当前行号再按 path 打开。");
+        }
+
+        if (request.View != WorkspaceOpenView.Excerpt)
+        {
+            return WorkspaceOpenResult.Failed(
+                request.View,
+                $"ref 打开 v1 只支持 view=excerpt（当前 {request.View}）；请先按 ref 拿到行号再选视图。");
+        }
+
+        var reference = parsed!;
+        var currentHash = await refSource
+            .GetFileContentHashAsync(reference.ProjectId, reference.FilePath, cancellationToken)
+            .ConfigureAwait(false);
+
+        var candidates = await refSource
+            .FindSymbolCandidatesAsync(reference.ProjectId, reference.SymbolId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var verdict = SymbolRefFreshness.Evaluate(reference, currentHash, candidates);
+
+        if (verdict.State != SymbolRefState.Fresh)
+        {
+            var hint = verdict.CanRelocate
+                ? $"候选: {verdict.Relocations[0].FilePath}:{verdict.Relocations[0].StartLine}-" +
+                  $"{verdict.Relocations[0].EndLine}"
+                : string.Empty;
+
+            return WorkspaceOpenResult.Failed(
+                request.View,
+                "stale_ref：" + verdict.Reason + (hint.Length == 0 ? string.Empty : " " + hint));
+        }
+
+        var fullPath = Path.GetFullPath(Path.Combine(root, reference.FilePath));
+        if (!IsWithin(root, fullPath))
+        {
+            return WorkspaceOpenResult.Failed(
+                request.View,
+                $"ref 的路径不在工作区内: {reference.FilePath}");
+        }
+
+        if (!File.Exists(fullPath))
+        {
+            return WorkspaceOpenResult.Failed(request.View, $"(文件不存在: {reference.FilePath})");
+        }
+
+        var ranged = request with
+        {
+            Path = reference.FilePath,
+            StartLine = reference.StartLine,
+            LineCount = reference.EndLine - reference.StartLine + 1,
+        };
+
+        return await OpenExcerptAsync(ranged, fullPath, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<WorkspaceOpenResult> OpenMapAsync(
