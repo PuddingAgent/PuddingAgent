@@ -75,7 +75,7 @@ public sealed class CodeSummaryTool : PuddingToolBase<CodeSummaryArgs>
             if (File.Exists(sym.FilePath))
             {
                 // Fast path: line-scan for doc comment without full AST parse
-                docComment = ExtractDocCommentFast(sym.FilePath, sym.StartLine);
+                docComment = CodeSummaryDocCommentReader.ExtractDocCommentFast(sym.FilePath, sym.StartLine);
                 if (docComment == null)
                 {
                     // Fallback: full AST parse — skip for large files (>25KB ≈ 500 lines)
@@ -89,7 +89,7 @@ public sealed class CodeSummaryTool : PuddingToolBase<CodeSummaryArgs>
                         var source = await File.ReadAllTextAsync(sym.FilePath, ct);
                         var tree = CSharpSyntaxTree.ParseText(source);
                         var root = await tree.GetRootAsync(ct);
-                        docComment = ExtractDocComment(root, sym);
+                        docComment = CodeSummaryDocCommentReader.ExtractDocComment(root, sym);
                     }
                 }
             }
@@ -130,124 +130,6 @@ public sealed class CodeSummaryTool : PuddingToolBase<CodeSummaryArgs>
         return Ok($"{text}\n\n---\n{json}");
     }
 
-    /// <summary>
-    /// Fast line-scanning doc comment extractor. Reads the file lines, scans backward
-    /// from the symbol's start line for /// comments. Much cheaper than full AST parse.
-    /// Returns null if the doc comment can't be reliably extracted (falls through to AST).
-    /// </summary>
-    private static string? ExtractDocCommentFast(string filePath, int startLine)
-    {
-        try
-        {
-            var lines = File.ReadAllLines(filePath);
-            if (startLine < 1 || startLine > lines.Length)
-                return null;
-
-            var comments = new List<string>();
-            for (int i = startLine - 2; i >= 0; i--)
-            {
-                var trimmed = lines[i].TrimStart();
-                if (trimmed.StartsWith("///"))
-                {
-                    var text = trimmed.Length > 3 ? trimmed[3..].TrimStart() : "";
-                    comments.Insert(0, text);
-                }
-                else if (trimmed.StartsWith("/**"))
-                {
-                    return null;
-                }
-                else if (trimmed.StartsWith('[') && comments.Count > 0)
-                {
-                    continue;
-                }
-                else if (string.IsNullOrWhiteSpace(trimmed) && comments.Count > 0)
-                {
-                    if (startLine - 2 - i > 20) break;
-                    continue;
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            return comments.Count > 0 ? string.Join("\n", comments) : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static string? ExtractDocComment(SyntaxNode root, CodeSymbolRecord sym)
-    {
-        Type? targetType = sym.Kind switch
-        {
-            CodeSymbolKind.Class      => typeof(ClassDeclarationSyntax),
-            CodeSymbolKind.Struct     => typeof(StructDeclarationSyntax),
-            CodeSymbolKind.Interface  => typeof(InterfaceDeclarationSyntax),
-            CodeSymbolKind.Enum       => typeof(EnumDeclarationSyntax),
-            CodeSymbolKind.Method     => typeof(MethodDeclarationSyntax),
-            CodeSymbolKind.Constructor=> typeof(ConstructorDeclarationSyntax),
-            CodeSymbolKind.Property   => typeof(PropertyDeclarationSyntax),
-            CodeSymbolKind.Field      => typeof(FieldDeclarationSyntax),
-            CodeSymbolKind.Event      => typeof(EventDeclarationSyntax),
-            CodeSymbolKind.Delegate   => typeof(DelegateDeclarationSyntax),
-            _ => null,
-        };
-
-        SyntaxNode? bestNode = null;
-        int bestDistance = int.MaxValue;
-
-        foreach (var node in root.DescendantNodes())
-        {
-            if (targetType is not null && !targetType.IsInstanceOfType(node))
-                continue;
-            if (targetType is null && !IsDeclarationNode(node))
-                continue;
-
-            int nodeStart = node.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
-            int distance = Math.Abs(nodeStart - sym.StartLine);
-            bool nameMatch = TryGetDeclarationName(node, out var declName)
-                          && string.Equals(declName, sym.Name, StringComparison.Ordinal);
-
-            if (nameMatch && distance < bestDistance)
-            {
-                bestDistance = distance;
-                bestNode = node;
-            }
-            else if (bestNode is null && distance < bestDistance)
-            {
-                bestDistance = distance;
-                bestNode = node;
-            }
-        }
-
-        if (bestNode is null) return null;
-        return OutlineSyntaxVisitor.GetDocumentationText(bestNode);
-    }
-
-    private static bool IsDeclarationNode(SyntaxNode node) =>
-        node is TypeDeclarationSyntax or MethodDeclarationSyntax or PropertyDeclarationSyntax
-            or FieldDeclarationSyntax or EventDeclarationSyntax or ConstructorDeclarationSyntax
-            or DelegateDeclarationSyntax or EnumMemberDeclarationSyntax;
-
-    private static bool TryGetDeclarationName(SyntaxNode node, out string name)
-    {
-        name = node switch
-        {
-            TypeDeclarationSyntax t => t.Identifier.Text,
-            MethodDeclarationSyntax m => m.Identifier.Text,
-            PropertyDeclarationSyntax p => p.Identifier.Text,
-            FieldDeclarationSyntax f => f.Declaration.Variables.FirstOrDefault()?.Identifier.Text ?? "",
-            EventDeclarationSyntax e => e.Identifier.Text,
-            ConstructorDeclarationSyntax c => c.Identifier.Text,
-            DelegateDeclarationSyntax d => d.Identifier.Text,
-            EnumMemberDeclarationSyntax em => em.Identifier.Text,
-            _ => "",
-        };
-        return !string.IsNullOrEmpty(name);
-    }
 
     private static string BuildSummaryText(CodeSymbolRecord sym, string? displayName,
         string? doc, List<CodeRelationRecord> callers, List<CodeRelationRecord> callees)

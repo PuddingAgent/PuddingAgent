@@ -446,6 +446,18 @@
 - 约束：旧 `ResolveFullPath` 的注释曾声称「校验其在工作区范围内」，代码实际**没有**子树校验。
   行为未改、只改注释，并用特征测试 `AbsolutePathOutsideWorkingDirectory_IsAccepted` 钉住；
   将来真要加沙箱，会先让该测试红掉，从而暴露「这是行为变更」。
+### 代码智能：summary 的文档注释提取已抽出（2026-10-29）
+
+- `Services/Tools/CodeSummaryDocCommentReader.cs` — `internal static`，从 `CodeSummaryTool` 搬来 118 行：
+  `ExtractDocCommentFast`（行扫描，廉价路径）、`ExtractDocComment`（Roslyn AST 回退）、
+  `IsDeclarationNode` / `TryGetDeclarationName`（AST 路径的判定辅助）。
+  搬动动机与 outline 相同：`ICodeSummaryService` 要复用同一份「怎么找 `///` 注释」的语义，
+  两处各写一份会在空行 / attribute / 嵌套类型这些边界上漂移。
+- `CodeSummaryTool` 现在只有两个调用点引用它（`CodeSummaryDocCommentReader.ExtractDocCommentFast` /
+  `.ExtractDocComment`），其余逻辑（摘要文本 `BuildSummaryText`、JSON 投影）仍在工具内。
+- **这段搬动没有新增测试覆盖**：4 条 `code_summary` 特征测试里符号文件并不存在，
+  `docComment` 走 null 分支。所以本次安全性靠「代码原样搬运 + 调用点唯一 + 4 条测试保持绿」，
+  而不是靠新断言 —— 将来抽 `ICodeSummaryService` 时应补一条"文件存在且带 `///` 注释"的用例。
 ## 工具平台与展示投影
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
