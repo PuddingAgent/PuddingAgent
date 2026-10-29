@@ -232,3 +232,49 @@ Codex 的四条判断我逐条回磁盘核对，**全部成立**：
 快路径单独回归（例如它对 attribute / block comment 的判断变错但 AST 能兜住）仍不可见。
 要真正覆盖，需要让测试能直接调用 `CodeSummaryDocCommentReader`（当前 `internal`，
 需 `InternalsVisibleTo`），这属于下一步。
+---
+
+## 9. `IProjectMapService` 抽取施工单（2026-10-29 13:25）
+
+特征测试已就位（`ProjectMapToolCharacterizationTests`，4 条，变异取红），可以直接动刀。
+**这一步不要靠记忆做**，按下面的行号与边界执行。
+
+### 9.1 搬什么
+
+| 内容 | 当前行（`ProjectMapTool.cs`，309 行） |
+|---|---|
+| `BuildDirectoryNodeAsync` | 65–138 |
+| `GetFileTopTypesAsync` | 139–173 |
+| `ResolveRootPath` | 251–279 |
+| `DirNode` / `FileEntry` 两个私有类 | 285–301 |
+| 常量 `MaxFilesPerDir=50` / `MaxTopLevelTypes=3` | 25–26 |
+
+### 9.2 留什么
+
+| 内容 | 行 |
+|---|---|
+| `AppendTreeText`（树形文本） | 177–222 |
+| `ToJsonNode`（JSON 投影） | 223–250 |
+| `ExecuteCoreAsync` 的三段：挂 `---`、`Ok`/`Fail` | 29–61 |
+
+### 9.3 唯一的硬点：节点类型必须重命名
+
+`DirNode` / `FileEntry` 是**工具内的私有嵌套类**，搬走后两个格式化器（`AppendTreeText` / `ToJsonNode`）
+编译不过。所以必须：
+
+1. 在服务侧定义**公开** record：`ProjectMapNode` / `ProjectMapFileEntry`（字段逐个照抄，不改名不改顺序）；
+2. 工具里的两个格式化器把类型引用改成新类型（纯重命名，**逻辑一行不动**）；
+3. `ExecuteCoreAsync` 改成 `var outcome = await _mapService.BuildAsync(args.ProjectPath, context.WorkingDirectory, args.Depth, ct);`，
+   失败直接 `Fail(outcome.Error!)`。
+
+### 9.4 验收标准
+
+- 4 条特征测试**断言一个字都不改**，仍全绿；
+- 变异 `Math.Clamp(...)` → 不夹取，仍能取红 2 条；
+- 工具里不再出现 `Directory.Exists` / `Directory.GetDirectories` / `CSharpSyntaxTree`（数据获取全在服务）。
+
+### 9.5 为什么现在不做
+
+当前会话上下文已经很长，而这一步要动 ~180 行并跨类重命名两个类型。
+**在剩余上下文不足时做这种规模的重命名，出错概率高于收益** ——
+留到新会话按本施工单机械执行，比在这里赌一把稳。
