@@ -204,16 +204,31 @@ public sealed class WorkspaceOpenService(
         var start = Math.Max(1, request.StartLine ?? 1);
         var take = Math.Max(1, request.LineCount ?? DefaultExcerptLines);
 
+        // start_line 超出文件末尾时，空切片是**假成功**：调用方手里多半是编辑前的旧行号，
+        // 它会把「0 行」读成「这一段本来就没有东西」。明确指出越界并提示重新定位
+        // （ADR-089 §8.3：不完全/定位失效必须可见）。空文件不算越界（确实没东西可给）。
+        if (all.Length > 0 && start > all.Length)
+        {
+            return WorkspaceOpenResult.Failed(
+                request.View,
+                $"(start_line={start} 超出文件总行数 {all.Length}: {request.Path}；文件可能已变短，请用 line_count/start_line 重新定位)");
+        }
+
         var slice = all.Skip(start - 1).Take(take).ToList();
 
         // MaxBytes 是**返回内容总字节**上限：超出就丢尾行，并说明丢了多少。
         var kept = new List<string>();
         var bytes = 0;
+        var firstDroppedBytes = 0;
         foreach (var line in slice)
         {
             var size = Encoding.UTF8.GetByteCount(line) + 1;
-            if (bytes + size > request.MaxBytes && kept.Count > 0)
+            if (bytes + size > request.MaxBytes)
             {
+                // 首行也必须受预算约束。早期的 `&& kept.Count > 0` 豁免会让 MaxBytes 被突破，
+                // 而切片只有一行时 truncated 仍为 false —— **硬上限被破坏且看不见**，
+                // 比报错更难发现。
+                firstDroppedBytes = size;
                 break;
             }
 
@@ -222,14 +237,22 @@ public sealed class WorkspaceOpenService(
         }
 
         var truncated = kept.Count < slice.Count;
+        string? reason = null;
+        if (truncated)
+        {
+            reason = $"达到 MaxBytes={request.MaxBytes} 上限，本段只返回 {kept.Count}/{slice.Count} 行。";
+            if (kept.Count == 0)
+            {
+                reason += $"连第一行都放不下（该行 {firstDroppedBytes} 字节），请调大 max_bytes。";
+            }
+        }
+
         return WorkspaceOpenResult.Ok(
             request.View,
             fullPath,
             new ExcerptPayload(kept, start, all.Length),
             truncated: truncated,
-            truncatedReason: truncated
-                ? $"达到 MaxBytes={request.MaxBytes} 上限，本段只返回 {kept.Count}/{slice.Count} 行。"
-                : null);
+            truncatedReason: reason);
     }
 
     private static bool IsWithin(string root, string candidate)

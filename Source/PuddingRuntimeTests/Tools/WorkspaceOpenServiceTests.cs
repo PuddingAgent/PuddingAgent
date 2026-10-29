@@ -90,6 +90,67 @@ public sealed class WorkspaceOpenServiceTests
         Assert.IsTrue(payload.Lines.Count is > 0 and < 50, "总字节上限必须真的截住，不能整段放行。");
         Assert.IsTrue(result.Truncated);
         StringAssert.Contains(result.TruncatedReason, "MaxBytes");
+
+        var returnedBytes = payload.Lines.Sum(l => System.Text.Encoding.UTF8.GetByteCount(l) + 1);
+        Assert.IsTrue(returnedBytes <= 200, $"返回内容总字节 {returnedBytes} 突破了 max_bytes=200。");
+    }
+
+    /// <summary>
+    /// <c>start_line</c> 超出文件末尾时不能返回空切片的“成功”：调用方手里多半是编辑前的旧行号，
+    /// 会把「0 行」读成「这一段本来就没东西」。
+    /// </summary>
+    [TestMethod]
+    public async Task Excerpt_StartLineBeyondEof_IsRejectedNotEmptySuccess()
+    {
+        var path = Path.Combine(_root, "short.txt");
+        await File.WriteAllLinesAsync(path, ["l1", "l2", "l3", "l4"]);
+
+        var result = await NewService(null)
+            .OpenAsync(Request("short.txt", WorkspaceOpenView.Excerpt, startLine: 99), CancellationToken.None);
+
+        Assert.IsFalse(result.Success, "超出末尾的空切片是假成功。");
+        StringAssert.Contains(result.Error, "超出文件总行数");
+        StringAssert.Contains(result.Error, "99");
+    }
+
+    /// <summary>
+    /// <c>MaxBytes</c> 是硬预算：即使切片只有一行、且那一行就超预算，也不能放行。
+    /// 早期实现的 <c>&amp;&amp; kept.Count &gt; 0</c> 豁免会突破预算，且 <c>truncated</c> 仍为 false。
+    /// </summary>
+    [TestMethod]
+    public async Task Excerpt_MaxBytesNeverExceededEvenForSingleLongLine()
+    {
+        var path = Path.Combine(_root, "one.txt");
+        await File.WriteAllLinesAsync(path, [new string('y', 100)]);
+
+        var result = await NewService(null)
+            .OpenAsync(
+                Request("one.txt", WorkspaceOpenView.Excerpt, startLine: 1, lineCount: 1, maxBytes: 10),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Error);
+        var payload = (ExcerptPayload)result.Payload!;
+        Assert.AreEqual(0, payload.Lines.Count, "超预算的一行也不能放行。");
+        Assert.IsTrue(result.Truncated, "一行都没给出去时，被截断必须可见。");
+        StringAssert.Contains(result.TruncatedReason, "max_bytes");
+        Assert.AreEqual(1, payload.TotalLineCount);
+    }
+
+    /// <summary>空文件不算越界：确实没东西可给，但要说清是 0 行而不是被截断。</summary>
+    [TestMethod]
+    public async Task Excerpt_EmptyFile_IsEmptySuccessNotError()
+    {
+        var path = Path.Combine(_root, "empty.txt");
+        await File.WriteAllTextAsync(path, string.Empty);
+
+        var result = await NewService(null)
+            .OpenAsync(Request("empty.txt", WorkspaceOpenView.Excerpt), CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Error);
+        var payload = (ExcerptPayload)result.Payload!;
+        Assert.AreEqual(0, payload.Lines.Count);
+        Assert.AreEqual(0, payload.TotalLineCount);
+        Assert.IsFalse(result.Truncated, "空文件不是被截断。");
     }
 
     [TestMethod]
