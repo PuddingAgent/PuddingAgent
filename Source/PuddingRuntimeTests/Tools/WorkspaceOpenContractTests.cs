@@ -131,6 +131,28 @@ public sealed class WorkspaceOpenContractTests
     }
 
     [TestMethod]
+    public void FromProjectMap_PreservesTrueTypeCount()
+    {
+        // Types 被 MaxTopLevelTypes 截断（默认 3）。若不带真实总数，
+        // 调用方会把「只列了 3 个」读成「这个文件只有 3 个类型」——
+        // 这属于 ADR-089 §8.3 禁止的 hollow negation。
+        var node = new ProjectMapNode { Name = "root", IsRoot = true, TotalFileCount = 12 };
+        node.Files.Add(new ProjectMapFileEntry
+        {
+            Name = "Big.cs",
+            Types = ["class A", "class B", "class C"],
+            TotalTypeCount = 7,
+        });
+        var outcome = new ProjectMapOutcome(true, null, "root", 1, node);
+
+        var payload = WorkspaceOpenMapping.FromProjectMap(outcome);
+
+        Assert.AreEqual(12, payload.TotalFileCount, "目录的文件总数要原样透传。");
+        Assert.AreEqual(3, payload.Root.Files[0].Types.Count);
+        Assert.AreEqual(7, payload.Root.Files[0].TotalTypeCount, "真实类型总数不能被截断掩盖。");
+    }
+
+    [TestMethod]
     public void AnonymousCSharpNode_GetsPlaceholderName()
     {
         var runtimeNode = new OutlineNode { Name = null, Kind = "class", Line = 1, EndLine = 2 };

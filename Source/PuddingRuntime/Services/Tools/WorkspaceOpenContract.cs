@@ -64,8 +64,16 @@ public sealed record OutlinePayload(
     int TotalCount,
     bool Truncated) : WorkspaceOpenPayload;
 
-/// <summary>目录地图里的一个文件。</summary>
-public sealed record MapFileEntry(string Name, IReadOnlyList<string> Types);
+/// <summary>
+/// 目录地图里的一个文件。
+/// <para>
+/// <b>为什么带 <paramref name="TotalTypeCount"/></b>：<see cref="Types"/> 被
+/// <c>CodeProjectMapService.MaxTopLevelTypes</c> 截断（默认 3），若不给出真实总数，
+/// 调用方会把「只列了 3 个」读成「这个文件只有 3 个类型」。这属于 ADR-089 §8.3 禁止的
+/// hollow negation —— 不完全必须可见，不能当成完整成功。
+/// </para>
+/// </summary>
+public sealed record MapFileEntry(string Name, IReadOnlyList<string> Types, int TotalTypeCount);
 
 /// <summary>目录地图里的一个目录。</summary>
 public sealed record MapEntry(
@@ -179,7 +187,7 @@ public static class WorkspaceOpenMapping
 
     private static MapEntry MapEntryOf(ProjectMapNode node) => new(
         node.Name,
-        node.Files.Select(f => new MapFileEntry(f.Name, f.Types)).ToList(),
+        node.Files.Select(f => new MapFileEntry(f.Name, f.Types, f.TotalTypeCount)).ToList(),
         node.Children.Select(MapEntryOf).ToList(),
         node.TotalFileCount);
 

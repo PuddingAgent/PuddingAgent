@@ -112,6 +112,26 @@ public sealed class ProjectMapToolCharacterizationTests
             "types 不得回退成命名空间名 —— 那等于什么都没说。");
     }
 
+    [TestMethod]
+    public async Task MoreFilesThanLimit_ReportsTrueTotalInText()
+    {
+        // 回归守卫：TotalFileCount 曾经被赋成「已截断后的条数」（csFiles.Count，已被 Take(50) 削过），
+        // 于是下面那条 (showing 50/N files) 分支永远不会触发 —— 调用方以为看到了全部文件。
+        // 这条钉住「真实总数要报出来」。
+        var many = Path.Combine(_root, "many");
+        Directory.CreateDirectory(many);
+        for (var i = 0; i < 55; i++)
+        {
+            await File.WriteAllTextAsync(Path.Combine(many, $"F{i:D2}.cs"), "public class C" + i + " { }");
+        }
+
+        var result = await RunAsync(_root, depth: 2);
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "showing 50/55 files",
+            "超过 MaxFilesPerDir 时必须报「已列 50 / 实际 55」，不能报成 50/50。");
+    }
+
     private static Task<ToolExecutionResult> RunAsync(string? projectPath, int? depth)
     {
         var tool = new ProjectMapTool();

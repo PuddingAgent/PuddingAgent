@@ -175,7 +175,13 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
     {
         name = entry.Name,
         total_file_count = entry.TotalFileCount,
-        files = entry.Files.Select(f => new { name = f.Name, types = f.Types }).ToList(),
+        files = entry.Files.Select(f => new
+        {
+            name = f.Name,
+            types = f.Types,
+            // 真实类型总数：types 被 MaxTopLevelTypes 截断，靠它才能看出「还有更多」。
+            total_type_count = f.TotalTypeCount,
+        }).ToList(),
         children = entry.Children.Select(EntryToJson).ToList(),
     };
 

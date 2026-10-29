@@ -71,6 +71,20 @@ try {
 
         if (-not (Test-Path $RelativePath)) { return @() }
         $text = Get-Content $RelativePath -Raw -Encoding UTF8
+
+        # String/comment blind spot (found 2026-10-30): the raw-text regex below also matched type
+        # declarations living *inside string literals*. A characterization test that writes
+        # "public class Alpha { }" as fixture source contributed phantom names Alpha/Beta, which then
+        # selected 10 test projects; one of them had zero matching tests and dotnet test exits 1 without
+        # a TRX, so the gate aborted on a filter that could never match. Strip literals and comments
+        # before scanning declarations.
+        $text = [regex]::Replace($text, '(?s)"{3,}.*?"{3,}', '""')                       # C# 11 raw strings
+        $text = [regex]::Replace($text, '(?s)@"(?:[^"]|"")*"', '""')                   # verbatim strings
+        $text = [regex]::Replace($text, '(?s)\$(?:@)?"(?:\\.|[^"\\])*"', '""')       # interpolated
+        $text = [regex]::Replace($text, '(?s)"(?:\\.|[^"\\])*"', '""')               # regular
+        $text = [regex]::Replace($text, '(?s)/\*.*?\*/', ' ')                              # block comments
+        $text = [regex]::Replace($text, '(?m)//.*$', ' ')                                   # line comments
+
         $pattern = '\b(?:class|record|interface|struct|enum)\s+([A-Za-z_][A-Za-z0-9_]*)'
         $names = @([regex]::Matches($text, $pattern) | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
 
@@ -137,6 +151,15 @@ try {
 
         $trxPath = Join-Path $ResultsDirectory "$trxName.trx"
         if (-not (Test-Path $trxPath)) {
+            # A filter that matches zero tests makes dotnet test exit 1 WITHOUT a TRX, which is not a
+            # build failure. Distinguish the two: a real build failure always prints 'error CSxxxx' /
+            # 'error MSBxxxx'. Language-independent on purpose (ASCII-only script, zh/en host locales).
+            $joined = ($output | Out-String)
+            if ($joined -notmatch 'error\s+(CS|MSB|NU)\d+') {
+                Write-Host "    (no test matched the filter - skipped)"
+                return $null
+            }
+
             Write-Host ($output | Select-Object -Last 30 | Out-String)
             throw "dotnet test for $ProjectPath exited $exitCode and produced no TRX log; fix the build first"
         }
@@ -220,6 +243,7 @@ try {
         Write-Host ("--- {0}  filter~{1}" -f (Resolve-Path -Relative $project), ($types -join "|"))
 
         $result = Invoke-TestProject -ProjectPath $project -Filter $filter -ResultsDirectory $resultsDirectory
+        if ($null -eq $result) { continue }
         $ranProjects++
 
         foreach ($name in $result.Failed) {

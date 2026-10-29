@@ -483,6 +483,15 @@
   `MaxTopLevelTypes` 截断永不触发。现由 `FlattenNamespaces` 展开命名空间容器（递归）。
   回归守卫：`ProjectMapToolCharacterizationTests.FileScopedNamespace_ReportsTypesNotNamespaceWrapper`。
   注：`code_outline` 仍以 namespace 为根，那是**结构树**语义（子节点展开），与本字段的“类型清单”语义不同，勿顺手统一。
+- **2026-10-30 修（两处静默截断，ADR-089 §8.3 hollow negation）**：
+  - `TotalFileCount` 曾被赋成「已截断后的条数」（`csFiles.Count`，而 `csFiles` 已被 `Take(MaxFilesPerDir)` 削过）
+    ⇒ `ProjectMapTool` 那条 `node.TotalFileCount > MaxFilesPerDir` 的 `(showing 50/N files)` 分支**永远是死分支**，
+    调用方以为看到了全部文件。现改为 `allFiles.Length`（真实总数），截断由「`Files.Count < TotalFileCount`」可见。
+    回归守卫：`ProjectMapToolCharacterizationTests.MoreFilesThanLimit_ReportsTrueTotalInText`。
+  - `MapFileEntry` 曾丢掉 `TotalTypeCount` ⇒ `workspace_open` 的 map 视图里，一个含 12 个类型的文件只列 3 个且**无任何截断提示**，
+    读起来就是「这个文件只有 3 个类型」。现 `MapFileEntry(Name, Types, TotalTypeCount)`，
+    工具 JSON 同步输出 `total_type_count`。回归守卫：`WorkspaceOpenContractTests.FromProjectMap_PreservesTrueTypeCount`。
+  - 教训：**「总数」字段若来自已截断的集合，它就是假的，而且会把下游的截断提示分支变成死代码**。
 ### workspace_open v1 已实现（2026-10-29）
 
 - `Services/Tools/WorkspaceOpenContract.cs` — 冻结的类型：`WorkspaceOpenRequest/Result`、

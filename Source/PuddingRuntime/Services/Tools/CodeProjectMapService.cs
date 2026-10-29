@@ -89,7 +89,12 @@ public sealed class CodeProjectMapService : ICodeProjectMapService
         // 扫描 .cs 文件
         try
         {
-            var csFiles = Directory.GetFiles(currentPath, "*.cs").Take(MaxFilesPerDir).ToList();
+            // TotalFileCount 必须是「真实总数」。原先把 csFiles.Count 赋给它，而 csFiles 已被
+            // Take(MaxFilesPerDir) 截断 ⇒ ProjectMapTool 里 `node.TotalFileCount > MaxFilesPerDir`
+            // 那条 (showing 50/N files) 分支永远不会触发，调用方以为看到了全部文件。
+            // ADR-089 §8.3：不得把「只列了一部分」当成「完整成功」。
+            var allFiles = Directory.GetFiles(currentPath, "*.cs");
+            var csFiles = allFiles.Take(MaxFilesPerDir).ToList();
             foreach (var file in csFiles)
             {
                 ct.ThrowIfCancellationRequested();
@@ -102,7 +107,7 @@ public sealed class CodeProjectMapService : ICodeProjectMapService
                     TotalTypeCount = totalTypeCount,
                 });
             }
-            node.TotalFileCount = csFiles.Count;
+            node.TotalFileCount = allFiles.Length;
         }
         catch
         {
