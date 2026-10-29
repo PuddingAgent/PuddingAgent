@@ -19,12 +19,14 @@ public interface ISymbolRefSource
 {
     /// <summary>取索引中该文件的 content_hash；文件不在索引内时返回 <c>null</c>。</summary>
     Task<string?> GetFileContentHashAsync(
+        string workspaceId,
         string projectId,
         string filePath,
         CancellationToken cancellationToken);
 
     /// <summary>在当前版本中按 symbol_id 找位置；零命中返回空列表（不抛异常）。</summary>
     Task<IReadOnlyList<SymbolRefRelocation>> FindSymbolCandidatesAsync(
+        string workspaceId,
         string projectId,
         string symbolId,
         CancellationToken cancellationToken);

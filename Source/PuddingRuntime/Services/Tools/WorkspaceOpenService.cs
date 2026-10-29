@@ -118,11 +118,11 @@ public sealed class WorkspaceOpenService(
 
         var reference = parsed!;
         var currentHash = await refSource
-            .GetFileContentHashAsync(reference.ProjectId, reference.FilePath, cancellationToken)
+            .GetFileContentHashAsync(request.WorkspaceId, reference.ProjectId, reference.FilePath, cancellationToken)
             .ConfigureAwait(false);
 
         var candidates = await refSource
-            .FindSymbolCandidatesAsync(reference.ProjectId, reference.SymbolId, cancellationToken)
+            .FindSymbolCandidatesAsync(request.WorkspaceId, reference.ProjectId, reference.SymbolId, cancellationToken)
             .ConfigureAwait(false);
 
         var verdict = SymbolRefFreshness.Evaluate(reference, currentHash, candidates);

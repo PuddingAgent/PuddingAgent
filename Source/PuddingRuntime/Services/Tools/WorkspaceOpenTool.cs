@@ -36,13 +36,22 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
 
     public WorkspaceOpenTool(
         IFileOutlinerRegistry? outlinerRegistry = null,
-        ICodeIndexScopeResolver? resolver = null)
+        ICodeIndexScopeResolver? resolver = null,
+        ICodeIndexStore? indexStore = null,
+        ICodeSourceMaintenanceStore? maintenanceStore = null)
     {
         // 三个服务都在内部构造：工具程序集扫描只要求工具本身可解析，不需要 DI 认识这些服务。
+        // ref 分支的两个事实来源（content_hash / 符号位置）同样带默认值：未注册时保持 null
+        // ⇒ ref 请求会得到「尚未接线」的显式拒绝，而不是静默回落到 path。
+        var refSource = indexStore is null
+            ? null
+            : new CodeIndexSymbolRefSource(indexStore, maintenanceStore);
+
         _openService = new WorkspaceOpenService(
             new CodeOutlineService(outlinerRegistry),
             resolver,
-            new CodeProjectMapService());
+            new CodeProjectMapService(),
+            refSource);
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(

@@ -135,11 +135,11 @@ public sealed class SymbolRefOpenServiceTests
         : ISymbolRefSource
     {
         public Task<string?> GetFileContentHashAsync(
-            string projectId, string filePath, CancellationToken cancellationToken) =>
+            string workspaceId, string projectId, string filePath, CancellationToken cancellationToken) =>
             Task.FromResult(hash);
 
         public Task<IReadOnlyList<SymbolRefRelocation>> FindSymbolCandidatesAsync(
-            string projectId, string symbolId, CancellationToken cancellationToken) =>
+            string workspaceId, string projectId, string symbolId, CancellationToken cancellationToken) =>
             Task.FromResult(candidates);
     }
 
