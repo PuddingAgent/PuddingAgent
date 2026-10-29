@@ -508,7 +508,14 @@
   每个目录最多 50 个文件、每个文件最多 3 个类型，两处都保留真实总数，但早期 `OpenMapAsync`
   **从不传 `truncated`** ⇒ 永远 `false`。只读这个标志的调用方会把「只列了 3 个」读成「只有 3 个」，
   属 ADR-089 §8.3 hollow negation。回归守卫：`Map_TypeListTruncation_SetsTruncatedWithReason`。
-- 尚未做：`summary`/`relations`/`status` 视图、`symbol_ref` 体系、工具外壳与 DI（S5）。
+- **工具外壳（S5）已接线**（e2d6efd）：`WorkspaceOpenTool` 内部 `new WorkspaceOpenService(...)`，
+  构造参数全带默认值 —— 多一个无默认值参数就多一个「没注册就启动期失败」的坑（见下节检索端口事故链）。
+- **`summary`/`relations`/`status` 未实现，但报错必须与「视图名写错」区分**（e5ded73）：
+  §8.3 已定义这三个视图。它们原先与拼错的名字一样报「不支持的 view」，调用方会以为自己写错、
+  反复换写法试错 —— 真实原因是能力缺口。现由 `Deferred(...)` 报「已定义 + 尚未实现 + 该用哪个工具」
+  （`code_summary` / `code_callers`·`code_callees` / `code_index_status`），真正未知的名字仍报「不支持的 view」。
+  回归守卫：`WorkspaceOpenToolCharacterizationTests.DefinedButUnimplementedView_IsRejectedWithActionableHint`。
+- 尚未做：`symbol_ref` 体系（上述三个视图都依赖它）。`excerpt`/`outline`/`map` 是 v1 的全部能力。
 
 ### 检索端口组合根单点化（2026-10-29，修复启动期崩溃）
 
