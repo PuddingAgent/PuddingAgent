@@ -95,10 +95,70 @@ public sealed class WorkspaceOpenService(
             return WorkspaceOpenResult.Failed(request.View, outcome.Error ?? "(map 失败但没有原因)");
         }
 
+        var payload = WorkspaceOpenMapping.FromProjectMap(outcome);
+        var (truncated, reason) = DescribeMapTruncation(payload.Root);
+
         return WorkspaceOpenResult.Ok(
             request.View,
             outcome.RootPath ?? fullPath,
-            WorkspaceOpenMapping.FromProjectMap(outcome));
+            payload,
+            truncated,
+            reason);
+    }
+
+    /// <summary>
+    /// 扫描整棵目录树，判断是否发生过「静默截断」。
+    /// <para>
+    /// map 视图有两处独立上限：每个目录最多 <c>MaxFilesPerDir</c> 个文件、每个文件最多
+    /// <c>MaxTopLevelTypes</c> 个类型。两处都保留了真实总数（<c>TotalFileCount</c> /
+    /// <c>TotalTypeCount</c>），但<b>顶层 truncated 若不跟着置真</b>，只读这个标志的调用方
+    /// 仍会得出「这就是全部」的结论 —— 那正是 ADR-089 §8.3 禁止的 hollow negation。
+    /// </para>
+    /// </summary>
+    private static (bool Truncated, string? Reason) DescribeMapTruncation(MapEntry root)
+    {
+        var truncatedDirs = 0;
+        var truncatedFiles = 0;
+        Visit(root);
+
+        if (truncatedDirs == 0 && truncatedFiles == 0)
+        {
+            return (false, null);
+        }
+
+        var parts = new List<string>();
+        if (truncatedDirs > 0)
+        {
+            parts.Add($"{truncatedDirs} 个目录的文件清单被截断");
+        }
+
+        if (truncatedFiles > 0)
+        {
+            parts.Add($"{truncatedFiles} 个文件的类型清单被截断");
+        }
+
+        return (true, string.Join("；", parts) + "。真实总数见各节点 total_file_count / total_type_count。");
+
+        void Visit(MapEntry node)
+        {
+            if (node.Files.Count < node.TotalFileCount)
+            {
+                truncatedDirs++;
+            }
+
+            foreach (var file in node.Files)
+            {
+                if (file.Types.Count < file.TotalTypeCount)
+                {
+                    truncatedFiles++;
+                }
+            }
+
+            foreach (var child in node.Children)
+            {
+                Visit(child);
+            }
+        }
     }
 
     private async Task<WorkspaceOpenResult> OpenOutlineAsync(

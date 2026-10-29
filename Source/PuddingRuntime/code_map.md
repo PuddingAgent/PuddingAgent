@@ -504,6 +504,10 @@
   比 `code_outline` 严 —— open 属于检索面。
 - 已补 `map` 视图（bbf3aec）：`MapPayload`/`MapEntry`/`MapFileEntry` 委派 `ICodeProjectMapService`，
   `WorkspaceOpenResult` 定义未变（当初留的判别容器生效）。
+- **`map` 顶层 `truncated` 必须由 `DescribeMapTruncation` 扫描整棵树得出**（2026-10-30）：
+  每个目录最多 50 个文件、每个文件最多 3 个类型，两处都保留真实总数，但早期 `OpenMapAsync`
+  **从不传 `truncated`** ⇒ 永远 `false`。只读这个标志的调用方会把「只列了 3 个」读成「只有 3 个」，
+  属 ADR-089 §8.3 hollow negation。回归守卫：`Map_TypeListTruncation_SetsTruncatedWithReason`。
 - 尚未做：`summary`/`relations`/`status` 视图、`symbol_ref` 体系、工具外壳与 DI（S5）。
 
 ### 检索端口组合根单点化（2026-10-29，修复启动期崩溃）

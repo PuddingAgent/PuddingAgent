@@ -164,6 +164,35 @@ public sealed class WorkspaceOpenServiceTests
         Assert.IsTrue(result.Success, result.Error);
         var payload = (MapPayload)result.Payload!;
         Assert.IsTrue(payload.TotalFileCount >= 1, "目录里有一个 .cs，总文件数不能是 0。");
+        Assert.IsFalse(result.Truncated, "单个类型、单个文件远未触上限，不得误报截断。");
+    }
+
+    [TestMethod]
+    public async Task Map_TypeListTruncation_SetsTruncatedWithReason()
+    {
+        // 回归守卫：一个文件有 5 个类型，MaxTopLevelTypes=3 ⇒ types 只列 3 个。
+        // 顶层 truncated 必须跟着置真，否则只读这个标志的调用方会把「只列了 3 个」读成「只有 3 个」
+        // —— 这正是 ADR-089 §8.3 禁止的 hollow negation。早期版本 OpenMapAsync 从不传 truncated。
+        var dir = Path.Combine(_root, "many");
+        Directory.CreateDirectory(dir);
+        await File.WriteAllTextAsync(
+            Path.Combine(dir, "Five.cs"),
+            "public class A { }\npublic class B { }\npublic class C { }\npublic class D { }\npublic class E { }");
+
+        var service = new WorkspaceOpenService(null, new FixedScopeResolver(_root), new CodeProjectMapService());
+
+        var result = await service.OpenAsync(
+            new WorkspaceOpenRequest("ws-1", null, "many", WorkspaceOpenView.Map, Depth: 1),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsTrue(result.Truncated, "类型清单被截断时顶层 truncated 必须为真。");
+        StringAssert.Contains(result.TruncatedReason, "类型", "截断理由必须指明是哪类截断。");
+
+        var payload = (MapPayload)result.Payload!;
+        var entry = payload.Root.Files.Single(f => f.Name == "Five.cs");
+        Assert.AreEqual(3, entry.Types.Count, "每文件最多列 3 个类型。");
+        Assert.AreEqual(5, entry.TotalTypeCount, "真实总数不能跟着截断。");
     }
 
     [TestMethod]
