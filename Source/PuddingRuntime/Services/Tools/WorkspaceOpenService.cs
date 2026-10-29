@@ -7,7 +7,8 @@ using PuddingCodeIntelligence.Contracts;
 namespace PuddingRuntime.Services.Tools;
 
 /// <summary>
-/// <see cref="IWorkspaceOpenService"/> 的 v1 实现：只做 <c>excerpt</c>（文件切片）与 <c>outline</c>（结构预览）。
+/// <see cref="IWorkspaceOpenService"/> 的 v1 实现：<c>excerpt</c>（文件切片）/ <c>outline</c>（结构预览）/
+/// <c>map</c>（目录地图）/ <c>relations</c>（关系：callers / callees / references / implementation / impact）。
 /// <para>
 /// <b>边界校验在本层</b>：契约只表达意图（<c>Path</c>），策略在这里 —— 路径必须落在
 /// 该 workspace 的 scope 根子树内。这比 <c>code_outline</c> 严，因为 open 属于检索面。
@@ -17,7 +18,9 @@ public sealed class WorkspaceOpenService(
     ICodeOutlineService? outlineService,
     ICodeIndexScopeResolver? resolver,
     ICodeProjectMapService? mapService = null,
-    ISymbolRefSource? refSource = null) : IWorkspaceOpenService
+    ISymbolRefSource? refSource = null,
+    ICodeIndexStore? indexStore = null,
+    ICodeQueryService? codeQueryService = null) : IWorkspaceOpenService
 {
     /// <summary>excerpt 未给行数时默认取多少行。</summary>
     public const int DefaultExcerptLines = 80;
@@ -109,11 +112,11 @@ public sealed class WorkspaceOpenService(
                 "请改用 project_id+path，或先用 workspace_search 拿到当前行号再按 path 打开。");
         }
 
-        if (request.View != WorkspaceOpenView.Excerpt)
+        if (request.View is not (WorkspaceOpenView.Excerpt or WorkspaceOpenView.Relations))
         {
             return WorkspaceOpenResult.Failed(
                 request.View,
-                $"ref 打开 v1 只支持 view=excerpt（当前 {request.View}）；请先按 ref 拿到行号再选视图。");
+                $"ref 打开 v1 只支持 view=excerpt / relations（当前 {request.View}）；请先按 ref 拿到行号再选视图。");
         }
 
         var reference = parsed!;
@@ -139,6 +142,11 @@ public sealed class WorkspaceOpenService(
                 "stale_ref：" + verdict.Reason + (hint.Length == 0 ? string.Empty : " " + hint));
         }
 
+        if (request.View == WorkspaceOpenView.Relations)
+        {
+            return await OpenRelationsAsync(request, reference, cancellationToken).ConfigureAwait(false);
+        }
+
         var fullPath = Path.GetFullPath(Path.Combine(root, reference.FilePath));
         if (!IsWithin(root, fullPath))
         {
@@ -160,6 +168,126 @@ public sealed class WorkspaceOpenService(
         };
 
         return await OpenExcerptAsync(ranged, fullPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// relations 视图：按 <c>relation</c> 取该符号的关系。
+    /// <para>
+    /// 三种来源各有归属：<c>callers</c> / <c>references</c> / <c>implementation</c> 是<b>入边</b>
+    /// （别人指向本符号），<c>callees</c> 是<b>出边</b>（本符号指向别人），<c>impact</c> 由查询服务做多跳 BFS。
+    /// 入/出边的区别决定「条目上的文件行号属于谁」：入边属于对方，出边那一行属于<b>当前符号自己</b>，
+    /// 所以出边一律不给文件行号 —— 宁可少给，也不能让调用方把当前行当成下一跳的位置。
+    /// </para>
+    /// </summary>
+    private async Task<WorkspaceOpenResult> OpenRelationsAsync(
+        WorkspaceOpenRequest request,
+        SymbolRefV1 reference,
+        CancellationToken cancellationToken)
+    {
+        const string allowed = "references / callers / callees / implementation / impact";
+        var relation = (request.Relation ?? string.Empty).Trim().ToLowerInvariant();
+        var entries = new List<RelationEntry>();
+
+        switch (relation)
+        {
+            case "callers":
+            case "references":
+            case "implementation":
+            {
+                if (indexStore is null)
+                {
+                    return WorkspaceOpenResult.Failed(
+                        request.View, "ICodeIndexStore is not registered: 关系查询不可用。");
+                }
+
+                var kind = relation switch
+                {
+                    "callers" => CodeRelationKind.Calls,
+                    "references" => CodeRelationKind.References,
+                    _ => CodeRelationKind.Implements,
+                };
+
+                var incoming = await indexStore
+                    .ListIncomingRelationsAsync(
+                        request.WorkspaceId,
+                        reference.ProjectId,
+                        reference.SymbolId,
+                        kind,
+                        cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+
+                entries.AddRange(incoming.Select(r => new RelationEntry(
+                    r.SourceSymbolId,
+                    kind.ToString().ToLowerInvariant(),
+                    r.SourceFilePath,
+                    r.SourceLine)));
+                break;
+            }
+
+            case "callees":
+            {
+                if (indexStore is null)
+                {
+                    return WorkspaceOpenResult.Failed(
+                        request.View, "ICodeIndexStore is not registered: 关系查询不可用。");
+                }
+
+                var outgoing = await indexStore
+                    .ListRelationsAsync(
+                        request.WorkspaceId,
+                        reference.ProjectId,
+                        reference.SymbolId,
+                        CodeRelationKind.Calls,
+                        cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+
+                // 出边：记录里的文件行号属于**当前符号**，不是下游符号 ⇒ 只给 id。
+                entries.AddRange(outgoing.Select(r => new RelationEntry(
+                    r.TargetSymbolId,
+                    CodeRelationKind.Calls.ToString().ToLowerInvariant())));
+                break;
+            }
+
+            case "impact":
+            {
+                if (codeQueryService is null)
+                {
+                    return WorkspaceOpenResult.Failed(
+                        request.View, "ICodeQueryService is not registered: impact 不可用。");
+                }
+
+                var symbols = await codeQueryService
+                    .GetImpactAsync(
+                        request.WorkspaceId,
+                        reference.ProjectId,
+                        reference.SymbolId,
+                        request.Depth ?? 2,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                entries.AddRange(symbols.Select(s => new RelationEntry(
+                    s.SymbolId,
+                    s.Kind.ToString().ToLowerInvariant(),
+                    s.FilePath,
+                    s.StartLine)));
+                break;
+            }
+
+            default:
+                return WorkspaceOpenResult.Failed(
+                    request.View,
+                    $"不支持的 relation: {request.Relation}（支持 {allowed}）。");
+        }
+
+        // ADR-089 §8.3：0 条不得静默等于「没有」—— 也可能是索引尚未建成。
+        var note = entries.Count == 0
+            ? $"按 symbol_id 精确查询 {relation} 得到 0 条：可能是该符号确实没有此类关系，" +
+              "也可能是索引尚未建成或未收录该符号。"
+            : null;
+
+        var payload = new RelationsPayload(entries, entries.Count, relation, note);
+        payload.Validate();
+        return WorkspaceOpenResult.Ok(request.View, reference.FilePath, payload);
     }
 
     private async Task<WorkspaceOpenResult> OpenMapAsync(

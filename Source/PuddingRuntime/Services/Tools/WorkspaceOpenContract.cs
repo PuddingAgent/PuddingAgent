@@ -3,7 +3,7 @@ using PuddingCodeIntelligence.Contracts;
 
 namespace PuddingRuntime.Services.Tools;
 
-/// <summary>workspace_open 支持的视图（v1 只有两个）。</summary>
+/// <summary>workspace_open 支持的视图（v1：excerpt / outline / map / relations）。</summary>
 public enum WorkspaceOpenView
 {
     /// <summary>文件切片：给路径 + 行范围，拿回那几行。</summary>
@@ -14,6 +14,9 @@ public enum WorkspaceOpenView
 
     /// <summary>目录地图：给目录路径，拿回目录树与每个文件的核心类型。</summary>
     Map = 2,
+
+    /// <summary>关系：给 ref + relation，拿回该符号的调用方 / 被调用方 / 引用 / 实现 / 传递影响。</summary>
+    Relations = 3,
 }
 
 /// <summary>
@@ -36,7 +39,13 @@ public sealed record WorkspaceOpenRequest(
     /// 符号引用 token（<c>pmsym1.…</c>）。与 <see cref="ProjectId"/>/<see cref="Path"/> 二选一，
     /// 两者同给属参数错误（见 <see cref="WorkspaceOpenRequestRules"/>），不做隐式择优。
     /// </summary>
-    string? Ref = null);
+    string? Ref = null,
+
+    /// <summary>
+    /// <c>view=relations</c> 专用：关系种类 —— <c>references</c> / <c>callers</c> / <c>callees</c> /
+    /// <c>implementation</c> / <c>impact</c>（规格 §8.3）。缺失或未知值一律显式报错，不猜默认种类。
+    /// </summary>
+    string? Relation = null);
 
 /// <summary>
 /// 请求形状校验（§8.3 的「二选一」与 ref 合法性）。
@@ -72,6 +81,26 @@ public static class WorkspaceOpenRequestRules
         if (hasRef && !SymbolRefV1.TryParse(request.Ref, out _, out var refError))
         {
             return "ref 不是合法的符号引用：" + refError;
+        }
+
+        var hasRelation = !string.IsNullOrWhiteSpace(request.Relation);
+
+        if (request.View == WorkspaceOpenView.Relations)
+        {
+            if (!hasRef)
+            {
+                return "view=relations 必须给 ref：关系是按符号身份查的，path 给不出\"哪个符号\"。";
+            }
+
+            if (!hasRelation)
+            {
+                return "view=relations 必须给 relation（references / callers / callees / implementation / impact）。";
+            }
+        }
+        else if (hasRelation)
+        {
+            // 显式拒绝而不是静默忽略 —— 给了 relation 却跑 excerpt，等于把参数当空气。
+            return $"relation 只用于 view=relations（当前 view={request.View.ToString().ToLowerInvariant()}）。";
         }
 
         return null;
@@ -110,6 +139,46 @@ public sealed record OutlinePayload(
     IReadOnlyList<OutlineEntry> Nodes,
     int TotalCount,
     bool Truncated) : WorkspaceOpenPayload;
+
+/// <summary>
+/// 关系条目 —— <b>只写来源真的给了什么</b>。
+/// <para>
+/// 关系记录的 <c>SourceLine</c> 指向<b>关系发生处（源侧）</b>，因此对 <c>callees</c>（取下游符号）
+/// 而言它属于<b>当前符号自己</b>、不是下游符号的位置。拿不到的位置一律留 <c>null</c>，
+/// 不用当前行号顶替 —— 那会让调用方以为下一跳就长在那里。
+/// </para>
+/// </summary>
+public sealed record RelationEntry(
+    string SymbolId,
+    string Kind,
+    string? FilePath = null,
+    int? Line = null);
+
+/// <summary>
+/// 关系负载。
+/// <para>
+/// <b>空结果必须带说明</b>：按 <c>symbol_id</c> 精确查不到关系，既可能是「确实没有」，
+/// 也可能是「索引还没建完」。ADR-089 §8.3 禁止把后者说成前者，故 <paramref name="Note"/> 在
+/// 0 条时必填（由构造校验强制）。
+/// </para>
+/// </summary>
+public sealed record RelationsPayload(
+    IReadOnlyList<RelationEntry> Entries,
+    int TotalCount,
+    string Relation,
+    string? Note = null) : WorkspaceOpenPayload
+{
+    /// <summary>0 条关系却没有任何说明 ⇒ 参数错误（空洞否定）。</summary>
+    public void Validate()
+    {
+        if (Entries.Count == 0 && string.IsNullOrWhiteSpace(Note))
+        {
+            throw new ArgumentException(
+                "0 条关系必须给出说明：可能是确实没有，也可能是索引未建完，不能默认说成\"没有\"。",
+                nameof(Note));
+        }
+    }
+}
 
 /// <summary>
 /// 目录地图里的一个文件。

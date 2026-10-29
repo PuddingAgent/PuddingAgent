@@ -39,7 +39,8 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
         ICodeIndexScopeResolver? resolver = null,
         ICodeIndexStore? indexStore = null,
         ICodeSourceMaintenanceStore? maintenanceStore = null,
-        ISymbolRefSource? refSource = null)
+        ISymbolRefSource? refSource = null,
+        ICodeQueryService? codeQueryService = null)
     {
         // 三个服务都在内部构造：工具程序集扫描只要求工具本身可解析，不需要 DI 认识这些服务。
         // ref 分支的两个事实来源（content_hash / 符号位置）同样带默认值：未注册时保持 null
@@ -55,7 +56,9 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
             new CodeOutlineService(outlinerRegistry),
             resolver,
             new CodeProjectMapService(),
-            effectiveRefSource);
+            effectiveRefSource,
+            indexStore,
+            codeQueryService);
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -77,7 +80,8 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
             LineCount: args.LineCount,
             Depth: args.Depth,
             MaxBytes: args.MaxBytes,
-            Ref: args.Ref);
+            Ref: args.Ref,
+            Relation: args.Relation);
 
         // §8.3 的「二选一」在契约层校验：同给不择一执行（静默择优会让调用方以为另一种写法生效）。
         var shapeError = WorkspaceOpenRequestRules.Validate(request);
@@ -120,6 +124,9 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
             case "map":
                 view = WorkspaceOpenView.Map;
                 return true;
+            case "relations":
+                view = WorkspaceOpenView.Relations;
+                return true;
 
             // 下面三个在规范 §8.3 里**已经定义**，只是 v1 没实现。
             // 必须与「拼错的名字」分开报：说「不支持的 view」会让调用方以为自己写错了，
@@ -127,15 +134,13 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
             // 不能把「还没做」含混成「没有这个东西」。
             case "summary":
                 return Deferred(raw, "按符号名取摘要请用 code_summary", out error);
-            case "relations":
-                return Deferred(raw, "取调用关系请用 code_callers / code_callees", out error);
             case "status":
                 return Deferred(raw, "查索引状态请用 code_index_status", out error);
 
             default:
                 // ADR-089 §8.3：不认识的视图必须报错。把它当 excerpt 返回会给出
                 // 「声称是 A、内容却是 B」的结果 —— 那比失败更难发现。
-                error = $"不支持的 view: {raw}（v1 支持 excerpt / outline / map）";
+                error = $"不支持的 view: {raw}（v1 支持 excerpt / outline / map / relations）";
                 return false;
         }
     }
@@ -190,6 +195,23 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
                 };
                 break;
 
+            case RelationsPayload relations:
+                head["relations"] = new
+                {
+                    relation = relations.Relation,
+                    total_count = relations.TotalCount,
+                    // 0 条时必有说明（构造校验强制）；有结果时为 null，不刷屏。
+                    note = relations.Note,
+                    entries = relations.Entries.Select(e => new
+                    {
+                        symbol_id = e.SymbolId,
+                        kind = e.Kind,
+                        file = e.FilePath,
+                        line = e.Line,
+                    }).ToList(),
+                };
+                break;
+
             default:
                 head["payload_kind"] = result.Payload?.GetType().Name ?? "(null)";
                 break;
@@ -239,8 +261,11 @@ public sealed record WorkspaceOpenArgs
     [ToolParam("Symbol reference token returned by workspace_search (pmsym1.…). Mutually exclusive with path.")]
     public string? Ref { get; init; }
 
-    [ToolParam("View: excerpt (line slice, default) | outline (top-level type tree) | map (directory tree).")]
+    [ToolParam("View: excerpt (line slice, default) | outline (top-level type tree) | map (directory tree) | relations (callers/callees/references/implementation/impact for a ref).")]
     public string? View { get; init; }
+
+    [ToolParam("relations only: references | callers | callees | implementation | impact. Required when view=relations.")]
+    public string? Relation { get; init; }
 
     [ToolParam("excerpt only: 1-based first line to return (default 1).")]
     public int? StartLine { get; init; }

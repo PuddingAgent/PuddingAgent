@@ -74,7 +74,7 @@ public sealed class WorkspaceOpenToolCharacterizationTests
         var cases = new (string View, string Alternative)[]
         {
             ("summary", "code_summary"),
-            ("relations", "code_callers"),
+            // 2026-10-30：relations 已实现（WorkspaceOpenRelationsTests 守护），不再属于本用例。
             ("status", "code_index_status"),
         };
 
