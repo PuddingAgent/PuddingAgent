@@ -199,3 +199,36 @@ Tools/CodeCallersImpactFreshnessTests.cs       ICodeQueryService 实现
 
 理由：§8.3 要求 `summary`/`outline`/`map` 的头部必须携带能力与覆盖。能力声明这件事
 **在「只有一个视图能跑」时最容易说真话**，等全都实现了反而容易含糊。
+---
+
+## 8. 外部验收结论（Codex gpt-5.6-sol，2026-10-29 08:10）
+
+按「大节点整体验收交 Codex、日常改动派子代理」的分层规则做了一次独立验收。
+Codex 的四条判断我逐条回磁盘核对，**全部成立**：
+
+| 判断 | 核对方式 | 结果 |
+|---|---|---|
+| `CodeSummaryTool` 仍独占 lookup / 文件读取 / AST / 调用图 / 展示 | grep 工具文件：`SearchSymbolsAsync`(56) / `File.ReadAllTextAsync`(89) / `CSharpSyntaxTree`(90) / `GetCallersAsync`(104) / `BuildSummaryText`(114) | 成立 |
+| `CodeOutlineOutcome` 暴露两个节点模型 | 第 34/35 行：`CSharpNodes` + `OutlinerNodes` | 成立 |
+| 没有 excerpt 服务 | 在 `Services/Tools/*.cs` 搜 `Excerpt` → 0 命中 | 成立 |
+| resolver 回退到进程 CWD 且不做工作区边界校验 | 第 45/48/49 行只有 `GetFullPath` | 成立 |
+
+**Codex 的核心结论**：分层方向对，但（a）可复用能力（outline 解析 / 文档注释解析）放在
+`PuddingRuntime/Services/Tools` 是耦合到工具宿主，长期应下沉；
+（b）**当前形状不足以支撑 `workspace_open`**，提前冻结合同会迫使适配器或破坏性改动；
+（c）118 行文档注释提取零覆盖属**高功能缺口**，应阻止「宣告抽取完成」。
+
+### 8.1 已采取的动作（唯一能立刻做的）
+
+补了 `ExistingFileWithXmlDocComment_EmitsDocumentationField`：造真实 `.cs` 文件（带 `///`），
+断言输出 JSON 的 `documentation` 非 null 且含预期文本。5/5 通过；把工具里的
+`documentation = docComment` 改成 `null` ⇒ 1 失败，证明断言是活的。
+
+### 8.2 这条测试**没有**证明的事（必须写明）
+
+把 reader 里的 `"///"` 前缀改成 `"//X"` 后测试**仍然全绿** —— 因为快路径返回 null 时
+会回退到 Roslyn AST，两条路只要有一条能找到注释就过。
+⇒ 该测试锁的是「**快路径 + 回退的合并行为**」，**不是**快路径本身。
+快路径单独回归（例如它对 attribute / block comment 的判断变错但 AST 能兜住）仍不可见。
+要真正覆盖，需要让测试能直接调用 `CodeSummaryDocCommentReader`（当前 `internal`，
+需 `InternalsVisibleTo`），这属于下一步。

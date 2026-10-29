@@ -18,6 +18,28 @@ namespace PuddingRuntimeTests.Tools;
 [TestClass]
 public sealed class CodeSummaryToolCharacterizationTests
 {
+    private string _root = null!;
+
+    [TestInitialize]
+    public void Setup()
+    {
+        _root = Path.Combine(Path.GetTempPath(), "summary-char-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_root);
+    }
+
+    [TestCleanup]
+    public void Cleanup()
+    {
+        try
+        {
+            Directory.Delete(_root, recursive: true);
+        }
+        catch
+        {
+            // 清理失败不影响断言结论。
+        }
+    }
+
     [TestMethod]
     public async Task MissingQueryService_ReportsNotRegistered()
     {
@@ -78,6 +100,36 @@ public sealed class CodeSummaryToolCharacterizationTests
         Assert.AreEqual(0, doc.RootElement.GetProperty("callees").GetArrayLength());
     }
 
+    [TestMethod]
+    public async Task ExistingFileWithXmlDocComment_EmitsDocumentationField()
+    {
+        // 这条补的正是 Codex 指出的缺口：前面四条用的符号文件并不存在，
+        // docComment 永远走 null 分支，所以那 118 行文档注释提取等于零覆盖。
+        // 这里造一个真实文件，让 ExtractDocCommentFast / AST 回退真的有东西可读。
+        var sourcePath = Path.Combine(_root, "OrderService.cs");
+        await File.WriteAllTextAsync(sourcePath, """
+            namespace Demo;
+
+            /// <summary>Handles customer orders.</summary>
+            /// <remarks>Legacy path.</remarks>
+            public class OrderService
+            {
+            }
+            """);
+
+        var symbol = new CodeSymbolRecord(
+            "ws-1", "proj-1", sourcePath, "sym-1", "OrderService",
+            CodeSymbolKind.Class, 5, 8);
+        var tool = NewTool(new FakeQueryService([new CodeSymbolDetail(symbol)]));
+
+        var result = await Run(tool, "OrderService");
+
+        Assert.IsTrue(result.Success, result.Error);
+        using var doc = JsonDocument.Parse(SplitJson(result.Output!));
+        var documentation = doc.RootElement.GetProperty("documentation").GetString();
+        Assert.IsNotNull(documentation, "真实文件带 /// 注释时，documentation 不能是 null。");
+        StringAssert.Contains(documentation, "Handles customer orders");
+    }
     private static CodeSummaryTool NewTool(ICodeQueryService query) =>
         new(query, new FixedScopeResolver());
 
