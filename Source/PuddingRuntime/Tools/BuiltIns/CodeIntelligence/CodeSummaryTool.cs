@@ -21,20 +21,18 @@ namespace PuddingRuntime.Services.Tools;
     SortOrder = 216)]
 public sealed class CodeSummaryTool : PuddingToolBase<CodeSummaryArgs>
 {
-    private const int MaxCallers = 5;
-    private const int MaxCallees = 5;
-    private static readonly JsonSerializerOptions JsonOptions = 
+    private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    private readonly ICodeQueryService? _queryService;
-    private readonly ICodeIndexScopeResolver? _resolver;
+    private readonly ICodeSummaryService _summaryService;
 
     public CodeSummaryTool(
         ICodeQueryService? queryService = null,
         ICodeIndexScopeResolver? resolver = null)
     {
-        _queryService = queryService;
-        _resolver = resolver;
+        // 服务在内部构造而不是构造注入：AddPuddingToolsFromAssembly 会解析**每个**工具，
+        // 多一个构造参数就多一个「没注册就启动失败」的坑。DI 接线留到 S5。
+        _summaryService = new CodeSummaryService(queryService, resolver);
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -42,89 +40,26 @@ public sealed class CodeSummaryTool : PuddingToolBase<CodeSummaryArgs>
         ToolExecutionContext context,
         CancellationToken ct)
     {
-        if (_queryService is null)
-            return Fail("ICodeQueryService is not registered.");
+        var outcome = await _summaryService.SummarizeAsync(args.SymbolName, args.ProjectId, context.WorkspaceId, ct);
+        if (!outcome.Success)
+            return Fail(outcome.Error!);
 
-        if (string.IsNullOrWhiteSpace(args.SymbolName))
-            return Fail("symbol_name is required.");
-
-        var symbolName = args.SymbolName.Trim();
-
-        var projectId = await CodeQueryToolHelper.ResolveAndEnsureProjectIdAsync(
-            _resolver, context.WorkspaceId, args.ProjectId, null, null, ct);
-
-        var searchResults = await _queryService.SearchSymbolsAsync(
-            new CodeSymbolSearchRequest(
-                WorkspaceId: context.WorkspaceId,
-                Query: symbolName,
-                ProjectId: projectId,
-                Kind: null,
-                Limit: 10,
-                Skip: 0),
-            ct);
-
-        if (searchResults.Count == 0)
-            return Fail($"(未找到符号: {symbolName})");
-
-        var match = searchResults[0];
-        var sym = match.Symbol;
-
-        string? docComment = null;
-        try
-        {
-            if (File.Exists(sym.FilePath))
-            {
-                // Fast path: line-scan for doc comment without full AST parse
-                docComment = CodeSummaryDocCommentReader.ExtractDocCommentFast(sym.FilePath, sym.StartLine);
-                if (docComment == null)
-                {
-                    // Fallback: full AST parse — skip for large files (>25KB ≈ 500 lines)
-                    var fileInfo = new FileInfo(sym.FilePath);
-                    if (fileInfo.Length > 25_000)
-                    {
-                        docComment = "(file too large for AST parse — use file_read to inspect)";
-                    }
-                    else
-                    {
-                        var source = await File.ReadAllTextAsync(sym.FilePath, ct);
-                        var tree = CSharpSyntaxTree.ParseText(source);
-                        var root = await tree.GetRootAsync(ct);
-                        docComment = CodeSummaryDocCommentReader.ExtractDocComment(root, sym);
-                    }
-                }
-            }
-        }
-        catch { }
-
-        List<CodeRelationRecord> callers = [];
-        List<CodeRelationRecord> callees = [];
-        try
-        {
-            var effectiveProjectId = sym.ProjectId ?? projectId;
-            var callersTask = _queryService.GetCallersAsync(
-                context.WorkspaceId, effectiveProjectId, sym.SymbolId, ct);
-            var calleesTask = _queryService.GetCalleesAsync(
-                context.WorkspaceId, effectiveProjectId, sym.SymbolId, ct);
-            var results = await Task.WhenAll(callersTask, calleesTask);
-            callers = results[0].Take(MaxCallers).ToList();
-            callees = results[1].Take(MaxCallees).ToList();
-        }
-        catch { }
-
-        var text = BuildSummaryText(sym, match.DisplayName, docComment, callers, callees);
+        // 排版留在工具层：摘要正文与 JSON 投影回答的是「怎么显示」，不是「是什么」。
+        var sym = outcome.Symbol!;
+        var text = BuildSummaryText(sym, outcome.DisplayName, outcome.DocComment, outcome.Callers.ToList(), outcome.Callees.ToList());
         var json = JsonSerializer.Serialize(new
         {
             symbol_id = sym.SymbolId,
-            name = match.DisplayName ?? sym.Name,
+            name = outcome.DisplayName ?? sym.Name,
             kind = sym.Kind.ToString(),
             file_path = sym.FilePath,
             start_line = sym.StartLine,
             end_line = sym.EndLine,
             signature = sym.Signature ?? sym.Name,
-            documentation = docComment,
+            documentation = outcome.DocComment,
             container = sym.Container,
-            callers = callers.Select(c => new { symbol_id = c.SourceSymbolId, file = c.SourceFilePath, line = c.SourceLine }),
-            callees = callees.Select(c => new { symbol_id = c.TargetSymbolId, file = c.SourceFilePath, line = c.SourceLine }),
+            callers = outcome.Callers.Select(c => new { symbol_id = c.SourceSymbolId, file = c.SourceFilePath, line = c.SourceLine }),
+            callees = outcome.Callees.Select(c => new { symbol_id = c.TargetSymbolId, file = c.SourceFilePath, line = c.SourceLine }),
         }, JsonOptions);
 
         return Ok($"{text}\n\n---\n{json}");

@@ -458,6 +458,16 @@
 - **这段搬动起初没有测试覆盖（2026-10-29 08:15 已补，见 `CodeSummaryToolCharacterizationTests.ExistingFileWithXmlDocComment_EmitsDocumentationField`）**：4 条 `code_summary` 特征测试里符号文件并不存在，
   `docComment` 走 null 分支。所以本次安全性靠「代码原样搬运 + 调用点唯一 + 4 条测试保持绿」，
   而不是靠新断言 —— 将来抽 `ICodeSummaryService` 时应补一条"文件存在且带 `///` 注释"的用例。
+### 代码智能：summary 已抽成服务（2026-10-29）
+
+- `Services/Tools/CodeSummaryService.cs` — `ICodeSummaryService` / `CodeSummaryService`：
+  校验参数 → 解析项目（`CodeQueryToolHelper.ResolveAndEnsureProjectIdAsync`）→ 搜符号（上限 10 取首条）
+  → 取文档注释（快路径 + AST 回退，>25KB 不解析）→ 取 callers/callees（各上限 5）。
+  **返回结构化 `CodeSummaryOutcome`，不返回 JSON**。
+- `Tools/BuiltIns/CodeIntelligence/CodeSummaryTool.cs` — 只剩：调服务 + `BuildSummaryText` + JSON 投影 + `Ok`/`Fail`。
+  工具从 7,330 降到 5,081 字节。
+- 关系图查询失败仍是**有意降级**（catch 后留空数组），不设标志位 —— 调用方从空数组即可判断。
+- 服务在工具构造里 `new`，不走构造注入（同 outline，理由见上一条）。
 ## 工具平台与展示投影
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
