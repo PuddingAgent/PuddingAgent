@@ -33,6 +33,44 @@ public sealed class CodeIndexSymbolRefSourceTests
         Assert.AreEqual("hash-42", hash);
     }
 
+    /// <summary>
+    /// manifest 落库是**绝对路径**（实测 CodeSourceManifest.FilePath），ref 存的是项目内相对路径。
+    /// 只比相对形态会让每一个 ref 都判 Stale —— 不报错、只返回 null，看起来完全正常。
+    /// </summary>
+    [TestMethod]
+    public async Task Hash_AbsoluteManifestKey_MatchesRelativeRefPath()
+    {
+        var project = new CodeProjectRecord("ws-1", "proj-1", @"D:\Repo\Proj", CodeProjectStatus.Active);
+        var source = new CodeIndexSymbolRefSource(
+            new StubIndexStore(null, project),
+            new StubMaintenanceStore(new Dictionary<string, CodeSourceEntry>
+            {
+                [@"D:\Repo\Proj\Services\Tools\Tool.cs"] =
+                    new(@"D:\Repo\Proj\Services\Tools\Tool.cs", Fingerprint("hash-abs"), Array.Empty<AppliedFileVersion>()),
+            }));
+
+        var hash = await source.GetFileContentHashAsync("ws-1", "proj-1", "services/tools/tool.cs", CancellationToken.None);
+
+        Assert.AreEqual("hash-abs", hash);
+    }
+
+    /// <summary>项目记录缺失 ⇒ 不猜绝对路径，只按原样比对；不命中就 null（判 Stale）。</summary>
+    [TestMethod]
+    public async Task Hash_ProjectUnknown_DoesNotGuessAbsolutePath()
+    {
+        var source = new CodeIndexSymbolRefSource(
+            new StubIndexStore(null),
+            new StubMaintenanceStore(new Dictionary<string, CodeSourceEntry>
+            {
+                [@"D:\Repo\Proj\services\tools\tool.cs"] =
+                    new(@"D:\Repo\Proj\services\tools\tool.cs", Fingerprint("hash-abs"), Array.Empty<AppliedFileVersion>()),
+            }));
+
+        var hash = await source.GetFileContentHashAsync("ws-1", "proj-1", "services/tools/tool.cs", CancellationToken.None);
+
+        Assert.IsNull(hash);
+    }
+
     /// <summary>不在 manifest 中 ⇒ null（不得编造版本）。</summary>
     [TestMethod]
     public async Task Hash_UnknownFile_ReturnsNull()
@@ -88,7 +126,7 @@ public sealed class CodeIndexSymbolRefSourceTests
     }
 
     /// <summary>只实现被用到的那一个成员，其余一律抛 —— 一旦适配器偷偷多调一个方法，测试立刻红。</summary>
-    private sealed class StubIndexStore(CodeSymbolRecord? symbol) : ICodeIndexStore
+    private sealed class StubIndexStore(CodeSymbolRecord? symbol, CodeProjectRecord? project = null) : ICodeIndexStore
     {
         public Task<CodeSymbolRecord?> GetSymbolAsync(
             string workspaceId, string projectId, string symbolId, CancellationToken cancellationToken = default) =>
@@ -97,7 +135,7 @@ public sealed class CodeIndexSymbolRefSourceTests
         public Task UpsertProjectAsync(CodeProjectRecord project, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task RemoveProjectAsync(string workspaceId, string projectId, bool removeIndexedArtifacts = true, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<CodeProjectRecord>> ListProjectsAsync(string workspaceId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<CodeProjectRecord?> GetProjectAsync(string workspaceId, string projectId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<CodeProjectRecord?> GetProjectAsync(string workspaceId, string projectId, CancellationToken cancellationToken = default) => Task.FromResult(project);
         public Task UpdateProjectStatusAsync(string workspaceId, string projectId, CodeProjectStatus status, string? statusMessage = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task UpsertFilesAsync(string workspaceId, string projectId, IReadOnlyCollection<CodeFileRecord> files, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<CodeFileRecord>> ListFilesAsync(string workspaceId, string projectId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
