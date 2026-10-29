@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PuddingCodeIndex.Contracts;
 using PuddingCodeIndex.Contracts.Retrieval;
@@ -72,6 +73,29 @@ public sealed class WorkspaceSearchToolCompositionTests
         var tool = provider.GetRequiredService<WorkspaceSearchTool>();
 
         Assert.IsNotNull(tool);
+    }
+
+    /// <summary>
+    /// `workspace_open` 的构造参数全部带默认值 ⇒ **即使容器里什么都没注册也能解析**。
+    /// 这条防的是 2026-10-29 那类启动期崩溃（exit -532462766）：工具被扫描登记后
+    /// DI 会构造每一个 <c>IPuddingTool</c>，多一个无默认值的依赖就多一个地雷。
+    /// </summary>
+    [TestMethod]
+    public void WorkspaceOpenTool_ResolvesWithEmptyContainer()
+    {
+        var services = new ServiceCollection();
+        // 与 AddPuddingToolsFromAssembly 的登记形态一致：IPuddingTool → 工具类型（实现类型单例）。
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton(typeof(PuddingCode.Tools.IPuddingTool), typeof(WorkspaceOpenTool)));
+
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true });
+
+        var tools = provider.GetServices<PuddingCode.Tools.IPuddingTool>().ToList();
+
+        Assert.IsTrue(
+            tools.Any(t => t is WorkspaceOpenTool),
+            "空容器下 workspace_open 必须能解析（构造参数全带默认值）；否则宿主启动期会抛 AggregateException。");
     }
 
     [TestMethod]
