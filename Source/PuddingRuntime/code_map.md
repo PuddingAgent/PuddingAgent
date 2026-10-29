@@ -468,6 +468,16 @@
   工具从 7,330 降到 5,081 字节。
 - 关系图查询失败仍是**有意降级**（catch 后留空数组），不设标志位 —— 调用方从空数组即可判断。
 - 服务在工具构造里 `new`，不走构造注入（同 outline，理由见上一条）。
+### 代码智能：project_map 已抽成服务（2026-10-29）
+
+- `Services/Tools/CodeProjectMapService.cs` — `ICodeProjectMapService` / `CodeProjectMapService`：
+  解析根路径 → 夹取 depth（1–3）→ 按深度遍历目录（每目录上限 50 文件）→ 对每个 .cs 取顶层类型（上限 3）。
+  目录树模型 `ProjectMapNode` / `ProjectMapFileEntry` 也从工具里搬出来成为公开类型。
+- `Tools/BuiltIns/CodeIntelligence/ProjectMapTool.cs` — 只剩：调服务 + `AppendTreeText` + `ToJsonNode` + `Ok`/`Fail`。
+  工具 309 → 152 行。
+- 两个上限常量**单一定义点**在服务里（`public const`），工具通过 `CodeProjectMapService.MaxFilesPerDir/MaxTopLevelTypes` 引用，
+  避免"服务按 50 截断、工具按另一个数显示"的漂移。
+- 服务在工具里 `new`，不走构造注入（同 outline/summary，理由见上）。
 ## 工具平台与展示投影
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
