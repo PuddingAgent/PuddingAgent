@@ -55,11 +55,6 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
             return Fail(viewError!);
         }
 
-        if (string.IsNullOrWhiteSpace(args.Path))
-        {
-            return Fail("path is required（v1 只支持按路径打开）");
-        }
-
         var request = new WorkspaceOpenRequest(
             context.WorkspaceId,
             ProjectId: null,
@@ -68,7 +63,25 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
             StartLine: args.StartLine,
             LineCount: args.LineCount,
             Depth: args.Depth,
-            MaxBytes: args.MaxBytes);
+            MaxBytes: args.MaxBytes,
+            Ref: args.Ref);
+
+        // §8.3 的「二选一」在契约层校验：同给不择一执行（静默择优会让调用方以为另一种写法生效）。
+        var shapeError = WorkspaceOpenRequestRules.Validate(request);
+        if (shapeError is not null)
+        {
+            return Fail(shapeError);
+        }
+
+        if (!string.IsNullOrWhiteSpace(args.Ref))
+        {
+            // ref 分支需要先做 FRESH/STALE 判定（SymbolRefFreshness 已就绪，但取 content_hash 与
+            // 候选位置需要索引侧接线）。这里必须**显式拒绝**而不是静默回落到 path：
+            // 回落会让调用方以为自己拿到的是那个符号，实际拿到的是另一个文件的内容。
+            return Fail(
+                "ref 打开尚未接线：需要先用索引版本做 FRESH/STALE 判定（§8.3 不得沿旧行号打开当前代码）。" +
+                "请改用 project_id+path，或先用 workspace_search 拿到当前行号再按 path 打开。");
+        }
 
         var result = await _openService.OpenAsync(request, ct).ConfigureAwait(false);
         if (!result.Success)
@@ -214,8 +227,11 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
 /// <summary><c>workspace_open</c> 的入参。</summary>
 public sealed record WorkspaceOpenArgs
 {
-    [ToolParam("Workspace-relative or absolute path of the file/directory to open. Must stay inside the workspace.")]
-    public required string Path { get; init; }
+    [ToolParam("Workspace-relative or absolute path of the file/directory to open. Must stay inside the workspace. Mutually exclusive with ref.")]
+    public string? Path { get; init; }
+
+    [ToolParam("Symbol reference token returned by workspace_search (pmsym1.…). Mutually exclusive with path.")]
+    public string? Ref { get; init; }
 
     [ToolParam("View: excerpt (line slice, default) | outline (top-level type tree) | map (directory tree).")]
     public string? View { get; init; }

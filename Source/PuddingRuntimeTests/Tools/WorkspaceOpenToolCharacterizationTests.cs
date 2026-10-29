@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PuddingCodeIndex.Contracts.Retrieval;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PuddingCode.Tools;
 using PuddingCodeIndex.Contracts;
@@ -107,11 +108,13 @@ public sealed class WorkspaceOpenToolCharacterizationTests
     [TestMethod]
     public async Task EmptyPath_IsRejectedByTool()
     {
-        // 显式传空串能绕过 required（它只约束“字段存在”），由工具自己的判空栏下。
+        // 显式传空串不应被当成“打开工作区根”，也不应被参数绑定拦下 ⇒ 由请求形状校验报缺参数。
+        // 2026-10-30：path 不再是 required（ref 与 path 二选一），故错误文案从
+        // “path is required（v1 只支持按路径打开）”改为“必须给 ref 或 path 之一”。
         var result = await RunAsync(NewTool, ("path", ""), ("view", "excerpt"));
 
         Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.Error, "path is required");
+        StringAssert.Contains(result.Error, "ref 或 path");
     }
 
     [TestMethod]
@@ -155,6 +158,58 @@ public sealed class WorkspaceOpenToolCharacterizationTests
             File.Delete(outside);
         }
     }
+
+    /// <summary>
+    /// ref 与 path 同给必须报错，**不得静默择一**：择一执行会让调用方以为另一种写法生效
+    /// （本仓已发生过同类：`line_count` 误写 `lines` 被绑定层静默丢弃、回落默认值 80）。
+    /// </summary>
+    [TestMethod]
+    public async Task RefAndPathTogether_IsRejectedNotSilentlyChosen()
+    {
+        var result = await RunAsync(NewTool, ("path", "lines.txt"), ("ref", ValidRefToken()), ("view", "excerpt"));
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "二选一");
+    }
+
+    /// <summary>
+    /// ref 单独给出时 v1 尚未接线 ⇒ 必须**显式拒绝**并指明替代路径，
+    /// 不能静默回落到 path（那会拿到另一个文件的内容却看起来正常）。
+    /// </summary>
+    [TestMethod]
+    public async Task RefOnly_IsRejectedExplicitly_NotSilentlyIgnored()
+    {
+        var result = await RunAsync(NewTool, ("ref", ValidRefToken()), ("view", "excerpt"));
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "尚未接线");
+        StringAssert.Contains(result.Error, "workspace_search");
+    }
+
+    /// <summary>既没 ref 也没 path ⇒ 报缺参数，而不是拿空路径去拼一个根目录。</summary>
+    [TestMethod]
+    public async Task NeitherRefNorPath_IsRejected()
+    {
+        var result = await RunAsync(NewTool, ("view", "excerpt"));
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "ref 或 path");
+    }
+
+    /// <summary>非法 ref（前缀/编码不对）必须逐个报原因，不能当成 path 用。</summary>
+    [TestMethod]
+    public async Task MalformedRef_IsRejectedWithReason()
+    {
+        var result = await RunAsync(NewTool, ("ref", "Source/A.cs:12"), ("view", "excerpt"));
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "不是合法的符号引用");
+        StringAssert.Contains(result.Error, SymbolRefV1.TokenPrefix);
+    }
+
+    private static string ValidRefToken() => SymbolRefV1
+        .Create("proj-1", "Source/A.cs", "M:Ns.Type.Run", 10, 20, "abc123", "roslyn-v1")
+        .ToToken();
 
     private WorkspaceOpenTool NewTool(string root) =>
         new(outlinerRegistry: null, resolver: new FixedScopeResolver(root));

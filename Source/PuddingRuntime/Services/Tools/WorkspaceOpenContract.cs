@@ -1,3 +1,4 @@
+using PuddingCodeIndex.Contracts.Retrieval;
 using PuddingCodeIntelligence.Contracts;
 
 namespace PuddingRuntime.Services.Tools;
@@ -18,7 +19,7 @@ public enum WorkspaceOpenView
 /// <summary>
 /// <c>workspace_open</c> 的请求。
 /// <para>
-/// <b>v1 只做「文件切片」式 excerpt</b>：不做 <c>symbol_ref</c> 上下文 —— 那需要身份/版本/授权体系。
+/// 规格 §8.3：请求 <c>ref</c> 或 <c>{project_id,path}</c> <b>二选一</b>。
 /// </para>
 /// </summary>
 public sealed record WorkspaceOpenRequest(
@@ -29,7 +30,53 @@ public sealed record WorkspaceOpenRequest(
     int? StartLine = null,
     int? LineCount = null,
     int? Depth = null,
-    int MaxBytes = 64 * 1024);
+    int MaxBytes = 64 * 1024,
+
+    /// <summary>
+    /// 符号引用 token（<c>pmsym1.…</c>）。与 <see cref="ProjectId"/>/<see cref="Path"/> 二选一，
+    /// 两者同给属参数错误（见 <see cref="WorkspaceOpenRequestRules"/>），不做隐式择优。
+    /// </summary>
+    string? Ref = null);
+
+/// <summary>
+/// 请求形状校验（§8.3 的「二选一」与 ref 合法性）。
+/// <para>
+/// <b>为何不择一执行</b>：同时给 ref 和 path 时静默选一个，会让调用方以为另一种写法生效 ——
+/// 例如他改的是 ref，而实际按旧 path 打开了另一个文件，结果看起来完全正常。
+/// 同类故障已经在本仓真实发生过：<c>line_count</c> 误写成 <c>lines</c> 被参数绑定静默丢弃，
+/// 回落默认值 80，调用方拿着错的答案以为是真答案。
+/// </para>
+/// </summary>
+public static class WorkspaceOpenRequestRules
+{
+    /// <summary>返回 <c>null</c> 表示形状合法；否则返回可读原因（工具层直接回显）。</summary>
+    public static string? Validate(WorkspaceOpenRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var hasRef = !string.IsNullOrWhiteSpace(request.Ref);
+        var hasPath = !string.IsNullOrWhiteSpace(request.Path);
+        var hasProject = !string.IsNullOrWhiteSpace(request.ProjectId);
+
+        if (hasRef && (hasPath || hasProject))
+        {
+            return "ref 与 {project_id,path} 二选一，不能同时给：" +
+                   "静默择优会让调用方以为另一种写法生效。";
+        }
+
+        if (!hasRef && !hasPath)
+        {
+            return "必须给 ref 或 path 之一。";
+        }
+
+        if (hasRef && !SymbolRefV1.TryParse(request.Ref, out _, out var refError))
+        {
+            return "ref 不是合法的符号引用：" + refError;
+        }
+
+        return null;
+    }
+}
 
 /// <summary>
 /// 结构预览的节点 —— <b>open 契约自己的词汇</b>。
