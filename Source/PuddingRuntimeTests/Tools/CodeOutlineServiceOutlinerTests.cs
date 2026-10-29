@@ -67,11 +67,12 @@ public sealed class CodeOutlineServiceOutlinerTests
         var result = new OutlineResult(false, path, [], "parser exploded");
         var service = new CodeOutlineService(new FakeRegistry(new FakeOutliner(result)));
 
-        var outcome = await service.OutlineAsync(path, "doc.md", CancellationToken.None);
+        var outcome = await service.OutlineAsync(path, "MY-DISPLAY-NAME.md", CancellationToken.None);
 
         Assert.IsFalse(outcome.Success);
         StringAssert.Contains(outcome.Error, "parser exploded");
-        StringAssert.Contains(outcome.Error, "doc.md", "错误信息要回显用户给的路径，不是绝对路径。");
+        StringAssert.Contains(outcome.Error, "MY-DISPLAY-NAME.md", "错误信息要回显用户给的路径，不是绝对路径。");
+        Assert.DoesNotContain(_root, outcome.Error, "错误信息不得泄露绝对路径。");
     }
 
     [TestMethod]
