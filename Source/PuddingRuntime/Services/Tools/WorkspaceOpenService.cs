@@ -56,7 +56,7 @@ public sealed class WorkspaceOpenService(
 
         if (!string.IsNullOrWhiteSpace(request.Ref))
         {
-            return await OpenByRefAsync(request, root, cancellationToken).ConfigureAwait(false);
+            return await OpenByRefAsync(request, cancellationToken).ConfigureAwait(false);
         }
 
         var fullPath = Path.GetFullPath(
@@ -96,7 +96,6 @@ public sealed class WorkspaceOpenService(
     /// </summary>
     private async Task<WorkspaceOpenResult> OpenByRefAsync(
         WorkspaceOpenRequest request,
-        string root,
         CancellationToken cancellationToken)
     {
         if (!SymbolRefV1.TryParse(request.Ref, out var parsed, out var refError))
@@ -147,12 +146,16 @@ public sealed class WorkspaceOpenService(
             return await OpenRelationsAsync(request, reference, cancellationToken).ConfigureAwait(false);
         }
 
-        var fullPath = Path.GetFullPath(Path.Combine(root, reference.FilePath));
-        if (!IsWithin(root, fullPath))
+        var fullPath = await ResolveRefFilePathAsync(request, reference, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (fullPath is null)
         {
             return WorkspaceOpenResult.Failed(
                 request.View,
-                $"ref 的路径不在工作区内: {reference.FilePath}");
+                $"ref 的路径是项目内相对路径（{reference.FilePath}），但项目 {reference.ProjectId} " +
+                "没有可用的根目录记录，无法确定要打开哪个文件。" +
+                "（不回落到工作区根：那会把另一个同名文件当成 ref 指向的文件）");
         }
 
         if (!File.Exists(fullPath))
@@ -168,6 +171,35 @@ public sealed class WorkspaceOpenService(
         };
 
         return await OpenExcerptAsync(ranged, fullPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 把 ref 的项目内相对路径解析成绝对路径。
+    /// <para>
+    /// 基准必须是**项目根**而不是工作区根：ref 的路径相对的是项目（<see cref="SymbolRefV1"/> 契约）。
+    /// 用工作区根去拼会得到一个仍在工作区内、但指向不存在文件的路径 —— 边界检查照样通过，
+    /// 只在 <c>File.Exists</c> 处失败并报「文件不存在」，看起来像文件被删了（实测踩过）。
+    /// </para>
+    /// <para>
+    /// <c>..</c> 与绝对路径已由 <see cref="SymbolRefV1.Parse"/> 拒绝，所以这里不再做逃逸检查
+    /// —— 边界在契约层，同一件事实现两份只会让两份慢慢不一致。
+    /// </para>
+    /// <para>
+    /// 项目根未知时返回 <c>null</c>（由调用方显式失败），**不回落工作区根**。
+    /// </para>
+    /// </summary>
+    private async Task<string?> ResolveRefFilePathAsync(
+        WorkspaceOpenRequest request,
+        SymbolRefV1 reference,
+        CancellationToken cancellationToken)
+    {
+        var projectRoot = await refSource!
+            .GetProjectRootAsync(request.WorkspaceId, reference.ProjectId, cancellationToken)
+            .ConfigureAwait(false);
+
+        return string.IsNullOrWhiteSpace(projectRoot)
+            ? null
+            : Path.GetFullPath(Path.Combine(projectRoot, reference.FilePath));
     }
 
     /// <summary>

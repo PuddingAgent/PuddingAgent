@@ -283,6 +283,11 @@ public sealed class WorkspaceOpenRelationsTests
         public Task<IReadOnlyList<SymbolRefRelocation>> FindSymbolCandidatesAsync(
             string workspaceId, string projectId, string symbolId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<SymbolRefRelocation>>([]);
+
+        /// <summary>relations 视图不读文件，所以项目根无关；给 null 正好能暴露“多调了一步”。</summary>
+        public Task<string?> GetProjectRootAsync(
+            string workspaceId, string projectId, CancellationToken cancellationToken) =>
+            Task.FromResult<string?>(null);
     }
 
     /// <summary>只实现关系查询；其余成员一律抛 —— 服务偷偷多调一个方法，测试立刻红。</summary>

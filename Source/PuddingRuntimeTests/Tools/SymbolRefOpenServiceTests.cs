@@ -39,7 +39,7 @@ public sealed class SymbolRefOpenServiceTests
     public async Task Fresh_OpensRefRecordedRange()
     {
         var reference = SymbolRefV1.Create("proj-1", "a.cs", "M:Ns.Type.Run", 2, 3, "hash-1", "roslyn-v1");
-        var service = NewService(new FakeSymbolRefSource("hash-1", Array.Empty<SymbolRefRelocation>()));
+        var service = NewService(new FakeSymbolRefSource("hash-1", Array.Empty<SymbolRefRelocation>(), projectRoot: _root));
 
         var result = await service.OpenAsync(Request(reference.ToToken(), WorkspaceOpenView.Excerpt), CancellationToken.None);
 
@@ -48,6 +48,59 @@ public sealed class SymbolRefOpenServiceTests
         CollectionAssert.AreEqual(new[] { "line2", "line3" }, payload.Lines.ToArray());
         Assert.AreEqual(2, payload.StartLine);
         Assert.AreEqual(5, payload.TotalLineCount);
+    }
+
+    /// <summary>
+    /// <b>本轮修的真实缺陷的守卫</b>（2026-10-30）：ref 存的是**项目内相对路径**，
+    /// 而旧实现拿工作区根去拼 —— 拼出来的位置仍在工作区内，边界检查照样通过，
+    /// 只在 <c>File.Exists</c> 处失败并报「文件不存在」，看起来像文件被删了。
+    /// <para>
+    /// 这里让 <c>a.cs</c> 在工作区根**真实存在**：只要实现回落到工作区根，本用例就会“成功”打开它。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task Fresh_ProjectRootUnknown_IsRejectedInsteadOfUsingWorkspaceRoot()
+    {
+        var reference = SymbolRefV1.Create("proj-1", "a.cs", "M:Ns.Type.Run", 2, 3, "hash-1", "roslyn-v1");
+        var service = NewService(
+            new FakeSymbolRefSource("hash-1", Array.Empty<SymbolRefRelocation>(), projectRoot: null));
+
+        var result = await service.OpenAsync(
+            Request(reference.ToToken(), WorkspaceOpenView.Excerpt), CancellationToken.None);
+
+        Assert.IsFalse(
+            result.Success,
+            "项目根未知时不得回落工作区根，否则会把另一个同名文件当成 ref 指向的文件。");
+        StringAssert.Contains(result.Error, "没有可用的根目录记录");
+        Assert.IsNull(result.Payload);
+    }
+
+    /// <summary>
+    /// 基准必须是**项目根**：工作区根下放一个同名干扰文件，若实现拼错基准就会读到它。
+    /// </summary>
+    [TestMethod]
+    public async Task Fresh_ResolvesAgainstProjectRoot_NotWorkspaceRoot()
+    {
+        var project = Path.Combine(_root, "proj");
+        Directory.CreateDirectory(Path.Combine(project, "src"));
+        File.WriteAllLines(Path.Combine(project, "src", "b.cs"), new[] { "P1", "P2", "P3" });
+
+        Directory.CreateDirectory(Path.Combine(_root, "src"));
+        File.WriteAllLines(Path.Combine(_root, "src", "b.cs"), new[] { "WRONG-1", "WRONG-2", "WRONG-3" });
+
+        var reference = SymbolRefV1.Create("proj-1", "src/b.cs", "M:Ns.Type.Run", 2, 2, "hash-1", "roslyn-v1");
+        var service = NewService(
+            new FakeSymbolRefSource("hash-1", Array.Empty<SymbolRefRelocation>(), projectRoot: project));
+
+        var result = await service.OpenAsync(
+            Request(reference.ToToken(), WorkspaceOpenView.Excerpt), CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Error);
+        var payload = (ExcerptPayload)result.Payload!;
+        CollectionAssert.AreEqual(
+            new[] { "P2" },
+            payload.Lines.ToArray(),
+            "ref 的路径必须相对项目根解析，不能读到工作区根下的同名文件。");
     }
 
     /// <summary>hash 不同 ⇒ stale_ref，且零候选时措辞是「无法定位」而不是「符号不存在」。</summary>
@@ -131,8 +184,10 @@ public sealed class SymbolRefOpenServiceTests
     private static WorkspaceOpenRequest Request(string token, WorkspaceOpenView view) =>
         new("ws-1", ProjectId: null, Path: null, view, Ref: token);
 
-    private sealed class FakeSymbolRefSource(string? hash, IReadOnlyList<SymbolRefRelocation> candidates)
-        : ISymbolRefSource
+    private sealed class FakeSymbolRefSource(
+        string? hash,
+        IReadOnlyList<SymbolRefRelocation> candidates,
+        string? projectRoot = null) : ISymbolRefSource
     {
         public Task<string?> GetFileContentHashAsync(
             string workspaceId, string projectId, string filePath, CancellationToken cancellationToken) =>
@@ -141,6 +196,10 @@ public sealed class SymbolRefOpenServiceTests
         public Task<IReadOnlyList<SymbolRefRelocation>> FindSymbolCandidatesAsync(
             string workspaceId, string projectId, string symbolId, CancellationToken cancellationToken) =>
             Task.FromResult(candidates);
+
+        public Task<string?> GetProjectRootAsync(
+            string workspaceId, string projectId, CancellationToken cancellationToken) =>
+            Task.FromResult(projectRoot);
     }
 
     private sealed class FixedScopeResolver(string root) : ICodeIndexScopeResolver

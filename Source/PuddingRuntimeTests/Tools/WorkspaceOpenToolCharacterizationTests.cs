@@ -241,7 +241,9 @@ public sealed class WorkspaceOpenToolCharacterizationTests
 
         // ref 记的是 10..20；Fresh 判定通过后必须**只**返回这一段。
         var result = await RunAsync(
-            root => NewToolWithRef(root, new FixedRefSource("abc123", ("Source/A.cs", 10, 20))),
+            root => NewToolWithRef(
+                root,
+                new FixedRefSource("abc123", ("Source/A.cs", 10, 20)) { ProjectRoot = root }),
             ("ref", ValidRefToken()),
             ("view", "excerpt"));
 
@@ -267,7 +269,9 @@ public sealed class WorkspaceOpenToolCharacterizationTests
         WriteRows("Source/A.cs", 60);
 
         var result = await RunAsync(
-            root => NewToolWithRef(root, new FixedRefSource("changed-hash", ("Source/A.cs", 40, 42))),
+            root => NewToolWithRef(
+                root,
+                new FixedRefSource("changed-hash", ("Source/A.cs", 40, 42)) { ProjectRoot = root }),
             ("ref", ValidRefToken()),
             ("view", "excerpt"));
 
@@ -289,11 +293,14 @@ public sealed class WorkspaceOpenToolCharacterizationTests
     private WorkspaceOpenTool NewToolWithRef(string root, ISymbolRefSource refSource) =>
         new(outlinerRegistry: null, resolver: new FixedScopeResolver(root), refSource: refSource);
 
-    /// <summary>只回答两个事实的测试替身：当前 hash 与候选位置。</summary>
+    /// <summary>只回答三个事实的测试替身：当前 hash、候选位置与项目根。</summary>
     private sealed class FixedRefSource(
         string? currentHash,
         params (string FilePath, int Start, int End)[] candidates) : ISymbolRefSource
     {
+        /// <summary>项目根：ref 的路径相对它解析；null = 项目无记录（必须显式失败）。</summary>
+        public string? ProjectRoot { get; init; }
+
         public Task<string?> GetFileContentHashAsync(
             string workspaceId, string projectId, string filePath, CancellationToken cancellationToken) =>
             Task.FromResult(currentHash);
@@ -302,6 +309,10 @@ public sealed class WorkspaceOpenToolCharacterizationTests
             string workspaceId, string projectId, string symbolId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<SymbolRefRelocation>>(
                 candidates.Select(c => new SymbolRefRelocation(c.FilePath, c.Start, c.End)).ToList());
+
+        public Task<string?> GetProjectRootAsync(
+            string workspaceId, string projectId, CancellationToken cancellationToken) =>
+            Task.FromResult(ProjectRoot);
     }
 
     private static string ValidRefToken() => SymbolRefV1

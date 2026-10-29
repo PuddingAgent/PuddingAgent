@@ -30,4 +30,22 @@ public interface ISymbolRefSource
         string projectId,
         string symbolId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 取该项目的根目录（注册表里的 <c>ProjectPath</c>）；项目无记录时返回 <c>null</c>。
+    /// <para>
+    /// <b>为什么需要它</b>：<see cref="SymbolRefV1.FilePath"/> 存的是**项目内相对路径**，
+    /// 而工具拿到的是**工作区根**。用工作区根去拼，会得到一个仍在工作区内、
+    /// 但指向不存在文件的路径 —— 边界检查照样通过，只在 <c>File.Exists</c> 处失败并报
+    /// 「文件不存在」，让人以为是文件被删了。实测就踩过这一条。
+    /// </para>
+    /// <para>
+    /// 实现方同样**不得猜**：查不到就返回 <c>null</c>，由调用方显式失败；
+    /// 不要回落到工作区根 —— 那等于把另一个同名文件当成 ref 指向的文件。
+    /// </para>
+    /// </summary>
+    Task<string?> GetProjectRootAsync(
+        string workspaceId,
+        string projectId,
+        CancellationToken cancellationToken);
 }

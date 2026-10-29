@@ -86,6 +86,24 @@ public sealed class CodeIndexSymbolRefSource(
             : new[] { new SymbolRefRelocation(symbol.FilePath, symbol.StartLine, symbol.EndLine) };
     }
 
+    /// <inheritdoc />
+    public async Task<string?> GetProjectRootAsync(
+        string workspaceId,
+        string projectId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(projectId))
+        {
+            return null;
+        }
+
+        var project = await symbolStore
+            .GetProjectAsync(workspaceId, projectId, cancellationToken)
+            .ConfigureAwait(false);
+
+        return string.IsNullOrWhiteSpace(project?.ProjectPath) ? null : project.ProjectPath;
+    }
+
     /// <summary>
     /// 构造 manifest 比对用的键集合：ref 给的相对路径本身，以及拼上项目根后的绝对路径。
     /// <para>
