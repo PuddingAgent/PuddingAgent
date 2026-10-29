@@ -478,6 +478,17 @@
 - 两个上限常量**单一定义点**在服务里（`public const`），工具通过 `CodeProjectMapService.MaxFilesPerDir/MaxTopLevelTypes` 引用，
   避免"服务按 50 截断、工具按另一个数显示"的漂移。
 - 服务在工具里 `new`，不走构造注入（同 outline/summary，理由见上）。
+### workspace_open v1 已实现（2026-10-29）
+
+- `Services/Tools/WorkspaceOpenContract.cs` — 冻结的类型：`WorkspaceOpenRequest/Result`、
+  判别容器 `WorkspaceOpenPayload`（`ExcerptPayload` / `OutlinePayload`）、`OutlineEntry`、
+  `WorkspaceOpenMapping`、`IWorkspaceOpenService`。结果构造即自校验（成功必有负载、失败必有原因、
+  截断必给理由）。
+- `Services/Tools/WorkspaceOpenService.cs` — v1 实现：`excerpt`（文件切片，`MaxBytes` 为**总字节**上限）
+  与 `outline`（委派 `ICodeOutlineService` 后映射）。
+  **路径边界校验在本层**：路径必须落在 workspace scope 根的子树内（`IsWithin`），
+  比 `code_outline` 严 —— open 属于检索面。
+- 尚未做：`summary`/`map` 视图、`symbol_ref` 体系、工具外壳与 DI（S5）。
 ## 工具平台与展示投影
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
