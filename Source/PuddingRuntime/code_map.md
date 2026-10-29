@@ -533,6 +533,27 @@
   **与生产组合根不同源**，所以全绿而宿主崩。现改为复用 `AddPuddingRetrievalPort()`，
   并新增 `ToolActivatesFromSharedCompositionExtension`（`ValidateOnBuild=true` 下解析工具本身）。
 - 残留缺口：宿主侧**是否调用**该扩展仍无测试看守（需宿主级组合冒烟），当前靠部署验收兜底。
+
+### workspace_open 支持 `ref`（2026-10-30）
+
+- `WorkspaceOpenArgs` 新增 `Ref`（与 `Path` 二选一，同时给报「二选一」）。`WorkspaceOpenService.OpenByRefAsync`
+  先 `SymbolRefV1.TryParse`，再交给 `SymbolRefFreshness.Evaluate` 三态判定：
+  **只有 Fresh 才按 ref 行号打开**；Stale 一律报 `stale_ref`，唯一候选只作提示、不代替打开；位置相关 id（含 `@span`）不提供候选。
+- `ISymbolRefSource` 由 `CodeIndexSymbolRefSource` 实现。`content_hash` 取自 **manifest 的源指纹，不是磁盘 hash**；
+  未命中返回 `null`（表示「不知道」）。若用磁盘 hash，「索引滞后于磁盘」的窗口里就会把陈旧 ref 判成 Fresh ——
+  正是 §8.3 禁止的「沿旧行号打开当前代码」。
+- 已知代价：manifest 是**整 scope 读**，单点查 hash 也是 O(文件数)。远期在存储侧加「按路径取指纹」定向查询，
+  **不在调用方缓存** —— 缓存等于把陈旧窗口搬个地方。
+- 已知数据保真度：候选提示的行范围取自索引 `StartLine/EndLine`，对类型符号实测为 `31-31`（单行），
+  候选路径是**绝对路径**而 ref 里是项目相对路径。两者只影响提示可读性，不影响 Fresh/Stale 判定。
+- **运行时实测（2026-10-30 03:00 前后，HEAD `43e8372` / request `a5a12772`，`phase=healthy`）**：
+  `ref=not-a-symbol-ref` ⇒ `ref 前缀不符（应以 pmsym1. 开头）`；
+  合法 token（项目 `c4020187…`、文件未入 manifest）⇒ `stale_ref：当前索引缺少该文件的版本信息…` + 候选，
+  **未回落 path**。两条合起来证明「短路已去除 + 判定真跑」。
+- 教训：S5 接入时工具层曾留 `return Fail("ref 打开尚未接线")` 的短路，而服务层 6 条 ref 用例全绿、
+  组合冒烟只验「空容器能构造出工具」 ⇒ **两层各自绿、中间那条短路没人碰**。
+  凡「外壳转发到服务」的分层，必须有一条用例**走外壳的执行路径**，否则测的是服务、不是线上。
+
 ## 工具平台与展示投影
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
