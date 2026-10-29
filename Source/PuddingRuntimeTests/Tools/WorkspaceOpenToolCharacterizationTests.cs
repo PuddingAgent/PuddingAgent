@@ -48,11 +48,46 @@ public sealed class WorkspaceOpenToolCharacterizationTests
     {
         File.WriteAllLines(Path.Combine(_root, "a.txt"), ["line1", "line2"]);
 
-        var result = await RunAsync(root => NewTool(root), ("path", "a.txt"), ("view", "summary"));
+        // "summary" 不在这里用：规范 §8.3 已定义它，见 DefinedButUnimplementedView_*。
+        // 本用例只用**拼错的名字**，它必须落到「不支持的 view」。
+        var result = await RunAsync(root => NewTool(root), ("path", "a.txt"), ("view", "summery"));
 
         Assert.IsFalse(result.Success, "未支持的视图必须失败，不能静默降级成 excerpt。");
         StringAssert.Contains(result.Error, "不支持的 view");
-        StringAssert.Contains(result.Error, "summary");
+        StringAssert.Contains(result.Error, "summery");
+    }
+
+    /// <summary>
+    /// 规范 §8.3 已定义、v1 未实现的视图，报错必须与「拼错的名字」区分开，并给出可执行的替代。
+    /// <para>
+    /// 若两者都报「不支持的 view」，调用方会以为自己写错了名字，于是反复换写法试错 ——
+    /// 真实原因是能力缺口。§8.3 要求能力声明如实。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task DefinedButUnimplementedView_IsRejectedWithActionableHint()
+    {
+        File.WriteAllLines(Path.Combine(_root, "a.txt"), ["line1"]);
+
+        var cases = new (string View, string Alternative)[]
+        {
+            ("summary", "code_summary"),
+            ("relations", "code_callers"),
+            ("status", "code_index_status"),
+        };
+
+        foreach (var (view, alternative) in cases)
+        {
+            var result = await RunAsync(root => NewTool(root), ("path", "a.txt"), ("view", view));
+
+            Assert.IsFalse(result.Success, $"view={view} 未实现，必须失败。");
+            StringAssert.Contains(result.Error, "已定义", $"view={view} 必须说明这是规范里已有的视图。");
+            StringAssert.Contains(result.Error, "尚未实现", $"view={view} 必须说清是能力缺口，不是名字写错。");
+            StringAssert.Contains(result.Error, alternative, $"view={view} 必须指向可用的替代工具。");
+            Assert.IsFalse(
+                result.Error.Contains("不支持的 view", StringComparison.Ordinal),
+                $"view={view} 不能报成「不支持的 view」—— 那会让调用方以为是拼写错误。");
+        }
     }
 
     [TestMethod]

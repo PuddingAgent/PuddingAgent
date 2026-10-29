@@ -101,12 +101,33 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
             case "map":
                 view = WorkspaceOpenView.Map;
                 return true;
+
+            // 下面三个在规范 §8.3 里**已经定义**，只是 v1 没实现。
+            // 必须与「拼错的名字」分开报：说「不支持的 view」会让调用方以为自己写错了，
+            // 于是反复换写法试错；而真实原因是能力缺口。§8.3 要求能力声明如实，
+            // 不能把「还没做」含混成「没有这个东西」。
+            case "summary":
+                return Deferred(raw, "按符号名取摘要请用 code_summary", out error);
+            case "relations":
+                return Deferred(raw, "取调用关系请用 code_callers / code_callees", out error);
+            case "status":
+                return Deferred(raw, "查索引状态请用 code_index_status", out error);
+
             default:
                 // ADR-089 §8.3：不认识的视图必须报错。把它当 excerpt 返回会给出
                 // 「声称是 A、内容却是 B」的结果 —— 那比失败更难发现。
                 error = $"不支持的 view: {raw}（v1 支持 excerpt / outline / map）";
                 return false;
         }
+    }
+
+    /// <summary>
+    /// 规范已定义、v1 未实现的视图：给出「已定义但未实现 + 该用哪个工具」的可执行原因。
+    /// </summary>
+    private static bool Deferred(string raw, string alternative, out string? error)
+    {
+        error = $"view={raw.Trim().ToLowerInvariant()} 在规范 §8.3 已定义，但 v1 尚未实现（依赖 symbol_ref）。{alternative}。";
+        return false;
     }
 
     /// <summary>结构化结果 → JSON 投影。按视图放各自的键，调用方不必按类型分支。</summary>
