@@ -118,6 +118,39 @@ public sealed class SymbolRefIssuanceServiceTests
         Assert.IsNull(result.Note);
     }
 
+    /// <summary>
+    /// token 超 <see cref="SymbolRefV1.MaxTokenLength"/> 上限时**必须留下逐项原因**。
+    /// <para>
+    /// 实测动机（2026-10-30）：<c>SymbolRefIssuer.FromManifest</c> 这类泛型方法把 symbol_id 撑到
+    /// 186 字符，签出的 token 达 558 字节 ⇒ <c>ToToken</c> 抛 ArgumentException ⇒ 签发器 Skip。
+    /// 在此修复之前工具层把原因丢掉，调用方只看到 <c>symbol_ref=null</c>，无法区分
+    /// 「本来就没有 ref」与「这个符号签不出来」。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task IssueAsync_TokenTooLong_RecordsPerHitSkipReason()
+    {
+        var longSymbolId = "M:Ns.Type.Run(" + new string('X', 400) + ")";
+        var store = new StubStore(new Dictionary<string, CodeSourceEntry>(StringComparer.Ordinal)
+        {
+            [SourcePath] = Entry(SourcePath, "hash-1"),
+        });
+
+        var service = new SymbolRefIssuanceService(store);
+        var result = await service.IssueAsync(
+            WorkspaceId,
+            new[] { Hit(symbolId: longSymbolId) },
+            new[] { Project() },
+            CancellationToken.None);
+
+        Assert.AreEqual(0, result.IssuedCount);
+        Assert.IsNull(result.Note, "这是逐项失败，不是全局故障");
+        Assert.IsTrue(
+            result.Skips.ContainsKey((ProjectId, longSymbolId)),
+            "签不出来必须给逐项原因，不能只给 null");
+        StringAssert.Contains(result.Skips[(ProjectId, longSymbolId)], "512");
+    }
+
     private sealed class StubStore(IReadOnlyDictionary<string, CodeSourceEntry> manifest)
         : ICodeSourceMaintenanceStore
     {

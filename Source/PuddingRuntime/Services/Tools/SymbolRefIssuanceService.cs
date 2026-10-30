@@ -10,6 +10,18 @@ public sealed record SymbolRefIssuanceResult(
     IReadOnlyDictionary<(string ProjectId, string SymbolId), string> Tokens,
     string? Note)
 {
+    /// <summary>
+    /// 逐项未签发原因（键与 <see cref="Tokens"/> 同一套）。
+    /// <para>
+    /// <b>为什么必须有</b>：签不出来的原因各不相同（manifest 没有已提交指纹 / token 超过
+    /// <see cref="SymbolRefV1.MaxTokenLength"/> 上限 / 路径换算不出项目内相对路径）。
+    /// 只回 <c>null</c> 会让调用方在「该符号本来就没有 ref」与「这个符号签不出来」之间瞎猜 ——
+    /// 与「空结果必须带 emptyReason」是同一条纪律。
+    /// </para>
+    /// </summary>
+    public IReadOnlyDictionary<(string ProjectId, string SymbolId), string> Skips { get; init; }
+        = new Dictionary<(string, string), string>();
+
     /// <summary>空结果（不签发任何 ref）。</summary>
     public static SymbolRefIssuanceResult Empty { get; } =
         new(new Dictionary<(string, string), string>(), null);
@@ -68,12 +80,19 @@ public sealed class SymbolRefIssuanceService(ICodeSourceMaintenanceStore? mainte
         }
 
         var tokens = new Dictionary<(string ProjectId, string SymbolId), string>();
+        var skips = new Dictionary<(string ProjectId, string SymbolId), string>();
 
         foreach (var group in hits.GroupBy(hit => hit.Symbol.ProjectId, StringComparer.Ordinal))
         {
             var projectId = group.Key;
             if (string.IsNullOrWhiteSpace(projectId))
             {
+                foreach (var hit in group)
+                {
+                    skips[(string.Empty, hit.Symbol.SymbolId)] =
+                        "命中没有 project_id：无法绑定 scope，拒绝签发。";
+                }
+
                 continue;
             }
 
@@ -91,9 +110,18 @@ public sealed class SymbolRefIssuanceService(ICodeSourceMaintenanceStore? mainte
             catch (Exception ex)
             {
                 // 只报类型名：不把存储路径、SQL 或凭据带进工具输出。
+                foreach (var hit in group)
+                {
+                    skips[(projectId, hit.Symbol.SymbolId)] =
+                        $"manifest 读取失败（{ex.GetType().Name}）：无法证明该文件的源版本。";
+                }
+
                 return new SymbolRefIssuanceResult(
                     tokens,
-                    $"manifest 读取失败（{ex.GetType().Name}）：本轮不签发 ref，搜索结果本身仍然有效。");
+                    $"manifest 读取失败（{ex.GetType().Name}）：本轮不签发 ref，搜索结果本身仍然有效。")
+                {
+                    Skips = skips,
+                };
             }
 
             var projectRoot = projects
@@ -117,9 +145,14 @@ public sealed class SymbolRefIssuanceService(ICodeSourceMaintenanceStore? mainte
                 {
                     tokens[(projectId, hit.Symbol.SymbolId)] = issue.Token!;
                 }
+                else
+                {
+                    // 逐项原因必须带出去：静默的 null 让调用方在「本来就没有」与「签不出来」之间瞎猜。
+                    skips[(projectId, hit.Symbol.SymbolId)] = issue.SkipReason ?? "未签发（未给出原因）。";
+                }
             }
         }
 
-        return new SymbolRefIssuanceResult(tokens, null);
+        return new SymbolRefIssuanceResult(tokens, null) { Skips = skips };
     }
 }

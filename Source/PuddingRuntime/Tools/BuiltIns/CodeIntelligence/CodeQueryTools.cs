@@ -470,8 +470,12 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
         string? RefOf(CodeSymbolDetail r) =>
             refIssuance.Tokens.TryGetValue((r.Symbol.ProjectId, r.Symbol.SymbolId), out var token) ? token : null;
 
+        // 逐项未签发原因：与「该符号本来就没有 ref」分开，不能只给 null。
+        string? RefSkipOf(CodeSymbolDetail r) =>
+            refIssuance.Skips.TryGetValue((r.Symbol.ProjectId, r.Symbol.SymbolId), out var why) ? why : null;
+
         // 统一的投影：可信命中 stale_reason=null；include_stale=true 时陈旧命中带原因一并返回。
-        object Project(CodeSymbolDetail r, string? staleReason, string? symbolRef) => new
+        object Project(CodeSymbolDetail r, string? staleReason, string? symbolRef, string? symbolRefSkipReason) => new
         {
             symbol_id = r.Symbol.SymbolId,
             name = r.Symbol.Name,
@@ -484,13 +488,15 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
             display_name = r.DisplayName,
             project_id = r.Symbol.ProjectId,
             stale_reason = staleReason,
-            // 只增不改：新增字段，既有字段名与语义未动。未签发时为 null（原因见顶层 symbol_ref_note）。
+            // 只增不改：新增字段，既有字段名与语义未动。未签发时为 null，原因见本项
+            // symbol_ref_skip_reason（逐项）或顶层 symbol_ref_note（全局）。
             symbol_ref = symbolRef,
+            symbol_ref_skip_reason = symbolRefSkipReason,
         };
 
-        var list = visible.Select(r => Project(r, null, RefOf(r))).ToList();
+        var list = visible.Select(r => Project(r, null, RefOf(r), RefSkipOf(r))).ToList();
         if (includeStale)
-            list.AddRange(stale.Select(s => Project(s.Detail, s.Reason, null)));
+            list.AddRange(stale.Select(s => Project(s.Detail, s.Reason, null, null)));
 
         var staleExamples = stale
             .Take(5)
