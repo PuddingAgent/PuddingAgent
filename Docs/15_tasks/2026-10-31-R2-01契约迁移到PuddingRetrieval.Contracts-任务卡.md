@@ -211,3 +211,34 @@ powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\migrate-retrieva
 施工计划 R2-00 列的是四个组件（Retrieval.Contracts / Retrieval / Grep / Adapters）。本轮实际产出的是 **Grep + Domain.Contracts**，`Retrieval.Contracts` 被撤回。
 
 理由已如上：先解决「枚举该住哪」这个前置问题，否则 `Retrieval.Contracts` 建起来就会因为要引用枚举而变成另一个方向错误。`Retrieval.Contracts` 应在契约真正迁移时建立，届时它的职责是「检索请求 / 结果 / 覆盖声明」，不含跨层值类型。
+
+## 附录 D：步骤 2 首次尝试失败并回滚（2026-10-31 06:03）
+
+在 `b23905f` 之上实际执行了迁移脚本 `-Apply`，随后编译失败、**已整体回滚**（`git reset --hard b23905f`，工作树干净，构建 0 错误）。
+
+回滚是正确处置：半迁移状态不能留在树里。
+
+### 实际发生了什么
+
+1. `-Apply` 成功：移动 28 文件、改 28 处命名空间、改 39 处 `using`。
+2. 构建 `PuddingRetrieval.Contracts`：10 个 `CS0246 CodeSymbolKind` —— 预期内（`ContainerSymbolGuidance` / `RetrievalDistribution` 原本没有 `using PuddingCodeIndex.Contracts;`）。
+3. 补 using 时**我的修补脚本写坏了两个文件**：脚本用
+   ```powershell
+   $new = $lines[0..($idx - 1)]
+   ```
+   当 `namespace` 位于第 0 行时 `$idx-1 = -1`，PowerShell 的 `0..-1` 会取**整个数组**（反向区间），于是文件内容被复制了一遍 ⇒ `CS8954 源文件只能包含一个文件范围内的命名空间声明`。
+4. 改用 `git checkout --` 恢复这两个文件后重新拼接，构建剩余 18 个错误，全部形如
+   `命名空间 "PuddingCodeIndex.Contracts.Retrieval" 中不存在类型 ILanguageCapabilityMatrix`。
+5. 我写脚本统计「含 `PuddingCodeIndex.Contracts.Retrieval.`（带尾点）的文件」，结果 **0** ——
+   但这与编译错误矛盾，说明真实引用形态不是简单的前缀拼接（可能跨行、可能 `global::`）。
+
+### 结论（下次执行前必读）
+
+1. **迁移脚本不完整**：只处理了 `using X;`，没有处理完全限定引用与 `global::` 形式。执行前必须先摸清这两种形态的存在数量。
+2. **修 using 的脚本有 PowerShell 负数索引陷阱**：`$lines[0..($idx-1)]` 在 `$idx=0` 时取整个数组。任何「在首行前插入」的操作都必须特判 `$idx -eq 0`。
+3. **不该全仓一刀切**：下次先在**单个小工程**（如 `PuddingRetrievalEvalProbe`，仅 3 个引用文件）跑通完整闭环（移动 → 改 ns → 改引用 → 构建 → 测试），再推广到全仓。
+4. 本轮耗时约 35 分钟且结论为回滚 —— 成本来自「一次性改 28 文件 + 39 引用」这种不可分段的操作，而我在执行前没有先在最小工程验证脚本。
+
+### 保留的成果
+
+`b23905f`（枚举下沉到 `PuddingDomain.Contracts`，命名空间不变、零调用方改动）**未受影响**，它是在此之前的独立提交，且已用 3,509 条测试验证零回归。
