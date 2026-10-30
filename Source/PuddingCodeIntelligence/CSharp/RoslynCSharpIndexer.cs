@@ -784,14 +784,14 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, I
                     var targetSymbol = semanticModel.GetSymbolInfo(invocation).Symbol;
                     if (targetSymbol is not null)
                         AddCallOrReference(workspaceId, projectId, filePath, semanticModel, invocation,
-                            targetSymbol, relations, references);
+                            targetSymbol, relations, references, isCall: true);
                     break;
                 }
                 case ObjectCreationExpressionSyntax creation:
                 {
                     if (semanticModel.GetSymbolInfo(creation).Symbol is ISymbol target)
                         AddCallOrReference(workspaceId, projectId, filePath, semanticModel, creation,
-                            target, relations, references);
+                            target, relations, references, isCall: true);
                     break;
                 }
                 case MemberAccessExpressionSyntax member:
@@ -802,7 +802,7 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, I
                         && !IsStaticTypeAccess(member, targetSymbol, semanticModel))
                     {
                         AddCallOrReference(workspaceId, projectId, filePath, semanticModel, member,
-                            targetSymbol, relations, references);
+                            targetSymbol, relations, references, isCall: false);
                     }
                     break;
                 }
@@ -820,7 +820,7 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, I
                         && targetSymbol is not IParameterSymbol)
                     {
                         AddCallOrReference(workspaceId, projectId, filePath, semanticModel, identifier,
-                            targetSymbol, relations, references);
+                            targetSymbol, relations, references, isCall: false);
                     }
                     break;
                 }
@@ -836,7 +836,8 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, I
         SyntaxNode node,
         ISymbol targetSymbol,
         List<CodeRelationRecord> relations,
-        List<CodeReferenceRecord> references)
+        List<CodeReferenceRecord> references,
+        bool isCall)
     {
         var targetId = RoslynSymbolId.GetId(targetSymbol);
         var sourceLine = node.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
@@ -859,7 +860,10 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, I
                 sourceText,
                 DateTimeOffset.UtcNow));
 
-            if (targetSymbol is IMethodSymbol)
+            // 只有真正的调用位置才产生 calls 边。
+            // `Action a = Target;` 是方法组转换：符号被引用，但没有发生调用，
+            // 只能留在 references 里（R1-04 门禁）。
+            if (isCall && targetSymbol is IMethodSymbol)
             {
                 relations.Add(new CodeRelationRecord(
                     workspaceId,

@@ -176,6 +176,86 @@ public sealed class RoslynCSharpIndexerTests : IDisposable
         Assert.AreEqual(0, symbols.Count, "All symbols should be removed after project removal");
     }
 
+    /// <summary>
+    /// R1-04 门禁：`Action a = Target;` 是<b>方法组转换</b>——符号被引用，但没有发生调用，
+    /// 因此只能产生 references，不得产生 calls 边。
+    /// </summary>
+    [TestMethod]
+    public async Task MethodGroupConversion_IsReferencedBut_NotACall()
+    {
+        var compilation = CreateMethodGroupCompilation();
+
+        var indexer = new RoslynCSharpIndexer(_store, _logger);
+        var result = await indexer.IndexCompilationAsync(compilation, "ws-1", "proj-1", CancellationToken.None);
+        Assert.IsTrue(result.Success, result.Message);
+
+        var incoming = await IncomingRelationsAsync("GroupOnly");
+
+        Assert.IsFalse(incoming.Any(r => r.Kind == CodeRelationKind.Calls),
+            "方法组转换只是引用，不得报 calls（R1-04 门禁）。");
+    }
+
+    /// <summary>正对照：真实调用必须仍产出 calls 边，否则「永不产生 calls」也能让上面那条变绿。</summary>
+    [TestMethod]
+    public async Task DirectInvocation_IsStillReportedAsACall()
+    {
+        var compilation = CreateMethodGroupCompilation();
+
+        var indexer = new RoslynCSharpIndexer(_store, _logger);
+        var result = await indexer.IndexCompilationAsync(compilation, "ws-1", "proj-1", CancellationToken.None);
+        Assert.IsTrue(result.Success, result.Message);
+
+        var incoming = await IncomingRelationsAsync("Invoked");
+
+        Assert.IsTrue(incoming.Any(r => r.Kind == CodeRelationKind.Calls),
+            "真实调用必须产生 calls 边。");
+    }
+
+    private async Task<IReadOnlyList<CodeRelationRecord>> IncomingRelationsAsync(string methodName)
+    {
+        var symbols = await _store.SearchSymbolsAsync(
+            new CodeSymbolSearchRequest("ws-1", methodName), CancellationToken.None);
+        var target = symbols.First(s => s.Name == methodName && s.Kind == CodeSymbolKind.Method);
+        Assert.IsFalse(string.IsNullOrEmpty(target.SymbolId));
+
+        return await _store.ListIncomingRelationsAsync(
+            "ws-1", "proj-1", target.SymbolId!, cancellationToken: CancellationToken.None);
+    }
+
+    private static Compilation CreateMethodGroupCompilation()
+    {
+        var sourceCode = """
+namespace MyApp.Calls
+{
+    public class Caller
+    {
+        public static void GroupOnly() { }
+
+        public static void Invoked() { }
+
+        public static void Run()
+        {
+            System.Action a = GroupOnly;
+            a();
+            Invoked();
+        }
+    }
+}
+""";
+
+        var tree = CSharpSyntaxTree.ParseText(sourceCode, path: "Calls.cs");
+        var references = AppDomain.CurrentDomain.GetAssemblies()
+            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+            .Select(a => MetadataReference.CreateFromFile(a.Location))
+            .ToArray<MetadataReference>();
+
+        return CSharpCompilation.Create(
+            "CallAssembly",
+            [tree],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
     private static Compilation CreateTestCompilation()
     {
         var sourceCode = """
