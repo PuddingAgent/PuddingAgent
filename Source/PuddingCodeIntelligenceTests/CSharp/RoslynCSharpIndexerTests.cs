@@ -114,6 +114,40 @@ public sealed class RoslynCSharpIndexerTests : IDisposable
         Assert.IsTrue(files.Count >= 1, "Should persist at least one file record");
     }
 
+    /// <summary>
+    /// EndLine 必须覆盖**整个声明跨度**，而不是名称标识符所在那一行。
+    /// 回归背景：此前用 <c>ISymbol.Locations</c> 取行范围，它指向标识符 token（单行），
+    /// 于是 EndLine 恒等于 StartLine ⇒ ref 打开类只返回 1 行、分块边界塌陷。
+    /// 断言用**跨度**而非绝对行号：跨度对缩进/命名空间布局不敏感，仍然能抓住“塌陷回去”。
+    /// </summary>
+    [TestMethod]
+    public async Task IndexCompilationAsync_EndLineCoversDeclarationSpan_NotJustIdentifierLine()
+    {
+        var compilation = CreateTestCompilation();
+
+        var indexer = new RoslynCSharpIndexer(_store, _logger);
+        var result = await indexer.IndexCompilationAsync(compilation, "ws-1", "proj-1", CancellationToken.None);
+        Assert.IsTrue(result.Success, $"Indexing failed: {result.Message}");
+
+        var allSymbols = await _store.SearchSymbolsAsync(
+            new CodeSymbolSearchRequest("ws-1", "", Limit: 200), CancellationToken.None);
+
+        // Add 体：签名行 + { + return + } ⇒ 跨 4 行（距 3）
+        var add = allSymbols.First(s => s.Name == "Add" && s.Kind == CodeSymbolKind.Method);
+        Assert.AreEqual(3, add.EndLine - add.StartLine,
+            "方法 EndLine 必须覆盖到闭合括号（距 3），而不是与 StartLine 相等");
+
+        // Compute 体：签名行 + { + 两行语句 + } ⇒ 跨 5 行（距 4）
+        var compute = allSymbols.First(s => s.Name == "Compute" && s.Kind == CodeSymbolKind.Method);
+        Assert.AreEqual(4, compute.EndLine - compute.StartLine,
+            "方法体 5 行 ⇒ 距必须是 4");
+
+        // Calculator 容器：包住两个方法 ⇒ 距至少 10
+        var calculator = allSymbols.First(s => s.Name == "Calculator" && s.Kind == CodeSymbolKind.Class);
+        Assert.IsGreaterThanOrEqualTo(10, calculator.EndLine - calculator.StartLine,
+            "类 EndLine 必须覆盖类体，不得只覆盖类名那一行");
+    }
+
     [TestMethod]
     public async Task IndexWorkspaceAsync_EmptyDescriptor_ShouldReturnFailed()
     {

@@ -723,8 +723,15 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, I
     {
         var symbolId = RoslynSymbolId.GetId(symbol);
         var kind = ToSymbolKind(symbol);
-        var lineSpan = symbol.Locations.FirstOrDefault(l => l.IsInSource)?.GetLineSpan()
-            ?? default;
+
+        // ISymbol.Locations 指向**名称标识符**（单行），不是整个声明跨度 ⇒ EndLine 会恒等于
+        // StartLine，于是 ref 打开类容器只返回 1 行、分块边界同时塌陷。优先用语法声明跨度；
+        // 无声明语法（元数据符号等）时才回退到标识符位置。
+        var declarationSpan = symbol.DeclaringSyntaxReferences
+            .FirstOrDefault()?.GetSyntax().GetLocation().GetLineSpan();
+        var lineSpan = declarationSpan is { IsValid: true } span
+            ? span
+            : symbol.Locations.FirstOrDefault(l => l.IsInSource)?.GetLineSpan() ?? default;
 
         var startLine = lineSpan.StartLinePosition.Line + 1;
         var endLine = lineSpan.EndLinePosition.Line + 1;
