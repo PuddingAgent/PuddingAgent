@@ -1,6 +1,7 @@
 using System.Text.Json;
 using PuddingCode.Models;
 using PuddingCode.Tools;
+using PuddingCodeIndex.Contracts;
 using PuddingCodeIndex.Contracts.Retrieval;
 using PuddingCodeIndex.Services.Retrieval;
 
@@ -45,10 +46,19 @@ public sealed class WorkspaceSearchTool : PuddingToolBase<WorkspaceSearchArgs>
     /// 「未接线」的显式拒绝，而不是静默回落到名字检索。
     /// </para>
     /// </summary>
-    public WorkspaceSearchTool(IRetrievalPort port, ISymbolRefSource? refSource = null)
+    public WorkspaceSearchTool(
+        IRetrievalPort port,
+        ISymbolRefSource? refSource = null,
+        ICodeIndexStore? indexStore = null,
+        ICodeSourceMaintenanceStore? maintenanceStore = null)
     {
         _port = port ?? throw new ArgumentNullException(nameof(port));
-        _refSource = refSource;
+
+        // 与 workspace_open 同一套组合规则：宿主不登记 ISymbolRefSource，但有 indexStore。
+        // 不自建就会让线上每一条 ref 都命中「not wired」—— 功能“已交付”但永远跑不到，
+        // 正是 2026-10-30 早上那次 hollow completion 的翻版。
+        _refSource = refSource
+            ?? (indexStore is null ? null : new CodeIndexSymbolRefSource(indexStore, maintenanceStore));
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
