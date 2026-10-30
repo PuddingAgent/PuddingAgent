@@ -228,6 +228,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 
 | 文档 | 主题 |
 |------|------|
+| [LLM 请求交付可靠性](Docs/12_features/LLM请求交付可靠性架构与实施规划-2026-10-30.md) | Proposed：冻结报文、独立传输预算、统一恢复与上下文版本协调；组件门禁与端到端验收 |
 | [交互面板 ADR-099](Docs/07_architecture/113ADR-099交互面板编辑状态与制成品归属ADR.md) | 提案：Agent 生成交互界面、SDK 双向事件、可恢复状态与 Core 资产归属；图片编辑为应用场景 |
 | [浏览器一期 ADR](Docs/07_architecture/111ADR-097Agent浏览器控制一期闭环与单一执行链ADR.md) · [实施方案](Docs/12_features/Agent浏览器控制一期整体实施方案-2026-10-18.md) · [现有架构](Docs/07_architecture/浏览器工具与浏览器控制能力-架构与施工进度-2026-10-18.md) | 真实浏览器闭环、单一执行链与分层验收；[命令合同与配套部署](Docs/12_features/浏览器发现契约与配套部署修复方案-2026-10-18.md)，审阅证据见架构入口 |
 | [`Docs/README.md`](Docs/README.md) · [`Agents.md`](Agents.md) · [`Agents-Hygiene.md`](Docs/10_conventions/Agents-Hygiene.md) | 文档总索引与阅读顺序 · 开发与提交纪律 · 仓库卫生 |
