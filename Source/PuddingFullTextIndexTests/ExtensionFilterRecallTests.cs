@@ -41,7 +41,7 @@ public sealed class ExtensionFilterRecallTests
     /// 噪声先入索引），1 个目标 cs 只含 1 行。maxResults=1 ⇒ 原实现的窗口是 5，
     /// 前 5 条全来自噪声文件，扩展名过滤后为空，而目标确实存在。
     /// </summary>
-    private async Task<(LuceneSearchEngine Engine, string TargetPath)> BuildNoisyCorpusAsync()
+    private async Task<(LuceneSearchEngine Engine, string TargetPath)> BuildNoisyCorpusAsync(FullTextIndexOptions? options = null)
     {
         var noise = Path.Combine(_root, "noise.txt");
         File.WriteAllLines(noise, Enumerable.Repeat("needle", 200));
@@ -49,7 +49,7 @@ public sealed class ExtensionFilterRecallTests
         var target = Path.Combine(_root, "target.cs");
         File.WriteAllText(target, "needle");
 
-        var engine = new LuceneSearchEngine(new FullTextIndexOptions());
+        var engine = new LuceneSearchEngine(options ?? new FullTextIndexOptions());
         var built = await engine.BuildIndexAsync(_root);
         Assert.IsTrue(built.Success, built.Error);
 
@@ -105,5 +105,36 @@ public sealed class ExtensionFilterRecallTests
         Assert.AreNotEqual(0, result.Matches.Count, "子目录过滤叠加时同样不得返回空集。");
         Assert.AreEqual(nestedPath, result.Matches[0].FilePath);
         _ = target;
+    }
+
+    /// <summary>
+    /// 续扫预算耗尽时必须报不完整：把「没扫完」报成「成功零命中」等于凭空断言「不存在」。
+    /// </summary>
+    [TestMethod]
+    public async Task ScanBudgetExhaustion_IsIncomplete_NotSuccessZeroHits()
+    {
+        var (engine, _) = await BuildNoisyCorpusAsync(
+            new FullTextIndexOptions { MaxPostFilterScanDocuments = 10 });
+
+        var result = await engine.SearchAsync(
+            "needle", _root, maxResults: 1, fileExtensionFilter: ".cs");
+
+        Assert.IsFalse(result.Success, "续扫预算耗尽不得报成功。");
+        Assert.IsFalse(string.IsNullOrWhiteSpace(result.Error), "必须给出可读原因。");
+        StringAssert.Contains(result.Error, "budget", "原因必须指向扫描预算而非其它失败。");
+    }
+
+    /// <summary>预算充足时同一语料必须能找到目标 —— 封顶不能变成常态失败。</summary>
+    [TestMethod]
+    public async Task AmpleScanBudget_FindsTheTarget()
+    {
+        var (engine, target) = await BuildNoisyCorpusAsync(
+            new FullTextIndexOptions { MaxPostFilterScanDocuments = 100_000 });
+
+        var result = await engine.SearchAsync(
+            "needle", _root, maxResults: 1, fileExtensionFilter: ".cs");
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(target, result.Matches[0].FilePath);
     }
 }

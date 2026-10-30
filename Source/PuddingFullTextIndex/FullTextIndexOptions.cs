@@ -85,6 +85,16 @@ public sealed record FullTextIndexOptions
     /// <summary>单个文件最大索引大小（默认 10MB）。超过的不索引。</summary>
     public long MaxFileSizeBytes { get; init; } = 10 * 1024 * 1024;
 
+    /// <summary>
+    /// 结果后过滤（扩展名 / 子目录）最多续扫多少个文档（默认 20 万）。
+    /// <para>
+    /// 过滤无法下推到 Lucene（<c>path</c> 是整串 <c>StringField</c>），只能边扫边滤。
+    /// 扫描量超过本上限时必须返回**失败 / 不完整**，绝不能返回「成功零命中」——
+    /// 那会把「没扫完」报成「不存在」（R1-01 门禁）。
+    /// </para>
+    /// </summary>
+    public int MaxPostFilterScanDocuments { get; init; } = 200_000;
+
     /// <summary>索引存储根目录。</summary>
     public string IndexRootDirectory { get; init; } =
         Path.Combine(

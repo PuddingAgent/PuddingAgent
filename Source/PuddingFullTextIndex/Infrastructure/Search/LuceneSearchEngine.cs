@@ -41,7 +41,6 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IFullTextIn
     private const int InitialFetchWindow = 64;
     private const int FetchGrowthFactor = 4;
     private const int MaxFetchWindow = 4096;
-    private const int MaxScanDocuments = 200_000;
 
     public LuceneSearchEngine(FullTextIndexOptions options)
         : this(options, new JiebaAnalyzer(), new List<IFileContentExtractor> { new PlainTextExtractor() })
@@ -163,9 +162,19 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IFullTextIn
             var totalHits = 0;
             ScoreDoc? after = null;
             var scanned = 0;
+            var scanBudget = Math.Max(1, _options.MaxPostFilterScanDocuments);
 
             while (true)
             {
+                if (filtering && scanned >= scanBudget)
+                {
+                    // 预算耗尽必须报不完整：「没扫完」不得伪装成「成功零命中」。
+                    return new FullTextSearchResult(false, matches,
+                        $"Post-filter scan budget exhausted after {scanned} documents; results are incomplete. " +
+                        "Narrow the scope or filters, or raise FullTextIndexOptions.MaxPostFilterScanDocuments.",
+                        filteredCount, sw.ElapsedMilliseconds);
+                }
+
                 var hits = after is null
                     ? searcher.Search(luceneQuery, fetchCount)
                     : searcher.SearchAfter(after, luceneQuery, fetchCount);
@@ -206,7 +215,7 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IFullTextIn
 
                 if (matches.Count >= maxResults) break;
                 if (docs.Length < fetchCount) break;          // 已扫到末尾
-                if (filtering && scanned >= MaxScanDocuments) break; // 扫描预算封顶
+
 
                 var nextAfter = docs[^1];
                 if (after is not null && nextAfter.Doc <= after.Doc) break; // 防御：位置未前进
