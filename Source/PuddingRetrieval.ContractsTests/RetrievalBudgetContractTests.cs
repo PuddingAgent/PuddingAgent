@@ -1,6 +1,6 @@
 using PuddingRetrieval.Contracts;
 
-namespace PuddingCodeIndexTests.Contracts.Retrieval;
+namespace PuddingRetrieval.ContractsTests;
 
 /// <summary>
 /// 契约测试 A8：单次返回必须有界（条数 + 字节/token 双预算，token 优先 —— ADR-089 §8.7）。

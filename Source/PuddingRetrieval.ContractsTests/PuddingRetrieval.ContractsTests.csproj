@@ -1,0 +1,21 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!--
+    规程 S2：契约组件必须有**自己的**测试工程。
+    只引用 PuddingRetrieval.Contracts 与其依赖的 PuddingDomain.Contracts，
+    不得引用 CodeIndex / CodeIntelligence / Runtime / Host —— 由 ComponentBoundaryTests 断言。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingRetrieval.Contracts\PuddingRetrieval.Contracts.csproj" />
+    <ProjectReference Include="..\PuddingDomain.Contracts\PuddingDomain.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

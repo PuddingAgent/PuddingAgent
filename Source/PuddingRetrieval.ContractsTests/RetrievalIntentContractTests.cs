@@ -1,7 +1,7 @@
 using PuddingCodeIndex.Contracts;
 using PuddingRetrieval.Contracts;
 
-namespace PuddingCodeIndexTests.Contracts.Retrieval;
+namespace PuddingRetrieval.ContractsTests;
 
 /// <summary>
 /// 契约测试 A1 / A7（ADR-089 §2 + §2.1 反向要求）。

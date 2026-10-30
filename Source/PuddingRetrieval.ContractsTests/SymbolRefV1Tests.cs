@@ -1,7 +1,7 @@
 using System.Text;
 using PuddingRetrieval.Contracts;
 
-namespace PuddingCodeIndexTests.Contracts.Retrieval;
+namespace PuddingRetrieval.ContractsTests;
 
 /// <summary>
 /// <see cref="SymbolRefV1"/> 契约测试（symbol_ref 提案 §4 / §5 / §6）。

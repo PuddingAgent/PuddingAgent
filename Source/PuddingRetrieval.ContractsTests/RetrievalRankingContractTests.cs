@@ -1,6 +1,6 @@
 using PuddingRetrieval.Contracts;
 
-namespace PuddingCodeIndexTests.Contracts.Retrieval;
+namespace PuddingRetrieval.ContractsTests;
 
 /// <summary>
 /// 契约测试 A5：显式全序 + 确定性（ADR-089 §2.1 第 5 条；分页游标的前提）。

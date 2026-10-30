@@ -1,7 +1,7 @@
 using System.Reflection;
 using PuddingRetrieval.Contracts;
 
-namespace PuddingCodeIndexTests.Contracts.Retrieval;
+namespace PuddingRetrieval.ContractsTests;
 
 /// <summary>
 /// 契约测试 A2 / A3 / A4 / A9：把"空洞否定"变成**不可表示**（ADR-089 §2.1 第 3/7 条、§2.2、§8.6/§8.7）。

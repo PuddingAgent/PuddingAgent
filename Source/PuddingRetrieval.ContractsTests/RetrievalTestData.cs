@@ -1,7 +1,7 @@
 using PuddingCodeIndex.Contracts;
 using PuddingRetrieval.Contracts;
 
-namespace PuddingCodeIndexTests.Contracts.Retrieval;
+namespace PuddingRetrieval.ContractsTests;
 
 /// <summary>
 /// U4-2a 契约测试的共享构造器：让"命中/请求/落盘/建议"的构造短到能一眼看清测试意图。

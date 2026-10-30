@@ -1,7 +1,7 @@
 using PuddingCodeIndex.Contracts;
 using PuddingRetrieval.Contracts;
 
-namespace PuddingCodeIndexTests.Contracts.Retrieval;
+namespace PuddingRetrieval.ContractsTests;
 
 /// <summary>
 /// 契约测试 A15（额外）：过滤面必须**正交且 AND 组合**，尤其"只关注类名称"这个面（ADR-089 §2.3）。

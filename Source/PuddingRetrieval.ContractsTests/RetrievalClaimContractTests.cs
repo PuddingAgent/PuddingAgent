@@ -1,7 +1,7 @@
 using PuddingCodeIndex.Contracts;
 using PuddingRetrieval.Contracts;
 
-namespace PuddingCodeIndexTests.Contracts.Retrieval;
+namespace PuddingRetrieval.ContractsTests;
 
 /// <summary>
 /// 契约测试：空结果必须有**机器可判定**的否定面（ADR-089 §8.x / 施工计划 R0-01）。

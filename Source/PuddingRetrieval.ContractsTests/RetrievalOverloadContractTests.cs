@@ -1,6 +1,6 @@
 using PuddingRetrieval.Contracts;
 
-namespace PuddingCodeIndexTests.Contracts.Retrieval;
+namespace PuddingRetrieval.ContractsTests;
 
 /// <summary>
 /// 契约测试 A10 / A11：过载即信号（ADR-089 §2.2 B/C、§8.8）+ 收窄手段必须是四类之一。

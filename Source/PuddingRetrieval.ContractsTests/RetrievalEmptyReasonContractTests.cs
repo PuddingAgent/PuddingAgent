@@ -1,7 +1,7 @@
 using PuddingCodeIndex.Contracts;
 using PuddingRetrieval.Contracts;
 
-namespace PuddingCodeIndexTests.Contracts.Retrieval;
+namespace PuddingRetrieval.ContractsTests;
 
 /// <summary>
 /// 契约测试 A12：过滤性空 ≠ 真空（ADR-089 §2.3 硬约束 / §8.9），以及空原因裁决表。
