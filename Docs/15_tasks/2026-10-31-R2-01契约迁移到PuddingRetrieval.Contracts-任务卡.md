@@ -88,3 +88,45 @@ Source/PuddingCodeIndex/Contracts/Retrieval/   30 个文件
 - `PuddingRetrieval.Adapters`（存储读取迁移）
 - `PuddingGrep` 的运行时接入（已建好内核，S5 另立）
 - R2-02 的物理项目/程序集身份
+
+## 附录 A：影响面实测（2026-10-31 04:26，`TestScripts/migrate-retrieval-contracts.ps1` 干跑）
+
+任务卡 §1 的估算数字已用脚本核实并精确化：
+
+| 项 | 实测 |
+|---|---|
+| 契约文件（`Contracts/Retrieval/*.cs`） | **28** |
+| 仓库内 cs 文件扫描量 | 3,522 |
+| 引用旧命名空间的文件 | **68** |
+| 其中声明旧命名空间（即契约文件本身） | 28 |
+| **需要改写 using 的外部文件** | **40** |
+
+按工程分布（引用文件数）：
+
+| 工程 | 文件数 |
+|---|---|
+| `PuddingCodeIndex` | 32 |
+| `PuddingCodeIndexTests` | 17 |
+| `PuddingRuntime` | 7 |
+| `PuddingRuntimeTests` | 7 |
+| `PuddingRetrievalEvalProbe` | 3 |
+| `PuddingRetrievalEvalProbeTests` | 2 |
+
+任务卡 §1 写「30 个文件 / ~40 个引用」——**文件数应为 28**（`dir` 数了 30 是把两个非 `.cs` 条目也算进来），引用数与估算一致。
+
+### ⚠️ 一处仪器失效（必须记）
+
+脚本首版用 `Select-String -Path <file> -Pattern <ns> -SimpleMatch -Quiet` 统计引用文件，**返回 `files referencing old ns : 0`**。
+
+若就此收工，会得出「没有任何外部引用、迁移毫无风险」的结论 —— 与实际 40 个引用相差 40 个文件。
+
+改为 `[IO.File]::ReadAllText(path, UTF8).Contains(ns, Ordinal)` 后立刻得到 68（含 28 个自身）。**同一份数据、同一条命令意图，两种检索方式给出 0 与 68。** 这类「仪器坏了却报出平静结论」的情形，必须以阳性对照复核后才可信。
+
+### 脚本的用法
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\migrate-retrieval-contracts.ps1          # 干跑，只出报告
+powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\migrate-retrieval-contracts.ps1 -Apply   # 实际移动 + 改命名空间
+```
+
+`-Apply` 之后仍需手工补：`PuddingCodeIndex.csproj` 增加对 `PuddingRetrieval.Contracts` 的引用、删除 CodeIndex 侧同名枚举、全仓构建修剩余编译错误。
