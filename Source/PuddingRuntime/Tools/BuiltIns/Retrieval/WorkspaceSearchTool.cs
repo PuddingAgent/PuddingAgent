@@ -22,18 +22,34 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "workspace_search",
     name: "Search workspace (unified)",
-    description: "统一检索入口：按 intent 在代码索引 + 文本面上检索，返回带证据、可解释排序、去重与分页的结果。intent 取值：auto/file/namespace/type/member/comment/implementation/references/callers/callees/any。结果包含 emptyReason（没搜到的真实原因）、nextSteps（下一步怎么办）、degraded（结果可能不完整）。scope 缺省取当前工作区。",
+    description: "统一检索入口：按 intent 在代码索引 + 文本面上检索，返回带证据、可解释排序、去重与分页的结果。两种主体二选一：query（按词）；或 symbolRef（code_symbol_search 签发的 token，必须先通过内容指纹校验）—— 给 symbolRef 时 intent 必须是关系面（callers/callees/references/implementation/impact），引擎按符号身份而非名字定位目标。intent 取值：auto/file/namespace/type/member/comment/implementation/references/callers/callees/any。结果包含 emptyReason（没搜到的真实原因）、nextSteps（下一步怎么办）、degraded（结果可能不完整）。scope 缺省取当前工作区。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     SortOrder = 40)]
-public sealed class WorkspaceSearchTool(IRetrievalPort port) : PuddingToolBase<WorkspaceSearchArgs>
+public sealed class WorkspaceSearchTool : PuddingToolBase<WorkspaceSearchArgs>
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false,
     };
 
-    private readonly IRetrievalPort _port = port ?? throw new ArgumentNullException(nameof(port));
+    private readonly IRetrievalPort _port;
+    private readonly ISymbolRefSource? _refSource;
+
+    /// <summary>
+    /// 构造。
+    /// <para>
+    /// <b>为什么 refSource 带默认值</b>：工具被程序集扫描登记后，DI 会构造每个
+    /// <c>IPuddingTool</c> ⇒ 多一个**无默认值**的依赖就是多一个启动期地雷
+    /// （2026-10-29 的 exit -532462766 就是这个死法）。未注册时 ref 请求会得到
+    /// 「未接线」的显式拒绝，而不是静默回落到名字检索。
+    /// </para>
+    /// </summary>
+    public WorkspaceSearchTool(IRetrievalPort port, ISymbolRefSource? refSource = null)
+    {
+        _port = port ?? throw new ArgumentNullException(nameof(port));
+        _refSource = refSource;
+    }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         WorkspaceSearchArgs args,
@@ -41,11 +57,23 @@ public sealed class WorkspaceSearchTool(IRetrievalPort port) : PuddingToolBase<W
         CancellationToken ct)
     {
         var query = args.Query?.Trim();
-        if (string.IsNullOrWhiteSpace(query))
+        var refText = args.SymbolRef?.Trim();
+
+        if (string.IsNullOrWhiteSpace(query) && string.IsNullOrWhiteSpace(refText))
         {
             return ToolExecutionResult.Fail(
-                "query is required — provide the text, symbol name, file path fragment or comment fragment to search for. " +
+                "query or symbolRef is required — provide the text, symbol name, file path fragment, comment fragment " +
+                "to search for, or a symbol_ref returned by code_symbol_search. " +
                 "Example: query='RetrievalPortV1', intent='type'",
+                status: ToolResultStatuses.ContractError);
+        }
+
+        // 两个都给 = “对谁做”有两个来源（§8.3 不猜）：不静默择优，直接拒。
+        if (!string.IsNullOrWhiteSpace(query) && !string.IsNullOrWhiteSpace(refText))
+        {
+            return ToolExecutionResult.Fail(
+                "query and symbolRef are mutually exclusive — a symbol_ref already names the subject; " +
+                "passing both would leave two sources of truth for the same question.",
                 status: ToolResultStatuses.ContractError);
         }
 
@@ -70,15 +98,28 @@ public sealed class WorkspaceSearchTool(IRetrievalPort port) : PuddingToolBase<W
                 status: ToolResultStatuses.ContractError);
         }
 
+        SymbolAnchor? anchor = null;
+        if (!string.IsNullOrWhiteSpace(refText))
+        {
+            var (resolved, resolveError) = await ResolveAnchorAsync(refText!, context.WorkspaceId, ct).ConfigureAwait(false);
+            if (resolveError is not null)
+            {
+                return ToolExecutionResult.Fail(resolveError, status: ToolResultStatuses.ContractError);
+            }
+
+            anchor = resolved;
+        }
+
         RetrievalRequest request;
         try
         {
             request = new RetrievalRequest(
-                query: query,
+                query: query ?? string.Empty,
                 scopeId: scopeId,
                 intent: intent,
                 pageSize: pageSize,
-                cursor: args.Cursor);
+                cursor: args.Cursor,
+                anchor: anchor);
         }
         catch (ArgumentException ex)
         {
@@ -149,6 +190,52 @@ public sealed class WorkspaceSearchTool(IRetrievalPort port) : PuddingToolBase<W
     }
 
     /// <summary>
+    /// 把 <c>symbol_ref</c> 解析成符号锚点（§8.3：不猜）。
+    /// <para>
+    /// 三道卡口依次是：①未接线 ⇒ 显式拒绝（不得静默改走名字检索）；
+    /// ②token 格式不合法 ⇒ 报错；③**FRESH 校验不过** ⇒ 报陈旧 + 重定位候选。
+    /// 只有三道都过，才允许把身份交给引擎。
+    /// </para>
+    /// </summary>
+    private async Task<(SymbolAnchor? Anchor, string? Error)> ResolveAnchorAsync(
+        string token,
+        string workspaceId,
+        CancellationToken cancellationToken)
+    {
+        if (_refSource is null)
+        {
+            return (null,
+                "symbolRef is not wired in this build (no index-side ref source registered); use query instead.");
+        }
+
+        if (!SymbolRefV1.TryParse(token, out var reference, out var parseError) || reference is null)
+        {
+            return (null, $"symbolRef is malformed: {parseError}");
+        }
+
+        var contentHash = await _refSource
+            .GetFileContentHashAsync(workspaceId, reference.ProjectId, reference.FilePath, cancellationToken)
+            .ConfigureAwait(false);
+
+        var candidates = await _refSource
+            .FindSymbolCandidatesAsync(workspaceId, reference.ProjectId, reference.SymbolId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var freshness = SymbolRefFreshness.Evaluate(reference, contentHash, candidates);
+        if (freshness.State != SymbolRefState.Fresh)
+        {
+            // "找到候选"不等于"旧 ref 仍有效"：候选只作提示，绝不用它静默替换目标。
+            var hint = freshness.CanRelocate
+                ? $" Relocation candidate: {freshness.Relocations[0].FilePath}:{freshness.Relocations[0].StartLine}."
+                : string.Empty;
+
+            return (null, $"symbolRef is stale — {freshness.Reason}{hint} Re-search by name with query instead.");
+        }
+
+        return (new SymbolAnchor(reference.ProjectId, reference.SymbolId), null);
+    }
+
+    /// <summary>
     /// intent 解析：非法值必须报错并列出合法值，不能静默退化成 auto ——
     /// 静默退化会让"我明确要 callers"变成"给了我一堆别的"。
     /// </summary>
@@ -178,8 +265,11 @@ public sealed class WorkspaceSearchTool(IRetrievalPort port) : PuddingToolBase<W
 /// <summary><c>workspace_search</c> 的参数。</summary>
 public sealed record WorkspaceSearchArgs
 {
-    [ToolParam("Text, symbol name, file-path fragment or comment fragment to search for. Required.")]
+    [ToolParam("Text, symbol name, file-path fragment or comment fragment to search for. Required unless symbolRef is given.")]
     public string? Query { get; init; }
+
+    [ToolParam("A symbol_ref token returned by code_symbol_search. Mutually exclusive with query. Requires a relation-face intent (callers/callees/references/implementation/impact); the engine resolves the target by identity instead of by name.")]
+    public string? SymbolRef { get; init; }
 
     [ToolParam("Retrieval intent: auto (default) / file / namespace / type / member / comment / implementation / references / callers / callees / impact / any. Unknown values are rejected, never silently downgraded to auto.")]
     public string? Intent { get; init; }

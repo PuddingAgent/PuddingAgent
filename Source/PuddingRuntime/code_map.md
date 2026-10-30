@@ -606,3 +606,17 @@
 - `build_output.txt`
 - `PuddingRuntime.csproj.lscache`
 - `runtimes/win-x64/native/Everything64.dll`
+
+### workspace_search 支持 `symbolRef`（2026-10-30）
+
+- `WorkspaceSearchArgs` 新增 `SymbolRef`：与 `query` **二选一**（同时给直接报 mutually exclusive ——
+  「对谁做」不能有两个来源）。给 ref 时 `intent` 必须是关系面（callers/callees/references/implementation/impact）。
+- 工具构造函数新增 `ISymbolRefSource? refSource = null`（**带默认值**）：未注册时 ref 请求得到
+  「not wired」显式拒绝，**不静默回落到名字检索**。构造参数仍只有一个必填（`IRetrievalPort`）。
+- `ResolveAnchorAsync` 三道卡口：①未接线拒绝 ②`SymbolRefV1.TryParse` 失败报错
+  ③`SymbolRefFreshness.Evaluate` 非 Fresh ⇒ 报陈旧 + 重定位候选，且**不构造任何检索请求**。
+- 装配断言改口径：`ToolTypeDependsOnlyOnRetrievalPort` → `ToolTypeHasOnlyOneRequiredDependency`。
+  原断言「参数个数 == 1」会把新增**可选**协作者误判成缺陷；真正要防的是「新增**必填**依赖」导致
+  启动期 `AggregateException`（见上一节的 exit -532462766）。
+- 三态证据：14/14 绿 → 变异（跳过 FRESH 判定）1 红且正是 `StaleSymbolRef_FailsWithHint_AndNeverReachesDataPlane`
+  → 还原 SHA 位级一致 + `-t:Rebuild` 14/14 复绿。

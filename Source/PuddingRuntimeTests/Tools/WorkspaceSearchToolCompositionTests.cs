@@ -98,8 +98,20 @@ public sealed class WorkspaceSearchToolCompositionTests
             "空容器下 workspace_open 必须能解析（构造参数全带默认值）；否则宿主启动期会抛 AggregateException。");
     }
 
+    /// <summary>
+    /// `workspace_search` 只允许**一个必填**依赖（<see cref="IRetrievalPort"/>），其余必须带默认值。
+    /// <para>
+    /// 这条防的还是 2026-10-29 那类启动期崩溃：工具被扫描登记后 DI 会构造每一个
+    /// <c>IPuddingTool</c>，多一个**无默认值**的依赖就多一个地雷。
+    /// </para>
+    /// <para>
+    /// <b>2026-10-30 改口径</b>：断言从「参数个数 == 1」改成「只有第一个没有默认值」。
+    /// 前者把「新增可选协作者」误判成缺陷，而真正要防的是「新增**必填**依赖」——
+    /// 后者会把整个宿主拖在启动期，前者不会。
+    /// </para>
+    /// </summary>
     [TestMethod]
-    public void ToolTypeDependsOnlyOnRetrievalPort()
+    public void ToolTypeHasOnlyOneRequiredDependency()
     {
         var ctors = typeof(WorkspaceSearchTool).GetConstructors();
 
@@ -107,10 +119,17 @@ public sealed class WorkspaceSearchToolCompositionTests
 
         var parameters = ctors[0].GetParameters();
 
-        Assert.AreEqual(1, parameters.Length, "workspace_search 只应依赖 IRetrievalPort");
-        Assert.AreEqual(
-            typeof(IRetrievalPort),
-            parameters[0].ParameterType,
-            "新增依赖会扩大启动期失败面；若确实需要，请同时补一条解析冒烟。");
+        Assert.IsTrue(parameters.Length >= 1, "至少要有检索端口");
+        Assert.AreEqual(typeof(IRetrievalPort), parameters[0].ParameterType);
+        Assert.IsFalse(
+            parameters[0].HasDefaultValue,
+            "IRetrievalPort 必须是必填依赖（否则检索端口缺失会被静默当成空壳工具）");
+
+        foreach (var optional in parameters.Skip(1))
+        {
+            Assert.IsTrue(
+                optional.HasDefaultValue,
+                $"新增依赖 {optional.Name} 必须带默认值 —— 否则宿主启动期会抛 AggregateException。");
+        }
     }
 }
