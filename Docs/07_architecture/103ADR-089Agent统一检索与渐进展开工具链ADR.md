@@ -2,12 +2,12 @@
 title: ADR-089：Agent 统一检索与渐进展开工具链
 author: hyfree
 date: 2026-09-13
-last_reviewed: 2026-10-18
+last_reviewed: 2026-10-30
 status: proposed
-description: "统一代码与文件检索的架构决策：会话多项目、精确 grep、代码地图、向量证据、组件边界及分阶段门禁。"
+description: "统一增强检索决策：覆盖约束下的否定、独立检索组件、生产向量召回、多语言能力分级与分阶段交付。"
 categories: [docs, architecture]
-tags: [adr-089, retrieval, grep, code-map, vector]
-related_docs: [Docs/12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md, Docs/12_features/增强索引分阶段施工计划-2026-10-18.md, Docs/14_reports/2026-10-18-增强索引设计与实现审阅.md, Docs/10_conventions/组件化交付规程.md, Docs/90_archive/adr_089_legacy_20261018/103ADR-089Agent统一检索与渐进展开工具链ADR.md]
+tags: [adr-089, retrieval, grep, code-map, vector, multilingual, coverage]
+related_docs: [Docs/12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md, Docs/12_features/增强索引分阶段施工计划-2026-10-18.md, Docs/14_reports/2026-10-18-增强索引设计与实现审阅.md, Docs/14_reports/2026-10-30-增强检索现场反馈与源码核对.md, Docs/10_conventions/组件化交付规程.md, Docs/90_archive/adr_089_legacy_20261018/103ADR-089Agent统一检索与渐进展开工具链ADR.md]
 related_files: [Source/PuddingCodeIndex/PuddingCodeIndex.csproj, Source/PuddingCodeIntelligence/PuddingCodeIntelligence.csproj, Source/PuddingFullTextIndex/PuddingFullTextIndex.csproj]
 slug: architecture-103adr-089agent统一检索与渐进展开工具链adr
 draft: false
@@ -23,6 +23,8 @@ draft: false
 
 统一文件与代码检索语义，建立可渐进展开的代码地图，并在已加载、索引就绪的选择性查询上实现毫秒级响应。性能以完整性和真实源证据为前提；冷启动、宽扫描和 embedding 分别计时与设预算。
 
+**检索成功调用、局部能力可用、增强检索交付是三个判定。** 后者要求生产自然语言召回、源证据可打开、覆盖声明可信和所声明语言能力通过验收；不能用符号检索或离线向量探针代替。中文查询能力与支持多种编程语言也是两个维度，必须分别评测。
+
 ## 2. 架构决策
 
 ### 2.1 组件和依赖
@@ -36,6 +38,8 @@ Contracts为BCL叶子，编排经端口使用provider。基础存储/编排测�
 内置文件/代码内容检索统一走同一literal/regex、路径过滤、范围、预算和完整性合同。Lucene分词命中不等于精确grep；采用自研字符trigram候选与原文验证，没有可证明的必要字面量时扫描。借鉴 [tgrep](https://github.com/microsoft/tgrep) 的候选原理，不依赖其程序或额外搜索守护进程。
 
 过滤必须先于最终TopK；候选/扫描预算耗尽必须报告partial。no_match需要该请求范围、语义与源版本的完整性证明。未提交修改、新文件、忽略规则、配置和解析器版本均参与失效，Git HEAD不能独自决定负缓存。任意Shell管道及记忆/日志领域检索保持各自执行和授权合同。
+
+**零命中不自动产生不存在结论。** 显式精确查询仅能否定已声明范围、匹配规则和快照内的匹配；关系零边仅能否定所选锚点与已覆盖的静态边种类，不能扩张为“没人使用”。`auto` / `semantic` 零命中永远不输出 `AcceptAbsence` 或“确实没有该实现”：词面查询不能证明概念不存在，向量召回即使完整执行也不能证明概念不存在。缺分支、未建索引、未支持语言、预算耗尽分别披露，不能合并为 `GenuinelyAbsent`。字段与判定表在设计 §8.2 唯一定义。
 
 ### 2.3 多项目会话与物理库
 
@@ -55,6 +59,8 @@ outline驱动分块，保留symbol/parent/span/source_version；向量补充自�
 
 向量必须支持持久upsert/delete、模型版本隔离和重建切换。float为质量基线，int8是压缩而非ANN；ANN按规模、Recall和延迟门禁引入。融合按符号/块身份去重，保留来源，不因重叠scope重复加权。
 
+生产语义召回的最短依赖是公共合同、授权项目身份、源版本/覆盖、可追溯分块、向量生命周期与模型服务。**不依赖完整地图、所有语言的精确调用图或旧工具全部退役。** 这些后续工作不得阻塞已具备前置条件的受限范围语义交付；反过来，召回结果缺项目身份、版本或可打开证据时，也不得抢先接入。`IRetrievalPort` 迁出 CodeIndex，既有 `IEmbeddingProvider` 留在 VectorIndex，由适配器连接模型服务，不在公共合同再造一个同名端口。
+
 ### 2.6 统一工具与渐进展开
 
 workspace_search统一文件、符号、精确文本、语义与关系查询；workspace_open统一excerpt/outline/summary/relations/map/status。所有证据引用绑定身份、版本与授权范围，但不授予权限。项目集合工具与运维工具分离，purge不进入默认查询权限。
@@ -67,14 +73,26 @@ workspace_search统一文件、符号、精确文本、语义与关系查询；w
 
 reader刷新先退休，最后读者释放后才Dispose/GC。离线或权限失败不触发批量删除。ProjectLocal默认1 GiB可配置，数据库/WAL/staging/向量/退休代际都计费，同时执行全局资源上限；配额不足保留可读代际并报告降级。
 
+### 2.8 多语言扩展与语义术语
+
+公共检索合同使用开放的 `language_id` 和能力描述，不依赖 Roslyn 类型、C# documentation ID 或封闭语言枚举。区分四个维度：通用文本匹配、语法结构、静态语义绑定、向量概念召回。每项能力按语言、编译项目、provider 版本和当前快照分别声明 `supported/partial/unsupported`；运行状态另报，不能把“支持但暂时失败”写成“不支持”。
+
+保留已有 C#/TS/JS/Python 提取器的可用能力，按证据逐项验收，不从零重写。C# 以 Roslyn 为静态绑定基线；TS/JS 从语法与导入解析推进至项目级类型/符号绑定；Python 先保证 AST 结构，动态行为保持 unknown。新增语言先获得文本和有来源的分块，再按需求补语法及静态语义。Tree-sitter 可承担语法层，编译器/语言服务器承担经验证的绑定能力；LSP 是接入协议，不能自动证明全项目引用完整。
+
+重依赖最终进入独立语言 provider 工程，公共语言分析合同与检索合同保持 BCL 边界。CodeIntelligence 的语言无关调度/图投影不反向依赖具体 provider；Host 从适配层装配。新语言不得要求修改纯检索编排、grep 匹配器或存储中的语言分支；必须通过独立 fixture、进程依赖与编译负向门禁。具体工程、协议、能力矩阵见设计 §6.3–§6.5。
+
+跨编程语言的自然语言召回可共用经分层评测的 embedding 模型；跨语言调用图则必须由显式桥接规则及证据构造，例如生成代码或接口合同。向量相似、同名符号和相同 URL 都不能自行生成确定调用边。
+
 ## 3. 取舍与被替代约束
 
 引入公共合同、候选索引、图投影和项目集合，增加身份与水位管理成本；收益是减少工具选择、重复扫描及无法解释的错误否定。选择按组件独立门禁逐步交付，避免一次性将试验工程接入宿主。
+
+不采用“只改空结果文案”“直接把评测探针装进 Runtime”“所有语言统一靠语法树推断精确调用”“等待所有地图/语言功能完成再接向量”四种方案：它们分别缺机器可判定合同、生产生命周期、绑定证据和可交付的关键路径。先交付范围明确的生产闭环，再扩展覆盖；每个切片仍须满足身份、版本、授权和故障门禁。
 
 原“不新建trigram引擎”“单库会话绑定”“所有分支必跑”“精确总量和全量落盘必需”“重叠scope增强置信度”不再有效。保留现有CodeIndex拆分、渐进展开、ProjectLocal、模型服务边界及异步维护。完整旧文见[历史快照](../90_archive/adr_089_legacy_20261018/103ADR-089Agent统一检索与渐进展开工具链ADR.md)，其它旧方案原路径仅作历史导航；新需求不得同时修改多套规范。
 
 ## 4. 实施与验收原则
 
-按施工计划R1–R6执行：**已确认P1先修 → 多项目和身份 → 统一grep → 代码地图 → 生产向量 → 工具退役及产品验收**。第一阶段同时完成reader静态风险的可控并发验证，不将它混写成已复现事故。
+按施工计划的依赖图执行：**R0 覆盖与否定止血 → R2 公共组件/身份/语料前置 → R5 生产向量闭环 → R6 分范围产品验收**。R1 既有正确性修复仍是受影响能力的发布前置；R3 统一 grep、R4 地图与多语言能力独立推进，完整产品交付要求全部门禁通过。完整地图和全部语言不再作为首次语义召回的前置。评测先冻结可复现基线，在改变合同/分块/模型/解析器/索引代际后重跑，不能只在最后验收一次。
 
 正确性、依赖边界、选择性查询p95/p99、内存/句柄/磁盘、增量与故障恢复、真实Agent检索质量均设硬门禁，阈值与数据集在设计 §9 唯一定义。未通过不得以“索引建立成功”或“单测绿灯”代替产品结论。源码就绪、进程外部署、新构建内功能smoke、进程外生命周期验收分别出证据。
