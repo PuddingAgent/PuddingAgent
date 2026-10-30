@@ -130,3 +130,40 @@ powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\migrate-retrieva
 ```
 
 `-Apply` 之后仍需手工补：`PuddingCodeIndex.csproj` 增加对 `PuddingRetrieval.Contracts` 的引用、删除 CodeIndex 侧同名枚举、全仓构建修剩余编译错误。
+
+## 附录 B：枚举影响面实测与一处架构判断修正（2026-10-31 04:36）
+
+### 实测数字
+
+扫描 `Source/**`（排除 bin/obj）中**使用** `CodeSymbolKind` 或 `CodeRelationKind` 的文件：
+
+| 工程 | 文件数 |
+|---|---|
+| `PuddingCodeIndexTests` | 23 |
+| `PuddingCodeIndex` | 13 |
+| `PuddingCodeIntelligence` | 13 |
+| `PuddingCodeIntelligenceTests` | 12 |
+| `PuddingRuntimeTests` | 12 |
+| `PuddingRuntime` | 3 |
+| `PuddingRetrieval.Contracts` / `…ContractsTests` | 2 / 2 |
+| `PuddingRetrievalEvalProbe` | 1 |
+| **合计** | **81** |
+
+对比附录 A：**引用检索契约的只有 40 个文件，而使用这两个枚举的有 81 个**。
+
+### 这改变了什么
+
+任务卡 §3 步骤 1 原计划「删掉 CodeIndex 侧枚举定义，让 CodeIndex 用契约组件的那份」。按上面的数字，这一步会牵动 **81 个文件**的命名空间解析 —— 远大于「搬 28 个契约文件」本身。
+
+### 架构判断修正
+
+`CodeSymbolKind` / `CodeRelationKind` **不是检索契约特有的概念**：它被 CodeIndex（存储）、CodeIntelligence（抽取）、Runtime（工具）、各处测试共同使用。把它塞进 `PuddingRetrieval.Contracts` 会让这个"检索契约"组件事实上变成**全仓基础类型库**，语义上并不准确。
+
+更贴合依赖方向的做法：建一个更基础的共享契约组件（例如 `PuddingDomain.Contracts` 或 `PuddingCodeModel.Contracts`），只承载 `CodeSymbolKind` / `CodeRelationKind` 这类**跨层共享的值类型**；`PuddingCodeIndex` 与 `PuddingRetrieval.Contracts` 都依赖它，而不是互相依赖。
+
+**在做出这个裁定前，不应执行 `-Apply`。** 迁移目标程序集一旦选错，81 个文件的 using 会白改一次。
+
+### 需要裁定的问题
+
+1. 枚举下沉目标：`PuddingRetrieval.Contracts`（现方案）还是新建更基础的共享契约组件（建议）？
+2. 若采用新组件，`PuddingRetrieval.Contracts` 的定位收窄为「只放检索请求/结果/覆盖声明」，与计划 §2 的描述一致。
