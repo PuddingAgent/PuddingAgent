@@ -527,6 +527,36 @@ public sealed class RetrievalPortV1Tests
         Assert.AreEqual(0, source.Requests.Count);
     }
 
+    [TestMethod]
+    public async Task Callers_AnchoredOnContainerWithNoEdges_SaysMembersNotExpanded_NotSilentAbsence()
+    {
+        // 实测动机（2026-10-30 线上验收）：对类 T:…SymbolRefIssuer 签发的 ref 查 references，
+        // 返回 GenuinelyAbsent /「确实没有匹配项」，而同一个名字的名字检索有 11 条命中 ——
+        // 因为关系边挂在成员（.ctor / FromManifest / Issue…）上，容器自身零边。
+        // 这种“空洞否定”会让 Agent 判定“没人用它”并打转，必须把边界说出来。
+        var source = new FakeSource(
+            [ActiveProject()],
+            [Symbol("OrderService", CodeSymbolKind.Class, "sym-container")]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest(
+                query: string.Empty,
+                scopeId: "ws-1",
+                intent: RetrievalIntent.References,
+                anchor: new SymbolAnchor("proj-1", "sym-container")),
+            CancellationToken.None);
+
+        Assert.AreEqual(0, result.Hits.Count);
+        Assert.AreEqual(RetrievalEmptyReason.GenuinelyAbsent, result.EmptyReason);
+
+        // 不得只回“接受缺失”：必须换面，并把“成员未展开”说出来。
+        Assert.AreEqual(RetrievalNextStepKind.UseAlternativeFace, result.NextSteps[0].Kind);
+        StringAssert.Contains(result.NextSteps[0].Text, "成员");
+        StringAssert.Contains(result.NextSteps[0].Text, "不代表没人用它");
+        Assert.AreEqual(0, source.Requests.Count);
+    }
+
     private static CodeFileRecord File(string path, string projectId = "proj-1") =>
         new("ws-1", projectId, path);
 

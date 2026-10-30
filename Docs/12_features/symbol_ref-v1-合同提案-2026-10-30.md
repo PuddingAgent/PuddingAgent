@@ -192,3 +192,22 @@ SymbolRefV1
 **下一原子任务**：让 `RetrievalRequest` 能表达「已解析的符号身份」，`workspace_search` 接受 `symbol_ref` 入参承担关系类意图。输出方向（命中带 ref）待命中能带回 `project_id` 与真实声明跨度后再议。
 
 **顺带修正**：`workspace_open` 的 `ref` 参数说明原写「token returned by workspace_search」，与实际不符（当前唯一签发者是 `code_symbol_search`），已改为如实描述。
+
+## 2026-10-30 线上验收追加：容器锚点的「空洞否定」（已修）
+
+对**类**符号（`T:PuddingCodeIndex.Services.Retrieval.SymbolRefIssuer`）签发的 ref 查 `references`，
+返回 `GenuinelyAbsent` +「索引可用、过滤面干净，确实没有匹配项」；而同名**名字检索**同一意图返回 **11 条**。
+原因是关系边挂在成员（`.ctor` / `FromManifest` / `Issue`…）上，容器自身零边。
+
+- **不是锚点解析失败**：方法锚点 `M:…SymbolRefIssuer.TryMakeRelative(…)` 查 `callers` 返回 2 条
+  （`SymbolRefIssuer.cs` 第 114 / 155 行），与名字面 `why` 字段里的证据行号完全一致
+  ⇒ 身份解析、边展开、去重都是对的。
+- **缺陷在报因**：`GenuinelyAbsent` 只允许 `AcceptAbsence`，Agent 会读成「没人用它」然后换查询打转 ——
+  这正是 §8.9 要消灭的空洞否定。
+- **修法**（`RetrievalPortV1.RetrieveRelationsAsync`）：锚点是容器且 0 条边时，仍报 `GenuinelyAbsent`
+  （对符号本身为真），但下一步必须 `UseAlternativeFace`，正文写明「关系边挂在成员上 / 本端口不展开成员 /
+  这不代表没人用它 / 请看具体成员的 ref」。
+- **三态**：基线 24/24 绿 → 变异（去掉容器判定）24 中 1 红，且单独重跑该测试仍红 → 还原 SHA 位级一致
+  `60614A19…` + `dotnet build -t:Rebuild` → 24/24 复绿。
+- **未做（待裁定）**：是否让容器锚点**自动展开到成员**。展开会改变「谁调用了 X」的语义
+  （把成员的调用者混进容器的调用者），故本轮只做诚实报因，不擅自改语义。

@@ -804,6 +804,22 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
     }
 
     /// <summary>
+    /// 该符号种类是否是“容器”（成员挂在它下面）。
+    /// <para>
+    /// 只有关系面空结果需要区分它：边挂在成员上，容器本身可以一条边都没有，
+    /// 此时“确实没有”为真但极易被读成“没人用它”。
+    /// </para>
+    /// </summary>
+    private static bool IsContainerKind(CodeSymbolKind kind) =>
+        kind is CodeSymbolKind.Namespace
+            or CodeSymbolKind.Type
+            or CodeSymbolKind.Class
+            or CodeSymbolKind.Interface
+            or CodeSymbolKind.Struct
+            or CodeSymbolKind.Enum
+            or CodeSymbolKind.Delegate;
+
+    /// <summary>
     /// 关系面检索（<see cref="RetrievalIntent.Callers"/> / <see cref="RetrievalIntent.Callees"/> /
     /// <see cref="RetrievalIntent.References"/> / <see cref="RetrievalIntent.Implementation"/>）。
     /// <para>
@@ -918,6 +934,23 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
 
         if (hits.Count == 0)
         {
+            // 锚点是容器且一条关系边都没有：边挂在成员上，本端口**不展开成员** ⇒
+            // “该符号自身没有边”为真，但只回 AcceptAbsence 会让 Agent 读成“没人用它”并打转
+            // （§8.9 要消灭的正是这种空洞否定）。必须把边界说清并给出可执行的替代面。
+            if (request.Anchor is not null && targets.Count == 1 && IsContainerKind(targets[0].Kind))
+            {
+                return RetrievalResult.Empty(
+                    request,
+                    RetrievalEmptyReason.GenuinelyAbsent,
+                    RetrievalNextStep.UseAlternativeFace(
+                        $"锚点 {targets[0].Name} 是容器符号（{targets[0].Kind}）：索引中的关系边挂在它的成员上，" +
+                        "本端口不展开成员 ⇒ 该符号自身确实没有关系边，但这**不代表没人用它**。" +
+                        "要看谁在用它，请对具体成员（构造器 / 方法 / 属性）签发 ref 再查。",
+                        "符号面检索（按名字匹配会自动展开到成员）"),
+                    indexVersion,
+                    appliedFilters: AppliedFilters(request));
+            }
+
             var reason = RetrievalEmptyReasonPolicy.ClassifyForZeroHits(
                 request.Filter,
                 RetrievalIndexAvailability.Available,
