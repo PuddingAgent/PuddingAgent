@@ -1417,8 +1417,43 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
                     "过滤面导致 0 命中；放宽该面后重试。");
 
             default:
-                return RetrievalNextStep.AcceptAbsence("索引可用、过滤面干净，确实没有匹配项。");
+                return RetrievalNextStep.AcceptAbsence(DescribeAbsence(request));
         }
+    }
+
+    /// <summary>
+    /// 空结果说明（ADR-089 §8.9 空洞否定）：本端口只做词面匹配，不含语义召回。
+    /// <para>
+    /// 不交代"匹配面"的话，Agent 会把"词面没命中"读成"这个概念不存在"——
+    /// 实测把「签发符号引用的令牌」查询判成 <c>GenuinelyAbsent</c> 并建议
+    /// <c>AcceptAbsence</c>，而该概念就在 <c>SymbolRefIssuer.Issue</c> 里。
+    /// 结论真实但覆盖面没说清，等价于误导。
+    /// </para>
+    /// </summary>
+    private static string DescribeAbsence(RetrievalRequest request)
+    {
+        const string lexicalOnly = "本端口只做词面匹配（符号名 / 声明文本），不含语义召回。";
+
+        if (request.Anchor is not null || string.IsNullOrWhiteSpace(request.Query))
+            return "索引可用、过滤面干净；该锚点范围内确实没有匹配的关系边。" + lexicalOnly;
+
+        return IsIdentifierShaped(request.Query)
+            ? "索引可用、过滤面干净；词面确实无匹配。" + lexicalOnly
+            : "索引可用、过滤面干净；但查询不像代码标识符，词面自然无匹配。" + lexicalOnly
+              + "同义说法与代码命名不同属于常态，这不代表该概念不存在 —— "
+              + "请改用代码里的英文标识符或符号名重试。";
+    }
+
+    /// <summary>查询是否像代码标识符（全 ASCII 且无空白）—— 决定空结果该说"换名字"还是"接受缺失"。</summary>
+    private static bool IsIdentifierShaped(string query)
+    {
+        foreach (var ch in query)
+        {
+            if (ch > 0x7F || char.IsWhiteSpace(ch))
+                return false;
+        }
+
+        return true;
     }
 
     private static CodeSymbolMatchTarget MapMatchTarget(RetrievalRequest request)

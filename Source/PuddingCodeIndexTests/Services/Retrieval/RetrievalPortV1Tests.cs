@@ -473,6 +473,42 @@ public sealed class RetrievalPortV1Tests
     }
 
     [TestMethod]
+    public async Task Empty_NaturalLanguageQuery_DeclaresLexicalFace_AndDoesNotClaimNonexistence()
+    {
+        // 实测缺陷：中文概念查询「签发符号引用的令牌」被判成 GenuinelyAbsent 且只回
+        // 「确实没有匹配项」——Agent 会读成"这个概念不存在"，而它就在 SymbolRefIssuer 里。
+        // 结论真实（词面确实没命中），但覆盖面没说清，等价于误导。
+        var source = new FakeSource([ActiveProject()], Array.Empty<CodeSymbolRecord>());
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("签发符号引用的令牌", "ws-1", RetrievalIntent.Auto),
+            CancellationToken.None);
+
+        Assert.AreEqual(RetrievalNextStepKind.AcceptAbsence, result.NextSteps[0].Kind);
+        var text = result.NextSteps[0].Text;
+        StringAssert.Contains(text, "语义召回");
+        StringAssert.Contains(text, "不代表该概念不存在");
+        StringAssert.Contains(text, "英文标识符");
+    }
+
+    [TestMethod]
+    public async Task Empty_IdentifierQuery_DeclaresLexicalFace_WithoutTellingAgentToRename()
+    {
+        // 标识符形态的查询：词面没命中就是真没有，不必劝 Agent 换名字。
+        var source = new FakeSource([ActiveProject()], Array.Empty<CodeSymbolRecord>());
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest("OrderService", "ws-1", RetrievalIntent.Auto),
+            CancellationToken.None);
+
+        var text = result.NextSteps[0].Text;
+        StringAssert.Contains(text, "词面确实无匹配");
+        StringAssert.Contains(text, "语义召回");
+        Assert.IsFalse(text.Contains("不像代码标识符"), "标识符查询不该被劝改名字。");
+    }
+    [TestMethod]
     public async Task Callers_Anchored_ResolvesBySymbolId_WithoutAnyNameSearch()
     {
         // 两个同名符号（两个项目各一个）—— 名字检索无法区分，锚点必须直接取对的那个。
