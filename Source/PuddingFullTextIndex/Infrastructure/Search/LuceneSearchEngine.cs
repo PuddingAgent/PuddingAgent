@@ -37,6 +37,12 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IFullTextIn
     private readonly ConcurrentDictionary<string, DirectoryReader> _readerCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, IndexSearcher> _searcherCache = new(StringComparer.OrdinalIgnoreCase);
 
+    // 结果后过滤的分批续扫参数（见 SearchAsync）。
+    private const int InitialFetchWindow = 64;
+    private const int FetchGrowthFactor = 4;
+    private const int MaxFetchWindow = 4096;
+    private const int MaxScanDocuments = 200_000;
+
     public LuceneSearchEngine(FullTextIndexOptions options)
         : this(options, new JiebaAnalyzer(), new List<IFileContentExtractor> { new PlainTextExtractor() })
     {
@@ -127,8 +133,11 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IFullTextIn
                 + Path.DirectorySeparatorChar
             : null;
 
-        // Fetch more results than needed so we can post-filter and still fill maxResults
-        var fetchCount = extSet != null || subDirPrefix != null ? maxResults * 5 : maxResults;
+        // 扩展名/子目录是<b>结果后过滤</b>（path 是整串 StringField，无法精确下推）。
+        // 固定倍数窗口在「高排名命中全被过滤掉」时会返回空集，把漏检报成不存在；
+        // 因此改为分批续扫（SearchAfter），直到填满 maxResults 或真正扫完。
+        var filtering = extSet != null || subDirPrefix != null;
+        var fetchCount = filtering ? Math.Max(maxResults, InitialFetchWindow) : maxResults;
 
         try
         {
@@ -149,44 +158,65 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IFullTextIn
             }
             ct.ThrowIfCancellationRequested();
 
-            var hits = searcher.Search(luceneQuery, fetchCount);
             var matches = new List<FullTextSearchMatch>();
             var filteredCount = 0;
+            var totalHits = 0;
+            ScoreDoc? after = null;
+            var scanned = 0;
 
-            foreach (var hit in hits.ScoreDocs)
+            while (true)
             {
-                ct.ThrowIfCancellationRequested();
-                var doc = searcher.Doc(hit.Doc);
-                var path = doc.Get("path");
-                var storedLine = doc.Get("line_number");
-                var text = doc.Get("line_text");
+                var hits = after is null
+                    ? searcher.Search(luceneQuery, fetchCount)
+                    : searcher.SearchAfter(after, luceneQuery, fetchCount);
+                totalHits = hits.TotalHits;
+                var docs = hits.ScoreDocs;
 
-                if (path == null) continue;
-
-                // 扩展名过滤
-                if (extSet != null)
+                foreach (var hit in docs)
                 {
-                    var ext = Path.GetExtension(path);
-                    if (!extSet.Contains(ext)) continue;
+                    ct.ThrowIfCancellationRequested();
+                    var doc = searcher.Doc(hit.Doc);
+                    var path = doc.Get("path");
+                    var storedLine = doc.Get("line_number");
+                    var text = doc.Get("line_text");
+
+                    if (path == null) continue;
+
+                    // 扩展名过滤
+                    if (extSet != null)
+                    {
+                        var ext = Path.GetExtension(path);
+                        if (!extSet.Contains(ext)) continue;
+                    }
+
+                    // 子目录过滤（基于索引根目录的相对路径）
+                    if (subDirPrefix != null)
+                    {
+                        var relativePath = Path.GetRelativePath(directoryPath, path);
+                        if (!relativePath.StartsWith(subDirPrefix, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                    }
+
+                    filteredCount++;
+                    if (matches.Count >= maxResults) break;
+
+                    _ = int.TryParse(storedLine, out var lineNumber);
+                    matches.Add(new FullTextSearchMatch(path, lineNumber, text ?? string.Empty));
                 }
 
-                // 子目录过滤（基于索引根目录的相对路径）
-                if (subDirPrefix != null)
-                {
-                    var relativePath = Path.GetRelativePath(directoryPath, path);
-                    if (!relativePath.StartsWith(subDirPrefix, StringComparison.OrdinalIgnoreCase))
-                        continue;
-                }
-
-                filteredCount++;
                 if (matches.Count >= maxResults) break;
+                if (docs.Length < fetchCount) break;          // 已扫到末尾
+                if (filtering && scanned >= MaxScanDocuments) break; // 扫描预算封顶
 
-                _ = int.TryParse(storedLine, out var lineNumber);
-                matches.Add(new FullTextSearchMatch(path, lineNumber, text ?? string.Empty));
+                var nextAfter = docs[^1];
+                if (after is not null && nextAfter.Doc <= after.Doc) break; // 防御：位置未前进
+                after = nextAfter;
+                scanned += docs.Length;
+                fetchCount = Math.Min(fetchCount * FetchGrowthFactor, MaxFetchWindow);
             }
 
             return new FullTextSearchResult(true, matches, null,
-                scope is not null && extSet is null && subDirPrefix is null ? hits.TotalHits : filteredCount,
+                scope is not null && extSet is null && subDirPrefix is null ? totalHits : filteredCount,
                 sw.ElapsedMilliseconds);
         }
         catch (ParseException ex)

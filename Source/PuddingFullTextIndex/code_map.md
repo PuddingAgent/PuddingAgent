@@ -35,7 +35,7 @@
 
 | 目录 | 用途 |
 |------|------|
-| `Search/` | 搜索实现（`LuceneSearchEngine.cs`；A23 增只读新鲜度探针）（见下「关键语义」） |
+| `Search/` | 搜索实现（`LuceneSearchEngine.cs`；A23 增只读新鲜度探针；`SearchAsync` 的扩展名/子目录过滤为**结果后过滤**，窗口必须按批续扫，不得退化为固定倍数）（见下「关键语义」） |
 | `Text/` | 文本处理 |
 | `Maintenance/` | **局部维护（S3a/S3b/S3c/S3d）**：纯逻辑零 IO / 零线程 + 循环本体（见下「关键语义」） |
 | `FullTextPolicyFingerprint.cs` | **`.last_indexed.p` patterns 指纹唯一真源**（S1b）（见下「关键语义」） |
