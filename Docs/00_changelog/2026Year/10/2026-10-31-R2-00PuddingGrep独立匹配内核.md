@@ -32,3 +32,24 @@
 - **未接入**：不进 `PuddingAgentNetwork.slnx`、不注册 DI、不替换 `SearchGrepTool` 的匹配逻辑 —— 按规程 S5 才做，且 R3 才做全文接入。
 - 扫描层（文件枚举、排除目录、扩展名、候选索引、`maxResults`/预算）不在本组件内。
 - 未与生产 `SearchGrepTool` 做行为等价验证（那需要 S5 之后的双跑对照）。
+
+## 补充：登记进 `PuddingAgentNetwork.slnx`（构建门禁）
+
+```
+$ dotnet sln PuddingAgentNetwork.slnx list | findstr PuddingGrep
+Source\PuddingGrep\PuddingGrep.csproj
+Source\PuddingGrepTests\PuddingGrepTests.csproj
+```
+
+项目总数 93 → **95**，无重复路径，XML 结构校验通过。
+
+### 为什么这一步不能省
+
+组件已通过 S1–S4，但如果**不进解决方案**，全仓构建与门禁都不会构建/运行它 —— 那就是「存在但没人跑」的测试工程，迟早静默腐烂。
+
+登记属**构建门禁**，不等于运行时接入：DI 注册、替换 `SearchGrepTool` 的匹配逻辑仍未做，那部分需要部署验证。
+
+### 仍未做
+
+- DI 注册、`SearchGrepTool` 匹配逻辑替换（S5 运行时部分）
+- 与生产 `SearchGrepTool` 的行为等价对照（需先在 Runtime 测试侧暴露可测接缝）

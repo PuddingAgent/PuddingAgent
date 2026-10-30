@@ -31,10 +31,13 @@
 
 `Source/PuddingGrepTests`（独立工程，40 条）：以 BCL 当 oracle 逐条对照（`IndexOf` / `Regex` / `Regex.Matches`），另覆盖空模式、非法正则、灾难性回溯超时、中文字面量、非重叠语义。
 
-## 未接入（S5 待办）
+## 接入状态（S5 进行中）
 
-**未登记进 `PuddingAgentNetwork.slnx`、未注册 DI、未替换 `Runtime/SearchGrepTool` 的匹配逻辑** —— 按组件化交付规程，S1–S4 完成并通过后才做 S5 接入。当前需单独运行：
+- **已登记进 `PuddingAgentNetwork.slnx`**（`dotnet sln PuddingAgentNetwork.slnx list` 可列出两个工程）—— 这样全仓构建/门禁会真的构建并运行它，而不是“存在但没人跑”。登记属构建门禁，不是运行时接入，S1–S4 已先通过。
+- **未注册 DI、未替换 `Runtime/SearchGrepTool` 的匹配逻辑**：那才是 S5 的运行时部分，需部署验证，未做。
+- 扫描层（文件枚举、排除目录、扩展名、候选索引、`maxResults`/预算）不在本组件内（R3）。
 
 ```
 dotnet test Source\PuddingGrepTests\PuddingGrepTests.csproj
+dotnet test PuddingAgentNetwork.slnx --filter FullyQualifiedName~PuddingGrepTests
 ```
