@@ -17,11 +17,12 @@
 | `CodeProjectContracts.cs` | 项目注册记录与增删请求的类型定义 | `CodeProjectStatus` / `CodeProjectRecord` / 增删请求 | — | `CodeProjectRecord.StatusMessage` 追加在**末尾**（可选参数）—— 插到中间会迫使全部 5 个构造点改签名；它承载「最近一次状态变更的原因」（如索引被中断），此前只写不读 |
 | `CodeSymbolContracts.cs` | 符号与搜索请求的契约类型 | `CodeSymbolKind` / `CodeSymbolRecord` / 搜索请求 | — | — |
 | `Contracts/Retrieval/SymbolRefV1.cs` | 跨请求符号引用（`workspace_open` 的 `ref`；绑定身份/源版本/scope/代际） | `SymbolRefV1` / `SymbolIdStability` / `ClassifySymbolId` | `Contracts/Retrieval/SymbolIdentity.cs` · `Docs/12_features/symbol_ref-v1-合同提案-2026-10-30.md` | 载体为不透明 token `pmsym1.<base64url>`（可读串会被 docId 的 `: . ( ) ,` 与路径的 `\` `:` 击穿）；创建与解析共用同一条不变量校验 ⇒ 伪造 ref 与非法参数同路径；无 `content_hash` 不得签发；`PositionDependent` 形态只能判陈旧、不得重定位 |
+| `Contracts/Retrieval/SymbolAnchor.cs` | 已解析的符号锚点：`workspace_search(symbol_ref=…, intent=callers/…)` 的入参载体 | `SymbolAnchor` | `RetrievalRequest.cs` · `RetrievalPortV1.cs` | 只有身份没有名字 —— 留着名字会诱使实现退回名字匹配（那也是关系面最容易错的一步） |
 | `CodeReferenceRecord.cs` | 引用记录的契约类型 | `CodeReferenceRecord` | — | — |
 | `CodeRelationContracts.cs` | 符号关系的契约类型 | `CodeRelationKind` / `CodeRelationRecord` | — | — |
 | `CodeWorkspaceDescriptor.cs` | 索引器输入的工作区描述符 | `CodeWorkspaceDescriptor` | — | — |
 | `ICodeIndexStore.cs` | 索引存储端口 | `ICodeIndexStore` / `RemoveFilesAsync` | — | 按文件清除必须与文件记录、符号及其关联图/引用同事务；幂等且回报真实删除数 |
-| `Services/Retrieval/RetrievalPortV1.cs` | `IRetrievalPort` 首个实现（切片一：Auto / Namespace / Type / Member / Any） | `RetrievalPortV1` / `IRetrievalSymbolSource` / `CodeIndexStoreSymbolSource` | `Contracts/Retrieval/IRetrievalPort.cs` | 未支持意图必须报 `IntentUnsupported` 并给替代方案（不得伪装空命中）；跨 scope 去重先于过载判定；超页必须落盘 + 给游标 |
+| `Services/Retrieval/RetrievalPortV1.cs` | `IRetrievalPort` 首个实现（切片一：Auto / Namespace / Type / Member / Any） | `RetrievalPortV1` / `IRetrievalSymbolSource` / `CodeIndexStoreSymbolSource` | `Contracts/Retrieval/IRetrievalPort.cs` | 未支持意图必须报 `IntentUnsupported` 并给替代方案（不得伪装空命中）；跨 scope 去重先于过载判定；超页必须落盘 + 给游标；带符号锚点时只按 (项目, 符号) 精确取目标，**不得**退回名字检索 |
 | `ICodeIndexer.cs` | 工作区级索引器端口 | `ICodeIndexer` / `IndexWorkspaceAsync` / `RemoveWorkspaceIndexAsync` | `Source/PuddingCodeIntelligence/code_map.md` | 只含全量操作；给共享端口加成员会破坏每个实现者（含组件外替身），增量能力必须另开端口 |
 | `ICodeIndexFileUpdater.cs` | 按文件增量的可选能力端口 | `ICodeIndexFileUpdater` / `IndexFileAsync` | `ICodeIndexer.cs` | 实现方未提供该能力时，调用方必须升级为 scope 级重索引，不得静默跳过文件 |
 | `ICodeIndexScheduler.cs` | 后台索引调度端口 | `ICodeIndexScheduler` | — | — |

@@ -769,6 +769,41 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
     }
 
     /// <summary>
+    /// 关系面 / 影响面的“起点符号”解析。
+    /// <para>
+    /// 有锚点 ⇒ 按 (项目, 符号) 精确取回；<b>绝不</b>退回名字检索（§8.3：不猜）。
+    /// 取不到返回 <c>null</c>，由调用方报“索引里没有”，而不是伪装成“确实没有”。
+    /// </para>
+    /// </summary>
+    private async Task<IReadOnlyList<CodeSymbolRecord>?> ResolveTargetsAsync(
+        RetrievalRequest request,
+        string scopeId,
+        CancellationToken cancellationToken)
+    {
+        if (request.Anchor is { } anchor)
+        {
+            var anchored = await _source
+                .GetSymbolAsync(scopeId, anchor.ProjectId, anchor.SymbolId, cancellationToken)
+                .ConfigureAwait(false);
+
+            return anchored is null ? null : [anchored];
+        }
+
+        return await _source.SearchSymbolsAsync(
+            new CodeSymbolSearchRequest(
+                WorkspaceId: scopeId,
+                Query: request.Query,
+                ProjectId: null,
+                Kind: null,
+                Limit: MaxRelationTargets,
+                Skip: 0,
+                MatchTarget: MapMatchTarget(request),
+                FileExtensions: null,
+                Kinds: null),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// 关系面检索（<see cref="RetrievalIntent.Callers"/> / <see cref="RetrievalIntent.Callees"/> /
     /// <see cref="RetrievalIntent.References"/> / <see cref="RetrievalIntent.Implementation"/>）。
     /// <para>
@@ -819,18 +854,22 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
                 appliedFilters: AppliedFilters(request));
         }
 
-        var targets = await _source.SearchSymbolsAsync(
-            new CodeSymbolSearchRequest(
-                WorkspaceId: scopeId,
-                Query: request.Query,
-                ProjectId: null,
-                Kind: null,
-                Limit: MaxRelationTargets,
-                Skip: 0,
-                MatchTarget: MapMatchTarget(request),
-                FileExtensions: null,
-                Kinds: null),
-            cancellationToken).ConfigureAwait(false);
+        var targets = await ResolveTargetsAsync(request, scopeId, cancellationToken).ConfigureAwait(false);
+
+        if (targets is null)
+        {
+            return RetrievalResult.Empty(
+                request,
+                RetrievalEmptyReason.NotIndexed,
+                // NotIndexed 的下一步在契约里被钉成"重建/修复索引"（§2.1 第 3 条 ①）：
+                // 锚点查不到属于索引缺口，不是"符号不存在"，更不该建议换面绕过去。
+                RetrievalNextStep.RebuildIndex(
+                    $"索引中查不到锚点符号 {request.Anchor!.SymbolId}（项目 {request.Anchor.ProjectId}）——" +
+                    "这不代表符号不存在：请先确认该项目已索引且索引未过期，再重试；或改用名称检索。",
+                    request.ScopeId),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
 
         if (targets.Count == 0)
         {
@@ -988,18 +1027,22 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
                 appliedFilters: AppliedFilters(request));
         }
 
-        var roots = await _source.SearchSymbolsAsync(
-            new CodeSymbolSearchRequest(
-                WorkspaceId: scopeId,
-                Query: request.Query,
-                ProjectId: null,
-                Kind: null,
-                Limit: MaxRelationTargets,
-                Skip: 0,
-                MatchTarget: MapMatchTarget(request),
-                FileExtensions: null,
-                Kinds: null),
-            cancellationToken).ConfigureAwait(false);
+        var roots = await ResolveTargetsAsync(request, scopeId, cancellationToken).ConfigureAwait(false);
+
+        if (roots is null)
+        {
+            return RetrievalResult.Empty(
+                request,
+                RetrievalEmptyReason.NotIndexed,
+                // NotIndexed 的下一步在契约里被钉成"重建/修复索引"（§2.1 第 3 条 ①）：
+                // 锚点查不到属于索引缺口，不是"符号不存在"，更不该建议换面绕过去。
+                RetrievalNextStep.RebuildIndex(
+                    $"索引中查不到锚点符号 {request.Anchor!.SymbolId}（项目 {request.Anchor.ProjectId}）——" +
+                    "这不代表符号不存在：请先确认该项目已索引且索引未过期，再重试；或改用名称检索。",
+                    request.ScopeId),
+                indexVersion,
+                appliedFilters: AppliedFilters(request));
+        }
 
         if (roots.Count == 0)
         {

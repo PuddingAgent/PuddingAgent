@@ -472,6 +472,61 @@ public sealed class RetrievalPortV1Tests
         Assert.AreEqual(RetrievalNextStepKind.AcceptAbsence, result.NextSteps[0].Kind);
     }
 
+    [TestMethod]
+    public async Task Callers_Anchored_ResolvesBySymbolId_WithoutAnyNameSearch()
+    {
+        // 两个同名符号（两个项目各一个）—— 名字检索无法区分，锚点必须直接取对的那个。
+        var source = new FakeSource(
+            [ActiveProject()],
+            [
+                Symbol("OrderService", CodeSymbolKind.Class, "sym-wanted", line: 10, file: @"D:\repo\A.cs"),
+                Symbol("OrderService", CodeSymbolKind.Class, "sym-other", line: 90, file: @"D:\repo\B.cs"),
+                Symbol("CheckoutFlow", CodeSymbolKind.Class, "sym-caller", line: 3, file: @"D:\repo\CheckoutFlow.cs"),
+            ],
+            [Rel("sym-caller", "sym-wanted", CodeRelationKind.Calls, line: 42, file: @"D:\repo\CheckoutFlow.cs")]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest(
+                query: string.Empty,
+                scopeId: "ws-1",
+                intent: RetrievalIntent.Callers,
+                anchor: new SymbolAnchor("proj-1", "sym-wanted")),
+            CancellationToken.None);
+
+        Assert.IsNull(result.EmptyReason);
+        Assert.AreEqual(1, result.Hits.Count);
+        Assert.AreEqual("CheckoutFlow", result.Hits[0].SymbolName);
+        Assert.AreEqual(42, result.Hits[0].Evidence.Line);
+
+        // 关键断言：有锚点就**不**得再走名字检索（否则同名符号又会把目标换成别人）。
+        Assert.AreEqual(0, source.Requests.Count);
+    }
+
+    [TestMethod]
+    public async Task Callers_AnchoredSymbolMissingInIndex_ReportsNotIndexed_NotGenuinelyAbsent()
+    {
+        var source = new FakeSource(
+            [ActiveProject()],
+            [Symbol("OrderService", CodeSymbolKind.Class, "sym-present")]);
+        var port = new RetrievalPortV1(source);
+
+        var result = await port.RetrieveAsync(
+            new RetrievalRequest(
+                query: string.Empty,
+                scopeId: "ws-1",
+                intent: RetrievalIntent.Callers,
+                anchor: new SymbolAnchor("proj-1", "sym-missing")),
+            CancellationToken.None);
+
+        Assert.AreEqual(0, result.Hits.Count);
+
+        // “索引里找不到” ≠ “确实没人调用它”：前者是缺口，后者是否定代码存在。
+        Assert.AreEqual(RetrievalEmptyReason.NotIndexed, result.EmptyReason);
+        Assert.IsTrue(result.NextSteps.Count >= 1);
+        Assert.AreEqual(0, source.Requests.Count);
+    }
+
     private static CodeFileRecord File(string path, string projectId = "proj-1") =>
         new("ws-1", projectId, path);
 
