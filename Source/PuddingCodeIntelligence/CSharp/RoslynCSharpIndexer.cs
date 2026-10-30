@@ -724,17 +724,30 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, I
         var symbolId = RoslynSymbolId.GetId(symbol);
         var kind = ToSymbolKind(symbol);
 
-        // ISymbol.Locations 指向**名称标识符**（单行），不是整个声明跨度 ⇒ EndLine 会恒等于
-        // StartLine，于是 ref 打开类容器只返回 1 行、分块边界同时塌陷。优先用语法声明跨度；
-        // 无声明语法（元数据符号等）时才回退到标识符位置。
-        var declarationSpan = symbol.DeclaringSyntaxReferences
-            .FirstOrDefault()?.GetSyntax().GetLocation().GetLineSpan();
-        var lineSpan = declarationSpan is { IsValid: true } span
-            ? span
-            : symbol.Locations.FirstOrDefault(l => l.IsInSource)?.GetLineSpan() ?? default;
+        // partial 类型有多个声明：跨度必须取**所有声明的并集**。
+        // 只取 FirstOrDefault 会让索引里只剩第一个声明，打开它就只看到一半（R1-02 门禁）。
+        //
+        // 另：ISymbol.Locations 指向**名称标识符**（单行），不是声明跨度 ⇒ 会恒等于 StartLine；
+        // 所以优先用语法声明跨度，无声明语法时才回退到标识符位置。
+        var declarationSpans = symbol.DeclaringSyntaxReferences
+            .Select(reference => reference.GetSyntax().GetLocation().GetLineSpan())
+            .Where(span => span.IsValid)
+            .ToArray();
 
-        var startLine = lineSpan.StartLinePosition.Line + 1;
-        var endLine = lineSpan.EndLinePosition.Line + 1;
+        int startLine;
+        int endLine;
+        if (declarationSpans.Length > 0)
+        {
+            startLine = declarationSpans.Min(item => item.StartLinePosition.Line) + 1;
+            endLine = declarationSpans.Max(item => item.EndLinePosition.Line) + 1;
+        }
+        else
+        {
+            // 无声明语法（元数据符号等）时才回退到标识符位置。
+            var fallbackSpan = symbol.Locations.FirstOrDefault(location => location.IsInSource)?.GetLineSpan();
+            startLine = fallbackSpan is { IsValid: true } valid ? valid.StartLinePosition.Line + 1 : 0;
+            endLine = fallbackSpan is { IsValid: true } validEnd ? validEnd.EndLinePosition.Line + 1 : startLine;
+        }
         var containerId = GetContainerSymbolId(symbol);
         var signature = GetSignature(symbol);
 

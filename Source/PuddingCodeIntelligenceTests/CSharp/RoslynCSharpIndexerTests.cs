@@ -211,6 +211,57 @@ public sealed class RoslynCSharpIndexerTests : IDisposable
             "真实调用必须产生 calls 边。");
     }
 
+    /// <summary>
+    /// R1-02 门禁：partial 类型有两个声明时必须**两个都保留**——跨度取所有声明的并集，
+    /// 否则索引里只剩后一个声明，打开它只看到一半。
+    /// </summary>
+    [TestMethod]
+    public async Task PartialType_SpanCoversAllDeclarations()
+    {
+        var compilation = CreatePartialCompilation();
+        var indexer = new RoslynCSharpIndexer(_store, _logger);
+        var result = await indexer.IndexCompilationAsync(compilation, "ws-1", "proj-1", CancellationToken.None);
+        Assert.IsTrue(result.Success, result.Message);
+
+        var symbols = await _store.SearchSymbolsAsync(
+            new CodeSymbolSearchRequest("ws-1", "Split"), CancellationToken.None);
+        var split = symbols.First(s => s.Name == "Split" && s.Kind == CodeSymbolKind.Class);
+
+        // 夹具：第一个声明在 3–6 行，第二个在 8–11 行。
+        Assert.AreEqual(3, split.StartLine, "跨度必须从第一个声明开始。");
+        Assert.AreEqual(11, split.EndLine, "跨度必须覆盖到第二个声明结束。");
+    }
+
+    private static Compilation CreatePartialCompilation()
+    {
+        var sourceCode = """
+namespace MyApp.Partial
+{
+    public partial class Split
+    {
+        public void A() { }
+    }
+
+    public partial class Split
+    {
+        public void B() { }
+    }
+}
+""";
+
+        var tree = CSharpSyntaxTree.ParseText(sourceCode, path: "Partial.cs");
+        var references = AppDomain.CurrentDomain.GetAssemblies()
+            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+            .Select(a => MetadataReference.CreateFromFile(a.Location))
+            .ToArray<MetadataReference>();
+
+        return CSharpCompilation.Create(
+            "PartialAssembly",
+            [tree],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
     /// <summary>R1-04 门禁：class : BaseClass ⇒ Inherits 边，端点为派生 → 基。</summary>
     [TestMethod]
     public async Task DerivedClass_Produces_Inherits_Edge_To_BaseClass()
