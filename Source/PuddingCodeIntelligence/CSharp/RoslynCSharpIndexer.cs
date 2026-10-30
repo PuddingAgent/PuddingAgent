@@ -761,7 +761,64 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, I
                 startLine,
                 filePath));
         }
+
+        AddInheritanceRelations(workspaceId, projectId, filePath, symbol, symbolId, startLine, relations);
     }
+
+    /// <summary>
+    /// 继承类关系边（R1-04）：base ⇒ <c>Inherits</c>、interface ⇒ <c>Implements</c>
+    /// （接口继承接口仍算 <c>Inherits</c>）、override 方法 ⇒ <c>Overrides</c>。
+    /// 端点方向固定为「派生 → 基」，与其它关系边一致。
+    /// <para>
+    /// 只对<b>源内定义</b>的基类型建边：外部类型（如 <c>System.IDisposable</c>）在索引里没有对应符号，
+    /// 建边只会产生悬挂引用，让「谁实现了 X」的回答掺入无法打开的端点。
+    /// </para>
+    /// </summary>
+    private static void AddInheritanceRelations(
+        string workspaceId,
+        string projectId,
+        string filePath,
+        ISymbol symbol,
+        string symbolId,
+        int line,
+        List<CodeRelationRecord> relations)
+    {
+        switch (symbol)
+        {
+            case INamedTypeSymbol type:
+            {
+                if (type.BaseType is { } baseType
+                    && baseType.SpecialType != SpecialType.System_Object
+                    && IsDefinedInSource(baseType))
+                {
+                    relations.Add(Relation(RoslynSymbolId.GetId(baseType), CodeRelationKind.Inherits));
+                }
+
+                foreach (var iface in type.Interfaces)
+                {
+                    if (!IsDefinedInSource(iface)) continue;
+                    var kind = type.TypeKind == TypeKind.Interface
+                        ? CodeRelationKind.Inherits
+                        : CodeRelationKind.Implements;
+                    relations.Add(Relation(RoslynSymbolId.GetId(iface), kind));
+                }
+
+                break;
+            }
+            case IMethodSymbol method when method.IsOverride:
+            {
+                if (method.OverriddenMethod is { } overridden && IsDefinedInSource(overridden))
+                    relations.Add(Relation(RoslynSymbolId.GetId(overridden), CodeRelationKind.Overrides));
+                break;
+            }
+        }
+
+        CodeRelationRecord Relation(string targetId, CodeRelationKind kind) =>
+            new(workspaceId, projectId, symbolId, targetId, kind, line, filePath);
+    }
+
+    private static bool IsDefinedInSource(ISymbol symbol) =>
+        symbol.Locations.Any(location => location.IsInSource);
 
     private static void ExtractReferences(
         SyntaxNode root,

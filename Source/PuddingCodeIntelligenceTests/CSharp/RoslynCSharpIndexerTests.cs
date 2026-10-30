@@ -211,6 +211,105 @@ public sealed class RoslynCSharpIndexerTests : IDisposable
             "真实调用必须产生 calls 边。");
     }
 
+    /// <summary>R1-04 门禁：class : BaseClass ⇒ Inherits 边，端点为派生 → 基。</summary>
+    [TestMethod]
+    public async Task DerivedClass_Produces_Inherits_Edge_To_BaseClass()
+    {
+        await IndexInheritanceFixtureAsync();
+
+        var circle = await OutgoingRelationsAsync("Circle", CodeSymbolKind.Class);
+        var shapeBase = await SymbolIdAsync("ShapeBase", CodeSymbolKind.Class);
+
+        Assert.IsTrue(
+            circle.Any(r => r.Kind == CodeRelationKind.Inherits && r.TargetSymbolId == shapeBase),
+            "派生的 Circle 到基类 ShapeBase 必须有 Inherits 边。");
+    }
+
+    /// <summary>R1-04 门禁：class : IFace ⇒ Implements 边。</summary>
+    [TestMethod]
+    public async Task DerivedClass_Produces_Implements_Edge_ToInterface()
+    {
+        await IndexInheritanceFixtureAsync();
+
+        var circle = await OutgoingRelationsAsync("Circle", CodeSymbolKind.Class);
+        var shape = await SymbolIdAsync("IShape", CodeSymbolKind.Interface);
+
+        Assert.IsTrue(
+            circle.Any(r => r.Kind == CodeRelationKind.Implements && r.TargetSymbolId == shape),
+            "Circle 到 IShape 必须有 Implements 边。");
+    }
+
+    /// <summary>R1-04 门禁：override 方法 ⇒ Overrides 边。</summary>
+    [TestMethod]
+    public async Task OverrideMethod_Produces_Overrides_Edge()
+    {
+        await IndexInheritanceFixtureAsync();
+
+        var draw = await SymbolIdAsync("Draw", CodeSymbolKind.Method, containerLike: "Circle");
+        var relations = await _store.ListRelationsAsync(
+            "ws-1", "proj-1", draw, cancellationToken: CancellationToken.None);
+
+        Assert.IsTrue(
+            relations.Any(r => r.Kind == CodeRelationKind.Overrides),
+            "override 方法必须有 Overrides 边。");
+    }
+
+    private async Task IndexInheritanceFixtureAsync()
+    {
+        var compilation = CreateInheritanceCompilation();
+        var indexer = new RoslynCSharpIndexer(_store, _logger);
+        var result = await indexer.IndexCompilationAsync(compilation, "ws-1", "proj-1", CancellationToken.None);
+        Assert.IsTrue(result.Success, result.Message);
+    }
+
+    private async Task<string> SymbolIdAsync(string name, CodeSymbolKind kind, string? containerLike = null)
+    {
+        var symbols = await _store.SearchSymbolsAsync(
+            new CodeSymbolSearchRequest("ws-1", name), CancellationToken.None);
+        var match = symbols.First(s => s.Name == name && s.Kind == kind
+            && (containerLike is null || (s.Container ?? string.Empty).Contains(containerLike, StringComparison.Ordinal)));
+        return match.SymbolId!;
+    }
+
+    private async Task<IReadOnlyList<CodeRelationRecord>> OutgoingRelationsAsync(string name, CodeSymbolKind kind)
+        => await _store.ListRelationsAsync(
+            "ws-1", "proj-1", await SymbolIdAsync(name, kind), cancellationToken: CancellationToken.None);
+
+    private static Compilation CreateInheritanceCompilation()
+    {
+        var sourceCode = """
+namespace MyApp.Inherit
+{
+    public interface IShape
+    {
+        void Draw();
+    }
+
+    public abstract class ShapeBase
+    {
+        public virtual void Draw() { }
+    }
+
+    public class Circle : ShapeBase, IShape
+    {
+        public override void Draw() { }
+    }
+}
+""";
+
+        var tree = CSharpSyntaxTree.ParseText(sourceCode, path: "Inherit.cs");
+        var references = AppDomain.CurrentDomain.GetAssemblies()
+            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+            .Select(a => MetadataReference.CreateFromFile(a.Location))
+            .ToArray<MetadataReference>();
+
+        return CSharpCompilation.Create(
+            "InheritAssembly",
+            [tree],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
     private async Task<IReadOnlyList<CodeRelationRecord>> IncomingRelationsAsync(string methodName)
     {
         var symbols = await _store.SearchSymbolsAsync(
