@@ -1,0 +1,168 @@
+{
+  "producedAtUtc": "2026-10-30T09:41:06.2235550+00:00",
+  "probe": "production-auto",
+  "source": {
+    "kind": "code-index",
+    "pathOrSnapshot": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\r0-02-snapshot\\20261030-093937\\code_index.db",
+    "sha256": "05c76b14d7246928722160e34a67a450e965d02fba6360db422715d0dc6d0cc2",
+    "bytes": 1923649536,
+    "derivedFrom": null,
+    "snapshotCreatedUtc": null,
+    "workCopy": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\temp\\r0-02-work\\20261030-094027\\code_index.db",
+    "sha256AfterRun": "05c76b14d7246928722160e34a67a450e965d02fba6360db422715d0dc6d0cc2",
+    "frozenUnchanged": true
+  },
+  "repo": {
+    "headSha": "326818523cc48ef3c4969d61e4099756c2b2f343",
+    "headSubject": "docs(retrieval): 冻结 R0-02 生产端口探针与基线任务卡",
+    "worktreeClean": false,
+    "dirtyPathCount": 16,
+    "note": null
+  },
+  "set": {
+    "name": "small-puddingcodeindex-v1",
+    "version": 1,
+    "caseCount": 28,
+    "sha256": "6cde4813508b0f16560b7040ff0ae7a384f12a161d6f2633058e993c7f1390fb"
+  },
+  "capabilities": {
+    "lexical": {
+      "state": "executed",
+      "reason": null
+    },
+    "relations": {
+      "state": "executed",
+      "reason": null
+    },
+    "vector": {
+      "state": "not-executed",
+      "reason": "未配置向量：生产端口未接入 IEmbeddingProvider（R5 未落地），本探针不伪造向量指标。"
+    }
+  },
+  "negativeControls": [
+    {
+      "query": "where is the index maintenance switch that the host lifecycle drives",
+      "claimKind": "None",
+      "unsearched": [
+        "vector"
+      ],
+      "passed": true,
+      "caseKind": "Intent"
+    },
+    {
+      "query": "which file turns gitignore style patterns into the directories the index skips",
+      "claimKind": "None",
+      "unsearched": [
+        "vector"
+      ],
+      "passed": true,
+      "caseKind": "Intent"
+    },
+    {
+      "query": "how does the scheduler decide when a maintenance cycle may run",
+      "claimKind": "None",
+      "unsearched": [
+        "vector"
+      ],
+      "passed": true,
+      "caseKind": "Intent"
+    },
+    {
+      "query": "which sqlite store removes index rows for files that disappeared from disk",
+      "claimKind": "None",
+      "unsearched": [
+        "vector"
+      ],
+      "passed": true,
+      "caseKind": "Intent"
+    },
+    {
+      "query": "where are file system change batches coalesced before the index is updated",
+      "claimKind": "None",
+      "unsearched": [
+        "vector"
+      ],
+      "passed": true,
+      "caseKind": "Intent"
+    },
+    {
+      "query": "how is a code file path normalised so two spellings map to one identity",
+      "claimKind": "None",
+      "unsearched": [
+        "vector"
+      ],
+      "passed": true,
+      "caseKind": "Intent"
+    },
+    {
+      "query": "where is the project root detected when no workspace descriptor exists",
+      "claimKind": "None",
+      "unsearched": [
+        "vector"
+      ],
+      "passed": true,
+      "caseKind": "Intent"
+    },
+    {
+      "query": "which service marks and sweeps index rows whose file no longer exists",
+      "claimKind": "None",
+      "unsearched": [
+        "vector"
+      ],
+      "passed": true,
+      "caseKind": "Intent"
+    }
+  ],
+  "claimStability": {
+    "queriesWithClaim": 8,
+    "variedQueries": 0,
+    "zeroHitCallsWithoutClaim": 0,
+    "repetitionsIdentical": true
+  },
+  "fixtureProbes": {
+    "relations": {
+      "ran": true,
+      "anchorSymbol": "ClassifyForEmpty",
+      "anchorSource": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\Source\\PuddingCodeIndex\\Contracts\\Retrieval\\RetrievalClaim.cs:117",
+      "intent": "Callers",
+      "incomingRelationCount": 6,
+      "hits": 6,
+      "claimKind": null,
+      "note": null
+    },
+    "pagination": {
+      "ran": true,
+      "query": "code",
+      "pageSize": 3,
+      "page1Hits": 3,
+      "hasNextCursor": true,
+      "page2Hits": 3,
+      "overlapWithPage1": 0,
+      "note": null
+    },
+    "symbolRef": {
+      "ran": true,
+      "tokenPrefix": "pmsym1.",
+      "issued": true,
+      "attempts": 21,
+      "issuedCount": 17,
+      "issuedSymbol": "code",
+      "issuedSymbolSource": "D:\\CodeProject\\PuddingAgent\\PuddingAgent\\Source\\Pudding.CapabilityBrokerTests\\TestInfrastructure.cs:459",
+      "anchorIssued": false,
+      "skipReason": "ref token 超过 512 字节上限（实际 579）。请缩短路径或符号标识。",
+      "skipReasons": [
+        "ClassifyForEmpty: ref token 超过 512 字节上限（实际 579）。请缩短路径或符号标识。",
+        "code: ref token 超过 512 字节上限（实际 547）。请缩短路径或符号标识。",
+        "code: ref token 超过 512 字节上限（实际 693）。请缩短路径或符号标识。",
+        "code: ref token 超过 512 字节上限（实际 522）。请缩短路径或符号标识。"
+      ],
+      "manifestKnownPaths": 13716,
+      "note": null
+    }
+  },
+  "notes": [
+    "capabilities 三态来自实际执行分支：lexical 依据本轮 claim.searched 是否恒含 lexical；relations 依据锚点关系意图是否真的调用过；vector 在本构建不可执行（R5 未落地），故不出现任何向量指标数值。",
+    "本模式只读：数据经 SQLite 在线备份 API 从 Mode=ReadOnly 连接复制成冻结快照；测量在一次性工作副本上进行，冻结主干只被读取，跑完重算 sha256 与跑前一致（见 source.frozenUnchanged）。对生产库没有任何写语句。",
+    "fixtureProbes 中的行号/命中数是**本次冻结快照上的实测值**，不是永久断言；换快照或换 HEAD 必须重测。"
+  ]
+}

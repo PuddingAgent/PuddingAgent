@@ -1,0 +1,194 @@
+{
+  "ProbeName": "production-auto",
+  "SetName": "production-negative-v1",
+  "SetVersion": 1,
+  "ScopeLabel": "workspace:default",
+  "ScopeRootDirectory": "D:\\CodeProject\\PuddingAgent\\PuddingAgent",
+  "StartedAtUtc": "2026-10-30T09:40:14.5939666\u002B00:00",
+  "TotalElapsedMs": 9455,
+  "CaseCount": 4,
+  "FailedCaseCount": 0,
+  "RecallAt1": 0,
+  "RecallAt5": 0,
+  "RecallAt10": 0,
+  "Mrr": 0,
+  "PrecisionAt5": 0,
+  "PrecisionAt10": 0,
+  "NoiseRateAt10": 0,
+  "Slices": [
+    {
+      "Language": "CSharp",
+      "CaseCount": 4,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0
+    }
+  ],
+  "ColdLatency": {
+    "Count": 4,
+    "MinMs": 351.981,
+    "P50Ms": 354.497,
+    "P95Ms": 2619.05,
+    "P99Ms": 2619.05,
+    "MaxMs": 2619.05,
+    "MeanMs": 922.082
+  },
+  "WarmLatency": {
+    "Count": 16,
+    "MinMs": 345.575,
+    "P50Ms": 356.511,
+    "P95Ms": 382.766,
+    "P99Ms": 382.766,
+    "MaxMs": 382.766,
+    "MeanMs": 360.102
+  },
+  "AllRepetitionsIdentical": true,
+  "ColdObservations": [
+    {
+      "Index": 0,
+      "Cold": true,
+      "HitCount": 0,
+      "ElapsedMs": 2619.0501,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 1,
+      "Cold": true,
+      "HitCount": 0,
+      "ElapsedMs": 354.4971,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 2,
+      "Cold": true,
+      "HitCount": 0,
+      "ElapsedMs": 351.9813,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 3,
+      "Cold": true,
+      "HitCount": 0,
+      "ElapsedMs": 362.8,
+      "Success": true,
+      "Error": null
+    }
+  ],
+  "Cases": [
+    {
+      "Case": {
+        "Query": "\u7B7E\u53D1\u7B26\u53F7\u5F15\u7528\u7684\u4EE4\u724C",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/Retrieval/SymbolRefIssuer.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [],
+      "ElapsedMs": 357.3829,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 0,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "\u7A7A\u7ED3\u679C\u600E\u4E48\u533A\u5206\u6CA1\u67E5\u8FC7\u548C\u786E\u5B9E\u6CA1\u6709",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/Retrieval/RetrievalClaim.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [],
+      "ElapsedMs": 350.7149,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 0,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "\u4E24\u79CD\u5199\u6CD5\u7684\u8DEF\u5F84\u600E\u4E48\u7B97\u6210\u540C\u4E00\u4E2A\u8EAB\u4EFD",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodePathIdentity.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [],
+      "ElapsedMs": 377.6678,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 0,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "\u7FFB\u9875\u6E38\u6807\u662F\u8C01\u7B7E\u53D1\u7684",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/Retrieval/RetrievalPortV1.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [],
+      "ElapsedMs": 355.2485,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 0,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    }
+  ]
+}

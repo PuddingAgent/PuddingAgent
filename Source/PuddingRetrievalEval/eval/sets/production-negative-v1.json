@@ -1,0 +1,31 @@
+{
+  "name": "production-negative-v1",
+  "version": 1,
+  "description": "R0-02 negative-control set for the *production* retrieval port (IRetrievalPort). Every query is a Chinese natural-language concept whose answer really exists in this repository, but whose literal text shares no token with the identifiers of the answering file — so a lexical/symbol-only pass must miss it. The assertion for these cases is NOT recall (recall is expected to be 0, and that is the measurement): it is claim.kind == None with 'vector' still listed in claim.unsearched, i.e. a lexical-only miss may never be reported as 'it does not exist'. expectedHits records the true answering file so the miss stays visible and machine-checkable.",
+  "cases": [
+    {
+      "query": "签发符号引用的令牌",
+      "expectedHits": ["Source/PuddingCodeIndex/Services/Retrieval/SymbolRefIssuer.cs"],
+      "kind": "intent",
+      "language": "csharp"
+    },
+    {
+      "query": "空结果怎么区分没查过和确实没有",
+      "expectedHits": ["Source/PuddingCodeIndex/Contracts/Retrieval/RetrievalClaim.cs"],
+      "kind": "intent",
+      "language": "csharp"
+    },
+    {
+      "query": "两种写法的路径怎么算成同一个身份",
+      "expectedHits": ["Source/PuddingCodeIndex/Services/CodePathIdentity.cs"],
+      "kind": "intent",
+      "language": "csharp"
+    },
+    {
+      "query": "翻页游标是谁签发的",
+      "expectedHits": ["Source/PuddingCodeIndex/Services/Retrieval/RetrievalPortV1.cs"],
+      "kind": "intent",
+      "language": "csharp"
+    }
+  ]
+}

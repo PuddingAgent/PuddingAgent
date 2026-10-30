@@ -1,0 +1,23 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+    <AssemblyName>PuddingRetrievalEvalProbeTests</AssemblyName>
+    <RootNamespace>PuddingRetrievalEvalProbeTests</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Component tests for the R0-02 production probe adapter (组件化交付规程 S2/S3).
+       Why a separate project and not PuddingRetrievalEvalTests: that project's boundary rule forbids
+       referencing any engine (PuddingCodeIndex included), and ComponentBoundaryTests enforces it at
+       runtime. The adapter *must* know the engine — that is the whole point of the adapter/probe
+       split — so its tests live here, next to the adapter, and the evaluation component keeps zero
+       ProjectReference. -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingRetrievalEvalProbe\PuddingRetrievalEvalProbe.csproj" />
+  </ItemGroup>
+
+</Project>

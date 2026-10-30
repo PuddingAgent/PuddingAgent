@@ -24,7 +24,7 @@
 | 文件 | 内容 |
 |---|---|
 `Contracts/EvalCase.cs` | `EvalCase` / `EvalKind{Symbol,Intent,Crossref}` / `EvalLanguage{CSharp,TypeScript,Markdown}` / `EvalSet`。`Unknown = 0`，加载器永不产出 `Unknown` |
-`Contracts/SearchProbeContracts.cs` | 端口 `ISearchProbe` + `SearchProbeRequest` / `SearchScope` / `SearchProbeHit` / `SearchProbeOutcome`。耗时由**探针**测量（`double` 毫秒，保留亚毫秒分辨率）|
+`Contracts/SearchProbeContracts.cs` | 端口 `ISearchProbe` + `SearchProbeRequest` / `SearchScope` / `SearchProbeHit` / `SearchProbeOutcome` / `SearchProbeClaim`。耗时由**探针**测量（`double` 毫秒，保留亚毫秒分辨率）。R0-02：`SearchProbeOutcome` 追加可选 `Claim`（`SearchProbeClaim{Kind, Searched, Unsearched, NextStepKinds}`，**纯字符串**，不引用任何引擎）——空结果的否定类型与已查/未查面得以进入报告，本工程仍为零 ProjectReference 叶子 |
 `Services/PathIdentity.cs` | 路径比较规则：大小写不敏感、`\`≡`/`、`./` 去除、期望命中支持后缀匹配（仓储相对路径 vs 绝对命中）、可选 `#Symbol`、`DistinctByFile`（同一文件多行命中只算一次）|
 `Services/NoiseDirectoryRules.cs` | **噪声目录**定义 = 现有三套规则的**并集**（`SearchGrepTool.DefaultExcludeDirs` 12 + `IndexExcludePatterns.NoiseDirNames` 28 + `FullTextIndexOptions.ExcludedDirectoryNames` 33 ⇒ 46 个去重段名）。取并集是**保守**方向（宁可多报噪声），因为 U4-1 才是"选哪套"的裁决者 |
 `Services/RetrievalMetrics.cs` | `recall@k`(1/5/10) / `MRR` / `precision@k` / `noiseRate@k` + 分子分母原始计数。**分母已在 XML 文档逐条写明** |
@@ -34,6 +34,8 @@
 `Services/EvalRun.cs` | 运行结果模型（逐 case 分数 + 分层聚合 + 冷/热 `LatencySummary` + 冷调用原始样本）|
 `Services/EvalReportWriter.cs` | Markdown + JSON（`ToMarkdown` / `ToJson` 纯函数；`Write` 落盘 UTF-8 无 BOM）。报告内**显式声明不设阈值** |
 `eval/sets/seed-v1.json` | **种子标注集**：80 条（C# 36 / TS-TSX 22 / md 22；symbol 36 / intent 26 / crossref 18），共 98 个 (query, 期望文件) 对 |
+| `eval/sets/production-negative-v1.json` | **R0-02 概念反例集**（4 条中文自然语言）：答案确实在仓库里但字面与标识符零重叠。断言不是命中，而是 `claim.kind == None` 且 `unsearched` 含 `vector`——词面未命中不得被写成“世上没有” |
+| `eval/reports/r0-02-production-*.{md,json,probe.json}` | **R0-02 生产端口基线**（`PuddingRetrievalEvalProbe --mode production`，`IRetrievalPort` 本体）：`negative-v1` 与 `negative-v1-repeat` 同快照重跑，`small-puddingcodeindex` 同集对 10-02 基线。`.probe.json` = 环境冻结块（数据 sha256 + repo HEAD + capabilities 三态 + 反例 claim + 锚点/分页/ref 实测）|
 | `eval/reports/*.md,*.json` | 首份真实基线（Lucene 全文索引面），见 `eval/reports/README.md` |
 | `eval/reports/u4-3-frozen-{f32,i8}-{all,p0}.*` | **U4-3 四变体矩阵**（同一 1,352 块语料：float32/int8 × 全 tier/仅 P0），报告 `temp/U4-3-REPORT.md`。`.probe.json` 里记 `VectorFormat` / `VectorTierFilter`，与索引 JSON 的 `VectorFormat` 对得上 |
 | `eval/reports/u4-3-{f32,i8}-{all,p0}.*` | 同四变体在**活仓库语料**（U4-2a 提交后 61 文件 / 2,177 块）上的稳健性复跑 |

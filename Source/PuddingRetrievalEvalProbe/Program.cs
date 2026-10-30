@@ -101,7 +101,7 @@ internal static class Program
         Console.WriteLine($"repoRoot      = {repoRoot}");
         Console.WriteLine($"scope         = {scope}");
         Console.WriteLine($"indexRoot     = {indexRoot}");
-        Console.WriteLine($"set           = {setPath}");
+        Console.WriteLine($"set           = {(mode == "production" ? "<resolved by --mode production>" : setPath)}");
         Console.WriteLine($"outBase       = {outBase}");
         Console.WriteLine($"label         = {label}");
         Console.WriteLine($"expectedUnder = {expectedUnder ?? "<none>"}");
@@ -130,6 +130,10 @@ internal static class Program
 
         switch (mode)
         {
+            case "production":
+                // R0-02: measure the *real* port (PuddingCodeIndex), not a Lucene stand-in.
+                return await ProductionRun.RunAsync(options, repoRoot).ConfigureAwait(false);
+
             case "count":
                 return CorpusInventory.Run(scope, indexOptions, options.GetInt("top", 25));
 
@@ -359,7 +363,7 @@ internal static class Program
                 return VectorScanBench.Run(options, repoRoot);
 
             default:
-                Console.Error.WriteLine($"unknown mode '{mode}' (expected count|index|measure|scan)");
+                Console.Error.WriteLine($"unknown mode '{mode}' (expected count|index|measure|scan|production)");
                 return 5;
         }
     }
@@ -368,7 +372,7 @@ internal static class Program
     /// Keeps only the cases whose every expected hit lives under <paramref name="expectedUnder"/>.
     /// Returns the set unchanged when no prefix is given.
     /// </summary>
-    private static EvalSet RestrictCases(EvalSet set, string? expectedUnder)
+    internal static EvalSet RestrictCases(EvalSet set, string? expectedUnder)
     {
         if (string.IsNullOrWhiteSpace(expectedUnder))
             return set;

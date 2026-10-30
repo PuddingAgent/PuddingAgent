@@ -74,7 +74,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingFullTextIndex.Cli/` | 全文索引供给的离线驱动工具（`plan` / `status` / `build` / `cancel`） | [code_map](Source/PuddingFullTextIndex.Cli/code_map.md) |
 | `Source/PuddingCodeIndexer.Cli/` | 代码索引 CLI | [code_map](Source/PuddingCodeIndexer.Cli/code_map.md) |
 | `Source/PuddingRetrievalEval/` | 检索评测组件（叶子，只依赖 `ISearchProbe` 端口） | [code_map](Source/PuddingRetrievalEval/code_map.md) |
-| `Source/PuddingRetrievalEvalProbe/` | 检索评测的真实探针入口：语料构建 + Lucene/向量/RRF 混合检索的可复现测量 | — |
+| `Source/PuddingRetrievalEvalProbe/` | 检索评测的真实探针入口：语料构建 + Lucene/向量/RRF 混合检索的可复现测量；R0-02 起新增 `--mode production`（直接驱动生产 `IRetrievalPort`，快照冻结 + 环境冻结块） | — |
 | `Source/PuddingBrowser.Abstractions/` | Browser 契约（驱动与 Agent 工具共用） | [code_map](Source/PuddingBrowser.Abstractions/code_map.md) |
 | `Source/PuddingBrowser.Protocol/` | Bridge 线协议 | [code_map](Source/PuddingBrowser.Protocol/code_map.md) |
 | `Source/PuddingBrowser.WebView2/` | WebView2 Driver（DOM/元素/页面操作） | [code_map](Source/PuddingBrowser.WebView2/code_map.md) |

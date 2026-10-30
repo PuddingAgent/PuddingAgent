@@ -88,6 +88,7 @@
     <Project Path="Source/PuddingMemoryEngineTests/PuddingMemoryEngineTests.csproj" />
     <Project Path="Source/PuddingPathFilteringTests/PuddingPathFilteringTests.csproj" />
     <Project Path="Source/PuddingPlatformTests/PuddingPlatformTests.csproj" />
+    <Project Path="Source/PuddingRetrievalEvalProbeTests/PuddingRetrievalEvalProbeTests.csproj" />
     <Project Path="Source/PuddingRetrievalEvalTests/PuddingRetrievalEvalTests.csproj" />
     <Project Path="Source/PuddingRuntimeTests/PuddingRuntimeTests.csproj" />
     <Project Path="Source/PuddingVectorIndexTests/PuddingVectorIndexTests.csproj" />

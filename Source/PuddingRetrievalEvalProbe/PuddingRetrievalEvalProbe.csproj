@@ -31,6 +31,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The adapter types (ProductionRetrievalProbe / ProductionCapabilityPolicy) are internal on
+         purpose: they are adapter-side, not a product API. The component test project needs them to
+         pin "claim is propagated" and "a face that did not run is never reported as executed". -->
+    <InternalsVisibleTo Include="PuddingRetrievalEvalProbeTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\PuddingRetrievalEval\PuddingRetrievalEval.csproj" />
     <ProjectReference Include="..\PuddingFullTextIndex\PuddingFullTextIndex.csproj" />
     <!-- U4-1a: the chunking component (leaf) plus the Roslyn-bearing project that lets the probe act as
@@ -41,6 +48,10 @@
          turns an EmbeddingRoute into a live OpenAI-compatible vector service. The component itself
          stays a leaf; the HTTP/credential-bearing adapter lives here. -->
     <ProjectReference Include="..\PuddingVectorIndex\PuddingVectorIndex.csproj" />
+    <!-- R0-02: the *production* retrieval port (PuddingCodeIndex) becomes an observable engine for
+         the evaluation. This is the adapter side of the port design: the eval component stays a leaf
+         (zero ProjectReference) and only ever sees ISearchProbe / SearchProbeClaim. -->
+    <ProjectReference Include="..\PuddingCodeIndex\PuddingCodeIndex.csproj" />
   </ItemGroup>
 
 </Project>

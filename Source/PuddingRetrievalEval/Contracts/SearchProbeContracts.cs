@@ -27,6 +27,31 @@ public sealed record SearchProbeRequest(string Query, SearchScope Scope, int Max
 public sealed record SearchProbeHit(string Path, string? Symbol = null, int? Line = null);
 
 /// <summary>
+/// The machine-checkable claim a probe observed for a call that produced no hits (ADR-089 §8.x).
+/// <para>
+/// Why it is a port-level type and not an engine type: the evaluation must be able to tell
+/// "I searched these faces and found nothing" apart from "the semantic face was never wired"
+/// without referencing any engine. Every field is therefore a plain string — an adapter maps the
+/// engine's claim into this shape, and the engine type never crosses the component boundary
+/// (this project stays a leaf: zero ProjectReference).
+/// </para>
+/// <para>
+/// <see cref="Kind"/> is passed through verbatim (<c>None</c> / <c>NoCandidates</c> /
+/// <c>NoMatchInScope</c>); <see cref="Unsearched"/> lists the faces known to exist but not run —
+/// their mere presence is the reason a negative conclusion is not allowed.
+/// </para>
+/// </summary>
+/// <param name="Kind">Negative type reported by the engine, verbatim.</param>
+/// <param name="Searched">Faces the probe actually executed for this call.</param>
+/// <param name="Unsearched">Faces known to exist but not executed (e.g. <c>vector</c>).</param>
+/// <param name="NextStepKinds">Kinds of the next-step suggestions the engine returned.</param>
+public sealed record SearchProbeClaim(
+    string Kind,
+    IReadOnlyList<string> Searched,
+    IReadOnlyList<string> Unsearched,
+    IReadOnlyList<string> NextStepKinds);
+
+/// <summary>
 /// Result of one probe call. <see cref="Hits"/> is already ranked: index 0 is the engine's top hit.
 /// <para>
 /// <see cref="ElapsedMs"/> is measured <b>by the probe</b> (the evaluation layer never times an engine
@@ -38,12 +63,19 @@ public sealed record SearchProbeHit(string Path, string? Symbol = null, int? Lin
 /// answers in well under 1 ms, and integer milliseconds would truncate the whole distribution to zero
 /// — which would look like a broken instrument rather than a fast engine.
 /// </para>
+/// <para>
+/// <see cref="Claim"/> is the optional machine-checkable negative claim (see
+/// <see cref="SearchProbeClaim"/>). It is optional and appended last so every existing construction
+/// site keeps compiling and keeps its meaning; a probe that cannot observe claims leaves it null
+/// rather than inventing one.
+/// </para>
 /// </summary>
 public sealed record SearchProbeOutcome(
     IReadOnlyList<SearchProbeHit> Hits,
     double ElapsedMs,
     bool Success = true,
-    string? Error = null)
+    string? Error = null,
+    SearchProbeClaim? Claim = null)
 {
     public static SearchProbeOutcome Failure(double elapsedMs, string error) =>
         new([], elapsedMs, false, error);
