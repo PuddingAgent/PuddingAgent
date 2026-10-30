@@ -410,6 +410,10 @@ public sealed class StorageManagementAdministrationTests : IDisposable
             executor,
             [],
             paths,
+            new StorageAutomaticCleanupLoop(
+                new StorageAutomaticCleanupDryRun(paths, NullLogger<StorageAutomaticCleanupDryRun>.Instance),
+                new StorageAutomaticCleanupOptions(),
+                NullLogger<StorageAutomaticCleanupLoop>.Instance),
             NullLogger<StorageMaintenanceCoordinator>.Instance);
     }
 
