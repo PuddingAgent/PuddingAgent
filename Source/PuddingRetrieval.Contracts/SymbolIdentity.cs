@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 跨 scope 去重键（ADR-089 §2.4）：<b>规范化 symbol_id + 文件 + 行</b>。

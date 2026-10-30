@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 命中层（ADR-089 §1 的六层分层 + Unknown）。

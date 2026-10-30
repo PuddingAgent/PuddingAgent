@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PuddingCodeIndex.Contracts;
-using PuddingCodeIndex.Contracts.Retrieval;
+using PuddingRetrieval.Contracts;
 using PuddingCodeIndex.Services.Retrieval;
 using PuddingCodeIndex.Storage;
 using PuddingRuntime;

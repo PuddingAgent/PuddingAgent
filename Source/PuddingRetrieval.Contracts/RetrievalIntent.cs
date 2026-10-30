@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 单次检索偏好（ADR-089 §2）：语义面向 <b>Agent 的意图</b>，不是引擎细节。

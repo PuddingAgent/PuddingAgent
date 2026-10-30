@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 空结果的**否定类型**（ADR-089 §8.x）：把"我没查到"与"世上没有"分开。

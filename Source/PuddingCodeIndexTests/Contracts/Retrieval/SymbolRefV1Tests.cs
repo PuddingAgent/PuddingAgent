@@ -1,5 +1,5 @@
 using System.Text;
-using PuddingCodeIndex.Contracts.Retrieval;
+using PuddingRetrieval.Contracts;
 
 namespace PuddingCodeIndexTests.Contracts.Retrieval;
 

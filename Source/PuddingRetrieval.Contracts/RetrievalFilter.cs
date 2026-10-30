@@ -1,6 +1,6 @@
 using PuddingCodeIndex.Contracts;
 
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 过滤面的名字（ADR-089 §2.3）：用于"放宽哪个面会得到结果"（<see cref="RetrievalEmptyReasonPolicy.SuggestRelaxationFacet"/>）

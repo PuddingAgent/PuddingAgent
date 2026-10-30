@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using PuddingCodeIndex.Contracts;
-using PuddingCodeIndex.Contracts.Retrieval;
+using PuddingRetrieval.Contracts;
 
 namespace PuddingCodeIndex.Services.Retrieval;
 

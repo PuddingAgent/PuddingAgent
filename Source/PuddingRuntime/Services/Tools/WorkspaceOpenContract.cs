@@ -1,4 +1,4 @@
-using PuddingCodeIndex.Contracts.Retrieval;
+using PuddingRetrieval.Contracts;
 using PuddingCodeIntelligence.Contracts;
 
 namespace PuddingRuntime.Services.Tools;

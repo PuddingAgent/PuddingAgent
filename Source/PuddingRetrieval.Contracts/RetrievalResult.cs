@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 检索结果（ADR-089 §2.1 / §2.2 / §2.4 / §2.3 的落地形状）：分层命中 + 双视图 + 降级标注 +

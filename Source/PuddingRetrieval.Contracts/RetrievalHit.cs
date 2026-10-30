@@ -1,6 +1,6 @@
 using PuddingCodeIndex.Contracts;
 
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 一条命中（ADR-089 §2.1 第 2 条 / §5.3）：<b>每个命中都自描述</b> ——

@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 一组 scope 标识的**规范集合**（去重 + 确定性排序 + 取值相等）。

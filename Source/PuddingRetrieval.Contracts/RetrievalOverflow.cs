@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>预算口径：先触顶的是哪一个（ADR-089 §2.2：条数 + 字节/token 双预算，token 优先）。</summary>
 public enum RetrievalBudgetKind

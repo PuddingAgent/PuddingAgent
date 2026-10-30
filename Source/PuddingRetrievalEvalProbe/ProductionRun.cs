@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Data.Sqlite;
 using PuddingCodeIndex.Contracts;
-using PuddingCodeIndex.Contracts.Retrieval;
+using PuddingRetrieval.Contracts;
 using PuddingCodeIndex.Services.Retrieval;
 using PuddingCodeIndex.Storage;
 using PuddingRetrievalEval.Contracts;

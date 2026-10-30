@@ -1,5 +1,5 @@
 using System.Text.Json;
-using PuddingCodeIndex.Contracts.Retrieval;
+using PuddingRetrieval.Contracts;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PuddingCode.Tools;
 using PuddingCodeIndex.Contracts;

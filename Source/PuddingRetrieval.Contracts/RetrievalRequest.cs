@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 检索请求（ADR-089 §2 的合同草案 + §2.2 双预算 + §2.3 过滤面）。

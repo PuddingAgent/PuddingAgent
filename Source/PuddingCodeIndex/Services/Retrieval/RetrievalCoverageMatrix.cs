@@ -4,7 +4,7 @@ namespace PuddingCodeIndex.Services.Retrieval;
 /// 覆盖矩阵的一格：某项目 × 某语言 × 某能力面 的声明结果。
 /// <para>
 /// <see cref="Supported"/> 与 <see cref="Alternative"/> 的关系由
-/// <see cref="Contracts.Retrieval.LanguageCapability"/> 保证（不支持必有替代），
+/// <see cref="PuddingRetrieval.Contracts.LanguageCapability"/> 保证（不支持必有替代），
 /// 本类型只把它们投影成"可以打印成表"的形状。
 /// </para>
 /// </summary>
@@ -63,12 +63,12 @@ public static class RetrievalCoverageMatrix
     /// <exception cref="ArgumentNullException">任一参数为 <c>null</c>。</exception>
     public static IReadOnlyList<ProjectCoverage> Build(
         IEnumerable<ProjectLanguages> projects,
-        Contracts.Retrieval.ILanguageCapabilityMatrix matrix)
+        PuddingRetrieval.Contracts.ILanguageCapabilityMatrix matrix)
     {
         ArgumentNullException.ThrowIfNull(projects);
         ArgumentNullException.ThrowIfNull(matrix);
 
-        var faces = Enum.GetValues<Contracts.Retrieval.RetrievalCapabilityFace>();
+        var faces = Enum.GetValues<PuddingRetrieval.Contracts.RetrievalCapabilityFace>();
 
         var rows = new List<ProjectCoverage>();
 
@@ -115,7 +115,7 @@ public static class RetrievalCoverageMatrix
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        var faces = Enum.GetValues<Contracts.Retrieval.RetrievalCapabilityFace>()
+        var faces = Enum.GetValues<PuddingRetrieval.Contracts.RetrievalCapabilityFace>()
             .Select(face => face.ToString())
             .ToArray();
 

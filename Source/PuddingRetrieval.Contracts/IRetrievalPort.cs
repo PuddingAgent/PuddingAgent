@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 结构化检索端口（ADR-089 §2；<b>本刀只冻结签名，无实现</b>）。

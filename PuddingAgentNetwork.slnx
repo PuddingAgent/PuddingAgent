@@ -46,6 +46,7 @@
     <Project Path="Source/PuddingPathFiltering/PuddingPathFiltering.csproj" />
     <Project Path="Source/PuddingGrep/PuddingGrep.csproj" />
     <Project Path="Source/PuddingDomain.Contracts/PuddingDomain.Contracts.csproj" />
+    <Project Path="Source/PuddingRetrieval.Contracts/PuddingRetrieval.Contracts.csproj" />
     <Project Path="Source/PuddingHtmlTests/PuddingHtmlTests.csproj" />
     <Project Path="Source/PuddingPlatform/PuddingPlatform.csproj" />
     <Project Path="Source/PuddingRetrievalEval/PuddingRetrievalEval.csproj" />

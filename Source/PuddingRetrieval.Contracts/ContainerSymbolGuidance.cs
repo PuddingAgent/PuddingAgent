@@ -1,4 +1,6 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+using PuddingCodeIndex.Contracts;
+
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 容器符号（命名空间 / 类型 / 类 / 接口 / 结构 / 枚举 / 委托）在<b>关系面 0 条结果</b>时的统一说法。

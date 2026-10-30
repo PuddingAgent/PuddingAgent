@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 已解析的符号锚点（设计 §8.2 的 <c>workspace_search(symbol_ref="…", intent="callers")</c>）。

@@ -5,7 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PuddingCodeIndex.Contracts;
-using PuddingCodeIndex.Contracts.Retrieval;
+using PuddingRetrieval.Contracts;
 using PuddingCodeIndex.Services.Retrieval;
 
 namespace PuddingCodeIndexTests.Services.Retrieval;

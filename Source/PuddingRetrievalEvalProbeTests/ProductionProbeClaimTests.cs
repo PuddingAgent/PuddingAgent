@@ -1,4 +1,4 @@
-using PuddingCodeIndex.Contracts.Retrieval;
+using PuddingRetrieval.Contracts;
 using PuddingRetrievalEval.Contracts;
 using PuddingRetrievalEvalProbe;
 

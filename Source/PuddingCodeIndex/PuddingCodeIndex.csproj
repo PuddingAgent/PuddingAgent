@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PuddingPathFiltering\PuddingPathFiltering.csproj" />
     <ProjectReference Include="..\PuddingDomain.Contracts\PuddingDomain.Contracts.csproj" />
+    <ProjectReference Include="..\PuddingRetrieval.Contracts\PuddingRetrieval.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

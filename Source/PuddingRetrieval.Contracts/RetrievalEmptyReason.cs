@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 空结果的**原因**（ADR-089 §2.1 第 3 条 + §8.9）：这是"空洞否定"的对立面。

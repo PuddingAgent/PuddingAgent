@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// "下一步"的种类（ADR-089 §2.1 第 3/7 条 + §2.2 C）：

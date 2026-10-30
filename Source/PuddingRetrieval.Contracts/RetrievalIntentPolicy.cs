@@ -1,6 +1,6 @@
 using PuddingCodeIndex.Contracts;
 
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// intent → 过滤 + 层序 的**成文表**（ADR-089 §2 表 + §2.1 反向要求）。

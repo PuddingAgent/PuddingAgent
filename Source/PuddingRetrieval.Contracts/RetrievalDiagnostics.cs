@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>特异度（ADR-089 §2.2 C）：查询问得准不准。</summary>
 public enum QuerySpecificity

@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 从路径派生的可解释事实（语言、顶层目录）：分布摘要与过载诊断都依赖它，

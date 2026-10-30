@@ -1,5 +1,5 @@
 using System.Text.Json.Serialization;
-using PuddingCodeIndex.Contracts.Retrieval;
+using PuddingRetrieval.Contracts;
 using PuddingRetrievalEval.Contracts;
 
 namespace PuddingRetrievalEvalProbe;

@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 显式**全序**比较器（ADR-089 §2.1 第 5 条 + §2.2）：同一 <c>query + scope + 索引版本</c>

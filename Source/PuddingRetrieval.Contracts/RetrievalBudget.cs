@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 结果预算（ADR-089 §2.2 / §8.7）：用户第六轮裁定原文 ——

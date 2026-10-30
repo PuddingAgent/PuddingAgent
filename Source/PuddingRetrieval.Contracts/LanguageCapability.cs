@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 能力面（ADR-089 §4 / §5.1）：能力矩阵要回答"这门语言 / 这个面支持到哪一级"。

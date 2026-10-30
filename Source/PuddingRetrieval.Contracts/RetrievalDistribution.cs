@@ -1,4 +1,6 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+using PuddingCodeIndex.Contracts;
+
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 分布摘要（ADR-089 §2.2）：按 <see cref="RetrievalHitKind"/> / <c>CodeSymbolKind</c> / 语言 / 顶层目录计数。

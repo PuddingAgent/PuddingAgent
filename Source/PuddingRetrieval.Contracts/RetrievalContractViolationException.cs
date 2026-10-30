@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 检索合同的**跨字段不变量**被违反（ADR-089 §8 的硬约束在构造期 fail-closed）。

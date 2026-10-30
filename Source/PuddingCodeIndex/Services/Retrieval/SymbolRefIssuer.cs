@@ -1,5 +1,5 @@
 using PuddingCodeIndex.Contracts;
-using PuddingCodeIndex.Contracts.Retrieval;
+using PuddingRetrieval.Contracts;
 
 namespace PuddingCodeIndex.Services.Retrieval;
 

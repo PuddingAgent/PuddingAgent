@@ -1,6 +1,6 @@
 using PuddingCodeIndex.Contracts;
 
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 符号视图（ADR-089 §5.4 的"双视图"之一）：<b>含归属与命中原因摘要</b>。

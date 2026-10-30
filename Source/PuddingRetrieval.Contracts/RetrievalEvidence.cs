@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 证据位置（ADR-089 §3 / §8.2）：<b>每条命中都必须能回答"证据在哪"</b>（文件 + 行号），

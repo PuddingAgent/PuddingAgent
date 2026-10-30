@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 符号标识的**可重定位性**判定（symbol_ref 提案 §6）。

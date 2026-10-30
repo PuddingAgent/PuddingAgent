@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    ADR-089 R2-00/R2-01：跨 provider 的检索契约（请求 / 结果 / 覆盖声明 / 能力矩阵）。
+
+    依赖方向：Contracts → PuddingDomain.Contracts（跨层共享值类型）→ BCL。
+    不认识 CodeIndex / CodeIntelligence / Runtime / Platform / Host。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingDomain.Contracts\PuddingDomain.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

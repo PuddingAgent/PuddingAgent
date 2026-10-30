@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Contracts.Retrieval;
+namespace PuddingRetrieval.Contracts;
 
 /// <summary>
 /// 跨 scope 去重的产出（ADR-089 §2.4 / §8.10）：<b>去重必须先于过载判定</b>。
