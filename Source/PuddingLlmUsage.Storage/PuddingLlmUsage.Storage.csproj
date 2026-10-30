@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>PuddingLlmUsage.Storage</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    LLM 余额采样的 SQLite 适配器（组件化交付规程 S1）。
+
+    边界（由测试 PuddingLlmUsageStorage_DoesNotReferenceHostAssemblies 运行时断言）：
+      * 只引用 PuddingLlmUsage（零依赖叶子）+ Microsoft.Data.Sqlite；
+      * **不得**引用 PuddingRuntime / PuddingPlatform / PuddingHost ——
+        存储是"往哪写"，不是"谁来采样"，这条边界必须由编译期失败强制，
+        否则将来有人为了图方便直接在这里读配置、发 HTTP。
+
+    独立库文件（<DataRoot>/databases/llm_usage.db）而不是塞进约 12 GB 的平台库：
+    采样是高频后台写，与业务读写争同一把 SQLite 写锁会让两侧都不稳。
+
+    SQLite 没有 decimal 类型：金额一律以 **invariant 字符串** 存储（TEXT），
+    绝不用 REAL —— 二进制浮点在金额上会引入不可解释的末位误差。
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingLlmUsage\PuddingLlmUsage.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingLlmUsageStorageTests" />
+  </ItemGroup>
+
+</Project>

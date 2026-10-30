@@ -1,0 +1,19 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!-- 存储适配器的组件测试（S2/S3）。
+       边界：只引用 Storage 与它所实现的叶子 PuddingLlmUsage。
+       不得引用 PuddingRuntime / PuddingPlatform / PuddingHost —— 存储不需要宿主也能测。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingLlmUsage.Storage\PuddingLlmUsage.Storage.csproj" />
+    <ProjectReference Include="..\PuddingLlmUsage\PuddingLlmUsage.csproj" />
+  </ItemGroup>
+
+</Project>
