@@ -540,6 +540,7 @@
   先 `SymbolRefV1.TryParse`，再交给 `SymbolRefFreshness.Evaluate` 三态判定：
   **只有 Fresh 才按 ref 行号打开**；Stale 一律报 `stale_ref`，唯一候选只作提示、不代替打开；位置相关 id（含 `@span`）不提供候选。
 - `ISymbolRefSource` 由 `CodeIndexSymbolRefSource` 实现。`content_hash` 取自 **manifest 的源指纹，不是磁盘 hash**；
+- **签发端**：`SymbolRefIssuanceService`（`Services/Tools/`）把搜索命中接到 `SymbolRefIssuer`（`PuddingCodeIndex/Services/Retrieval/`）；`code_symbol_search` 结果新增 `symbol_ref` / `symbol_ref_issued` / `symbol_ref_note`（**只增不改**）。manifest 每项目每搜索只装载一次；存储读取失败降级为「不签发 + note」，不打断搜索。
   未命中返回 `null`（表示「不知道」）。若用磁盘 hash，「索引滞后于磁盘」的窗口里就会把陈旧 ref 判成 Fresh ——
   正是 §8.3 禁止的「沿旧行号打开当前代码」。
 - 已知代价：manifest 是**整 scope 读**，单点查 hash 也是 O(文件数)。远期在存储侧加「按路径取指纹」定向查询，

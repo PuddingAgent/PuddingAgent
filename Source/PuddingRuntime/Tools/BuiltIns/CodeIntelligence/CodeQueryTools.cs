@@ -375,17 +375,21 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
     private readonly ICodeIndexScopeResolver? _resolver;
     private readonly ICodeProjectRegistry? _registry;
     private readonly ICodeIndexMaintenance? _maintenance;
+    private readonly SymbolRefIssuanceService _refIssuance;
 
     public CodeSymbolSearchTool(
         ICodeQueryService? queryService = null,
         ICodeIndexScopeResolver? resolver = null,
         ICodeProjectRegistry? registry = null,
-        ICodeIndexMaintenance? maintenance = null)
+        ICodeIndexMaintenance? maintenance = null,
+        ICodeSourceMaintenanceStore? maintenanceStore = null)
     {
         _queryService = queryService;
         _resolver = resolver;
         _registry = registry;
         _maintenance = maintenance;
+        // 未注册 manifest 存储时也会构造（内部按 null 降级为“不签发”），不引入兼容分支。
+        _refIssuance = new SymbolRefIssuanceService(maintenanceStore);
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -457,8 +461,17 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
             ? rescoped
             : rescoped.Where(r => r.Symbol.Kind.ToString() is not ("Parameter" or "Unknown")).ToList();
 
+        // symbol_ref 只签发给**可信**命中：陈旧命中按 §8.3 不得作为可重定位引用；
+        // 每个项目只装载一次 manifest，存储读取失败降级为“不签发 + 说明”而不打断搜索。
+        var refIssuance = await _refIssuance
+            .IssueAsync(context.WorkspaceId, visible, registeredProjects, ct)
+            .ConfigureAwait(false);
+
+        string? RefOf(CodeSymbolDetail r) =>
+            refIssuance.Tokens.TryGetValue((r.Symbol.ProjectId, r.Symbol.SymbolId), out var token) ? token : null;
+
         // 统一的投影：可信命中 stale_reason=null；include_stale=true 时陈旧命中带原因一并返回。
-        object Project(CodeSymbolDetail r, string? staleReason) => new
+        object Project(CodeSymbolDetail r, string? staleReason, string? symbolRef) => new
         {
             symbol_id = r.Symbol.SymbolId,
             name = r.Symbol.Name,
@@ -471,11 +484,13 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
             display_name = r.DisplayName,
             project_id = r.Symbol.ProjectId,
             stale_reason = staleReason,
+            // 只增不改：新增字段，既有字段名与语义未动。未签发时为 null（原因见顶层 symbol_ref_note）。
+            symbol_ref = symbolRef,
         };
 
-        var list = visible.Select(r => Project(r, null)).ToList();
+        var list = visible.Select(r => Project(r, null, RefOf(r))).ToList();
         if (includeStale)
-            list.AddRange(stale.Select(s => Project(s.Detail, s.Reason)));
+            list.AddRange(stale.Select(s => Project(s.Detail, s.Reason, null)));
 
         var staleExamples = stale
             .Take(5)
@@ -499,6 +514,9 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
             stale_examples = staleExamples,
             results = list,
             results_include_stale = includeStale,
+            // 签发统计与全局说明：未签发不等于“该符号不存在”，说明里会写明原因。
+            symbol_ref_issued = refIssuance.IssuedCount,
+            symbol_ref_note = refIssuance.Note,
             // T1：新增字段——既有字段名与语义一律未动。
             index_freshness = freshness.ToWire(),
         }, JsonOptions);
