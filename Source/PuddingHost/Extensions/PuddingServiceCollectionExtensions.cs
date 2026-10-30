@@ -67,17 +67,23 @@ public static partial class PuddingServiceCollectionExtensions
         PuddingDataPaths dataPaths,
         IConfiguration bootstrapConfiguration,
         string aspnetcoreEnvironment,
-        PuddingHostOptions hostOptions)
+        PuddingHostOptions hostOptions,
+        StartupPhaseTracker? phases = null)
     {
         // 出站 HTTP 统一 UA 采用「逐点注册」（见 Connectors/Platform/Runtime 各 AddHttpClient）。
         // 注意：不要改回 ConfigureHttpClientDefaults 全局 AddHttpMessageHandler —— 实测会让
         // PuddingWebApiTests 引入 48 项回归（失败 6 → 54），疑似波及测试宿主基础设施的 HttpClient。
 
         AddPlatformServices(builder, dataPaths, aspnetcoreEnvironment);
+        phases?.Mark(StartupPhases.ServicesPlatform);
         AddRuntimeServices(builder, dataPaths, bootstrapConfiguration);
+        phases?.Mark(StartupPhases.ServicesRuntime);
         AddConnectorServices(builder);
+        phases?.Mark(StartupPhases.ServicesConnectors);
         AddBootstrapServices(builder, dataPaths);
+        phases?.Mark(StartupPhases.ServicesBootstrap);
         AddBrowserBridgeServices(builder, hostOptions);
+        phases?.Mark(StartupPhases.ServicesBrowser);
         return builder;
     }
 

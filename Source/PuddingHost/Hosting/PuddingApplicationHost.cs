@@ -337,11 +337,14 @@ public static class PuddingApplicationHost
         builder.Services.AddHostedService<ConnectorHostLifecycleService>();
 
         // ── Business service registrations ─────────────────
+        // 注册段入口打点：把 services-registered 的 delta 拆成「注册前 wiring」与「注册本身」。
+        phases?.Mark(StartupPhases.ServicesRegistering);
         builder.AddPuddingApplicationServices(
             dataPaths,
             bootstrapConfiguration,
             aspnetcoreEnvironment,
-            options);
+            options,
+            phases);
 
         phases?.Mark(StartupPhases.ServicesRegistered);
 

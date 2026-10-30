@@ -17,6 +17,24 @@ public static class StartupPhases
     public const string DataRootBootstrapped = "data-root-bootstrapped";
     public const string LoggingReady = "logging-ready";
     public const string ServicesRegistered = "services-registered";
+
+    /// <summary>
+    /// 注册段入口点：紧贴 <c>AddPuddingApplicationServices</c> 之前。
+    /// <para>
+    /// 动机（2026-10-30）：<c>services-registered</c> 的 delta 在稳态是 6.7~9.6 秒，
+    /// 而部署候选实测到 51.9 秒。该 delta 从**上一个打点**算起，中间既包含
+    /// “注册前的一大段 wiring”，也包含五个注册分组本身，不拆开就无法归因。
+    /// </para>
+    /// </summary>
+    public const string ServicesRegistering = "services-registering";
+
+    /// <summary>注册段的五个分组边界（顺序与 <c>AddPuddingApplicationServices</c> 一致）。</summary>
+    public const string ServicesPlatform = "services-platform";
+
+    public const string ServicesRuntime = "services-runtime";
+    public const string ServicesConnectors = "services-connectors";
+    public const string ServicesBootstrap = "services-bootstrap";
+    public const string ServicesBrowser = "services-browser";
     public const string HostBuilt = "host-built";
     public const string MiddlewareMapped = "middleware-mapped";
     public const string Initialized = "initialized";
