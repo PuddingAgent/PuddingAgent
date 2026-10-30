@@ -174,3 +174,21 @@ SymbolRefV1
 - 跨 **worktree** 的身份（`FilePath` 目前是项目内相对路径，多 worktree 同名路径会撞）；
 - 符号改名后能否追踪（需要 git 层的 rename 检测，索引侧无此信息）；
 - `relations` 的 impact 多跳预算在 open 视图里是否需要独立的 `depth` 上界。
+
+## 11 `workspace_search` 方向的裁定（2026-10-30 实测追加）
+
+原待办「`workspace_search` 签发 ref」**撤回**，三条理由：
+
+1. **语义错位。** `workspace_open` 的 ref 语义是「打开该符号的声明体」。检索命中里的行号是**证据位置**：`callers`/`callees`/`references` 命中的行指向调用点，不是声明体起点。而 ref 的校验只有**文件级** `content_hash`（实测 `stale_ref` 报文只比对文件指纹），不校验符号跨度 ⇒ 用调用点行号签发的 ref 会是 **Fresh 但打开错行**。静默错位比直接报错更危险。
+
+2. **无法唯一确定项目。** `RetrievalHit` 只带 `Identity`（`symbolId`、规范化路径、行）与 `Evidence`（路径 / 行 / 可选 `endLine`），**没有 `project_id`**。当前工作区 4 个已登记项目相互嵌套（根 + `Source\PuddingCore` / `PuddingPlatform` / `PuddingRuntime`），同一文件同时落在多个项目根内 ⇒ 用路径前缀推项目就是猜，违反 §8.3「不猜，拒签」。
+
+3. **架构边界被测试锁住。** `WorkspaceSearchToolCompositionTests` 断言 `workspace_search` **只依赖** `IRetrievalPort`（1 个构造函数、1 个参数）。把签发器塞进工具会破坏这条边界；正确位置在端口或其装饰器，而那需要先给 `RetrievalHit` 增加 `SymbolRef` 字段 —— 是契约变更，不是接线。
+
+**真实缺口在入参方向。** `增强索引统一检索与代码地图设计方案-2026-10-18.md` 明确要求
+`workspace_search(symbol_ref="…", intent="callers", depth=1)`，且「`implementation`/`references`/`callers`/`callees`/`impact` 必须给精确 `symbol_ref`，禁止模糊取首项」。
+但 `RetrievalRequest` 当前**没有 ref 字段**，`Query` 又是必填非空 ⇒ 该条款在契约层无法表达。
+
+**下一原子任务**：让 `RetrievalRequest` 能表达「已解析的符号身份」，`workspace_search` 接受 `symbol_ref` 入参承担关系类意图。输出方向（命中带 ref）待命中能带回 `project_id` 与真实声明跨度后再议。
+
+**顺带修正**：`workspace_open` 的 `ref` 参数说明原写「token returned by workspace_search」，与实际不符（当前唯一签发者是 `code_symbol_search`），已改为如实描述。

@@ -258,7 +258,7 @@ public sealed record WorkspaceOpenArgs
     [ToolParam("Workspace-relative or absolute path of the file/directory to open. Must stay inside the workspace. Mutually exclusive with ref.")]
     public string? Path { get; init; }
 
-    [ToolParam("Symbol reference token returned by workspace_search (pmsym1.…). Mutually exclusive with path.")]
+    [ToolParam("Symbol reference token (pmsym1.…) issued by code_symbol_search. Mutually exclusive with path.")]
     public string? Ref { get; init; }
 
     [ToolParam("View: excerpt (line slice, default) | outline (top-level type tree) | map (directory tree) | relations (callers/callees/references/implementation/impact for a ref).")]
