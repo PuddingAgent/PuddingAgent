@@ -188,6 +188,15 @@ public sealed class WorkspaceSearchTool : PuddingToolBase<WorkspaceSearchArgs>
             totalCount = result.TotalCount,
             returned = result.Hits.Count,
             emptyReason = result.EmptyReason?.ToString(),
+            claim = result.Claim is null
+                ? null
+                : new
+                {
+                    kind = result.Claim.Kind.ToString(),
+                    searched = result.Claim.SearchedSurfaces,
+                    unsearched = result.Claim.UnsearchedSurfaces,
+                    requiredProviders = result.Claim.RequiredProviders,
+                },
             degraded = result.Degraded,
             degradedReason = result.DegradedReason,
             nextCursor = result.NextCursor,

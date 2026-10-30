@@ -35,7 +35,8 @@ public sealed record RetrievalResult
         QueryDiagnostics? diagnostics,
         IReadOnlyList<string>? appliedFilters,
         IReadOnlyList<ScopeOverlapWarning>? scopeOverlapWarnings,
-        string? nextCursor)
+        string? nextCursor,
+        RetrievalClaim? claim)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(hits);
@@ -152,6 +153,16 @@ public sealed record RetrievalResult
         _appliedFilters = NormalizeAppliedFilters(appliedFilters);
         _scopeOverlapWarnings = scopeOverlapWarnings?.ToArray() ?? [];
         NextCursor = string.IsNullOrWhiteSpace(nextCursor) ? null : nextCursor.Trim();
+
+        // 0 命中必须可机器判定「已查 / 未查面」（ADR-089 §8.x）。未显式给出时按 (请求, 空原因) 保守推导：
+        // 默认永不输出无条件否定，避免调用方漏填就说出「确实没有」。
+        Claim = claim ?? (hitList.Length == 0 ? RetrievalClaim.ClassifyForEmpty(request, emptyReason) : null);
+        if (hitList.Length > 0 && Claim is not null)
+        {
+            throw new RetrievalContractViolationException(
+                "有命中时不得同时声明否定面（claim）—— 二者互斥。");
+        }
+
         BytesUsed = bytesUsed;
         TokensUsed = tokensUsed;
     }
@@ -182,6 +193,12 @@ public sealed record RetrievalResult
 
     /// <summary>下一页游标。</summary>
     public string? NextCursor { get; }
+
+    /// <summary>
+    /// 空结果的<b>机器可判定</b>声明（ADR-089 §8.x）：否定类型 + 已查/未查面 + 所需 provider。
+    /// <para>有命中时为 <c>null</c>；0 命中时必非空（构造期强制或保守推导）。</para>
+    /// </summary>
+    public RetrievalClaim? Claim { get; }
 
     /// <summary>落盘信息（超预算时必填）。</summary>
     public RetrievalOverflow? Overflow { get; }
@@ -256,7 +273,8 @@ public sealed record RetrievalResult
         QueryDiagnostics? diagnostics = null,
         IReadOnlyList<string>? appliedFilters = null,
         IReadOnlyList<ScopeOverlapWarning>? scopeOverlapWarnings = null,
-        string? nextCursor = null) => new(
+        string? nextCursor = null,
+        RetrievalClaim? claim = null) => new(
             request,
             hits,
             totalCount,
@@ -270,7 +288,8 @@ public sealed record RetrievalResult
             diagnostics,
             appliedFilters,
             scopeOverlapWarnings,
-            nextCursor);
+            nextCursor,
+            claim);
 
     /// <summary>
     /// 构造空结果：<paramref name="reason"/> 是<b>必填</b>参数（没有"没有原因的 0 命中"这条路径）。
@@ -284,7 +303,8 @@ public sealed record RetrievalResult
         string? degradedReason = null,
         IReadOnlyList<string>? appliedFilters = null,
         IReadOnlyList<ScopeOverlapWarning>? scopeOverlapWarnings = null,
-        QueryDiagnostics? diagnostics = null)
+        QueryDiagnostics? diagnostics = null,
+        RetrievalClaim? claim = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(nextStep);
@@ -303,7 +323,8 @@ public sealed record RetrievalResult
             diagnostics,
             appliedFilters,
             scopeOverlapWarnings,
-            null);
+            null,
+            claim);
     }
 
     private static void ValidateStep(

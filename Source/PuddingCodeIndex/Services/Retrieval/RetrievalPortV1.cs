@@ -1412,7 +1412,14 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
                     "过滤面导致 0 命中；放宽该面后重试。");
 
             default:
-                return RetrievalNextStep.AcceptAbsence(DescribeAbsence(request));
+                // ADR-089 §8.x：auto 零结果一律禁止 AcceptAbsence。
+                // 锚点关系面能证明「该范围内无此边」，那是限定范围结论（NoMatchInScope）；
+                // auto 没有这个前提 —— 语义面未接入，词面没命中不等于概念不存在。
+                return request.HasAnchor
+                    ? RetrievalNextStep.AcceptAbsence(DescribeAbsence(request))
+                    : RetrievalNextStep.UseAlternativeFace(
+                        DescribeAbsence(request),
+                        "code_symbol_search / 改用英文标识符或符号名重试");
         }
     }
 

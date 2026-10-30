@@ -469,7 +469,10 @@ public sealed class RetrievalPortV1Tests
 
         Assert.AreEqual(0, result.Hits.Count);
         Assert.AreEqual(RetrievalEmptyReason.GenuinelyAbsent, result.EmptyReason);
-        Assert.AreEqual(RetrievalNextStepKind.AcceptAbsence, result.NextSteps[0].Kind);
+        // R0-01（ADR-089 §8.x）：按名字查关系面时，目标身份并未经 ref 确认 ⇒ 只能算「未找到证据」，
+        // 不能下「没人调用它」的结论；下一步必须是换面，而不是接受缺失。
+        Assert.AreEqual(RetrievalNextStepKind.UseAlternativeFace, result.NextSteps[0].Kind);
+        Assert.AreEqual(RetrievalClaimKind.NoCandidates, result.Claim!.Kind);
     }
 
     [TestMethod]
@@ -485,7 +488,12 @@ public sealed class RetrievalPortV1Tests
             new RetrievalRequest("签发符号引用的令牌", "ws-1", RetrievalIntent.Auto),
             CancellationToken.None);
 
-        Assert.AreEqual(RetrievalNextStepKind.AcceptAbsence, result.NextSteps[0].Kind);
+        // R0-01：auto 零结果一律禁止 AcceptAbsence；且否决面必须可机器判定，不能只靠文案。
+        Assert.AreEqual(RetrievalNextStepKind.UseAlternativeFace, result.NextSteps[0].Kind);
+        Assert.AreEqual(RetrievalClaimKind.None, result.Claim!.Kind);
+        CollectionAssert.Contains(
+            result.Claim.UnsearchedSurfaces.ToArray(),
+            RetrievalClaim.SurfaceVector);
         var text = result.NextSteps[0].Text;
         StringAssert.Contains(text, "语义召回");
         StringAssert.Contains(text, "不代表该概念不存在");
