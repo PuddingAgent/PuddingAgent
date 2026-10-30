@@ -37,6 +37,15 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IFullTextIn
     private readonly ConcurrentDictionary<string, DirectoryReader> _readerCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, IndexSearcher> _searcherCache = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// 测试接缝：拿到 searcher 后、真正执行查询前的注入点。生产路径为 null（零开销）。
+    /// <para>
+    /// 存在理由：reader 生命周期缺陷属于「持有期间被并发失效」，靠等待/计时无法确定性复现，
+    /// 必须有一个可控的连接点才能把「查询持有 reader → 失效 → 查询继续」这个时序固定下来。
+    /// </para>
+    /// </summary>
+    internal Action<string>? AfterSearcherAcquired { get; set; }
+
     // 结果后过滤的分批续扫参数（见 SearchAsync）。
     private const int InitialFetchWindow = 64;
     private const int FetchGrowthFactor = 4;
@@ -138,9 +147,20 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IFullTextIn
         var filtering = extSet != null || subDirPrefix != null;
         var fetchCount = filtering ? Math.Max(maxResults, InitialFetchWindow) : maxResults;
 
+        IndexReader? lease = null;
+
         try
         {
             var searcher = GetOrRefreshSearcher(indexDir);
+
+            // 租约：本次查询在完成前必须让 reader 保持未释放。
+            // 缓存里那份引用随时可能被刷新/失效释放掉，只有额外 IncRef 才能保证
+            // 「查询持有 reader → 缓存失效 → 查询继续」不抛 ObjectDisposedException（R1-05）。
+            // ⚠️ 必须在 AfterSearcherAcquired **之前**取租约：那个接缝就是用来模拟失效的。
+            lease = searcher.IndexReader;
+            lease.IncRef();
+
+            AfterSearcherAcquired?.Invoke(indexDir);
             var parser = new MultiFieldQueryParser(MatchVersion,
                 new[] { "content", "file_name" }, _analyzer);
             Query luceneQuery = parser.Parse(scope?.LiteralQuery == true ? QueryParserBase.Escape(query) : query);
@@ -241,6 +261,12 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IFullTextIn
         {
             return new FullTextSearchResult(false, [],
                 $"Search failed: {ex.Message}", 0, sw.ElapsedMilliseconds);
+        }
+        finally
+        {
+            // 与上面的 IncRef 成对：无论成功、失败还是异常，都必须归还租约，
+            // 否则一次异常就会永久多持一份引用（文件句柄泄漏）。
+            try { lease?.DecRef(); } catch { /* ignore */ }
         }
     }
 
@@ -689,7 +715,7 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IFullTextIn
                 var newSearcher = new IndexSearcher(newReader);
                 _readerCache[indexDir] = newReader;
                 _searcherCache[indexDir] = newSearcher;
-                existingReader.Dispose();
+                existingReader.DecRef();
                 return newSearcher;
             }
         }
@@ -737,7 +763,9 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IFullTextIn
 
         if (_readerCache.TryRemove(indexDir, out var reader))
         {
-            try { reader.Dispose(); } catch { /* ignore */ }
+            // 只释放「缓存持有的那一份引用」：正在查询的调用方自己 IncRef 过，
+            // 引用计数不归零就不会真正释放，查询得以跑完（R1-05）。
+            try { reader.DecRef(); } catch { /* ignore */ }
         }
 
         _searcherCache.TryRemove(indexDir, out _);
