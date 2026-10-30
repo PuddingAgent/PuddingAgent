@@ -269,6 +269,10 @@ public static class RuntimeServiceExtensions
         // operator action through SqliteCodeIndexStore.RunFullMaintenanceAsync.
         services.AddHostedService<Services.CodeIndexStorageMaintenanceService>();
 
+        // LLM 余额采样：独立时钟把余额写入 <DataRoot>/databases/llm_usage.db。
+        // ⚠️ 产品组合根（PuddingHost）不走本方法，那边必须同样调用（见 Host/Extensions）。
+        PuddingRuntime.Services.Llm.LlmUsageSamplingServiceCollectionExtensions.AddPuddingLlmUsageSampling(services);
+
         services.AddPuddingCodeIntelligence();
 
         services.AddPuddingToolRegistry(configuration);

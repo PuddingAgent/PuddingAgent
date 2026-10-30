@@ -36,6 +36,9 @@
     <ProjectReference Include="..\PuddingPathFiltering\PuddingPathFiltering.csproj" />
     <!-- LLM 余额采样：消耗判定是零依赖叶子，Runtime 只是它的宿主侧适配器（端口 + HTTP 实现）。 -->
     <ProjectReference Include="..\PuddingLlmUsage\PuddingLlmUsage.csproj" />
+    <!-- 采样适配器：Runtime 在组合根里直接构造 SqliteLlmUsageStore（与既有的
+         new SqliteCodeIndexStore 一致）；叶子与适配器分开，判定逻辑仍零依赖。 -->
+    <ProjectReference Include="..\PuddingLlmUsage.Storage\PuddingLlmUsage.Storage.csproj" />
     <!-- S5：上下文容量/候选/收益/退避纯策略组件（BCL-only 叶子，无反向依赖）；Runtime 在提交边界消费。 -->
     <ProjectReference Include="..\PuddingContextPolicy\PuddingContextPolicy.csproj" />
     <!-- S5：零 LLM 确定性载荷剪枝（只依赖 PuddingCore 的叶子）；Runtime 在发请求边界消费。 -->

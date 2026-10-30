@@ -394,6 +394,10 @@ public static partial class PuddingServiceCollectionExtensions
         // RequestServices.GetService 获取并投递 last-used 合并写。
         builder.Services.AddHostedService<ExternalAccessTokenUsageCoalescer>();
 
+        // LLM 余额采样：产品组合根必须显式装配 —— 本文件上方已注明 PuddingHost 不调用
+        // RuntimeServiceExtensions.AddPuddingRuntime，只在该方法里注册会让采样永不运行。
+        PuddingRuntime.Services.Llm.LlmUsageSamplingServiceCollectionExtensions.AddPuddingLlmUsageSampling(builder.Services);
+
         // ── External Task API v1（ADR-075 P2 基本功能：评价 + 幂等 + 门控）──
         builder.Services.AddSingleton<TaskEvaluationStore>();
         builder.Services.AddSingleton<ExternalApiIdempotencyStore>();
