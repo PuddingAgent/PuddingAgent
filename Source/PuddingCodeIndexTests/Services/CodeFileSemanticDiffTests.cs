@@ -24,6 +24,34 @@ public sealed class CodeFileSemanticDiffTests
         new(WorkspaceId, ScopeId, FilePath, symbolId, name, kind, startLine, startLine + 2, signature, container);
 
     [TestMethod]
+    public void NewOverload_RequiresExistingOverloadsDependentsToRebind()
+    {
+        // 新增 Pick(string) 会让原本绑定到 Pick(object) 的调用改绑（重载解析变化），
+        // 因此 Pick(object) 的依赖方必须重绑。
+        var changed = CodeFileSemanticDiff.ChangedSymbolIds(
+            [Symbol("M:Acme.Pick(object)", signature: "void Pick(object value)", name: "Pick")],
+            [
+                Symbol("M:Acme.Pick(object)", signature: "void Pick(object value)", name: "Pick"),
+                Symbol("M:Acme.Pick(string)", signature: "void Pick(string value)", name: "Pick"),
+            ]);
+
+        Assert.IsTrue(
+            changed.Contains("M:Acme.Pick(object)"),
+            "新增重载会改变重载解析，已有重载的依赖方必须重绑。");
+    }
+
+    /// <summary>正对照：没有同名旧重载时，新增方法不得触发任何重绑（否则退化成全量重绑）。</summary>
+    [TestMethod]
+    public void BrandNewMethodWithoutPriorOverload_DoesNotForceRebind()
+    {
+        var changed = CodeFileSemanticDiff.ChangedSymbolIds(
+            [Symbol("sym-a")],
+            [Symbol("sym-a"), Symbol("M:Acme.Fresh", signature: "void Fresh()", name: "Fresh")]);
+
+        Assert.AreEqual(0, changed.Count, "没有任何同名旧重载时，新增方法不需让任何人重绑。");
+    }
+
+    [TestMethod]
     public void VanishedSymbolsRequireDependentsToRebind()
     {
         var changed = CodeFileSemanticDiff.ChangedSymbolIds(
@@ -66,9 +94,11 @@ public sealed class CodeFileSemanticDiffTests
     {
         var changed = CodeFileSemanticDiff.ChangedSymbolIds(
             [Symbol("sym-a")],
-            [Symbol("sym-a"), Symbol("sym-new")]);
+            // 夹具必须用**不同名**的新方法：与旧符号同名同容器就构成重载，
+            // 重载会改变重载解析（R1-03），那就该触发重绑，不能用它证明「新增不失效」。
+            [Symbol("sym-a"), Symbol("sym-new", name: "Fresh")]);
 
-        Assert.IsEmpty(changed, "新增符号没有旧依赖方需要失效");
+        Assert.IsEmpty(changed, "无关的新增符号没有旧依赖方需要失效");
     }
 
     [TestMethod]

@@ -11,6 +11,10 @@ namespace PuddingCodeIndex.Services;
 /// <para>
 /// 行号变化不算语义变化：整段代码下移不会让任何引用方失效。
 /// </para>
+/// <para>
+/// 新增符号一般也不算 —— <b>除了新增重载</b>：它会改变既有调用点的重载解析结果，
+/// 所以同容器、同名的既有重载会被列入变化（R1-03 门禁）。
+/// </para>
 /// </summary>
 public static class CodeFileSemanticDiff
 {
@@ -40,30 +44,56 @@ public static class CodeFileSemanticDiff
         }
 
         var changed = new SortedSet<string>(StringComparer.Ordinal);
+        var currentIds = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var symbol in current ?? [])
         {
             if (symbol is null || string.IsNullOrWhiteSpace(symbol.SymbolId))
                 continue;
 
+            currentIds.Add(symbol.SymbolId);
+
             if (!previousById.TryGetValue(symbol.SymbolId, out var before))
             {
-                // 新符号：没有旧依赖方需要失效（新增不会打断已有绑定）。
+                // 新增符号一般不会打断已有绑定，**除了重载**：
+                // 新增 Pick(string) 会让原本绑定到 Pick(object) 的调用改绑（重载解析变了），
+                // 那些调用点必须重新绑定。因此把同容器同名的既有重载列为变化。
+                // 没有同名旧重载时不产生任何变化 —— 否则退化成「一改就全量重绑」。
+                if (IsOverloadable(symbol.Kind))
+                {
+                    foreach (var prior in previousById.Values)
+                    {
+                        if (prior.Kind == symbol.Kind
+                            && string.Equals(prior.Name, symbol.Name, StringComparison.Ordinal)
+                            && string.Equals(prior.Container, symbol.Container, StringComparison.Ordinal))
+                        {
+                            changed.Add(prior.SymbolId);
+                        }
+                    }
+                }
+
                 continue;
             }
 
             if (!HasSameSemantics(before, symbol))
                 changed.Add(symbol.SymbolId);
-
-            previousById.Remove(symbol.SymbolId);
         }
 
-        // 剩下的就是消失的符号：依赖方必须重新绑定。
+        // 剩下的（不在本次集合里的）就是消失的符号：依赖方必须重新绑定。
+        // 注意“剩余”必须靠 currentIds 判断，不能靠边循环边 Remove —— 那会让新增重载
+        // 看不到已被移除的同名旧重载，重载变化就被静默丢掉。
         foreach (var symbolId in previousById.Keys)
-            changed.Add(symbolId);
+        {
+            if (!currentIds.Contains(symbolId))
+                changed.Add(symbolId);
+        }
 
         return changed.ToArray();
     }
+
+    /// <summary>可参与重载解析的成员种类：新增一个就会改变既有调用点的绑定。</summary>
+    private static bool IsOverloadable(CodeSymbolKind kind) =>
+        kind is CodeSymbolKind.Method or CodeSymbolKind.Constructor or CodeSymbolKind.Operator;
 
     /// <summary>两个符号在**语义上**是否等价（行号不算）。</summary>
     private static bool HasSameSemantics(CodeSymbolRecord left, CodeSymbolRecord right) =>
