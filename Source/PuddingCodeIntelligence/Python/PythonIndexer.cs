@@ -564,26 +564,51 @@ public sealed class PythonIndexer : ICodeIndexer, ICodeIndexFileUpdater, ICodeIn
             WorkspaceId: workspaceId, ProjectId: projectId);
     }
 
-    private static string? GetPythonCommand()
+    /// <summary>解析到的 Python 解释器：可执行文件 + 必须前置的参数（Windows 的 <c>py -3</c>）。</summary>
+    private sealed record PythonCommand(string FileName, string PrefixArguments);
+
+    private static PythonCommand? GetPythonCommand()
     {
-        foreach (var cmd in new[] { "python", "python3" })
+        // Windows 上 `python` / `python3` 常是 **App Execution Alias 占位符**：
+        // 命令能命中、进程能启动，但只打印「Python was not found」—— 真正的解释器往往是 `py -3`。
+        // 因此候选必须包含带前置参数的形式，且用「退出码 + 输出不是占位提示」双重判定
+        //（命中 ≠ 可用，这是本仓已踩过的坑）。
+        var candidates = new[]
+        {
+            new PythonCommand("python", string.Empty),
+            new PythonCommand("python3", string.Empty),
+            new PythonCommand("py", "-3 "),
+        };
+
+        foreach (var candidate in candidates)
         {
             try
             {
                 using var process = new Process();
                 process.StartInfo = new ProcessStartInfo
                 {
-                    FileName = cmd,
-                    Arguments = "--version",
+                    FileName = candidate.FileName,
+                    Arguments = candidate.PrefixArguments + "--version",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true,
                 };
                 process.Start();
+                var stdout = process.StandardOutput.ReadToEnd();
+                var stderr = process.StandardError.ReadToEnd();
                 process.WaitForExit(5000);
-                if (process.ExitCode == 0)
-                    return cmd;
+
+                if (process.ExitCode != 0)
+                    continue;
+
+                // 占位别名会「成功启动」并打印安装提示 —— 那不是可用解释器。
+                var text = stdout + stderr;
+                if (text.Contains("was not found", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("Microsoft Store", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                return candidate;
             }
             catch
             {
@@ -626,7 +651,7 @@ public sealed class PythonIndexer : ICodeIndexer, ICodeIndexFileUpdater, ICodeIn
     /// Returns the parsed project output, or null if the script fails or is not supported.
     /// </summary>
     private async Task<PyProjectOutput?> RunProjectExtractionAsync(
-        string pythonCommand,
+        PythonCommand pythonCommand,
         string scriptPath,
         string projectDirectory,
         CancellationToken cancellationToken)
@@ -636,8 +661,8 @@ public sealed class PythonIndexer : ICodeIndexer, ICodeIndexFileUpdater, ICodeIn
             using var process = new Process();
             process.StartInfo = new ProcessStartInfo
             {
-                FileName = pythonCommand,
-                Arguments = $"\"{scriptPath}\" --project \"{projectDirectory}\"",
+                FileName = pythonCommand.FileName,
+                Arguments = pythonCommand.PrefixArguments + $"\"{scriptPath}\" --project \"{projectDirectory}\"",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -830,7 +855,7 @@ public sealed class PythonIndexer : ICodeIndexer, ICodeIndexFileUpdater, ICodeIn
     }
 
     private async Task<PyExtractionOutput?> RunExtractionScriptAsync(
-        string pythonCommand,
+        PythonCommand pythonCommand,
         string scriptPath,
         string filePath,
         CancellationToken cancellationToken)
@@ -840,8 +865,8 @@ public sealed class PythonIndexer : ICodeIndexer, ICodeIndexFileUpdater, ICodeIn
             using var process = new Process();
             process.StartInfo = new ProcessStartInfo
             {
-                FileName = pythonCommand,
-                Arguments = $"\"{scriptPath}\" \"{filePath}\"",
+                FileName = pythonCommand.FileName,
+                Arguments = pythonCommand.PrefixArguments + $"\"{scriptPath}\" \"{filePath}\"",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
