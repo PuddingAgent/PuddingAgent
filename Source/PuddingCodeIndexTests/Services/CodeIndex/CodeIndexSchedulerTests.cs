@@ -53,6 +53,33 @@ public sealed class CodeIndexSchedulerTests
         Assert.AreEqual(0, scheduler.GetQueueDepth(MaintenanceTestData.WorkspaceId));
     }
 
+    /// <summary>
+    /// R1-03 门禁：索引运行**失败**时旧水位不得冒充 current —— CommittedVersion 只能前进到
+    /// 「真的提交过的版本」，失败后必须仍然 Behind。
+    /// </summary>
+    [TestMethod]
+    public async Task FailedRun_DoesNotAdvanceCommittedVersion()
+    {
+        using var fixture = CodeIndexFixture.Create();
+        await fixture.Store.UpsertProjectAsync(
+            new CodeProjectRecord(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, fixture.Root, CodeProjectStatus.Active));
+
+        var indexer = new RecordingCodeIndexer
+        {
+            OnIndexAsync = (_, _) => throw new InvalidOperationException("boom"),
+        };
+        using var scheduler = CreateScheduler(fixture, indexer);
+
+        scheduler.Enqueue(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId);
+        await scheduler.ProcessPendingAsync();
+
+        var progress = scheduler.GetProgress(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId);
+
+        Assert.AreEqual(0, progress.CommittedVersion,
+            "失败运行不得让已提交水位前进——那会把没索引成的版本冒充成 current。");
+        Assert.IsTrue(progress.Behind, "失败后必须仍然落后于期望版本。");
+    }
+
     /// <summary>I1 — repeated requests during indexing collapse into exactly one extra run.</summary>
     [TestMethod]
     public async Task Repeated_Requests_During_Indexing_Collapse_Into_One_Extra_Run()

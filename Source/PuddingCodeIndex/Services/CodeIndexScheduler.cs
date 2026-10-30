@@ -187,6 +187,7 @@ public sealed class CodeIndexScheduler : ICodeIndexSchedulerDriver, IDisposable
 
         var cancelled = false;
         var ranIndexer = false;
+        var failed = false;
 
         try
         {
@@ -241,6 +242,7 @@ public sealed class CodeIndexScheduler : ICodeIndexSchedulerDriver, IDisposable
         }
         catch (Exception ex)
         {
+            failed = true;
             _logger.LogError(ex, "[CodeIndexScheduler] Failed to index {ScopeId}", job.ScopeId);
             try
             {
@@ -262,7 +264,8 @@ public sealed class CodeIndexScheduler : ICodeIndexSchedulerDriver, IDisposable
                 var progress = GetOrCreateProgress(job);
                 progress.InFlight = false;
 
-                if (!cancelled)
+                // 失败运行不得让已提交水位前进：那会把没索引成的版本冒充成 current（R1-03 门禁）。
+                if (!cancelled && !failed)
                     progress.CommittedVersion = startDesired;
 
                 // Still behind (a request arrived while this run was in flight) or cancelled before it
