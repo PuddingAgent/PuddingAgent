@@ -25,7 +25,12 @@ public sealed class ProviderBalanceTool(PuddingDataPaths paths) : PuddingToolBas
 
     private readonly PuddingDataPaths _paths = paths ?? throw new ArgumentNullException(nameof(paths));
 
-    private static readonly HttpClient SharedHttp = new() { Timeout = TimeSpan.FromSeconds(20) };
+    /// <summary>
+    /// 共享的 HTTP 客户端。<c>internal</c> 而不是 <c>private</c>：余额采样器（<c>LlmProviderBalanceProbe</c>）
+    /// 必须用同一个实例，否则每条采样路径各建一个客户端，连接池与 DNS 缓存都会退化；
+    /// 测试也要能注入假的 handler，所以可见性必须到程序集内。
+    /// </summary>
+    internal static readonly HttpClient SharedHttp = new() { Timeout = TimeSpan.FromSeconds(20) };
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         ProviderBalanceArgs args,

@@ -34,6 +34,8 @@
     <ProjectReference Include="..\PuddingFullTextIndex\PuddingFullTextIndex.csproj" />
     <!-- ADR-089 U4-4 D4: tool-side exclusion lists are derived from this leaf. -->
     <ProjectReference Include="..\PuddingPathFiltering\PuddingPathFiltering.csproj" />
+    <!-- LLM 余额采样：消耗判定是零依赖叶子，Runtime 只是它的宿主侧适配器（端口 + HTTP 实现）。 -->
+    <ProjectReference Include="..\PuddingLlmUsage\PuddingLlmUsage.csproj" />
     <!-- S5：上下文容量/候选/收益/退避纯策略组件（BCL-only 叶子，无反向依赖）；Runtime 在提交边界消费。 -->
     <ProjectReference Include="..\PuddingContextPolicy\PuddingContextPolicy.csproj" />
     <!-- S5：零 LLM 确定性载荷剪枝（只依赖 PuddingCore 的叶子）；Runtime 在发请求边界消费。 -->
