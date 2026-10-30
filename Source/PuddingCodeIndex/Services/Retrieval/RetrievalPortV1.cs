@@ -811,13 +811,7 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
     /// </para>
     /// </summary>
     private static bool IsContainerKind(CodeSymbolKind kind) =>
-        kind is CodeSymbolKind.Namespace
-            or CodeSymbolKind.Type
-            or CodeSymbolKind.Class
-            or CodeSymbolKind.Interface
-            or CodeSymbolKind.Struct
-            or CodeSymbolKind.Enum
-            or CodeSymbolKind.Delegate;
+        ContainerSymbolGuidance.IsContainer(kind);
 
     /// <summary>
     /// 关系面检索（<see cref="RetrievalIntent.Callers"/> / <see cref="RetrievalIntent.Callees"/> /
@@ -943,9 +937,10 @@ public sealed class RetrievalPortV1(IRetrievalSymbolSource source, IRetrievalTex
                     request,
                     RetrievalEmptyReason.GenuinelyAbsent,
                     RetrievalNextStep.UseAlternativeFace(
-                        $"锚点 {targets[0].Name} 是容器符号（{targets[0].Kind}）：索引中的关系边挂在它的成员上，" +
-                        "本端口不展开成员 ⇒ 该符号自身确实没有关系边，但这**不代表没人用它**。" +
-                        "要看谁在用它，请对具体成员（构造器 / 方法 / 属性）签发 ref 再查。",
+                        ContainerSymbolGuidance.BuildEmptyRelationText(
+                            targets[0].Name,
+                            targets[0].Kind,
+                            ContainerSymbolGuidance.RetrievalFace),
                         "符号面检索（按名字匹配会自动展开到成员）"),
                     indexVersion,
                     appliedFilters: AppliedFilters(request));

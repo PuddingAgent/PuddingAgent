@@ -212,6 +212,43 @@ public sealed class WorkspaceOpenRelationsTests
         Ref: FreshRef(),
         Relation: relation);
 
+    [TestMethod]
+    public async Task Relations_EmptyOnContainer_ExplainsMembersNotIndex()
+    {
+        // 容器自身可以一条边都没有：边挂在成员上。若只说「也可能索引没建成」，
+        // 调用方会去怀疑索引，而不是去看成员 —— 这正是同一问题在检索面与 open 面答案不一致的地方。
+        var store = new StubIndexStore(
+            anchor: new CodeSymbolRecord(
+                "ws-1", ProjectId, FilePath, SymbolId, "Demo", CodeSymbolKind.Class, 7, 9));
+
+        var result = await Open(store, relation: "callers");
+
+        Assert.IsTrue(result.Success, result.Error);
+        var payload = (RelationsPayload)result.Payload!;
+        Assert.AreEqual(0, payload.TotalCount);
+        Assert.IsNotNull(payload.Note);
+        StringAssert.Contains(payload.Note, "容器符号");
+        StringAssert.Contains(payload.Note, "成员");
+        StringAssert.Contains(payload.Note, "不代表没人用它");
+    }
+
+    [TestMethod]
+    public async Task Relations_EmptyOnPlainMember_KeepsIndexCaveat()
+    {
+        // 非容器（方法）0 条：既没有可展开的成员，就不能拿「去看成员」当建议。
+        var store = new StubIndexStore(
+            anchor: new CodeSymbolRecord(
+                "ws-1", ProjectId, FilePath, SymbolId, "Run", CodeSymbolKind.Method, 7, 9));
+
+        var result = await Open(store, relation: "callers");
+
+        Assert.IsTrue(result.Success, result.Error);
+        var payload = (RelationsPayload)result.Payload!;
+        Assert.IsNotNull(payload.Note);
+        StringAssert.Contains(payload.Note, "索引");
+        Assert.IsFalse(payload.Note.Contains("容器符号"), "方法没有成员可展开，不得回容器文案。");
+    }
+
     private static async Task<WorkspaceOpenResult> Open(StubIndexStore store, string relation)
     {
         var service = new WorkspaceOpenService(
@@ -290,10 +327,11 @@ public sealed class WorkspaceOpenRelationsTests
             Task.FromResult<string?>(null);
     }
 
-    /// <summary>只实现关系查询；其余成员一律抛 —— 服务偷偷多调一个方法，测试立刻红。</summary>
+    /// <summary>只实现关系查询与锚点查表；其余成员一律抛 —— 服务偷偷多调一个方法，测试立刻红。</summary>
     private sealed class StubIndexStore(
         IReadOnlyList<CodeRelationRecord>? incoming = null,
-        IReadOnlyList<CodeRelationRecord>? outgoing = null) : ICodeIndexStore
+        IReadOnlyList<CodeRelationRecord>? outgoing = null,
+        CodeSymbolRecord? anchor = null) : ICodeIndexStore
     {
         public Task<IReadOnlyList<CodeRelationRecord>> ListIncomingRelationsAsync(
             string workspaceId,
@@ -323,7 +361,8 @@ public sealed class WorkspaceOpenRelationsTests
         public Task<int> RemoveFilesAsync(string workspaceId, string projectId, IReadOnlyCollection<string> filePaths, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task UpsertSymbolsAsync(string workspaceId, string projectId, IReadOnlyCollection<CodeSymbolRecord> symbols, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<CodeSymbolRecord>> SearchSymbolsAsync(CodeSymbolSearchRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<CodeSymbolRecord?> GetSymbolAsync(string workspaceId, string projectId, string symbolId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<CodeSymbolRecord?> GetSymbolAsync(string workspaceId, string projectId, string symbolId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(anchor);
         public Task<IReadOnlyList<CodeSymbolRecord>> GetSymbolsByFileAsync(string workspaceId, string projectId, string filePath, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task ClearSymbolsForFileAsync(string workspaceId, string projectId, string filePath, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task UpsertRelationsAsync(string workspaceId, string projectId, IReadOnlyCollection<CodeRelationRecord> relations, CancellationToken cancellationToken = default) => throw new NotSupportedException();

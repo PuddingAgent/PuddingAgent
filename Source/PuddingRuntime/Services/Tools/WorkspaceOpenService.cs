@@ -317,9 +317,50 @@ public sealed class WorkspaceOpenService(
               "也可能是索引尚未建成或未收录该符号。"
             : null;
 
+        note = await RefineEmptyRelationsNoteAsync(note, request, reference, cancellationToken)
+            .ConfigureAwait(false);
+
         var payload = new RelationsPayload(entries, entries.Count, relation, note);
         payload.Validate();
         return WorkspaceOpenResult.Ok(request.View, reference.FilePath, payload);
+    }
+
+    /// <summary>
+    /// 给 0 条关系的说明补上「锚点是容器」这层事实（ADR-089 §8.3）。
+    /// <para>
+    /// 原说明只说「可能没有此类关系，也可能索引没建成」—— 对容器符号，这个二分法把调用方
+    /// 引向「去查索引」，而正确下一步是「去看成员」。容器判定与文案都取自
+    /// <see cref="ContainerSymbolGuidance"/>，与关系面检索共用同一份，
+    /// 否则同一个问题在两个面会给出不同答案。
+    /// </para>
+    /// <para>
+    /// 查不到符号时不猜：<b>原样返回</b>调用方给的说明。
+    /// </para>
+    /// </summary>
+    private async Task<string?> RefineEmptyRelationsNoteAsync(
+        string? note,
+        WorkspaceOpenRequest request,
+        SymbolRefV1 reference,
+        CancellationToken cancellationToken)
+    {
+        if (note is null || indexStore is null)
+        {
+            return note;
+        }
+
+        var symbol = await indexStore
+            .GetSymbolAsync(request.WorkspaceId, reference.ProjectId, reference.SymbolId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (symbol is null || !ContainerSymbolGuidance.IsContainer(symbol.Kind))
+        {
+            return note;
+        }
+
+        return ContainerSymbolGuidance.BuildEmptyRelationNote(
+            symbol.Name,
+            symbol.Kind,
+            ContainerSymbolGuidance.OpenViewFace);
     }
 
     private async Task<WorkspaceOpenResult> OpenMapAsync(
