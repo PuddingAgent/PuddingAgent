@@ -1,4 +1,7 @@
+using Lucene.Net.Analysis.Standard;
+using Lucene.Net.Util;
 using PuddingFullTextIndex;
+using PuddingFullTextIndex.Contracts;
 using PuddingFullTextIndex.Infrastructure.Search;
 
 namespace PuddingFullTextIndexTests;
@@ -122,6 +125,34 @@ public sealed class ExtensionFilterRecallTests
         Assert.IsFalse(result.Success, "续扫预算耗尽不得报成功。");
         Assert.IsFalse(string.IsNullOrWhiteSpace(result.Error), "必须给出可读原因。");
         StringAssert.Contains(result.Error, "budget", "原因必须指向扫描预算而非其它失败。");
+    }
+
+    /// <summary>
+    /// 计划门禁要求「生产 Jieba 与基准 analyzer 都测」：换成基准 StandardAnalyzer 后，
+    /// 同一条噪声饱和场景同样不得漏检。
+    /// </summary>
+    [TestMethod]
+    public async Task ExtensionFilter_UnderTheBenchmarkAnalyzer_AlsoSurvivesNoiseSaturation()
+    {
+        var noise = Path.Combine(_root, "noise.txt");
+        File.WriteAllLines(noise, Enumerable.Repeat("needle", 200));
+        var target = Path.Combine(_root, "target.cs");
+        File.WriteAllText(target, "needle");
+
+        var options = new FullTextIndexOptions();
+        using var analyzer = new StandardAnalyzer(LuceneVersion.LUCENE_48);
+        var engine = new LuceneSearchEngine(
+            options, analyzer, new IFileContentExtractor[] { new PlainTextExtractor(options) });
+
+        var built = await engine.BuildIndexAsync(_root);
+        Assert.IsTrue(built.Success, built.Error);
+
+        var result = await engine.SearchAsync(
+            "needle", _root, maxResults: 1, fileExtensionFilter: ".cs");
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreNotEqual(0, result.Matches.Count, "基准 analyzer 下同样不得漏检。");
+        Assert.AreEqual(target, result.Matches[0].FilePath);
     }
 
     /// <summary>预算充足时同一语料必须能找到目标 —— 封顶不能变成常态失败。</summary>
