@@ -54,15 +54,16 @@ public sealed class CodeQueryService : ICodeQueryService
             return [];
 
         // ADR-089 硬约束 9/10：跨 scope 去重优先于过载判定。
-        // 未限定 project 的检索跨全部已登记项目（本仓即 4 个互相嵌套的 project），
-        // 而 SymbolId 是全限定名、跨项目唯一 ⇒ 同一符号会被返回多次
-        //（实测：code_symbol_search 的 10 条结果里有 5 对重复）。
+        // 去重键必须是 (SymbolId, FilePath)，不能只用 SymbolId：
+        // ① 同一份源码被互相嵌套的 project 各索引一份 ⇒ 两者都相同，应去重；
+        // ② 两个程序集各有同名类型 ⇒ SymbolId 相同但 FilePath 不同，是两个声明，必须都保留。
+        // 只用 SymbolId 会把 ② 合并掉（R1-02 门禁：两根同名 T:Acme.Service 均须返回）。
         // 保留首次出现者；store 已按 Name/SymbolId/ProjectId 稳定排序 ⇒ 保留哪一条是确定的。
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seen = new HashSet<(string SymbolId, string FilePath)>();
         var unique = new List<CodeSymbolRecord>(symbols.Count);
         foreach (var symbol in symbols)
         {
-            if (seen.Add(symbol.SymbolId))
+            if (seen.Add((symbol.SymbolId, symbol.FilePath ?? string.Empty)))
                 unique.Add(symbol);
         }
 

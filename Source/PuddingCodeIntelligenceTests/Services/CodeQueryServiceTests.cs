@@ -132,6 +132,33 @@ public sealed class CodeQueryServiceTests
             results.Select(r => r.Symbol.SymbolId).ToArray());
     }
 
+    [TestMethod]
+    public async Task SearchSymbols_Keeps_Same_FullyQualified_Name_From_Distinct_Files()
+    {
+        using var fixture = CodeIntelligenceFixture.Create();
+        var alpha = Project(fixture.Root, "project-alpha");
+        var beta = Project(fixture.Root, "project-beta");
+        var alphaFile = new CodeFileRecord(alpha.WorkspaceId, alpha.ProjectId, "src/Acme/Service.cs", "CSharp");
+        var betaFile = new CodeFileRecord(beta.WorkspaceId, beta.ProjectId, "lib/Acme/Service.cs", "CSharp");
+
+        await fixture.Store.UpsertProjectAsync(alpha);
+        await fixture.Store.UpsertProjectAsync(beta);
+        await fixture.Store.UpsertFilesAsync(alpha.WorkspaceId, alpha.ProjectId, [alphaFile]);
+        await fixture.Store.UpsertFilesAsync(beta.WorkspaceId, beta.ProjectId, [betaFile]);
+        await fixture.Store.UpsertSymbolsAsync(alpha.WorkspaceId, alpha.ProjectId,
+            [Symbol(alpha, alphaFile.FilePath, "T:Acme.Service", "Service", CodeSymbolKind.Class)]);
+        await fixture.Store.UpsertSymbolsAsync(beta.WorkspaceId, beta.ProjectId,
+            [Symbol(beta, betaFile.FilePath, "T:Acme.Service", "Service", CodeSymbolKind.Class)]);
+
+        var service = new CodeQueryService(fixture.Store);
+        var results = await service.SearchSymbolsAsync(
+            new CodeSymbolSearchRequest(alpha.WorkspaceId, "Service"));
+
+        // 两个程序集里各有 T:Acme.Service：全限定名相同但是**不同的声明**，必须都返回。
+        // 去重键若只用 SymbolId，这里会被合并成 1 条（R1-02 门禁）。
+        Assert.HasCount(2, results);
+    }
+
     private static CodeProjectRecord Project(string rootPath, string projectId) =>
         new("workspace-one", projectId, rootPath, CodeProjectStatus.Active, UpdatedAtUtc: DateTimeOffset.UtcNow);
 
