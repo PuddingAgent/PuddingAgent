@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!--
+    ADR-089 R2-00：统一 grep 的**独立匹配内核**。
+    边界规则（由 PuddingGrepTests/ComponentBoundaryTests 在运行时断言）：
+      - 本工程只引 BCL，零 ProjectReference、零 PackageReference；
+      - 不认识文件系统、子目录、排除目录、候选索引、Provider —— 那些属于上层；
+      - 因此它可以在没有宿主、没有索引的情况下单独构建与测试（规程 S1–S4）。
+    接入（slnx / DI / 替换 SearchGrepTool 的匹配逻辑）属于 S5，不在本工程内。
+  -->
+
+</Project>

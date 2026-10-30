@@ -1,0 +1,20 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!--
+    规程 S2：本测试工程只引用被测组件。
+    不得引用 PuddingRuntime / PuddingCodeIndex / PuddingHost / PuddingAgent ——
+    匹配内核必须在没有宿主、没有索引的情况下就能被证明正确（ComponentBoundaryTests 断言）。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingGrep\PuddingGrep.csproj" />
+  </ItemGroup>
+
+</Project>
