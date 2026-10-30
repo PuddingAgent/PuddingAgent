@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>PuddingLlmUsage</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    LLM 余额采样与消耗分析的**纯逻辑**组件（组件化交付规程 S1）。
+
+    边界（由测试 PuddingLlmUsage_ProjectHasNoReferences 在运行时断言）：
+      * ZERO <ProjectReference> —— 不依赖任何工程，因此
+        PuddingRuntime / PuddingPlatform / 未来任何宿主都能引用它而不产生反向依赖；
+      * ZERO <PackageReference> —— 消耗判定是纯算术与状态机，不需要外部包。
+
+    为什么先做这一层：钱怎么算属于「规则」，与「谁去采样」「存哪张表」「怎么画曲线」
+    完全无关。先把规则做成可独立测试的叶子，后面三层换实现都不会碰它。
+  -->
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingLlmUsageTests" />
+  </ItemGroup>
+
+</Project>
