@@ -17,6 +17,7 @@
        PuddingPathFiltering (a leaf with zero references of its own => no reverse dependency). -->
   <ItemGroup>
     <ProjectReference Include="..\PuddingPathFiltering\PuddingPathFiltering.csproj" />
+    <ProjectReference Include="..\PuddingDomain.Contracts\PuddingDomain.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

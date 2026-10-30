@@ -1,14 +1,14 @@
 using System.Globalization;
-using PuddingRetrieval.Contracts;
+using PuddingCodeIndex.Contracts;
 
-namespace PuddingRetrieval.ContractsTests;
+namespace PuddingDomain.ContractsTests;
 
 /// <summary>
 /// 数值钉死测试：这两个枚举是**持久化契约**（CodeSymbols.Kind / CodeRelations.Kind 按整数存储）。
 /// 成员顺序一旦被调整，已有索引库里的数据含义会整体错位 —— 而且不会有任何编译错误。
 /// <para>
 /// 这里把「成员名=数值」整个序列钉死：既检查数值，也检查顺序与成员数量。
-/// 用运行时枚举值与期望序列对照（而不是逐条常量比较），避免分析器把断言当成恒真而失效。
+/// 用运行时枚举值与期望序列整体对照（逐条常量比较会被分析器判为恒真而失去保护）。
 /// </para>
 /// </summary>
 [TestClass]
@@ -48,16 +48,10 @@ public sealed class EnumStabilityTests
             "关系种类是持久化契约：数值或顺序变化会让已有索引数据含义错位。");
     }
 
-    /// <summary>
-    /// 与 CodeIndex 侧仍并存的同名枚举保持一致 —— 这是迁移的**过渡**要求：
-    /// 两份定义期间任何一侧改了成员，都会让「同一份索引库」被两种含义读取。
-    /// </summary>
     [TestMethod]
-    public void TransitionalDuplicate_HasSameMembersAsDocumentedContract()
+    public void MemberCounts_ArePinned()
     {
-        Assert.HasCount(18, Enum.GetValues<CodeSymbolKind>(),
-            "过度期成员数必须与 PuddingCodeIndex.Contracts.CodeSymbolKind 一致（18）。");
-        Assert.HasCount(9, Enum.GetValues<CodeRelationKind>(),
-            "过渡期成员数必须与 PuddingCodeIndex.Contracts.CodeRelationKind 一致（9）。");
+        Assert.HasCount(18, Enum.GetValues<CodeSymbolKind>());
+        Assert.HasCount(9, Enum.GetValues<CodeRelationKind>());
     }
 }

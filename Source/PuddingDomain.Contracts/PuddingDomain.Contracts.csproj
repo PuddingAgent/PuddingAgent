@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    ADR-089 R2-01「跨层共享的值类型」落点。
+
+    为什么需要独立组件：CodeSymbolKind / CodeRelationKind 被 81 个文件使用，横跨
+    CodeIndex（存储）、CodeIntelligence（抽取）、Runtime（工具）与各路测试。
+    把它们留在 PuddingCodeIndex 里，会让「检索契约」为了用这两个枚举而反向依赖存储组件；
+    放进 PuddingRetrieval.Contracts 又会让「检索契约」事实上变成全仓基础库。
+
+    依赖方向：本组件只引 BCL；CodeIndex / Retrieval.Contracts 都可以依赖本组件，反之不行。
+
+    ⚠️ 命名空间刻意保留 `PuddingCodeIndex.Contracts`：迁移阶段零调用方改动（81 个文件的 using
+    一行不用改），先把**程序集依赖方向**修正，命名空间整理留作后续单独一步。
+  -->
+
+</Project>

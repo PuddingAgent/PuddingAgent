@@ -1,17 +1,7 @@
 namespace PuddingCodeIndex.Contracts;
 
-public enum CodeRelationKind
-{
-    Unknown,
-    Contains,
-    Calls,
-    References,
-    Inherits,
-    Implements,
-    Overrides,
-    Overloads,
-    Uses,
-}
+// CodeRelationKind 已下沉到 PuddingDomain.Contracts（跨层共享值类型）。
+// 命名空间保持不变 ⇒ 引用方零改动。
 
 public sealed record CodeRelationRecord(
     string WorkspaceId,

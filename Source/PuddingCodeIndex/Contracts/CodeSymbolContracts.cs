@@ -1,26 +1,7 @@
 namespace PuddingCodeIndex.Contracts;
 
-public enum CodeSymbolKind
-{
-    Unknown,
-    Namespace,
-    Type,
-    Struct,
-    Class,
-    Interface,
-    Enum,
-    Delegate,
-    Method,
-    Constructor,
-    Property,
-    Field,
-    Event,
-    Parameter,
-    Local,
-    Variable,
-    Constant,
-    Operator,
-}
+// CodeSymbolKind 已下沉到 PuddingDomain.Contracts（跨层共享值类型）。
+// 命名空间保持不变 ⇒ 引用方零改动；程序集独立 ⇒ 依赖方向由编译期强制。
 
 public sealed record CodeSymbolRecord(
     string WorkspaceId,

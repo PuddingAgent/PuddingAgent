@@ -10,10 +10,10 @@
 
   <!--
     规程 S2：只引用被测组件。不得引用 PuddingCodeIndex / Runtime / Host ——
-    契约组件必须在没有实现的情况下就能被证明（ComponentBoundaryTests 断言）。
+    共享值类型组件必须在没有实现的情况下就能被证明。
   -->
   <ItemGroup>
-    <ProjectReference Include="..\PuddingRetrieval.Contracts\PuddingRetrieval.Contracts.csproj" />
+    <ProjectReference Include="..\PuddingDomain.Contracts\PuddingDomain.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

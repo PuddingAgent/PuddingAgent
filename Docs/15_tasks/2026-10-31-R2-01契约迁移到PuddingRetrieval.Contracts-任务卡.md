@@ -167,3 +167,47 @@ powershell -NoProfile -ExecutionPolicy Bypass -File TestScripts\migrate-retrieva
 
 1. 枚举下沉目标：`PuddingRetrieval.Contracts`（现方案）还是新建更基础的共享契约组件（建议）？
 2. 若采用新组件，`PuddingRetrieval.Contracts` 的定位收窄为「只放检索请求/结果/覆盖声明」，与计划 §2 的描述一致。
+
+## 附录 C：裁定与执行结果（2026-10-31 05:30）
+
+附录 B 提的两个问题，按第一性原理自行裁定并执行：
+
+### 裁定
+
+**枚举下沉到新建的 `PuddingDomain.Contracts`**，而不是 `PuddingRetrieval.Contracts`。
+
+理由：这两个枚举被 81 个文件横跨存储 / 抽取 / 工具 / 测试使用，属**跨层共享值类型**。放进检索契约会让该组件事实上变成全仓基础库；留在 CodeIndex 又会让上层反向依赖存储组件。
+
+**关键手法：命名空间保持不变**（仍是 `PuddingCodeIndex.Contracts`），只换程序集。这样：
+
+- 81 个调用方的 `using` **一行都不用改**；
+- 程序集依赖方向立刻正确（CodeIndex → Domain.Contracts，单向）；
+- 命名空间整理留作后续独立一步（那步可以连带 `CodeSymbolRecord` 一起处理）。
+
+若按原方案（改命名空间 + 搬 28 个契约文件）执行，代价是 81 处 using 改动，且目标还有选错的风险。
+
+### 执行
+
+- 新增 `Source/PuddingDomain.Contracts`（BCL 零依赖）承载两个枚举 + `code_map.md`。
+- 新增 `Source/PuddingDomain.ContractsTests`（5 条：数值/顺序/成员数钉死 + 边界反射断言）。
+- `PuddingCodeIndex` 增加对 Domain.Contracts 的 `ProjectReference`；原两处枚举定义删除（保留同文件其它类型）。
+- **删除**上一轮建的 `PuddingRetrieval.Contracts` / `PuddingRetrieval.ContractsTests`（`git rm`）—— 枚举不该住那里，且该组件当时是空壳，留着会变成「存在但定位错误」的工程。
+- `PuddingAgentNetwork.slnx`：相应替换两条登记。
+
+### 验证（实测）
+
+| 工程 | 结果 |
+|---|---|
+| `PuddingCodeIndex` 构建 | 0 错误 |
+| `PuddingCodeIndexTests` | **473/473** |
+| `PuddingCodeIntelligenceTests` | **151/151** |
+| `PuddingRuntimeTests` | **2,511/2,511** |
+| `PuddingDomain.ContractsTests` | **5/5** |
+
+零回归 —— 这正是「命名空间不变」带来的直接好处：没有任何调用方需要改，也就没有漏改的可能。
+
+### 与计划的差异（需知会）
+
+施工计划 R2-00 列的是四个组件（Retrieval.Contracts / Retrieval / Grep / Adapters）。本轮实际产出的是 **Grep + Domain.Contracts**，`Retrieval.Contracts` 被撤回。
+
+理由已如上：先解决「枚举该住哪」这个前置问题，否则 `Retrieval.Contracts` 建起来就会因为要引用枚举而变成另一个方向错误。`Retrieval.Contracts` 应在契约真正迁移时建立，届时它的职责是「检索请求 / 结果 / 覆盖声明」，不含跨层值类型。
