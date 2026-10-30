@@ -191,6 +191,7 @@ public sealed class WorkspaceOpenTool : PuddingToolBase<WorkspaceOpenArgs>
                 head["map"] = new
                 {
                     total_file_count = map.TotalFileCount,
+                    total_file_count_scope = MapPayload.TotalFileCountScope,
                     root = EntryToJson(map.Root),
                 };
                 break;

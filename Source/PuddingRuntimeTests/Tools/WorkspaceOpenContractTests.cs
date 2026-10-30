@@ -153,6 +153,23 @@ public sealed class WorkspaceOpenContractTests
     }
 
     [TestMethod]
+    public void FromProjectMap_TotalsAllNodes_NotJustRootDirectFiles()
+    {
+        // 回归守卫：根目录通常没有直属 .cs。若顶层 total_file_count 直接取 root.TotalFileCount，
+        // 一份有几千个文件的地图会报 0，调用方读成「地图里没有文件」（ADR-089 §8.3）。
+        var root = new ProjectMapNode { Name = "root", IsRoot = true, TotalFileCount = 0 };
+        root.Children.Add(new ProjectMapNode { Name = "a", TotalFileCount = 3 });
+        root.Children.Add(new ProjectMapNode { Name = "b", TotalFileCount = 4 });
+        var outcome = new ProjectMapOutcome(true, null, "root", 1, root);
+
+        var payload = WorkspaceOpenMapping.FromProjectMap(outcome);
+
+        Assert.AreEqual(7, payload.TotalFileCount, "顶层总数必须是各节点之和，不能等于根目录直属数（0）。");
+        Assert.AreEqual(0, payload.Root.TotalFileCount, "节点级仍报该目录真实文件数，语义不变。");
+        Assert.IsFalse(string.IsNullOrWhiteSpace(MapPayload.TotalFileCountScope), "口径说明不能为空。");
+    }
+
+    [TestMethod]
     public void AnonymousCSharpNode_GetsPlaceholderName()
     {
         var runtimeNode = new OutlineNode { Name = null, Kind = "class", Line = 1, EndLine = 2 };

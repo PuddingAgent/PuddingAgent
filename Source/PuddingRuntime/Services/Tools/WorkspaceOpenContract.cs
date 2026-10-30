@@ -199,7 +199,16 @@ public sealed record MapEntry(
     int TotalFileCount);
 
 /// <summary>目录地图负载。</summary>
-public sealed record MapPayload(MapEntry Root, int TotalFileCount) : WorkspaceOpenPayload;
+public sealed record MapPayload(MapEntry Root, int TotalFileCount) : WorkspaceOpenPayload
+{
+    /// <summary>
+    /// <see cref="TotalFileCount"/> 的口径：顶层值是「本图所有已展开目录的文件数之和」，
+    /// 与节点级的「该目录真实文件数」不是一回事。不带这句时，根目录恰好没有直属 .cs
+    /// 会让顶层报 0，被调用方读成「地图里没有文件」（ADR-089 §8.3）。
+    /// </summary>
+    public const string TotalFileCountScope =
+        "本图所有已展开目录的 .cs 文件数之和（受 depth 限制，未展开层级不计）；单目录真实数见各节点 total_file_count";
+}
 
 /// <summary>
 /// <c>workspace_open</c> 的结果。构造即自校验：
@@ -298,8 +307,18 @@ public static class WorkspaceOpenMapping
     {
         ArgumentNullException.ThrowIfNull(outcome);
 
-        return new MapPayload(MapEntryOf(outcome.Root!), outcome.Root!.TotalFileCount);
+        var root = MapEntryOf(outcome.Root!);
+        return new MapPayload(root, SumFileCount(root));
     }
+
+    /// <summary>
+    /// 树内所有节点的直属文件数之和。
+    /// 顶层 <c>TotalFileCount</c> 必须用它：仓库根的 Source 目录常常没有直属 .cs，
+    /// 直接用 <c>root.TotalFileCount</c> 会让一份有几千个文件的地图报 0
+    /// （ADR-089 §8.3：不得把「局部为 0」当成「整体为空」）。
+    /// </summary>
+    private static int SumFileCount(MapEntry node) =>
+        node.TotalFileCount + node.Children.Sum(child => SumFileCount(child));
 
     private static MapEntry MapEntryOf(ProjectMapNode node) => new(
         node.Name,

@@ -231,6 +231,27 @@ public sealed class WorkspaceOpenServiceTests
     }
 
     [TestMethod]
+    public async Task Map_RootWithNoDirectFiles_TotalStillCountsChildren()
+    {
+        // 端到端守卫：容器目录没有直属 .cs、子目录有 2 个 ⇒ 顶层总数必须是 2 而不是 0。
+        var root = Path.Combine(_root, "tree");
+        var leaf = Path.Combine(root, "leaf");
+        Directory.CreateDirectory(leaf);
+        await File.WriteAllTextAsync(Path.Combine(leaf, "A.cs"), "public class A { }");
+        await File.WriteAllTextAsync(Path.Combine(leaf, "B.cs"), "public class B { }");
+
+        var service = new WorkspaceOpenService(null, new FixedScopeResolver(_root), new CodeProjectMapService());
+
+        var result = await service.OpenAsync(
+            new WorkspaceOpenRequest("ws-1", null, "tree", WorkspaceOpenView.Map, Depth: 2),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Error);
+        var payload = (MapPayload)result.Payload!;
+        Assert.AreEqual(2, payload.TotalFileCount, "顶层总数要把子目录算进来，不能因为根目录没直属 .cs 就报 0。");
+    }
+
+    [TestMethod]
     public async Task Map_TypeListTruncation_SetsTruncatedWithReason()
     {
         // 回归守卫：一个文件有 5 个类型，MaxTopLevelTypes=3 ⇒ types 只列 3 个。
