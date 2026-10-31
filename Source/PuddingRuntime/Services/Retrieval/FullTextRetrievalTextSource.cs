@@ -1,6 +1,5 @@
 using PuddingRetrieval;
 using PuddingCode.Runtime;
-using PuddingCodeIndex.Services.Retrieval;
 using PuddingFullTextIndex.Contracts;
 
 namespace PuddingRuntime.Services;

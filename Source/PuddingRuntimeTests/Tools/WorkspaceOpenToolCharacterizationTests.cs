@@ -3,7 +3,6 @@ using PuddingRetrieval.Contracts;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PuddingCode.Tools;
 using PuddingCodeIndex.Contracts;
-using PuddingCodeIndex.Services.Retrieval;
 using PuddingRetrieval;
 using PuddingRuntime.Services.Tools;
 

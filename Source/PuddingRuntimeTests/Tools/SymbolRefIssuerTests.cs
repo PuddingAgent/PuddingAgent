@@ -4,7 +4,6 @@ using System.IO;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PuddingCodeIndex.Contracts;
 using PuddingRetrieval.Contracts;
-using PuddingCodeIndex.Services.Retrieval;
 using PuddingRetrieval;
 
 namespace PuddingRuntimeTests.Tools;

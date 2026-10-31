@@ -1,7 +1,7 @@
 using PuddingCodeIndex.Contracts;
 using PuddingRetrieval.Contracts;
 
-namespace PuddingCodeIndex.Services.Retrieval;
+namespace PuddingRetrieval;
 
 /// <summary>一个待签发 ref 的候选：只含索引已经知道的定位信息，**不含 hash**。</summary>
 /// <param name="FilePath">命中文件路径。可以是项目内相对路径，也可以是绝对路径；签发时会换算成相对路径。</param>

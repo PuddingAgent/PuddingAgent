@@ -4,7 +4,6 @@ using PuddingRetrieval.Adapters;
 using PuddingRetrieval;
 using PuddingCodeIndex.Contracts;
 using PuddingRetrieval.Contracts;
-using PuddingCodeIndex.Services.Retrieval;
 using PuddingFullTextIndex.Contracts;
 using PuddingRuntime.Services;
 

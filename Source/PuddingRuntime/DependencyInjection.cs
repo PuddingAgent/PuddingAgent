@@ -27,7 +27,7 @@ using PuddingRuntime.Services.Tools;
 using PuddingCodeIntelligence;
 using PuddingCodeIntelligence.Contracts;
 using PuddingRetrieval.Contracts;
-using PuddingCodeIndex.Services.Retrieval;
+using PuddingRetrieval;
 using PuddingFullTextIndex.Contracts;
 
 using System.Threading.Channels;

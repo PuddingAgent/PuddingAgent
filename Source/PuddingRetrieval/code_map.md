@@ -1,6 +1,6 @@
 # PuddingRetrieval CodeMAP
 
-> 检索实现层：**编排 + 数据面抽象** | 条目数: 6 · 最近整理: 2026-10-31
+> 检索实现层：**编排 + 数据面抽象** | 条目数: 7 · 最近整理: 2026-10-31
 
 ## 定位
 
@@ -29,6 +29,7 @@ PuddingRetrieval  →  PuddingRetrieval.Contracts + PuddingDomain.Contracts（�
 | `DefaultLanguageCapabilityMatrix.cs` | 语言能力矩阵的默认实现（C# / TS / Markdown / 未知语言）；**只声明有实测证据的「支持」** | `DefaultLanguageCapabilityMatrix` |
 | `RetrievalCoverageMatrix.cs` | 覆盖矩阵：项目 × 语言 × 能力面 在输出层交叉，可渲染成 Markdown 表 | `RetrievalCoverageMatrix` / `CoverageCell` / `ProjectCoverage` / `ProjectLanguages` |
 | `SymbolRefFreshness.cs` | `symbol_ref` 的 FRESH / STALE 判定（纯函数，不读盘不查库） | `SymbolRefFreshness` / `SymbolRefFreshnessResult` / `SymbolRefState` / `SymbolRefRelocation` |
+| `SymbolRefIssuer.cs` | `symbol_ref` 的**签发端**：把搜索命中批量变成 token（读端见 `SymbolRefFreshness`）；**纯类** —— `FromManifest` 由调用方传入 manifest 快照，不持有 store | `SymbolRefIssuer` / `SymbolRefIssueRequest` / `SymbolRefIssue` |
 
 ## 契约要点
 
@@ -48,9 +49,9 @@ PuddingRetrieval  →  PuddingRetrieval.Contracts + PuddingDomain.Contracts（�
 PuddingRetrieval  ←  PuddingRetrieval.Adapters  →  PuddingCodeIndex
 ```
 
-## 未迁入（仍在 `PuddingCodeIndex/Services/Retrieval/`）
+## 未迁入
 
-`SymbolRefIssuer.cs` —— 实测它是**纯类**：`FromManifest(IReadOnlyDictionary<string, CodeSourceEntry>, projectRoot)` 由调用方传入快照，不持有 `ICodeSourceMaintenanceStore`，不需要端口。障碍只有一处：`CodeSourceEntry` / `SourceFingerprint` / `AppliedFileVersion` 三个值类型仍在 `PuddingCodeIndex.Contracts`，需先按既有模式下沉到 `PuddingDomain.Contracts`（命名空间不变、调用方零改动）。
+**已无。** `PuddingCodeIndex/Services/Retrieval/` 目录已删除（2026-10-31 步骤 8）。
 
 ## 测试
 
@@ -58,4 +59,4 @@ PuddingRetrieval  ←  PuddingRetrieval.Adapters  →  PuddingCodeIndex
 dotnet test Source\PuddingRetrievalTests\PuddingRetrievalTests.csproj
 ```
 
-**55 条**。其中 25 条随 `DefaultLanguageCapabilityMatrix` / `RetrievalCoverageMatrix` / `SymbolRefFreshness` 从 `PuddingCodeIndexTests` 迁入（迁移前 30 → 迁移后 55，对应 `PuddingCodeIndexTests` 399 → 374，两侧差值必须相等）。
+**55 条**（另有 `SymbolRefIssuer` 的契约测试仍在 `PuddingRuntimeTests`，未随之搬迁）。其中 25 条随 `DefaultLanguageCapabilityMatrix` / `RetrievalCoverageMatrix` / `SymbolRefFreshness` 从 `PuddingCodeIndexTests` 迁入（迁移前 30 → 迁移后 55，对应 `PuddingCodeIndexTests` 399 → 374，两侧差值必须相等）。
