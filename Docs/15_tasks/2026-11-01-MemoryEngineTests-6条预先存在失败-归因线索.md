@@ -198,3 +198,28 @@ pipeline 走的是**没有编排器的旧路径** —— 那条路径本来就�
 | C. 仅在本文件标注「测的是无编排器降级路径」 | 低 | 不修行为，但让后来人不再把它当契约 |
 
 我倾向 **B**：同一套语义不该在两个测试工程里各写一遍，且 Runtime 侧那份是接线完整的。
+
+## 收口：6 条已全部有结论（2026-11-01 07:40）
+
+| # | 用例 | 结论 | 证据 |
+|---|---|---|---|
+| 1 | `ContextPipeline_ShouldAssembleAll7Layers` | **已修**（层标签改名） | 改后绿；变异（标签改回旧名）红；还原 SHA 一致 |
+| 2 | `EnvironmentLayer_ShouldBePresentInAssemblyResult` | **已修**（同上） | 同上，与 #1 同时变红 |
+| 3 | `ContextPipeline_ShouldTriggerGentleCompaction` | **已定性，未改代码** | fixture 传 `orchestrator: null` ⇒ 走无编排器旧路径，不组装历史层；已在 fixture 上注释 + 基线登记 |
+| 4 | `Health_RejectsUsageFromBeforeCheckpoint (False)` | **已修**（用量档位不符闸门口径） | 实测 EffectiveWindow=934,976 / GateRatio=used/effective / Trigger 0.8 / Blocking 0.92；原 600,000 只到 0.6417 |
+| 5 | `Health_RejectsUsageFromBeforeCheckpoint (True)` | **已修**（同上） | 同上 |
+| 6 | `ProviderUsage_...OrWeakenOutboundGuard` | **已修**（断言方向写反）+ 用例改名 | 设计允许系数 < 1.0（下限 0.5，安全网 `RecordProviderInputLimitFailure`）；改后绿，变异（下限改 1.0）红 |
+
+## 总数
+
+```
+PuddingMemoryEngineTests  301 条
+  改动前  295 通过 / 6 失败
+  现在    300 通过 / 1 失败   ← 唯一剩余为 #3（fixture 缺 orchestrator，已注释与登记）
+```
+
+## 复用的判据（写给下一次）
+
+1. **先观测再改**：tmp 把断言换成 `Assert.Fail(对象)` dump 出来，比读十遍代码快；
+2. **改完必须取红**：把实现改回去，断言必须变红，否则就是恒真；
+3. **修好立刻从基线移除**：`TestScripts/staged-test-baseline.json` 只能减，加了不删会变成垃圾桶。
