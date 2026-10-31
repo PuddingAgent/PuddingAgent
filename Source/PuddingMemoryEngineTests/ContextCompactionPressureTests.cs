@@ -140,9 +140,13 @@ public sealed class ContextCompactionPressureTests
         Assert.AreEqual("active_session_messages", health.UsageSource);
 
         // A request measured in the new generation must still trigger when truly full.
+        // 2026-11-01 修：闸门用的是 used / EffectiveWindowTokens（实测 934,976，因为 requested output 被
+        // 夹到 64,000 而不是入参的 384,000），阈值 Trigger=0.8、Blocking=0.92。
+        // 原来的 600,000 只到 0.6417，本来就不该触发 —— 断言数与实现口径不符，不是实现退化。
+        // 900,000 / 934,976 = 0.9626，同时越过 0.8 与 0.92。
         store.Set(new ContextUsageSnapshot
         {
-            SessionId = "s", UsedTokens = 600000, Source = "llm_request",
+            SessionId = "s", UsedTokens = 900000, Source = "llm_request",
             RecordedAt = boundary.AddSeconds(1),
         });
         var full = await service.GetHealthAsync("s", contextWindowTokens: 1000000, maxOutputTokens: 384000);
