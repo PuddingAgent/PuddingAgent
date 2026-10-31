@@ -1,7 +1,7 @@
+using PuddingRetrieval;
 using PuddingRetrieval.Contracts;
-using PuddingCodeIndex.Services.Retrieval;
 
-namespace PuddingCodeIndexTests.Services.Retrieval;
+namespace PuddingRetrievalTests;
 
 /// <summary>
 /// <see cref="SymbolRefFreshness"/> 的三态判定契约（symbol_ref 提案 §5/§6）。

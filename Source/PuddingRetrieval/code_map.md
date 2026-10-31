@@ -1,6 +1,6 @@
 # PuddingRetrieval CodeMAP
 
-> 检索实现层：**编排 + 数据面抽象** | 条目数: 3 · 最近整理: 2026-10-31
+> 检索实现层：**编排 + 数据面抽象** | 条目数: 6 · 最近整理: 2026-10-31
 
 ## 定位
 
@@ -26,6 +26,9 @@ PuddingRetrieval  →  PuddingRetrieval.Contracts + PuddingDomain.Contracts（�
 |---|---|---|
 | `IRetrievalSources.cs` | 符号面 + 文本面的窄端口，以及文本命中的值类型与「不可用」异常 | `IRetrievalSymbolSource` / `IRetrievalTextSource` / `RetrievalTextMatch` / `RetrievalTextSourceUnavailableException` |
 | `RetrievalPortV1.cs` | `IRetrievalPort` 首个实现（1391 行）：意图路由 / 多路融合 / 去重 / 排序 / 预算 / 空原因裁决 / 跨页游标 | `RetrievalPortV1` |
+| `DefaultLanguageCapabilityMatrix.cs` | 语言能力矩阵的默认实现（C# / TS / Markdown / 未知语言）；**只声明有实测证据的「支持」** | `DefaultLanguageCapabilityMatrix` |
+| `RetrievalCoverageMatrix.cs` | 覆盖矩阵：项目 × 语言 × 能力面 在输出层交叉，可渲染成 Markdown 表 | `RetrievalCoverageMatrix` / `CoverageCell` / `ProjectCoverage` / `ProjectLanguages` |
+| `SymbolRefFreshness.cs` | `symbol_ref` 的 FRESH / STALE 判定（纯函数，不读盘不查库） | `SymbolRefFreshness` / `SymbolRefFreshnessResult` / `SymbolRefState` / `SymbolRefRelocation` |
 
 ## 契约要点
 
@@ -47,9 +50,7 @@ PuddingRetrieval  ←  PuddingRetrieval.Adapters  →  PuddingCodeIndex
 
 ## 未迁入（仍在 `PuddingCodeIndex/Services/Retrieval/`）
 
-`DefaultLanguageCapabilityMatrix.cs` / `RetrievalCoverageMatrix.cs` /
-`SymbolRefFreshness.cs` / `SymbolRefIssuer.cs` —— 其中 `SymbolRefIssuer` 依赖存储内容哈希，
-搬迁需另设端口，未评估。
+`SymbolRefIssuer.cs` —— 依赖存储的内容哈希（manifest），搬迁需先设计端口，未评估。
 
 ## 测试
 
@@ -57,4 +58,4 @@ PuddingRetrieval  ←  PuddingRetrieval.Adapters  →  PuddingCodeIndex
 dotnet test Source\PuddingRetrievalTests\PuddingRetrievalTests.csproj
 ```
 
-4 条：两条边界（运行时 / csproj 声明）、`RetrievalTextMatch` 值相等、异常的 InnerException 保留。
+**55 条**。其中 25 条随 `DefaultLanguageCapabilityMatrix` / `RetrievalCoverageMatrix` / `SymbolRefFreshness` 从 `PuddingCodeIndexTests` 迁入（迁移前 30 → 迁移后 55，对应 `PuddingCodeIndexTests` 399 → 374，两侧差值必须相等）。

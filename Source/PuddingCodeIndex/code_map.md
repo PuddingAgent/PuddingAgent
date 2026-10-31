@@ -5,12 +5,13 @@
 > 依赖倒置：`ICodeIndexer` 定义在本工程，Roslyn/TS 等**实现留在** `PuddingCodeIntelligence`。
 > 命名空间：`PuddingCodeIndex.Contracts` / `PuddingCodeIndex.Services` / `PuddingCodeIndex.Services.CodeIndex` / `PuddingCodeIndex.Storage`
 > 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingCodeIndex-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingCodeIndex-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
-> 源指纹: Source/PuddingCodeIndex/**=96-27cb6e69b8a5 · 条目数: 58 · 最近整理: 2026-10-31
+> 源指纹: Source/PuddingCodeIndex/**=96-27cb6e69b8a5 · 条目数: 57 · 最近整理: 2026-10-31
 > ⚠ 2026-10-31 R2-01：28 个检索契约已迁至 **`Source/PuddingRetrieval.Contracts/`**（独立工程，命名空间 `PuddingRetrieval.Contracts`）。
 > 下表凡写 `PuddingRetrieval.Contracts/…` 的条目，文件**不在本工程内**；`Services/Retrieval/…` 仍是本工程实现。
 > 同时 `CodeSymbolKind` / `CodeRelationKind` 已下沉到 `PuddingDomain.Contracts`（命名空间保持 `PuddingCodeIndex.Contracts`，调用方零改动）。
 > 同日追加：CodeFileRecord / CodeSymbolContracts / CodeProjectContracts / CodeRelationContracts / CodeIndexScopeContracts **5 个文件（13 个类型）**也已下沉到 PuddingDomain.Contracts（命名空间不变，零调用方改动）—— 下表这 5 条的文件**不在本工程内**。
 > ⚠ 同日步骤 2：`Services/Retrieval/RetrievalPortV1.cs`（1391 行编排）与其测试已迁至 `Source/PuddingRetrieval/`（命名空间 `PuddingRetrieval`）。本工程**不再引用** `PuddingRetrieval`，全工程扫描检索窄端口类型为空。
+> ⚠ 同日步骤 6：`Services/Retrieval/` 下 `DefaultLanguageCapabilityMatrix.cs` / `RetrievalCoverageMatrix.cs` / `SymbolRefFreshness.cs` 及其三个测试类已迁至 `Source/PuddingRetrieval/`（命名空间 `PuddingRetrieval`）。本目录现只余 `SymbolRefIssuer.cs`（依赖存储内容哈希，搬迁需另设计端口）。
 
 ## 契约（Contracts/ → `PuddingCodeIndex.Contracts`）
 
@@ -84,8 +85,7 @@
 | `IndexExcludePatterns.cs` | 索引排除模式 | `IndexExcludePatterns` | — | — |
 | `DefaultCodeWorkspaceResolver.cs` | 工作区解析（sln/slnx/csproj 描述符） | `DefaultCodeWorkspaceResolver` / `ICodeWorkspaceResolver` | `Contracts/ICodeWorkspaceResolver.cs` | — |
 | `DefaultProjectRootDetector.cs` | 项目根检测（向上遍历 + 标记文件） | `DefaultProjectRootDetector` / `ICodeProjectRootDetector` | `Contracts/ICodeProjectRootDetector.cs` | — |
-| `Retrieval/SymbolRefFreshness.cs` | `symbol_ref` 的 FRESH / STALE 判定（纯函数，不读盘不查库） | `SymbolRefFreshness` / `SymbolRefFreshnessResult` / `SymbolRefState` / `SymbolRefRelocation` | `PuddingRetrieval.Contracts/SymbolRefV1.cs` · `Docs/12_features/symbol_ref-v1-合同提案-2026-10-30.md` | 只有 content_hash 相等才 Fresh（§8.3 禁令收成唯一入口）；重定位成功**仍是 Stale**（找到候选 ≠ 旧 ref 仍有效）；位置相关/未知形态 id 一律不可重定位；零候选措辞不得暗示符号不存在；版本未知不得当 Fresh |
-| `Services/Retrieval/SymbolRefIssuer.cs` | `symbol_ref` 的**签发端**：把搜索命中批量变成 token（读端见 `SymbolRefFreshness`） | `SymbolRefIssuer` / `SymbolRefIssueRequest` / `SymbolRefIssue` | `PuddingRetrieval.Contracts/SymbolRefV1.cs` · `Services/Retrieval/SymbolRefFreshness.cs` | content_hash **只取自 manifest（索引时）**，绝不读磁盘（否则索引落后于磁盘时会签出假 Fresh ref）；ref 只接受项目内相对路径，绝对命中必须用项目根换算，换算不出就拒签；manifest 建索引一次批量复用，逐条是 O(文件数)；证据缺失一律拒签，不抛异常打断搜索 |
+| `Services/Retrieval/SymbolRefIssuer.cs` | `symbol_ref` 的**签发端**：把搜索命中批量变成 token（读端见 `SymbolRefFreshness`） | `SymbolRefIssuer` / `SymbolRefIssueRequest` / `SymbolRefIssue` | `PuddingRetrieval.Contracts/SymbolRefV1.cs` · `PuddingRetrieval/SymbolRefFreshness.cs` | content_hash **只取自 manifest（索引时）**，绝不读磁盘（否则索引落后于磁盘时会签出假 Fresh ref）；ref 只接受项目内相对路径，绝对命中必须用项目根换算，换算不出就拒签；manifest 建索引一次批量复用，逐条是 O(文件数)；证据缺失一律拒签，不抛异常打断搜索 |
 
 ## 存储（Storage/ → `PuddingCodeIndex.Storage`）
 

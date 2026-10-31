@@ -1,6 +1,6 @@
 using PuddingRetrieval.Contracts;
 
-namespace PuddingCodeIndex.Services.Retrieval;
+namespace PuddingRetrieval;
 
 /// <summary>ref 相对当前索引的两种状态（提案 §5 三态协议收敛后的两态；"不可重定位"由 <see cref="SymbolRefFreshnessResult.CanRelocate"/> 表达）。</summary>
 public enum SymbolRefState

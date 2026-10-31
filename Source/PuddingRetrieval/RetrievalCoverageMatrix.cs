@@ -1,4 +1,4 @@
-namespace PuddingCodeIndex.Services.Retrieval;
+namespace PuddingRetrieval;
 
 /// <summary>
 /// 覆盖矩阵的一格：某项目 × 某语言 × 某能力面 的声明结果。

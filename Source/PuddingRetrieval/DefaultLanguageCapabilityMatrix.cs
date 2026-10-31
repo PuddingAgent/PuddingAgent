@@ -1,6 +1,6 @@
 using PuddingRetrieval.Contracts;
 
-namespace PuddingCodeIndex.Services.Retrieval;
+namespace PuddingRetrieval;
 
 /// <summary>
 /// 默认能力矩阵（ADR-089 §4 / §5.2，施工计划 R0-03）。

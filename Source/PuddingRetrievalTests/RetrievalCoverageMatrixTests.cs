@@ -1,7 +1,7 @@
+using PuddingRetrieval;
 using PuddingRetrieval.Contracts;
-using PuddingCodeIndex.Services.Retrieval;
 
-namespace PuddingCodeIndexTests.Services.Retrieval;
+namespace PuddingRetrievalTests;
 
 /// <summary>
 /// 覆盖矩阵：把「能力事实」与「项目里有哪些语言」在输出层交叉。

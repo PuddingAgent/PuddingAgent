@@ -1,7 +1,7 @@
+using PuddingRetrieval;
 using PuddingRetrieval.Contracts;
-using PuddingCodeIndex.Services.Retrieval;
 
-namespace PuddingCodeIndexTests.Services.Retrieval;
+namespace PuddingRetrievalTests;
 
 /// <summary>
 /// 能力矩阵的诚实性。每条都在守「不许假装支持」：
