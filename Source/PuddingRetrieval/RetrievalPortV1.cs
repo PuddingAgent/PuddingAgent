@@ -7,10 +7,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using PuddingCodeIndex.Contracts;
-using PuddingRetrieval;
 using PuddingRetrieval.Contracts;
 
-namespace PuddingCodeIndex.Services.Retrieval;
+namespace PuddingRetrieval;
 
 /// <summary>
 /// <see cref="IRetrievalPort"/> 的第一个实现。

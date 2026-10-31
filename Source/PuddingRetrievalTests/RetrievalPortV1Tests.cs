@@ -7,9 +7,8 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PuddingRetrieval;
 using PuddingCodeIndex.Contracts;
 using PuddingRetrieval.Contracts;
-using PuddingCodeIndex.Services.Retrieval;
 
-namespace PuddingCodeIndexTests.Services.Retrieval;
+namespace PuddingRetrievalTests;
 
 /// <summary>
 /// <see cref="RetrievalPortV1"/> 的边界断言（R6 B1 切片一）。

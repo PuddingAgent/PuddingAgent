@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using PuddingRetrieval;
 using PuddingRetrieval.Adapters;
 using PuddingCodeIndex.Contracts;
 using PuddingRetrieval.Contracts;

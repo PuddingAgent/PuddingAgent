@@ -19,10 +19,6 @@
     <ProjectReference Include="..\PuddingPathFiltering\PuddingPathFiltering.csproj" />
     <ProjectReference Include="..\PuddingDomain.Contracts\PuddingDomain.Contracts.csproj" />
     <ProjectReference Include="..\PuddingRetrieval.Contracts\PuddingRetrieval.Contracts.csproj" />
-    <!-- 过渡态：窄端口接口 IRetrievalSymbolSource 在 PuddingRetrieval；
-         适配器 CodeIndexStoreSymbolSource 仍在本工程，待 PuddingRetrieval.Adapters 建立后迁出，
-         届时本引用应改为 Adapters → CodeIndex。 -->
-    <ProjectReference Include="..\PuddingRetrieval\PuddingRetrieval.csproj" />
   </ItemGroup>
 
   <ItemGroup>

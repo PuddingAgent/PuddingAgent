@@ -7,6 +7,7 @@ using Microsoft.Data.Sqlite;
 using PuddingRetrieval.Adapters;
 using PuddingCodeIndex.Contracts;
 using PuddingRetrieval.Contracts;
+using PuddingRetrieval;
 using PuddingCodeIndex.Services.Retrieval;
 using PuddingCodeIndex.Storage;
 using PuddingRetrievalEval.Contracts;

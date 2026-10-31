@@ -1,6 +1,6 @@
 # PuddingRetrieval CodeMAP
 
-> 检索实现层：**数据面抽象**（窄端口） | 条目数: 2 · 最近整理: 2026-10-31
+> 检索实现层：**编排 + 数据面抽象** | 条目数: 3 · 最近整理: 2026-10-31
 
 ## 定位
 
@@ -25,6 +25,7 @@ PuddingRetrieval  →  PuddingRetrieval.Contracts + PuddingDomain.Contracts（�
 | 文件 | 用途 | 关键符号 |
 |---|---|---|
 | `IRetrievalSources.cs` | 符号面 + 文本面的窄端口，以及文本命中的值类型与「不可用」异常 | `IRetrievalSymbolSource` / `IRetrievalTextSource` / `RetrievalTextMatch` / `RetrievalTextSourceUnavailableException` |
+| `RetrievalPortV1.cs` | `IRetrievalPort` 首个实现（1391 行）：意图路由 / 多路融合 / 去重 / 排序 / 预算 / 空原因裁决 / 跨页游标 | `RetrievalPortV1` |
 
 ## 契约要点
 
@@ -33,13 +34,22 @@ PuddingRetrieval  →  PuddingRetrieval.Contracts + PuddingDomain.Contracts（�
   否则「没法查」会被读成「确实没有」—— 那正是 R0 要消灭的空洞否定。
 - `IRetrievalSymbolSource` 的关系面按 `symbolId` 精确取目标，**不得**退回名字检索。
 
-## 未迁入（仍在上游，待 `PuddingRetrieval.Adapters`）
+## 依赖边已反转（2026-10-31 步骤 2/3）
 
-- `RetrievalPortV1`（编排：意图路由 / 去重 / 排序 / 预算 / 空原因裁决）—— 在 `PuddingCodeIndex`
-- `CodeIndexStoreSymbolSource`（`ICodeIndexStore` → 窄端口适配器）—— 在 `PuddingCodeIndex`
+`PuddingCodeIndex` **不再**引用本工程。全工程扫描
+`IRetrievalSymbolSource|IRetrievalTextSource|RetrievalTextMatch|RetrievalPortV1` 的结果为空。
 
-> ⚠️ 过渡态：当前 `PuddingCodeIndex` 引用本工程（为了拿到窄端口接口）。适配器迁出到
-> `PuddingRetrieval.Adapters` 后，这条边应反转为 `Adapters → CodeIndex`。
+`CodeIndexStoreSymbolSource` 已迁至 `PuddingRetrieval.Adapters`：
+
+```
+PuddingRetrieval  ←  PuddingRetrieval.Adapters  →  PuddingCodeIndex
+```
+
+## 未迁入（仍在 `PuddingCodeIndex/Services/Retrieval/`）
+
+`DefaultLanguageCapabilityMatrix.cs` / `RetrievalCoverageMatrix.cs` /
+`SymbolRefFreshness.cs` / `SymbolRefIssuer.cs` —— 其中 `SymbolRefIssuer` 依赖存储内容哈希，
+搬迁需另设端口，未评估。
 
 ## 测试
 
