@@ -39,3 +39,43 @@
 ```
 dotnet test Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj
 ```
+
+## 查清了：1/2/3 是**层标签改名**后的陈旧断言（2026-11-01 04:20）
+
+从 `ContextPipelineOrchestrator.cs` 逐条抽出 `RecordLayer(sb, content, snapshotLabel, layerName, …)`：
+
+| `layerName`（进 `ContextLayerInfo` 与 `--- CONTEXT-LAYER: … ---` 标记） | `snapshotLabel`（进 `result.Layers[*].LayerName`） |
+|---|---|
+| `L0-STATIC` | 静态上下文 |
+| `L0-ENVIRONMENT` | **运行环境不变量** |
+| `L0-AGENTS-ROSTER` | 工作区 Agents |
+| `L1-TOOLS` | **工具使用规则** |
+| `L2-SKILLS` | **技能使用规则** |
+| `L3-WORKSPACE-ENVIRONMENT` | 工作区环境 |
+| `L2-INHERITED` | 继承上下文 |
+| `L4-PINNED` | 重要记忆 |
+| `L9-USER-PREFERENCES` | 用户偏好记忆 |
+
+`result.Layers` 里的名字是**右列**（snapshotLabel）。测试断言的是左列时代的旧中文名：
+
+| 测试断言 | 现状 |
+|---|---|
+| `"环境信息"` | 已改名为 **运行环境不变量** |
+| `"动态工具"` | 已改名为 **工具使用规则** |
+| `"动态技能"` | 已改名为 **技能使用规则** |
+| `"静态上下文"` / `"用户偏好"` / `"当前消息"` / `"运行时指令"` | 仍存在，断言有效 |
+
+⇒ 1/2/3 三条**不是代码退化**，是层标签重构后测试没跟着改。
+
+### 为什么没顺手改
+
+断言是顺序执行的，只报第一个失败（`环境信息`）。把这一条改掉之后，`动态工具`/`动态技能` 大概率接着红。
+改对需要同时确认「每个 label 在 `Layers` 里出现几次、顺序如何」，否则容易把断言改成「恒真」。
+
+**正确做法**（下一轮）：按上表一次性替换三个旧名，然后确认这 3 条转绿、且断言仍能取红
+（临时把某个 label 改回旧值必须红）。半改会留下「假绿」。
+
+## 4/5/6 仍未定性
+
+`Health_RejectsUsageFromBeforeCheckpoint` ×2 与 `ProviderUsage_*`（期望 1.0，实测 0.5887）
+属于用量校验 / 校准比例一族，与「缺层」无关。尚未读代码，**没有证据说明是陈旧还是退化**。
