@@ -44,9 +44,18 @@ PuddingRuntime（DI 装配）
 dotnet test Source\PuddingRetrieval.AdaptersTests\PuddingRetrieval.AdaptersTests.csproj
 ```
 
-5 条。用 `DispatchProxy` 运行时生成 `ICodeIndexStore` 替身记录调用，避免手写 30+ 方法。
+8 条 = 5 条转发行为 + 3 条边界（声明层 csproj 恰好两条引用 / 闭包层 deps.json 含两侧且无上层 / 探测器自检）。转发测试用 `DispatchProxy` 运行时生成 `ICodeIndexStore` 替身记录调用，避免手写 30+ 方法。
 ⚠️ 代理基类**不能是 `sealed`**（运行时需要派生子类）。
 
-## 待办
+## 边界断言（2026-10-31）
 
-`PuddingCodeIndex → PuddingRetrieval` 的反向边仍在（规划步骤 3 删除）。
+`PuddingRetrieval.AdaptersTests/ComponentBoundaryTests.cs` 两层把守：
+
+1. **声明层**：csproj 的 `ProjectReference` 必须**恰好**是 `PuddingRetrieval` + `PuddingCodeIndex` 两条。
+   用白名单而不是黑名单 —— 这个组件的职责边界就是「只能看见这两侧」，多一条即设计走样。
+2. **闭包层**：`*.deps.json` 必须含两侧、且不含任何上层程序集。声明层看不见传递依赖，闭包层能；
+   闭包层看不见「声明了但没用」，声明层能。
+
+三态证据（2026-10-31）：基线 8/8 → 变异（csproj 加 `PuddingGrep` 引用）恰好 1 红且红的正是声明层断言、
+其余 7 条仍绿 → 还原 SHA `7740F408…` `SAME=True` → 8/8 复绿。
+⚠️ 首版 `LocateCsproj` 指向**测试工程**而非被测组件，会让断言静默失效（测试工程恰好也可能凑够 2 条）。
