@@ -14,7 +14,8 @@
 |------|------|
 | `GrepPattern.cs` | 匹配意图（字面量 / 正则 + 大小写）。**构造期**校验：空模式、非法正则当场失败，不留到运行时变成「静默不命中」 |
 | `GrepSpan.cs` | 行内命中位置（`Index` / `Length` / `End`），不含文件与行号 |
-| `GrepMatcher.cs` | `IsMatch` / `FindAll`；字面量用 `IndexOf`（Ordinal / OrdinalIgnoreCase），正则用 `Regex` + 文化不敏感 + **超时**（`DefaultMatchTimeout = 2s`，防灾难性回溯挂住扫描线程） |
+| `GrepLineMatch.cs` | 一行匹配的三态 `GrepMatchOutcome`（NoMatch / Matched / **Timeout**）与 `GrepLineMatch`；`Timeout` 不得被折成「未命中」 |
+| `GrepMatcher.cs` | `IsMatch` / `FindAll` / **`Match`（三态）**；字面量用 `IndexOf`（Ordinal / OrdinalIgnoreCase），正则用 `Regex` + 文化不敏感 + **超时**（`DefaultMatchTimeout = 2s`，防灾难性回溯挂住扫描线程） |
 
 ## 关键语义
 
@@ -29,7 +30,7 @@
 
 ## 测试
 
-`Source/PuddingGrepTests`（独立工程，41 条）：以 BCL 当 oracle 逐条对照（`IndexOf` / `Regex` / `Regex.Matches`），另覆盖空模式、非法正则、灾难性回溯超时、中文字面量、非重叠语义。
+`Source/PuddingGrepTests`（独立工程，46 条）：以 BCL 当 oracle 逐条对照（`IndexOf` / `Regex` / `Regex.Matches`），另覆盖空模式、非法正则、灾难性回溯超时、中文字面量、非重叠语义。
 
 ## 接入状态（S5 进行中）
 

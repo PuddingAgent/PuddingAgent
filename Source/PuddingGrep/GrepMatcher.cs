@@ -70,6 +70,35 @@ public static class GrepMatcher
         return spans;
     }
 
+    /// <summary>
+    /// 三态匹配：命中 / 未命中 / <b>超时</b>。
+    /// <para>
+    /// 与 <see cref="IsMatch"/> / <see cref="FindAll"/> 的区别只有一条，但是关键的：正则灾难性回溯导致的
+    /// <see cref="RegexMatchTimeoutException"/> 在这里被折成 <see cref="GrepMatchOutcome.Timeout"/>，
+    /// <b>不会</b>被折成 <see cref="GrepMatchOutcome.NoMatch"/>。上层因此能如实告诉调用方
+    /// 「这次没查出结论」，而不是把「跑不完」说成「确实没有」。
+    /// </para>
+    /// <para>
+    /// 模式本身非法**仍然抛** <see cref="ArgumentException"/>：那是调用方的错，不该混进三态里。
+    /// </para>
+    /// </summary>
+    public static GrepLineMatch Match(GrepPattern pattern, string line, TimeSpan? timeout = null)
+    {
+        ArgumentNullException.ThrowIfNull(pattern);
+        ArgumentNullException.ThrowIfNull(line);
+        EnsureValid(pattern);
+
+        try
+        {
+            var spans = FindAll(pattern, line, timeout);
+            return spans.Count > 0 ? GrepLineMatch.Matched(spans) : GrepLineMatch.NoMatch();
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return GrepLineMatch.Timeout();
+        }
+    }
+
     private static void EnsureValid(GrepPattern pattern)
     {
         if (pattern.ValidationError is { } error)
