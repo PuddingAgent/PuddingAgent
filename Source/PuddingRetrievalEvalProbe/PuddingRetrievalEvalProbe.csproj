@@ -54,4 +54,8 @@
     <ProjectReference Include="..\PuddingCodeIndex\PuddingCodeIndex.csproj" />
   </ItemGroup>
 
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingRetrieval.Adapters\PuddingRetrieval.Adapters.csproj" />
+  </ItemGroup>
 </Project>

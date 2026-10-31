@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Data.Sqlite;
+using PuddingRetrieval.Adapters;
 using PuddingCodeIndex.Contracts;
 using PuddingRetrieval.Contracts;
 using PuddingCodeIndex.Services.Retrieval;

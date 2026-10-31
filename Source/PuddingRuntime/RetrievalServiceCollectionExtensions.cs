@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using PuddingRetrieval.Adapters;
 using PuddingRetrieval;
 using PuddingCodeIndex.Contracts;
 using PuddingRetrieval.Contracts;

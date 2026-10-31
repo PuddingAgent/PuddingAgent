@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    ADR-089 R2-A 四组件之四：适配器层。
+
+    本工程是**唯一**允许同时看见「检索窄端口」与「代码存储」的位置：
+
+        PuddingRetrieval（窄端口 + 编排）
+                 ↑
+        PuddingRetrieval.Adapters  →  PuddingCodeIndex（ICodeIndexStore）
+                 ↑
+            PuddingRuntime（DI 装配）
+
+    为什么不在 PuddingRetrieval 里直接依赖 ICodeIndexStore：那样检索实现层就绑死在
+    SQLite 存储上，测试必须实现整个 store（30+ 成员），测试会退化成「能编译就算过」。
+    为什么不在 PuddingCodeIndex 里实现窄端口：那是反向依赖 —— 存储不该知道检索要什么。
+
+    本工程**不得**引用 PuddingRuntime / PuddingHost / PuddingCodeIntelligence /
+    PuddingFullTextIndex。
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingRetrieval\PuddingRetrieval.csproj" />
+    <ProjectReference Include="..\PuddingCodeIndex\PuddingCodeIndex.csproj" />
+  </ItemGroup>
+
+</Project>

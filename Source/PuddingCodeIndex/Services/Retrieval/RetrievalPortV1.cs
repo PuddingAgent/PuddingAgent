@@ -12,69 +12,6 @@ using PuddingRetrieval.Contracts;
 
 namespace PuddingCodeIndex.Services.Retrieval;
 
-/// <summary>把既有 <see cref="ICodeIndexStore"/> 适配成窄端口（生产路径唯一实现）。</summary>
-public sealed class CodeIndexStoreSymbolSource(ICodeIndexStore store) : IRetrievalSymbolSource
-{
-    private readonly ICodeIndexStore _store = store ?? throw new ArgumentNullException(nameof(store));
-
-    /// <inheritdoc />
-    public Task<IReadOnlyList<CodeProjectRecord>> ListProjectsAsync(
-        string scopeId,
-        CancellationToken cancellationToken) =>
-        _store.ListProjectsAsync(scopeId, cancellationToken);
-
-    /// <inheritdoc />
-    public Task<IReadOnlyList<CodeSymbolRecord>> SearchSymbolsAsync(
-        CodeSymbolSearchRequest request,
-        CancellationToken cancellationToken) =>
-        _store.SearchSymbolsAsync(request, cancellationToken);
-
-    /// <inheritdoc />
-    public Task<CodeSymbolRecord?> GetSymbolAsync(
-        string workspaceId,
-        string projectId,
-        string symbolId,
-        CancellationToken cancellationToken) =>
-        _store.GetSymbolAsync(workspaceId, projectId, symbolId, cancellationToken);
-
-    /// <inheritdoc />
-    public Task<IReadOnlyList<CodeFileRecord>> ListFilesAsync(
-        string workspaceId,
-        string projectId,
-        CancellationToken cancellationToken) =>
-        _store.ListFilesAsync(workspaceId, projectId, cancellationToken);
-
-    /// <inheritdoc />
-    public Task<IReadOnlyList<CodeRelationRecord>> ListIncomingRelationsAsync(
-        string workspaceId,
-        string projectId,
-        string symbolId,
-        IReadOnlyList<CodeRelationKind> relationKinds,
-        CancellationToken cancellationToken) =>
-        _store.ListIncomingRelationsAsync(
-            workspaceId,
-            projectId,
-            symbolId,
-            relationKind: null,
-            relationKinds: relationKinds,
-            cancellationToken: cancellationToken);
-
-    /// <inheritdoc />
-    public Task<IReadOnlyList<CodeRelationRecord>> ListOutgoingRelationsAsync(
-        string workspaceId,
-        string projectId,
-        string symbolId,
-        IReadOnlyList<CodeRelationKind> relationKinds,
-        CancellationToken cancellationToken) =>
-        _store.ListRelationsAsync(
-            workspaceId,
-            projectId,
-            symbolId,
-            relationKind: null,
-            relationKinds: relationKinds,
-            cancellationToken: cancellationToken);
-}
-
 /// <summary>
 /// <see cref="IRetrievalPort"/> 的第一个实现。
 /// <para>
