@@ -196,6 +196,8 @@ SymbolRefV1
 ## 2026-10-30 线上验收追加：容器锚点的「空洞否定」（已修）
 
 对**类**符号（`T:PuddingCodeIndex.Services.Retrieval.SymbolRefIssuer`）签发的 ref 查 `references`，
+> 注（2026-10-31）：`SymbolRefIssuer` 类型已于当日迁至 `PuddingRetrieval`（命名空间变更为 `PuddingRetrieval.SymbolRefIssuer`，`PuddingCodeIndex/Services/Retrieval/` 目录已删除）。上面这条**观察本身仍然成立**（它记录的是当时线上签发的 token 与当时的报因缺陷），只是该符号现在的命名空间标识已变 —— 复现时请用新命名空间。
+
 返回 `GenuinelyAbsent` +「索引可用、过滤面干净，确实没有匹配项」；而同名**名字检索**同一意图返回 **11 条**。
 原因是关系边挂在成员（`.ctor` / `FromManifest` / `Issue`…）上，容器自身零边。
 
