@@ -140,6 +140,9 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
     private static Task<DesktopCapabilityResponse> Tabs(DesktopCapabilityRequest request)
     {
         var tabs = request.Tabs ?? throw new InvalidOperationException("probe: tabs payload missing");
+        // Target 与其它载荷一样可能未提供；显式判空而不是用 ! 掩盖 ——
+        // 探针是验证工具，漏参时应在构造处就失败，而不是在构造 DesktopPageInfo 时才 NRE。
+        var target = tabs.Target ?? throw new InvalidOperationException("probe: tabs target missing");
         var next = DesktopPageVersion.Require(tabs.ExpectedPageVersion.Value + 1);
         var closed = tabs.Action == DesktopTabAction.Close;
 
@@ -149,14 +152,14 @@ internal sealed class ProbeExecutor : IDesktopCapabilityExecutor
             [
                 new DesktopContextInfo("ctx-probe", DesktopContextTrust.AgentAuthorized,
                 [
-                    new DesktopPageInfo(tabs.Target, next, title: "activated", isActive: true, isAgentTarget: true),
+                    new DesktopPageInfo(target, next, title: "activated", isActive: true, isAgentTarget: true),
                 ]),
             ]);
 
         return Task.FromResult(DesktopCapabilityResponse.FromTabs(new DesktopTabsResult(
             tabs.Target,
             tabs.Action,
-            new DesktopPageState(tabs.Target, new Uri("https://example.com/probe-tab"), next, DesktopPageReadiness.Complete),
+            new DesktopPageState(target, new Uri("https://example.com/probe-tab"), next, DesktopPageReadiness.Complete),
             closed,
             remaining)));
     }
