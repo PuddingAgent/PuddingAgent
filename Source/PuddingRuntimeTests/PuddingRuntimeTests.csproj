@@ -11,6 +11,7 @@
     <ItemGroup>
     <ProjectReference Include="..\PuddingRuntime\PuddingRuntime.csproj" />
     <ProjectReference Include="..\PuddingPlatform\PuddingPlatform.csproj" />
+    <ProjectReference Include="..\PuddingRetrieval\PuddingRetrieval.csproj" />
   </ItemGroup>
 
   <ItemGroup>
