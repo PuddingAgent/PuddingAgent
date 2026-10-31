@@ -132,3 +132,32 @@ var recentLayer = result.Layers.First(l => l.LayerName == "近期历史");
 
 本轮到此为止：不再靠猜，也不再改断言。该条已登记在 `TestScripts/staged-test-baseline.json`
 的 `memoryEngineContextPipeline` 组里，门禁不会因它阻塞。
+
+## 第二次证伪：`IsFirstMessage = false` 也不改变层清单（2026-11-01 05:48）
+
+上一节说「只差一次读取」：`CreateDefaultContextRequest` 确实把 `SessionHistory` 赋给了请求
+（`SessionHistory = sessionHistory ?? Array.Empty<…>()`），所以历史**是**传进去的。
+
+于是第二假设：helper 里 `IsFirstMessage = true`，「首条消息」语义下不组装历史层。
+把该用例改成 `with { IsFirstMessage = false }` 后重跑 —— **仍然 `First()` 无匹配**。
+
+再把断言换成层名转储，`IsFirstMessage = false` 下的结果与原来**逐字相同**：
+
+```
+静态上下文:203 | 运行环境不变量:37 | 工作区 Agents:14 | 工具使用规则:393 |
+技能使用规则:1009 | 工作区环境:20 | 用户偏好:15 | 重要记忆:22 |
+运行时目录更新:81 | 运行时目录更新:84 | 运行时指令:73 | 当前消息:10
+```
+
+⇒ 这个 fixture 构造出的 pipeline **在任何情况下都不组装历史层**。两次假设均被证伪，改动都已回退。
+
+## 下一步（唯一剩下的方向）
+
+问题不在请求参数，而在 **`CreateContextPipeline()` 的依赖装配**：很可能是历史/摘要所需的服务
+（如 `IAgentMemorySummaryContextBuilder` 之类）在该 helper 里为 null 或被 mock 掉，
+于是历史层被**静默跳过**。
+
+判定方法：读 `CreateContextPipeline()` 的构造实参，看历史相关依赖是否为空；
+然后与 `PuddingRuntimeTests` 里同类 pipeline 的构造对比（那边有历史层用例，装配应当是完整的）。
+
+**不要**再靠改断言或改请求参数 —— 两次都证明无效。
