@@ -1129,6 +1129,19 @@ public sealed class MemoryLibraryTests
     // ═══════════════════════════════════════════════════════════════════
 
     /// <summary>创建 ContextPipeline 实例，所有依赖使用 Mock 或最小构造。</summary>
+    /// <summary>
+    /// 本文件的 pipeline fixture。
+    /// <para>
+    /// ⚠️ 2026-11-01 核实：这里的构造实参传了 <c>orchestrator: null</c>（<c>recallService</c> 也是 null），
+    /// 因此本文件里所有 ContextPipeline 用例跑的是**没有编排器的旧路径** —— 那条路径不组装历史层，
+    /// 层标签也是旧的。生产 DI 会注入 orchestrator，行为与这里不同。
+    /// </para>
+    /// <para>
+    /// 所以本文件的断言不构成「现行组装契约」的证据：判契约请以 <c>PuddingRuntimeTests</c> 里接线完整的
+    /// <c>ContextPipeline*LayerTests</c> 为准。背景与三次证伪过程见
+    /// <c>Docs/15_tasks/2026-11-01-MemoryEngineTests-6条预先存在失败-归因线索.md</c>。
+    /// </para>
+    /// </summary>
     private static ContextPipeline CreateContextPipeline()
     {
         var mockMemory = new Mock<IMemoryEngine>();
