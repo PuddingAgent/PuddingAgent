@@ -41,3 +41,12 @@
 dotnet test Source\PuddingGrepTests\PuddingGrepTests.csproj
 dotnet test PuddingAgentNetwork.slnx --filter FullyQualifiedName~PuddingGrepTests
 ```
+
+## 落地状态（2026-11-01 核实）
+
+**生产端零引用**：全仓 csproj 扫描只有本工程与 `PuddingGrepTests` 提到它。
+`Runtime/SearchGrepTool` 用的是 **另一个**匹配内核 `PuddingCore/Tools/Retrieval/RetrievalMatcher`，
+所以仓库现在有**两个** grep 匹配内核并存，语义未收归单一真源。
+
+两者取舍（含关键差异：`RetrievalMatcher` 给可判别的 `Timeout`，本工程给 span 定位）
+与前置条件见 `Docs/15_tasks/2026-11-01-grep匹配内核二选一-决策输入.md` —— **待裁定**，不要直接接线。
