@@ -3,8 +3,14 @@
   "measuredAtUtc": "2026-10-27T11:05:00Z",
   "measuredAtCommit": "2d6f439",
   "measuredTotals": {
-    "Tests/PuddingHost.Tests/PuddingHost.Tests.csproj": { "total": 396, "passed": 391, "failed": 5 },
-    "Source/PuddingWebApiTests/PuddingWebApiTests.csproj": { "note": "3 failures, all environment-induced (see reasonGroups.environmentKeyVault); not counted here" }
+    "Tests/PuddingHost.Tests/PuddingHost.Tests.csproj": {
+      "total": 396,
+      "passed": 391,
+      "failed": 5
+    },
+    "Source/PuddingWebApiTests/PuddingWebApiTests.csproj": {
+      "note": "3 failures, all environment-induced (see reasonGroups.environmentKeyVault); not counted here"
+    }
   },
   "reasonGroups": {
     "environmentKeyVault": {
@@ -14,6 +20,13 @@
         "SteeringEndpoint_AcceptsRunningTurn_AndCreatesRuntimeQueueItem",
         "SteeringEndpoint_RejectsTerminalTurn_WithoutCreatingQueueItem",
         "AgentExecutionService_Uses_UnifiedToolInvocationFacade"
+      ]
+    },
+    "memoryEngineContextPipeline": {
+      "recordedAt": "2026-11-01",
+      "reason": "PuddingMemoryEngineTests 的 ContextPipeline 断言自层标签重构后未同步更新（环境信息→运行环境不变量、动态工具→工具使用规则、动态技能→技能使用规则），2026-11-01 才被发现长期为红——该工程不在九工程门禁内。其中 2 条已按现行命名修好；本条仍红：First() 找不到某个层名，成因未定位。对照实验：把当次依赖上提改动 git stash 掉后同样为红 ⇒ 与依赖无关、预先存在。",
+      "affected": [
+        "ContextPipeline_ShouldTriggerGentleCompaction"
       ]
     }
   },
@@ -25,6 +38,7 @@
     "PuddingHost.Tests.BrowserBridge.BrowserAgentToolBridgeIntegrationTests.BrowserSnapshotTool_TraversesAuthenticatedBridgeAndReturnsVersionedRefs",
     "SteeringEndpoint_AcceptsRunningTurn_AndCreatesRuntimeQueueItem",
     "SteeringEndpoint_RejectsTerminalTurn_WithoutCreatingQueueItem",
-    "AgentExecutionService_Uses_UnifiedToolInvocationFacade"
+    "AgentExecutionService_Uses_UnifiedToolInvocationFacade",
+    "ContextPipeline_ShouldTriggerGentleCompaction"
   ]
 }

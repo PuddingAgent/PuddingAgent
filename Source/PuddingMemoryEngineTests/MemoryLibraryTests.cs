@@ -668,11 +668,11 @@ public sealed class MemoryLibraryTests
         // L0 静态上下文
         Assert.IsTrue(result.Layers.Any(l => l.LayerName == "静态上下文"));
         // L0-ENVIRONMENT
-        Assert.IsTrue(result.Layers.Any(l => l.LayerName == "环境信息"));
-        // L1 动态工具
-        Assert.IsTrue(result.Layers.Any(l => l.LayerName == "动态工具"));
-        // L2 动态技能
-        Assert.IsTrue(result.Layers.Any(l => l.LayerName == "动态技能"));
+        Assert.IsTrue(result.Layers.Any(l => l.LayerName == "运行环境不变量"));
+        // L1 工具使用规则
+        Assert.IsTrue(result.Layers.Any(l => l.LayerName == "工具使用规则"));
+        // L2 技能使用规则
+        Assert.IsTrue(result.Layers.Any(l => l.LayerName == "技能使用规则"));
         // L3 用户偏好
         Assert.IsTrue(result.Layers.Any(l => l.LayerName == "用户偏好"));
         // L7 当前消息
@@ -794,7 +794,7 @@ public sealed class MemoryLibraryTests
             "System prompt should contain workspace root");
 
         // 诊断层应包含 L0-ENVIRONMENT
-        var envLayer = result.Layers.FirstOrDefault(l => l.LayerName == "环境信息");
+        var envLayer = result.Layers.FirstOrDefault(l => l.LayerName == "运行环境不变量");
         Assert.IsNotNull(envLayer, "Environment layer should exist in Layers");
         Assert.IsTrue(envLayer!.EstimatedTokens > 0, "Environment layer should have positive token count");
     }
