@@ -49,10 +49,12 @@
     <Project Path="Source/PuddingRetrieval.Contracts/PuddingRetrieval.Contracts.csproj" />
     <Project Path="Source/PuddingHtmlTests/PuddingHtmlTests.csproj" />
     <Project Path="Source/PuddingPlatform/PuddingPlatform.csproj" />
+    <Project Path="Source/PuddingRetrieval/PuddingRetrieval.csproj" />
     <Project Path="Source/PuddingRetrievalEval/PuddingRetrievalEval.csproj" />
     <Project Path="Source/PuddingRetrievalEvalProbe/PuddingRetrievalEvalProbe.csproj" />
     <Project Path="Source/Pudding.Rpc.Protocol/Pudding.Rpc.Protocol.csproj" />
     <Project Path="Source/Pudding.Rpc.IpcProbe/Pudding.Rpc.IpcProbe.csproj" />
+    <Project Path="Source/PuddingRetrievalTests/PuddingRetrievalTests.csproj" />
     <Project Path="Source/PuddingRuntime/PuddingRuntime.csproj" Id="bf7b7efd-1c2a-4e06-9efa-f0e4af746f49" />
     <Project Path="Source/PuddingTaskRecall.Cli/PuddingTaskRecall.Cli.csproj" />
     <Project Path="Source/PuddingVectorIndex/PuddingVectorIndex.csproj" />

@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    ADR-089 R2-A 四组件之一：检索实现层。
+
+    依赖方向（编译期强制）：
+      PuddingRetrieval  →  PuddingRetrieval.Contracts + PuddingDomain.Contracts
+      本工程【不得】引用 PuddingCodeIndex / PuddingCodeIntelligence / PuddingRuntime /
+      PuddingFullTextIndex / PuddingPathFiltering。
+
+    「数据从哪来」由两个窄端口（IRetrievalSymbolSource / IRetrievalTextSource）表达：
+    代码索引不该知道全文索引用的是 Lucene 还是别的，检索编排也不该知道存储是 SQLite。
+    把 ICodeIndexStore（30+ 成员）直接塞进来，测试就得实现一整个 store，
+    于是测试会退化成「能编译就算过」。
+
+    真实适配器（ICodeIndexStore → IRetrievalSymbolSource）留在 PuddingCodeIndex，
+    待 PuddingRetrieval.Adapters 建立后迁入 —— 那是唯一允许反向依赖存储的位置。
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingRetrieval.Contracts\PuddingRetrieval.Contracts.csproj" />
+    <ProjectReference Include="..\PuddingDomain.Contracts\PuddingDomain.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
