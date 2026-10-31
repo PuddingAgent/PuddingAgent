@@ -79,3 +79,27 @@ dotnet test Source\PuddingMemoryEngineTests\PuddingMemoryEngineTests.csproj
 
 `Health_RejectsUsageFromBeforeCheckpoint` ×2 与 `ProviderUsage_*`（期望 1.0，实测 0.5887）
 属于用量校验 / 校准比例一族，与「缺层」无关。尚未读代码，**没有证据说明是陈旧还是退化**。
+
+## 一次被证伪的猜测（记录以免重犯）
+
+`ContextPipeline_ShouldTriggerGentleCompaction` 里那句是：
+
+```csharp
+var recentLayer = result.Layers.First(l => l.LayerName == "近期历史");
+```
+
+按上一节的对照表，我猜它是「近期历史 → 历史上下文」的又一次改名，改成 `"历史上下文"` 后重跑：
+
+**仍然是 `Sequence contains no matching element`** —— 场景里根本没有这个名字的层。
+
+⇒ 猜测证伪，改动已 `git checkout` 回退。这条**不是**标签改名问题，可能的成因至少两种：
+
+1. Gentle 压缩在该场景下根本没触发（历史没被摘要化 ⇒ 不产生历史层）；
+2. 该层用了第三种名字（不在 `RecordLayer` 的字面量里，可能由更下层拼出）。
+
+要定位得看 `AssembleAsync` 在 `maxTokens: 8000` + 30 条 200 字历史下的实际层输出——
+打印一次 `result.Layers` 的 `LayerName` 列表即可判定，不需要猜。
+
+## 当前状态
+
+6 条中：**2 条已修好并取红验证**（层标签改名）；1 条已证伪猜测、待查实际层列表；3 条（Health ×2 / ProviderUsage）未读代码。
