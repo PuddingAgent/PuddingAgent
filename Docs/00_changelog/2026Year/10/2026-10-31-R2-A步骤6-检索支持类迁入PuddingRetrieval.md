@@ -47,6 +47,6 @@
 
 ## 未做
 
-- `SymbolRefIssuer.cs` 仍在 `PuddingCodeIndex/Services/Retrieval/`：它读存储的内容哈希（manifest），搬迁需先设计端口，未评估。
+- `SymbolRefIssuer.cs` 仍在 `PuddingCodeIndex/Services/Retrieval/`。**更正**：本轮初稿称它「读存储内容哈希、需先设计端口」，实测不成立 —— `FromManifest(...)` 由调用方传入 manifest 快照，类本身不持有 `ICodeSourceMaintenanceStore`，是纯类。真正障碍是 `CodeSourceEntry` / `SourceFingerprint` / `AppliedFileVersion` 三个值类型仍在 `PuddingCodeIndex.Contracts`。
 - 不部署：本轮为结构调整 + 命名空间搬迁，无行为变化；线上构建版本未在本轮核实。
 - R2-A 步骤 5（部署验证）仍待授权。

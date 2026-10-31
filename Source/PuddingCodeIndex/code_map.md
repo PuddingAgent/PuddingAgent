@@ -11,7 +11,7 @@
 > 同时 `CodeSymbolKind` / `CodeRelationKind` 已下沉到 `PuddingDomain.Contracts`（命名空间保持 `PuddingCodeIndex.Contracts`，调用方零改动）。
 > 同日追加：CodeFileRecord / CodeSymbolContracts / CodeProjectContracts / CodeRelationContracts / CodeIndexScopeContracts **5 个文件（13 个类型）**也已下沉到 PuddingDomain.Contracts（命名空间不变，零调用方改动）—— 下表这 5 条的文件**不在本工程内**。
 > ⚠ 同日步骤 2：`Services/Retrieval/RetrievalPortV1.cs`（1391 行编排）与其测试已迁至 `Source/PuddingRetrieval/`（命名空间 `PuddingRetrieval`）。本工程**不再引用** `PuddingRetrieval`，全工程扫描检索窄端口类型为空。
-> ⚠ 同日步骤 6：`Services/Retrieval/` 下 `DefaultLanguageCapabilityMatrix.cs` / `RetrievalCoverageMatrix.cs` / `SymbolRefFreshness.cs` 及其三个测试类已迁至 `Source/PuddingRetrieval/`（命名空间 `PuddingRetrieval`）。本目录现只余 `SymbolRefIssuer.cs`（依赖存储内容哈希，搬迁需另设计端口）。
+> ⚠ 同日步骤 6：`Services/Retrieval/` 下 `DefaultLanguageCapabilityMatrix.cs` / `RetrievalCoverageMatrix.cs` / `SymbolRefFreshness.cs` 及其三个测试类已迁至 `Source/PuddingRetrieval/`（命名空间 `PuddingRetrieval`）。本目录现只余 `SymbolRefIssuer.cs` —— 它是**纯类**（manifest 由调用方传入，不持有 store）；唯一搬迁障碍是 `CodeSourceEntry` / `SourceFingerprint` / `AppliedFileVersion` 仍在 `Contracts/CodeSourceManifestContracts.cs`。
 
 ## 契约（Contracts/ → `PuddingCodeIndex.Contracts`）
 

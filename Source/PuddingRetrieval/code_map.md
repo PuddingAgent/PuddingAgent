@@ -50,7 +50,7 @@ PuddingRetrieval  ←  PuddingRetrieval.Adapters  →  PuddingCodeIndex
 
 ## 未迁入（仍在 `PuddingCodeIndex/Services/Retrieval/`）
 
-`SymbolRefIssuer.cs` —— 依赖存储的内容哈希（manifest），搬迁需先设计端口，未评估。
+`SymbolRefIssuer.cs` —— 实测它是**纯类**：`FromManifest(IReadOnlyDictionary<string, CodeSourceEntry>, projectRoot)` 由调用方传入快照，不持有 `ICodeSourceMaintenanceStore`，不需要端口。障碍只有一处：`CodeSourceEntry` / `SourceFingerprint` / `AppliedFileVersion` 三个值类型仍在 `PuddingCodeIndex.Contracts`，需先按既有模式下沉到 `PuddingDomain.Contracts`（命名空间不变、调用方零改动）。
 
 ## 测试
 
