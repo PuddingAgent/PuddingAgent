@@ -9,8 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-<ProjectReference Include="..\\PuddingRuntime\\PuddingRuntime.csproj" />
     <ProjectReference Include="..\\PuddingCodeIndex\\PuddingCodeIndex.csproj" />
+    <ProjectReference Include="..\\PuddingCodeIntelligence\\PuddingCodeIntelligence.csproj" />
   </ItemGroup>
 
 </Project>

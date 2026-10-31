@@ -2,7 +2,7 @@
 using PuddingRuntime.Services.Tools;
 using PuddingCodeIndex.Contracts;
 
-namespace PuddingCodeIntelligenceTests.Services;
+namespace PuddingRuntimeTests.Services.Tools;
 
 [TestClass]
 public sealed class CodeQueryToolHelperTests
