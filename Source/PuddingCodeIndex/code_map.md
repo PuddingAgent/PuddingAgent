@@ -9,6 +9,7 @@
 > ⚠ 2026-10-31 R2-01：28 个检索契约已迁至 **`Source/PuddingRetrieval.Contracts/`**（独立工程，命名空间 `PuddingRetrieval.Contracts`）。
 > 下表凡写 `PuddingRetrieval.Contracts/…` 的条目，文件**不在本工程内**；`Services/Retrieval/…` 仍是本工程实现。
 > 同时 `CodeSymbolKind` / `CodeRelationKind` 已下沉到 `PuddingDomain.Contracts`（命名空间保持 `PuddingCodeIndex.Contracts`，调用方零改动）。
+> 同日追加：CodeFileRecord / CodeSymbolContracts / CodeProjectContracts / CodeRelationContracts / CodeIndexScopeContracts **5 个文件（13 个类型）**也已下沉到 PuddingDomain.Contracts（命名空间不变，零调用方改动）—— 下表这 5 条的文件**不在本工程内**。
 
 ## 契约（Contracts/ → `PuddingCodeIndex.Contracts`）
 
