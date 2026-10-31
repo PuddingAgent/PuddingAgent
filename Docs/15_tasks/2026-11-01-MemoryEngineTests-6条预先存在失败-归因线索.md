@@ -161,3 +161,40 @@ var recentLayer = result.Layers.First(l => l.LayerName == "近期历史");
 然后与 `PuddingRuntimeTests` 里同类 pipeline 的构造对比（那边有历史层用例，装配应当是完整的）。
 
 **不要**再靠改断言或改请求参数 —— 两次都证明无效。
+
+## 找到根因：fixture 构造 pipeline 时 `orchestrator: null`（2026-11-01 06:10）
+
+读了 `CreateContextPipeline()` 的构造实参：
+
+```csharp
+new ContextPipeline(
+    mockMemory.Object, skillRuntime, skillRegistry, systemPromptBuilder,
+    memCache, contextAssemblyStore, NullLogger<ContextPipeline>.Instance,
+    envProvider: envProvider.Object,
+    libraryConvenience: mockLibrary.Object,
+    recallService: null,        // ← 也是 null
+    orchestrator: null,         // ← 编排器没有注入
+    templateProvider: mockTemplateProvider.Object,
+    workspaceProfileProvider: mockWorkspaceProfile.Object,
+    personaFileProvider: null);
+```
+
+`ContextPipelineOrchestrator` 正是所有 `RecordLayer(...)`（含历史层）的所在地。fixture 传 `null`，
+pipeline 走的是**没有编排器的旧路径** —— 那条路径本来就不组装历史层。
+
+⇒ **一次解释全部三次观测**：层标签是旧名、无历史层、`IsFirstMessage` 无影响。
+
+## 定性结论（本条）
+
+**不是生产缺陷，是测试 fixture 少接线。** 生产 DI 会注入 orchestrator；这些用例断言的是
+「没有编排器时的降级路径」，与现行契约对不上。
+
+## 处理选项（未执行，需选择）
+
+| 选项 | 代价 | 说明 |
+|---|---|---|
+| A. fixture 注入真实 orchestrator | 高 | 需要补齐 orchestrator 的整条依赖链；这些用例才真正覆盖现行组装 |
+| B. 认定该文件为遗留双写、按新契约重写或退役 | 中 | `PuddingRuntimeTests` 已有覆盖编排器路径的同类用例（`ContextPipelineSkillLayerTests` 等） |
+| C. 仅在本文件标注「测的是无编排器降级路径」 | 低 | 不修行为，但让后来人不再把它当契约 |
+
+我倾向 **B**：同一套语义不该在两个测试工程里各写一遍，且 Runtime 侧那份是接线完整的。
