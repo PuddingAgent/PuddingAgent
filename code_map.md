@@ -60,7 +60,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingCodeIndex/` | 索引组件：契约与变更捕获管线及范围注册；不得引用 `PuddingCodeIntelligence` | [code_map](Source/PuddingCodeIndex/code_map.md) |
 | `Source/PuddingDomain.Contracts/` | 跨层共享值类型（BCL-only）：`CodeSymbolKind` / `CodeRelationKind`；命名空间刻意保持 `PuddingCodeIndex.Contracts`（零调用方改动） | [code_map](Source/PuddingDomain.Contracts/code_map.md) |
 | `Source/PuddingRetrieval.Contracts/` | 跨 provider 检索契约（请求 / 结果 / 覆盖声明 / 能力矩阵）；只依赖 `PuddingDomain.Contracts` | [code_map](Source/PuddingRetrieval.Contracts/code_map.md) |
-| `Source/PuddingGrep/` | grep 字面量/正则**独立匹配内核**（BCL-only，零工程依赖）；扫描层与运行时接入未做 | [code_map](Source/PuddingGrep/code_map.md) |
+| `Source/PuddingGrep/` | grep 字面量/正则**独立匹配内核**（BCL-only，零工程依赖）。**生产端零引用**（2026-11-01 实测：全仓仅本工程与其测试工程提到它）—— `Runtime/SearchGrepTool` 仍用自带实现，语义收归单一真源**未做** | [code_map](Source/PuddingGrep/code_map.md) |
 | `Source/PuddingContextPolicy/` | 上下文容量与压缩候选的**纯策略**组件（BCL-only）：容量算术、候选边界与指纹、严格适用校验、净收益准入、退避判定（见下「关键语义」） | [code_map](Source/PuddingContextPolicy/code_map.md) |
 | `Source/PuddingContextPruning/` | 零 LLM 确定性载荷剪枝：工具结果去重与超大载荷裁剪，保护尾部（见下「关键语义」） | [code_map](Source/PuddingContextPruning/code_map.md) |
 | `Source/PuddingConversationReadModel/` | 会话首屏读模型纯规则组件（BCL-only；C2 已接入 Platform/slnx）：事件归约、预算与三游标合同 | [code_map](Source/PuddingConversationReadModel/code_map.md) |

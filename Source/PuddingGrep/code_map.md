@@ -29,7 +29,7 @@
 
 ## 测试
 
-`Source/PuddingGrepTests`（独立工程，40 条）：以 BCL 当 oracle 逐条对照（`IndexOf` / `Regex` / `Regex.Matches`），另覆盖空模式、非法正则、灾难性回溯超时、中文字面量、非重叠语义。
+`Source/PuddingGrepTests`（独立工程，41 条）：以 BCL 当 oracle 逐条对照（`IndexOf` / `Regex` / `Regex.Matches`），另覆盖空模式、非法正则、灾难性回溯超时、中文字面量、非重叠语义。
 
 ## 接入状态（S5 进行中）
 
