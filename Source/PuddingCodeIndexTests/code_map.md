@@ -37,7 +37,7 @@
 
 > 下列原文对应上方表格中被缩写为「（见下「关键语义」）」的单元格；改写只做语义摘要，此处逐字保留原文。
 
-- `ComponentBoundaryTests.cs`：**S3/S4 边界断言**：① 探测器自检（必须能报出违规）；② 测试进程未加载（并强制加载元数据引用）Roslyn/MSBuild/上层程序集；③ 声明的依赖闭包（`*.deps.json`）不含禁用程序集
+- `ComponentBoundaryTests.cs`：**S3/S4 边界断言**：① 探测器自检（必须能报出违规）；② 测试进程未加载（并强制加载元数据引用）Roslyn/MSBuild/上层程序集；③ 声明的依赖闭包（`*.deps.json`）不含禁用程序集；④ 依赖闭包不含检索实现 `PuddingRetrieval`（R2-A 方向不变量，正对照是闭包里必须有 `PuddingRetrieval.Contracts`）
 - `Services/CodeIndex/CodeIndexMaintenanceTestDoubles.cs`：维护服务测试替身：`RecordingCodeIndexer`（含 U3-B3 的 `IndexFileAsync` 记账与拒绝注入）/ `FakeCodeIndexChangeWatcher` / `MaintenanceTestData`
 - `Services/CodeIndex/CodeIndexRemovalCorrectnessTests.cs`：**U3-B3** 管线级施用：删除后**查询不再返回**该文件符号（A6 硬判据，改动前为红）、重命名旧清新增、消失路径按删除处理、索引器拒绝 ⇒ 升级 scope 级重索引
 

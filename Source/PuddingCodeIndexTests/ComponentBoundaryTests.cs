@@ -177,6 +177,37 @@ public sealed class ComponentBoundaryTests
             + "or upper-layer assemblies, but found: " + string.Join(", ", violations));
     }
 
+    /// <summary>
+    /// R2-A（2026-10-31）确立的依赖方向不变量：<c>PuddingCodeIndex</c>（存储/索引实现）
+    /// <b>不得</b>引用检索实现 <c>PuddingRetrieval</c>。正确方向是
+    /// <c>PuddingRetrieval &lt;- PuddingRetrieval.Adapters -&gt; PuddingCodeIndex</c>。
+    /// <para>
+    /// 为什么要有这条：把编排从 CodeIndex 搬走后，那条反向 <c>ProjectReference</c> 是
+    /// <b>唯一</b>还挡在方向正确性前面的东西。没有断言，任何人补一行引用都不会有测试变红，
+    /// 而编译期也不会报错（引用是允许的，只是方向错）。
+    /// </para>
+    /// <para>
+    /// 判据用依赖闭包（<c>*.deps.json</c>）而不是运行时程序集：项目引用即使「只写不引用」
+    /// 也会进闭包，而运行时反射看不见未使用的引用。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public void Dependency_Closure_Must_Not_Contain_RetrievalImplementation()
+    {
+        var closure = ReadDependencyClosure();
+
+        // 正对照：契约必须在闭包里。它不在，说明闭包读取口径错了 —— 那样下面的负断言就是空转。
+        Assert.Contains(
+            "PuddingRetrieval.Contracts",
+            closure,
+            "control: CodeIndex 依赖检索契约 PuddingRetrieval.Contracts，它必须出现在闭包里");
+
+        Assert.DoesNotContain(
+            "PuddingRetrieval",
+            closure,
+            "PuddingCodeIndex 不得引用检索实现 PuddingRetrieval —— 依赖方向必须是 "
+            + "PuddingRetrieval <- Adapters -> CodeIndex");
+    }
     private static IReadOnlyList<string> FindViolations(IEnumerable<string> assemblyNames) =>
         assemblyNames
             .Where(n => !string.IsNullOrEmpty(n))
