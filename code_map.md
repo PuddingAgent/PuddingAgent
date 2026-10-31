@@ -1,6 +1,6 @@
 # PuddingAgent 代码地图（根索引）
 
-> 源指纹: Source/**=4128db41da49, Tests/**=19a07b471379, Tools/**=83d7eb33e1cf, TestScripts/**=9d8c5fa016f7 · 条目数: 125 · 最近整理: 2026-10-25
+> 源指纹: Source/**=4128db41da49, Tests/**=19a07b471379, Tools/**=83d7eb33e1cf, TestScripts/**=9d8c5fa016f7 · 条目数: 128 · 最近整理: 2026-10-31
 >
 > ⚠️ 2026-10-28：`TestScripts/**` 与 `Source/**` 指纹均已**陈旧**——本轮新增 9 个验收/采样/运维脚本（verify-retrieval-delivery / verify-fulltext-incremental-latency / sample-host-io-shape / correlate-host-read-io / measure-retrieval-resources / watch-read-io-anomaly / verify-storage-vacuum-readiness / swap-compacted-platform-db / probe-read-io-shape），并在 `Source/PuddingPlatform/Services/StorageManagement/` 新增 `PlatformStorageReclaimPolicy.cs`（纯决策核心 + 其测试），故 `Source/**` 同样需重算。而仓库内无 code_map 指纹自检器可重算。**不编造新指纹**，只登记为待刷新；拿到算法后一次算清。
 > 本文件是**索引**不是日志：只放 概念 · 组件 · 关键文件（相对路径）· 用途；维护规则见 [`Agents.md`](Agents.md)，过程记录写 [`Docs/00_changelog/`](Docs/00_changelog/README.md)；子项目内部的文件级索引在其自己的 `code_map.md` 中，本文件只做跨项目路由。
@@ -58,6 +58,9 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingDesktop.WpfArchive/` | 旧 WPF 入口/验证基线；无 UI 的启动器与协议源文件由 WinUI 项目链接编译 | [code_map](Source/PuddingDesktop.WpfArchive/code_map.md) |
 | `Source/Pudding.Rpc.IpcProbe/` | 真实端点技术探针（Named Pipe / h2c 服务端替身，退出码 0/1） | — |
 | `Source/PuddingCodeIndex/` | 索引组件：契约与变更捕获管线及范围注册；不得引用 `PuddingCodeIntelligence` | [code_map](Source/PuddingCodeIndex/code_map.md) |
+| `Source/PuddingDomain.Contracts/` | 跨层共享值类型（BCL-only）：`CodeSymbolKind` / `CodeRelationKind`；命名空间刻意保持 `PuddingCodeIndex.Contracts`（零调用方改动） | [code_map](Source/PuddingDomain.Contracts/code_map.md) |
+| `Source/PuddingRetrieval.Contracts/` | 跨 provider 检索契约（请求 / 结果 / 覆盖声明 / 能力矩阵）；只依赖 `PuddingDomain.Contracts` | [code_map](Source/PuddingRetrieval.Contracts/code_map.md) |
+| `Source/PuddingGrep/` | grep 字面量/正则**独立匹配内核**（BCL-only，零工程依赖）；扫描层与运行时接入未做 | [code_map](Source/PuddingGrep/code_map.md) |
 | `Source/PuddingContextPolicy/` | 上下文容量与压缩候选的**纯策略**组件（BCL-only）：容量算术、候选边界与指纹、严格适用校验、净收益准入、退避判定（见下「关键语义」） | [code_map](Source/PuddingContextPolicy/code_map.md) |
 | `Source/PuddingContextPruning/` | 零 LLM 确定性载荷剪枝：工具结果去重与超大载荷裁剪，保护尾部（见下「关键语义」） | [code_map](Source/PuddingContextPruning/code_map.md) |
 | `Source/PuddingConversationReadModel/` | 会话首屏读模型纯规则组件（BCL-only；C2 已接入 Platform/slnx）：事件归约、预算与三游标合同 | [code_map](Source/PuddingConversationReadModel/code_map.md) |
