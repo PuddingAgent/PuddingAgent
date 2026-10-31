@@ -28,6 +28,14 @@
       "affected": [
         "ContextPipeline_ShouldTriggerGentleCompaction"
       ]
+    },
+    "usageCheckpointHealth": {
+      "recordedAt": "2026-11-01",
+      "reason": "两条同源用例（DataRow False/True）自 2026-10-31 起为红。对照实验：把当次依赖上提改动 git stash 掉后同样为红 ⇒ 预先存在、与依赖无关。**尚未定位成因**（未读断言与实现），仅登记以免阻塞其他改动；定位后应按棘轮规则移除。",
+      "affected": [
+        "Health_RejectsUsageFromBeforeCheckpoint_InMemoryAndAfterRestart (False)",
+        "Health_RejectsUsageFromBeforeCheckpoint_InMemoryAndAfterRestart (True)"
+      ]
     }
   },
   "knownFailures": [
@@ -39,6 +47,8 @@
     "SteeringEndpoint_AcceptsRunningTurn_AndCreatesRuntimeQueueItem",
     "SteeringEndpoint_RejectsTerminalTurn_WithoutCreatingQueueItem",
     "AgentExecutionService_Uses_UnifiedToolInvocationFacade",
-    "ContextPipeline_ShouldTriggerGentleCompaction"
+    "ContextPipeline_ShouldTriggerGentleCompaction",
+    "Health_RejectsUsageFromBeforeCheckpoint_InMemoryAndAfterRestart (False)",
+    "Health_RejectsUsageFromBeforeCheckpoint_InMemoryAndAfterRestart (True)"
   ]
 }

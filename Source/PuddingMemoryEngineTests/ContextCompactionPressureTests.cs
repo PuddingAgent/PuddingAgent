@@ -18,7 +18,7 @@ public sealed class ContextCompactionPressureTests
     /// 估算就削弱出站硬门禁的保守校准。
     /// </summary>
     [TestMethod]
-    public void ProviderUsage_DoesNotMislabelAnOverestimate_OrWeakenOutboundGuard()
+    public void ProviderUsage_DoesNotMislabelAnOverestimate_AndRelaxesCalibrationWithinFloor()
     {
         var store = new ContextUsageSnapshotStore();
         var prepared = new ContextUsageSnapshot
@@ -42,8 +42,17 @@ public sealed class ContextCompactionPressureTests
         Assert.AreEqual(204942, current!.UsedTokens);
         Assert.AreEqual(44164, current.ToolDefinitionTokens);
 
-        // Provider 报数小于估算 ⇒ 校准保持 1.0（不得削弱硬门禁）。
-        Assert.AreEqual(1.0, store.GetPromptCalibrationRatio("s", "deepseek-flash"));
+        // Provider 报数小于估算 ⇒ 校准向实测收敛（不是夹在 1.0）。
+        // 设计依据见 LlmOptions.MinPromptCalibrationRatio 的注释：夹在 1.0 会让本地系统性高估永远修不回来，
+        // 闸门于是在真实占用远未到阈值时提前压缩；安全网由 RecordProviderInputLimitFailure 承担（下限 0.5）。
+        Assert.AreEqual(
+            120653.0 / 204942.0,
+            store.GetPromptCalibrationRatio("s", "deepseek-flash"),
+            1e-9,
+            "校准系数应等于该请求的 provider/raw 比值");
+        Assert.IsTrue(
+            store.GetPromptCalibrationRatio("s", "deepseek-flash") >= 0.5,
+            "系数不得低于 MinPromptCalibrationRatio（0.5）");
 
         // 实测按身份配对，raw 来自它自己那次准备。
         Assert.IsTrue(store.TryGetLastMeasuredRequest("s", out var measured));
