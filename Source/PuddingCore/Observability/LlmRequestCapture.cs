@@ -12,6 +12,12 @@ public sealed class LlmRequestCapture : IDisposable
 
     private const string MessageTemplate =
         "[LlmRequestCapture] invocationId={invocationId} modelId={modelId} bodyBytes={bodyBytes} bodySha256={bodySha256} localEstimatedTokens={localEstimatedTokens} bodyTokens={bodyTokens} inlineImageCount={inlineImageCount} inlineImageWireBytes={inlineImageWireBytes} reasoningEffort={reasoningEffort}";
+
+    /// <summary>
+    /// 请求体超过这个字符数就不再全量分词：诊断信息的价值远小于把主链路卡成分钟级。
+    /// 256 KiB 已足够覆盖正常多模态请求（图片载荷会被 RedactInlineImages 剔除后再计）。
+    /// </summary>
+    private const int MaxTokenizedChars = 256 * 1024;
     private static readonly AsyncLocal<LlmRequestCapture?> Ambient = new();
     private readonly LlmRequestCapture? _previous;
     private readonly string _invocationId;
@@ -53,7 +59,12 @@ public sealed class LlmRequestCapture : IDisposable
         // 但内联图片的 base64 载荷必须先剔除：provider 按图片计费，按字符分词会把它算成十几万 token，
         // 那样两个数之差反映的是「base64 有多长」，不是「估算有多准」。
         var sanitized = LlmBodyTextSanitizer.RedactInlineImages(System.Text.Encoding.UTF8.GetString(bytes));
-        var bodyTokens = ContextUsageSnapshotStore.CountTokens(sanitized.Text, modelId);
+        // 诊断不得拖慢主链路：对超大请求体做全量分词会把一次请求拖成分钟级
+        // （2026-11-01 实测：2 MiB 文本即可让一次 ChatAsync 卡住数十秒到数分钟，看起来像挂死）。
+        // 超过阈值时记为 -1（未测量），而不是伪造一个估算值。
+        var bodyTokens = sanitized.Text.Length <= MaxTokenizedChars
+            ? ContextUsageSnapshotStore.CountTokens(sanitized.Text, modelId)
+            : -1;
         // 报文里的 reasoning.effort 是验收“思考强度真的发出去了”的唯一直接证据；
         // 没有该段时记哨字符 "-"，避免日志键缺失而被误读成“没执行”。
         var reasoningEffort = LlmBodyReasoningProbe.TryReadReasoningEffort(sanitized.Text) ?? "-";
