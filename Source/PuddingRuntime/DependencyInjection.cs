@@ -99,6 +99,8 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<CompletionPolicy>();
 
         services.AddSingleton<IAgentLoopHook, LoggingAgentLoopHook>();
+        // Harness 层工具用法引导：只追加提示文本，不改成功位/退出码；失败必静默。
+        services.AddSingleton<IAgentLoopHook, ToolGuidanceHook>();
         services.TryAddSingleton<IHookPublisher, HookPublisher>();
 
         var subconsciousChannel = Channel.CreateUnbounded<ConsolidationJob>(

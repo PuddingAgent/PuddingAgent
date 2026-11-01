@@ -1321,14 +1321,15 @@ public sealed partial class AgentExecutionService
     /// </para>
     /// </summary>
     private async Task<SkillResult> FireToolResultTransformersAsync(
-        AgentLoopContext loopCtx, int round, string toolName, SkillResult result, CancellationToken ct)
+        AgentLoopContext loopCtx, int round, string toolName, string argsJson,
+        SkillResult result, CancellationToken ct)
     {
         foreach (var hook in _hooks)
         {
             try
             {
                 var transformed = await hook
-                    .OnToolResultTransformingAsync(loopCtx, round, toolName, result, ct)
+                    .OnToolResultTransformingAsync(loopCtx, round, toolName, argsJson, result, ct)
                     .ConfigureAwait(false);
                 if (transformed is not null)
                     result = transformed;

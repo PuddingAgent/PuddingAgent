@@ -1500,7 +1500,7 @@ if (effectiveLlmConfig is not null)
 
                         await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, canonicalCall.Name, skillResult, ct));
                         // 变换链：Hook 可以改写结果（如追加用法提示）。只在此处生效，不改核心或工具实现。
-                        skillResult = await FireToolResultTransformersAsync(loopCtx, round, canonicalCall.Name, skillResult, ct);
+                        skillResult = await FireToolResultTransformersAsync(loopCtx, round, canonicalCall.Name, safeToolArgs, skillResult, ct);
 
                         var newlyLoadedToolCount = ToolExposurePlanner.RegisterSearchResult(
                             canonicalCall.Name,
@@ -2115,7 +2115,7 @@ if (effectiveLlmConfig is not null)
 
                     await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, toolName, skillResult, ct));
                         // 变换链：Hook 可以改写结果（如追加用法提示）。只在此处生效，不改核心或工具实现。
-                        skillResult = await FireToolResultTransformersAsync(loopCtx, round, toolName, skillResult, ct);
+                        skillResult = await FireToolResultTransformersAsync(loopCtx, round, toolName, toolArgs, skillResult, ct);
 
                     var newlyLoadedToolCount = ToolExposurePlanner.RegisterSearchResult(
                         toolName,

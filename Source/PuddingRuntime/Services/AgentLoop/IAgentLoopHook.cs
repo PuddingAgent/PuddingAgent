@@ -77,6 +77,10 @@ public interface IAgentLoopHook
     /// 本方法的返回值会成为后续消费方（工具曝光规划、下一轮上下文）看到的**最终结果**。
     /// </para>
     /// <para>
+    /// 同时给 <paramref name="argsJson"/>：只看结果往往判不出「用法错在哪」（例如 cmd 里的 <c>tail</c>），
+    /// 必须同时看到调用参数才能给建议。
+    /// </para>
+    /// <para>
     /// 默认实现原样返回 —— 已有 hook 无需修改；新增能力 = 注册一个新 hook，而不是到处改 Core 或工具实现。
     /// 多个 hook 按注册顺序**串行组合**：后一个看到前一个改写后的结果。
     /// </para>
@@ -85,6 +89,7 @@ public interface IAgentLoopHook
         AgentLoopContext context,
         int round,
         string toolName,
+        string argsJson,
         SkillResult result,
         CancellationToken ct = default)
         => Task.FromResult(result);
