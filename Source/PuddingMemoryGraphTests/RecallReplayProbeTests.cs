@@ -36,6 +36,17 @@ public sealed class RecallReplayProbeTests
         var strongCueTexts = new Dictionary<string, int>(StringComparer.Ordinal);
         long totalChars = 0;
 
+        // 按 turn 长度分桶：用来区分「触发太松」和「样本本身就偏任务型」。
+        var buckets = new (string Name, int Min, int Max)[]
+        {
+            ("<50 字符", 0, 49),
+            ("50~200", 50, 199),
+            ("200~1000", 200, 999),
+            ("≥1000", 1000, int.MaxValue),
+        };
+        var bucketTotal = new Dictionary<string, int>(StringComparer.Ordinal);
+        var bucketStrong = new Dictionary<string, int>(StringComparer.Ordinal);
+
         foreach (var line in File.ReadLines(turnsPath, Encoding.UTF8))
         {
             if (string.IsNullOrWhiteSpace(line))
@@ -61,8 +72,20 @@ public sealed class RecallReplayProbeTests
             var cues = MemoryCueExtractor.Extract(text);
             if (cues.Count > 0)
                 withCue++;
-            if (MemoryCueExtractor.ShouldRecall(cues))
+            var willRecall = MemoryCueExtractor.ShouldRecall(cues);
+            if (willRecall)
                 strong++;
+
+            var len = text.Length;
+            foreach (var b in buckets)
+            {
+                if (len < b.Min || len > b.Max)
+                    continue;
+                bucketTotal[b.Name] = bucketTotal.GetValueOrDefault(b.Name) + 1;
+                if (willRecall)
+                    bucketStrong[b.Name] = bucketStrong.GetValueOrDefault(b.Name) + 1;
+                break;
+            }
 
             foreach (var kind in cues.Select(c => c.Kind).Distinct())
                 kindHits[kind] = kindHits.GetValueOrDefault(kind) + 1;
@@ -87,6 +110,18 @@ public sealed class RecallReplayProbeTests
         sb.AppendLine($"| 至少提取到 1 条线索 | {withCue} | {Pct(withCue, total)} |");
         sb.AppendLine($"| **强线索（会触发召回）** | {strong} | {Pct(strong, total)} |");
         sb.AppendLine($"| 完全无线索 | {total - withCue} | {Pct(total - withCue, total)} |");
+        sb.AppendLine();
+        sb.AppendLine("## 按 turn 长度分桶（判断是「触发太松」还是「样本偏任务型」）");
+        sb.AppendLine();
+        sb.AppendLine("| 长度 | turn 数 | 占比 | 会触发召回 | 触发率 |");
+        sb.AppendLine("|---|---:|---:|---:|---:|");
+        foreach (var b in buckets)
+        {
+            var totalB = bucketTotal.GetValueOrDefault(b.Name);
+            var strongB = bucketStrong.GetValueOrDefault(b.Name);
+            sb.AppendLine($"| {b.Name} | {totalB} | {Pct(totalB, total)} | {strongB} | {Pct(strongB, totalB)} |");
+        }
+
         sb.AppendLine();
         sb.AppendLine("## 按线索种类（有多少 turn 命中该类）");
         sb.AppendLine();
