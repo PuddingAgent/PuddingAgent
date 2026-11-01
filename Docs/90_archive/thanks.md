@@ -40,6 +40,7 @@ Pudding's design is deeply inspired by the following projects and research.
 - **[DeepSeek-TUI 官网](https://deepseek-tui.com/zh)** — 终端交互体验的实践案例 / Terminal interaction experience case study
 - **[CodeWhale](https://github.com/Hmbown/CodeWhale)** — AI 编程工具参考 / AI coding tool reference
 - **[dsh-motion-ui](https://github.com/Scorp1o117/dsh-motion-ui)** (Scorp1o117) — DeepSeek Harness 的智能 UI 插件：让模型按内容生成流程指引、方案对比、数据看板、交互计算器与 HTML/SVG 图解动画，含引导/自由设计模式、5 种视觉风格与 Mermaid/ECharts/表单等扩展组件 — 生成式 UI 与可交互回答形态的设计参考 / Smart UI plugin for DeepSeek Harness that turns answers into interactive interfaces (flow guides, comparisons, dashboards, interactive calculators, HTML/SVG diagrams and animations), with guided/free design modes, five visual styles and Mermaid/ECharts/form extensions — a reference for generative UI and interactive answer surfaces
+- **[DeepSeek Harness · Super-agent 架构](https://github.com/deepseek-ai/dsh-superagent-prototype)**（DeepSeek Harness 团队；中文图解见 [赛博禅心](https://mp.weixin.qq.com/s/lcIkBMOKHSvkRYELgkduMg)） — 常驻事件驱动 Agent 的四特征（连续 / 高效 / 主动 / 持久）与五模块（双层架构、事件驱动、异步多信道交互、存算分离、外部 Watchdog）；其 goal 体系的 phase 与 activation 分离、轮次准入（只有进入模型历史的 round 才计额度）语义，是本仓 goal 模式与「24 小时常驻」方向的直接对标 / Four traits and five modules of a resident, event-driven agent; its goal lifecycle (phase vs process-local activation, admission-only round accounting) is the direct reference for this repo's goal mode
 
 以及所有在 AI Agent 领域探索的开源贡献者和研究者。
 And to all the open source contributors and researchers exploring the frontier of AI agents.
