@@ -119,6 +119,38 @@ public sealed class ShellDialectRulesTests
         Assert.IsNull(First(new GuidanceInput("shell", "cmd", "cd /d repo && dotnet build")));
     }
 
+    // ── 规则 6：cmd 里嵌套调用别的 shell ─────────────────────
+
+    [DataTestMethod]
+    [DataRow("cmd", @"powershell -NoProfile -Command ""Get-ChildItem""")]
+    [DataRow("cmd", "wsl ls -la")]
+    [DataRow("cmd", "cd /d repo & pwsh -c \"Get-Date\"")]
+    [DataRow("cmd", "dir | wsl grep foo")]
+    public void Nested_shell_in_cmd_should_advise(string dialect, string command)
+    {
+        // 同一条命令可能命中多条规则（例如 `dir | wsl grep` 也含 Unix 命令），
+        // 所以断言「包含该规则」而不是「第一条就是它」—— 否则测试会锁死规则顺序。
+        var advices = new GuidanceEngine(maxAdvices: 5)
+            .Evaluate(new GuidanceInput("shell", dialect, command)).Advices;
+
+        var nested = advices.FirstOrDefault(a => a.RuleId == "shell.nested_shell_in_cmd");
+        Assert.IsNotNull(nested, $"应命中嵌套 shell 规则：{dialect} / {command}");
+        StringAssert.Contains(nested!.Message, "shell 参数", "提示必须给可执行的动作，而不是只说“别这样”");
+    }
+
+    [DataTestMethod]
+    [DataRow("cmd", "findstr /n /c:\"bash\" notes.txt")]
+    [DataRow("cmd", "echo powershell")]
+    [DataRow("cmd", "type wsl-notes.txt")]
+    [DataRow("powershell", "wsl ls -la")]
+    [DataRow("wsl", "bash -lc \"ls\"")]
+    public void Mentioning_a_shell_without_nesting_should_not_advise(string dialect, string command)
+    {
+        var advice = First(new GuidanceInput("shell", dialect, command));
+        if (advice is not null)
+            Assert.AreNotEqual("shell.nested_shell_in_cmd", advice.RuleId, $"不应判为嵌套：{dialect} / {command}");
+    }
+
     // ── 非 shell 工具一律不提示 ───────────────────────────────
 
     [TestMethod]

@@ -33,6 +33,7 @@ public static class ShellDialectRules
         new BashVariableOutsideBashRule(),
         new FindstrWithCjkRule(),
         new CmdAmpersandChainRule(),
+        new NestedShellInCmdRule(),
         // 低效循环检测与方言无关，对所有工具生效。
         new RepeatedFailureRule()
     ];
