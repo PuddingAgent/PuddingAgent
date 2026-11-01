@@ -47,6 +47,9 @@ public sealed class RecallReplayProbeTests
         var bucketTotal = new Dictionary<string, int>(StringComparer.Ordinal);
         var bucketStrong = new Dictionary<string, int>(StringComparer.Ordinal);
 
+        // 短对话里「没触发」的样本：漏召回只能靠人看，工具负责把它们捞出来。
+        var untriggeredShort = new List<string>();
+
         foreach (var line in File.ReadLines(turnsPath, Encoding.UTF8))
         {
             if (string.IsNullOrWhiteSpace(line))
@@ -77,6 +80,9 @@ public sealed class RecallReplayProbeTests
                 strong++;
 
             var len = text.Length;
+
+            if (!willRecall && len is > 2 and <= 200 && untriggeredShort.Count < 40)
+                untriggeredShort.Add(text.Replace("\n", " ").Trim());
             foreach (var b in buckets)
             {
                 if (len < b.Min || len > b.Max)
@@ -138,6 +144,14 @@ public sealed class RecallReplayProbeTests
         sb.AppendLine();
         foreach (var pair in strongCueTexts.OrderByDescending(p => p.Value).Take(15))
             sb.AppendLine($"- `{Trim(pair.Key)}` × {pair.Value}");
+
+        sb.AppendLine();
+        sb.AppendLine("## 短对话未触发样本（供人工判「漏召回」）");
+        sb.AppendLine();
+        sb.AppendLine("> 判断标准：这条是否**预设了累积状态**？若是，说明规则漏了。");
+        sb.AppendLine();
+        foreach (var s in untriggeredShort)
+            sb.AppendLine($"- {Trim(s)}");
 
         File.WriteAllText(outPath, sb.ToString(), new UTF8Encoding(false));
 
