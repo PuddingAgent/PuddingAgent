@@ -1,0 +1,19 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!--
+    规程 S2：本测试工程只引用被测组件。
+    记忆图必须在没有宿主、没有数据库、没有 DI 的情况下就能被证明正确。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingMemoryGraph\PuddingMemoryGraph.csproj" />
+  </ItemGroup>
+
+</Project>

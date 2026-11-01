@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    记忆图组件（S1）。设计上刻意保持零工程依赖：
+    节点/边/版本/排序/渐进加载这些都是纯数据与纯函数，能在没有宿主的进程里单独跑测试，
+    也避免把 Roslyn/EF 这类重依赖拖进测试进程（与 PuddingCodeIndex 同样的理由）。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>
