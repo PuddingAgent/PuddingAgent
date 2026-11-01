@@ -70,6 +70,25 @@ public interface IAgentLoopHook
         CancellationToken ct = default)
         => Task.CompletedTask;
 
+    /// <summary>
+    /// 工具调用结果的**变换链**：可以返回改写后的结果（例如在输出末尾追加一行用法提示）。
+    /// <para>
+    /// 与 <see cref="OnToolResultAsync"/> 的分工：那一个是<b>只读通知</b>（返回值被丢弃），
+    /// 本方法的返回值会成为后续消费方（工具曝光规划、下一轮上下文）看到的**最终结果**。
+    /// </para>
+    /// <para>
+    /// 默认实现原样返回 —— 已有 hook 无需修改；新增能力 = 注册一个新 hook，而不是到处改 Core 或工具实现。
+    /// 多个 hook 按注册顺序**串行组合**：后一个看到前一个改写后的结果。
+    /// </para>
+    /// </summary>
+    Task<SkillResult> OnToolResultTransformingAsync(
+        AgentLoopContext context,
+        int round,
+        string toolName,
+        SkillResult result,
+        CancellationToken ct = default)
+        => Task.FromResult(result);
+
     /// <summary>每轮 LLM 响应解析完成后触发（包含 DONE/CONTINUE 等结构信息）。</summary>
     Task OnRoundCompleteAsync(
         AgentLoopContext context,

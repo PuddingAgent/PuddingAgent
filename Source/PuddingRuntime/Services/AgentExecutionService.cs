@@ -1314,6 +1314,37 @@ public sealed partial class AgentExecutionService
     }
 
     /// <summary>
+    /// 工具结果变换链：按注册顺序串行传递，后一个 hook 看到前一个的输出。
+    /// <para>
+    /// 容错口径与 <see cref="FireHooksAsync"/> 一致 —— 任何 hook 抛异常或返回 null 都只跳过它、
+    /// 保留当前结果，绝不中断主执行链。Hook 是「建议层」，不是「控制层」。
+    /// </para>
+    /// </summary>
+    private async Task<SkillResult> FireToolResultTransformersAsync(
+        AgentLoopContext loopCtx, int round, string toolName, SkillResult result, CancellationToken ct)
+    {
+        foreach (var hook in _hooks)
+        {
+            try
+            {
+                var transformed = await hook
+                    .OnToolResultTransformingAsync(loopCtx, round, toolName, result, ct)
+                    .ConfigureAwait(false);
+                if (transformed is not null)
+                    result = transformed;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[AgentExec] Hook {Hook} failed to transform tool result; keeping previous result.",
+                    hook.GetType().Name);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// 合并 DB 策略与代码模板策略。DB 为主（覆盖布尔标志），
     /// 但 DefaultToolNames / RequiresGrantToolNames 合并两源，不丢失代码内置的默认工具。
     /// 若无 DB 策略，直接使用模板策略。
