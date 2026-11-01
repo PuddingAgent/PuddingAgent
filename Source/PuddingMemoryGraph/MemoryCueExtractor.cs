@@ -44,11 +44,19 @@ public sealed record MemoryCue
 /// </summary>
 public static class MemoryCueExtractor
 {
+    // 只保留"指向过去"的词。「继续」「continue」属于推进语义（1408 次实测），
+    // 放进这里会让近半数 turn 误触发召回 —— 它们由 ResumeWords 以弱线索处理。
     private static readonly string[] TimeWords =
     [
         "上次", "上回", "之前", "刚才", "早先", "那天", "昨天", "前天",
-        "继续", "接着说", "还没说完", "上次说", "上次那个",
-        "earlier", "last time", "previously", "continue", "as before",
+        "接着说", "还没说完", "上次说", "上次那个", "接着上次",
+        "earlier", "last time", "previously", "as before",
+    ];
+
+    /// <summary>"继续干活"类词：说明任务没做完，不说明要想起过去。</summary>
+    private static readonly string[] ResumeWords =
+    [
+        "继续", "接着", "往下", "continue", "go on",
     ];
 
     private static readonly string[] CorrectionWords =
@@ -63,8 +71,10 @@ public static class MemoryCueExtractor
         "todo", "pending", "unfinished", "left over",
     ];
 
+    // 只认「ASCII 路径段」：中文斜杠串（如 /目标进展/健康指标/下一步）不是路径。
+    // 字符集刻意收窄到 ASCII，避免把随后的中文标点一起吃进来。
     private static readonly Regex PathPattern = new(
-        @"(?:[A-Za-z]:\\[^\s""'<>|]+)|(?:/(?:[\w.\-]+/)+[\w.\-]+)|(?:https?://[^\s""'<>]+)",
+        @"(?:[A-Za-z]:(?!\\[ntr])\\[A-Za-z0-9._\\/\-]{2,})|(?:/(?:[A-Za-z0-9._\-]{2,}/)+[A-Za-z0-9._\-]{2,})|(?:https?://[^\s""'<>\u4e00-\u9fff]+)",
         RegexOptions.CultureInvariant);
 
     private static readonly Regex QuotedPattern = new(
@@ -117,6 +127,12 @@ public static class MemoryCueExtractor
                 Add(MemoryCueKind.UnfinishedTask, w, 0.6);
         }
 
+        foreach (var w in ResumeWords)
+        {
+            if (text.Contains(w, StringComparison.OrdinalIgnoreCase))
+                Add(MemoryCueKind.UnfinishedTask, w, 0.5);
+        }
+
         foreach (Match m in QuotedPattern.Matches(text))
         {
             var value = m.Groups["t"].Value;
@@ -140,6 +156,19 @@ public static class MemoryCueExtractor
     /// 而预算一旦被无关记忆占满，真正该想起的东西反而进不来。
     /// </para>
     /// </summary>
-    public static bool ShouldRecall(IReadOnlyList<MemoryCue> cues) =>
-        cues is { Count: > 0 } && cues.Any(c => c.IsStrong);
+    public static bool ShouldRecall(IReadOnlyList<MemoryCue> cues)
+    {
+        if (cues is not { Count: > 0 })
+            return false;
+
+        // 实测依据（3000 条真实 turn）：仅靠 Path 判定会把 42.9% 的 turn 打成"要召回"，
+        // 但绝大多数路径只是"当前要操作的文件"，与回忆过去无关。
+        // ⇒ 只有「指向过去」的线索才单独触发：
+        //   · Correction  —— 必须招回被推翻的旧结论
+        //   · TimeReference —— 「上次」「之前」
+        //   · UnfinishedTask（≥0.6）——「还没弄完」的真未完成语义（「继续」只算 0.5，不触发）
+        return cues.Any(c =>
+            c.Kind is MemoryCueKind.Correction or MemoryCueKind.TimeReference
+            || (c.Kind == MemoryCueKind.UnfinishedTask && c.Strength >= 0.6));
+    }
 }

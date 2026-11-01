@@ -105,10 +105,47 @@ public sealed class MemoryCueExtractorTests
             Assert.IsTrue(cues[i - 1].Strength >= cues[i].Strength, "线索必须按强度降序，调用方才能按预算截断");
     }
 
+    /// <summary>
+    /// 召回触发是**组合判定**，不是"有强线索就触发"。
+    /// <para>
+    /// 语义依据（3000 条真实语料实测）：
+    /// · 「继续」出现 46.9%，但那是"继续干活"的推进语义 ⇒ 只给 0.5，不触发；
+    /// · 「还没弄完」是真的未完成 ⇒ 0.6，触发；
+    /// · 路径/实体单独出现 ⇒ 不触发（它们只说明"当前在操作什么"，不说明"要想起过去"）。
+    /// </para>
+    /// </summary>
     [TestMethod]
-    public void Should_recall_only_when_a_strong_cue_exists()
+    public void Should_recall_requires_a_memory_referencing_cue()
     {
+        // 只推进、不忆旧：不触发
+        Assert.IsFalse(MemoryCueExtractor.ShouldRecall(MemoryCueExtractor.Extract("继续")));
+
+        // 真未完成语义：触发
+        Assert.IsTrue(MemoryCueExtractor.ShouldRecall(MemoryCueExtractor.Extract("这个还没弄完")));
+
+        // 时间引用：触发
         Assert.IsTrue(MemoryCueExtractor.ShouldRecall(MemoryCueExtractor.Extract("继续上次那个")));
-        Assert.IsFalse(MemoryCueExtractor.ShouldRecall(MemoryCueExtractor.Extract("这个还没弄完")));
+
+        // 只有路径：不触发（实测这类占 42.9%，若触发则召回退化为无筛选）
+        Assert.IsFalse(MemoryCueExtractor.ShouldRecall(
+            MemoryCueExtractor.Extract(@"打开 D:\CodeProject\PuddingAgent\README.md")));
+    }
+
+    [TestMethod]
+    public void Path_does_not_trigger_recall_on_its_own()
+    {
+        var cues = MemoryCueExtractor.Extract(@"看 D:\Data\databases\pudding_memory.db");
+
+        Assert.IsTrue(cues.Any(c => c.Kind == MemoryCueKind.Path), "路径本身仍应被识别为线索");
+        Assert.IsFalse(MemoryCueExtractor.ShouldRecall(cues), "但路径单独不触发召回");
+    }
+
+    [TestMethod]
+    public void Escape_sequence_is_not_a_path()
+    {
+        // 真实语料里 n:\n / a:\n1. / S:\nnone 这类转义串被误判为路径上百次。
+        var cues = MemoryCueExtractor.Extract(@"a:\n1. S:\nnone Y:\n");
+
+        Assert.IsFalse(cues.Any(c => c.Kind == MemoryCueKind.Path), "转义序列不是路径");
     }
 }
