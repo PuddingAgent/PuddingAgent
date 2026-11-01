@@ -14,6 +14,10 @@ public static class DefaultRules
         // ① 方言误用：cmd 里的 Unix 命令 / pwsh cmdlet / Bash 变量 / 嵌套 shell / & 串行
         .. ShellDialectRules.All,
         // ② 构建与测试效率：重复测试未跳过构建、连续超时未用挂起检测
-        .. BuildEfficiencyRules.All
+        .. BuildEfficiencyRules.All,
+        // ③ Git 安全：add -A 收进临时件、stash 与恢复同链
+        .. GitSafetyRules.All,
+        // ④ 本机工具链别名：python / python3 是商店占位符
+        .. HostToolingRules.All
     ];
 }
