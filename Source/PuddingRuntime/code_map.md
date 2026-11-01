@@ -622,3 +622,23 @@
   启动期 `AggregateException`（见上一节的 exit -532462766）。
 - 三态证据：14/14 绿 → 变异（跳过 FRESH 判定）1 红且正是 `StaleSymbolRef_FailsWithHint_AndNeverReachesDataPlane`
   → 还原 SHA 位级一致 + `-t:Rebuild` 14/14 复绿。
+
+## goal 模式组件（2026-11-01 新增）
+
+> 由 goal 模式线的纯逻辑层组成；全部无 IO，共 113 条测试。接线只差主干一处（见 `Docs/12_features/2026-11-01-goal续跑最后一跳方案与影响面.md`）。
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Services/AgentLoop/GoalLifecycle.cs` | 目标生命周期状态机；phase 持久 / activation 进程本地；完成必须带可核验证据 | `GoalLifecycle`、`GoalState`、`GoalPhase`、`GoalActivation` | `GoalEvidence` | 纯函数，无 IO；activation 永不落盘 |
+| `Services/AgentLoop/GoalEvidence.cs` | 完成证据（Command/Test/File/Url，引用与说明均非空） | `GoalEvidence`、`GoalEvidenceKind` | `GoalLifecycle` | — |
+| `Services/AgentLoop/GoalRoundLedger.cs` | 轮次准入记账：只有进入历史的 round 才计额度；轮号必须 == 已用+1 | `GoalRoundLedger`、`GoalRoundReservation` | `GoalRegistry` | 纯状态机，无 IO |
+| `Services/AgentLoop/ContinuationPolicy.cs` | 续跑三条件（有待办 + 有余量 + 上轮有推进） | `ContinuationPolicy`、`ContinuationDecision` | `GoalLoopDecider` | — |
+| `Services/AgentLoop/RepeatedActionGuard.cs` | 空转检测：同一动作**连续**重复即判循环 | `RepeatedActionGuard` | `GoalLoopDecisionHook` | 按连续而非窗口计数（窗口会误判交替读写） |
+| `Services/AgentLoop/GoalRegistry.cs` | 按会话绑定状态与账本；`ApplyRestart` 只 disarm 保留 phase 与轮次 | `GoalRegistry`、`GoalSlot` | `GoalLifecycle`、`GoalRoundLedger` | 进程内，不持久化 |
+| `Services/AgentLoop/GoalLoopDecider.cs` | 统一决策入口，输出 Continue/Complete/Yield/Stop/Block + 稳定原因码 | `GoalLoopDecider`、`GoalLoopInput`、`GoalLoopOutcome` | 上述四个判定 | 顺序即规则：用户消息优先于一切 |
+| `Services/AgentLoop/GoalLoopDecisionHook.cs` | 挂既有 `OnLoopCompleteAsync` 的观测期钩子；采集工具签名喂空转守卫；读待办数 | `GoalLoopDecisionHook` | `GoalRegistry`、`GoalOpenItemsReader` | 默认关（`PUDDING_GOAL_DECIDER=1`），只记日志不改控制流 |
+| `Services/AgentLoop/GoalOpenItemsReader.cs` | 从 `ITodoStore` 按 (agent, session) 读未完成待办数 | `GoalOpenItemsReader` | `ITodoStore` | 按 `CompletedAtUtc` 结构判断，不解析 status 文本 |
+| `Services/AgentLoop/GoalBootstrap.cs` | 方案 3 临时入口：从 `PUDDING_GOAL_OBJECTIVE` 建目标 | `GoalBootstrap` | `GoalRegistry` | 仅开发验证用，不得演变为产品入口 |
+| `Services/AgentLoop/GoalContinuationQueue.cs` | 续跑请求队列（生产者侧），供宿主消费 | `GoalContinuationQueue`、`GoalContinuationRequest` | 待接主干 | 同会话去重，最多一条待消费 |
+| `Services/AgentLoop/GoalRoundPrompt.cs` | 续跑一轮的模型提示；目标 JSON 转义（含尖括号） | `GoalRoundPrompt` | `GoalState` | 目标文本不得破坏标签结构 |
+| `Services/AgentLoop/GoalRunEquivalence.cs` | 开关两态等价性比对（轮次/结束原因/工具序列） | `GoalRunEquivalence`、`GoalRunTrace` | — | 不比时间戳与耗时，避免假差异 |
