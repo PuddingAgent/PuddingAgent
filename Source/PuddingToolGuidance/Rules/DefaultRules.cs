@@ -18,6 +18,8 @@ public static class DefaultRules
         // ③ Git 安全：add -A 收进临时件、stash 与恢复同链
         .. GitSafetyRules.All,
         // ④ 本机工具链别名：python / python3 是商店占位符
-        .. HostToolingRules.All
+        .. HostToolingRules.All,
+        // ⑤ 结果质量：范围被截断不等于不存在、过滤器没匹配到不等于没有测试
+        .. ResultQualityRules.All
     ];
 }

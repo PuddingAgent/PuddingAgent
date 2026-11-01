@@ -71,7 +71,8 @@ public sealed class ToolGuidanceHook : IAgentLoopHook
             Succeeded: result.Success,
             Error: result.Error,
             ConsecutiveFailureCount: consecutiveFailures,
-            RepeatedCommandCount: repeatedCommandCount));
+            RepeatedCommandCount: repeatedCommandCount,
+            Output: result.Output));
 
         if (!summary.HasAdvice)
             return Task.FromResult(result);

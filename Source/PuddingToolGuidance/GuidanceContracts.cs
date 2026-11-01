@@ -16,6 +16,8 @@ namespace PuddingToolGuidance;
 /// <see cref="ConsecutiveFailureTracker"/> 维护。默认 0 不影响已有规则。</param>
 /// <param name="RepeatedCommandCount">本会话窗口内同一条命令（含本次）出现的次数；由调用方用
 /// <see cref="CommandOccurrenceTracker"/> 维护。默认 0/1 不影响已有规则。</param>
+/// <param name="Output">工具输出文本（成功时也有值）。供「结果质量」类规则判断
+/// 「是不是没搜到/只搜到一部分」，而不是靠推。只做子串检查，不复制大字符串。</param>
 public sealed record GuidanceInput(
     string ToolId,
     string? ShellDialect = null,
@@ -23,7 +25,8 @@ public sealed record GuidanceInput(
     bool Succeeded = true,
     string? Error = null,
     int ConsecutiveFailureCount = 0,
-    int RepeatedCommandCount = 0);
+    int RepeatedCommandCount = 0,
+    string? Output = null);
 
 /// <summary>一条短提示。<paramref name="RuleId"/> 用于去重与配额，不展示给模型。</summary>
 public sealed record GuidanceAdvice(string RuleId, string Message);
