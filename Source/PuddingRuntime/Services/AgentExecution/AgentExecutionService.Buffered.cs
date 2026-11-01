@@ -450,16 +450,6 @@ public sealed partial class AgentExecutionService
             // cleanup rounds and reaches BudgetExhausted before terminal post-processing.
             : checked(maxRounds + subAgentBudget.GraceRounds + 1);
 
-        var loopCtx = new AgentLoopContext
-        {
-            SessionId       = request.SessionId,
-            AgentInstanceId = instance.AgentInstanceId,
-            WorkspaceId     = request.WorkspaceId,
-            AgentTemplateId = request.AgentTemplateId,
-            UserMessage     = request.MessageText,
-            MaxRounds       = maxRounds,
-        };
-
         var effectiveLlmConfig = await ResolveLlmConfigAsync(request.LlmConfig, ct);
         // 思考强度：本轮手动档位（CallerLlmSnapshot）> 模板配置 > 已解析配置 > 产品默认 high。
         // 决策收口到 ReasoningEffortPolicy：非法值跳过而不抛错，避免一个拼错让整轮失败。
@@ -481,6 +471,18 @@ if (effectiveLlmConfig is not null)
     {
         MaxOutputTokens = LlmReplyBudget.ResolveRequestTokens(effectiveLlmConfig.MaxOutputTokens),
     };
+
+        var loopCtx = new AgentLoopContext
+        {
+            SessionId = request.SessionId,
+            AgentInstanceId = instance.AgentInstanceId,
+            WorkspaceId = request.WorkspaceId,
+            AgentTemplateId = request.AgentTemplateId,
+            UserMessage = request.MessageText,
+            MaxRounds = maxRounds,
+            EffectiveInputLimit = LlmRequestBudgetGuard.ResolveEffectiveInputLimit(effectiveLlmConfig,
+                workUnitInputCapacity: request.UsageBudget?.MaxInputTokens),
+        };
 
         string             finalMessage   = "(no response)";
         var                stopReason     = AgentLoopStopReason.MaxRoundsReached;

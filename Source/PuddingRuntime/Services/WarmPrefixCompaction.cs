@@ -18,7 +18,7 @@ internal static class WarmPrefixCompaction
         "This is an automatically generated checkpoint condensing an earlier span of the conversation " +
         "to free up context. Treat it as lossy historical evidence, check later corrections, and build on it " +
         "without restating it. Continue the task directly from the messages that follow, without " +
-        "acknowledging this checkpoint.";
+        "acknowledging this checkpoint. " + PuddingContextHandoff.HandoffGuidance.RecoveryInstruction;
 
     internal const string SummaryInstruction = """
         You are a compaction engine for a general-purpose assistant. Condense the conversation ABOVE into a structured checkpoint that lets the same model resume work. Preserve non-coding tasks just as carefully as coding tasks.
@@ -34,9 +34,9 @@ internal static class WarmPrefixCompaction
         ## Next Step
         ## Critical Context
 
-        Preserve exact file paths, commands, error strings, identifiers, numeric values, function signatures, user corrections, and safety constraints. Merge any prior <compacted-summary> instead of copying it verbatim. Do not continue the task, call tools, mention this request, or output anything outside the checkpoint Markdown.
+        Preserve user corrections and safety constraints. Merge any prior <compacted-summary> instead of copying it verbatim. Do not continue the task, call tools, mention this request, or output anything outside the checkpoint Markdown.
         Distinguish explicit user requirements from assistant proposals, tool output and unverified claims. Later user corrections supersede earlier statements. Preserve completed versus pending operations; do not turn a past tool action into a new task. Mark uncertainty instead of inventing missing detail. Evidence locators are supplied by the host; never invent Turn IDs or copy nested <compaction-evidence> blocks into the summary.
-        """;
+        """ + "\n" + PuddingContextHandoff.HandoffGuidance.ForCompaction;
 
     internal static bool TryCreatePlan(
         ContextUsageSnapshotStore usageStore,

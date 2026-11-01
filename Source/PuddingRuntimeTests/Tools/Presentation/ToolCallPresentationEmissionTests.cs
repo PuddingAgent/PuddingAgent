@@ -31,6 +31,28 @@ public sealed class ToolCallPresentationEmissionTests
         """{"job":{"job_id":"j-1","process_id":"j-1","session_id":"s-1","command":"dotnet build Source/PuddingRuntime/PuddingRuntime.csproj","cwd":"E:\\repo","status":"Exited","exit_code":0},"output":null,"next_action":"done"}""";
 
     [TestMethod]
+    public async Task StreamingToolResult_InvokesHandoffHookAndFeedsAdviceToNextModelCall()
+    {
+        const string session = "session-handoff-stream";
+        var snapshots = new ContextUsageSnapshotStore();
+        snapshots.Set(new ContextUsageSnapshot { SessionId = session, UsedTokens = 5000 });
+        var llm = new ToolCallingLlmClient(
+            new LlmResponse(null, [new ToolCall("handoff-trigger", "terminal_start", TerminalStartArgs)]),
+            new LlmResponse("Completed the requested operation successfully; no remaining actions.", null));
+        var tools = new StubToolInvocationService(TerminalResultJson);
+        var service = CreateService(llm, tools, hooks: [new ContextHandoffHook(snapshots)]);
+
+        var frames = await DrainAsync(service.ExecuteStreamAsync(CreateDispatchRequest(session)));
+
+        Assert.HasCount(2, llm.StreamRequests);
+        var modelToolResult = llm.StreamRequests[1].Single(m => m.Role == ChatRole.Tool);
+        StringAssert.Contains(modelToolResult.Content!, "context_handoff");
+        StringAssert.Contains(modelToolResult.Content!, "j-1");
+        Assert.HasCount(1, tools.Requests, "The reminder must not trigger extra tools or LLM calls itself.");
+        Assert.AreEqual("j-1", PresentationMetaString(FindFrame(frames, SseEventTypes.ToolResult), "job_id"));
+    }
+
+    [TestMethod]
     public async Task ToolCallAndResultFrames_CarryToolOwnedTerminalPresentation()
     {
         var tools = new StubToolInvocationService(TerminalResultJson);
@@ -153,7 +175,8 @@ public sealed class ToolCallPresentationEmissionTests
     private static AgentExecutionService CreateService(
         IRuntimeLlmClient llm,
         IToolInvocationService tools,
-        IToolPresentationProjector? projector = null)
+        IToolPresentationProjector? projector = null,
+        IEnumerable<IAgentLoopHook>? hooks = null)
     {
         var sessionManager = new AgentSessionManager(NullLogger<AgentSessionManager>.Instance);
         var runtimeSessionStore = new InMemoryRuntimeSessionStore();
@@ -202,7 +225,7 @@ public sealed class ToolCallPresentationEmissionTests
             completionPolicy,
             skillPackageRegistry,
             skillPackageDownloader,
-            Array.Empty<IAgentLoopHook>(),
+            hooks ?? Array.Empty<IAgentLoopHook>(),
             contextPipeline,
             contextManager,
             NullLogger<AgentExecutionService>.Instance,
@@ -228,6 +251,7 @@ public sealed class ToolCallPresentationEmissionTests
     private sealed class ToolCallingLlmClient(params LlmResponse[] responses) : IRuntimeLlmClient
     {
         private readonly Queue<LlmResponse> _responses = new(responses);
+        public List<IReadOnlyList<ChatMessage>> StreamRequests { get; } = [];
 
         public Task<LlmResponse> ChatAsync(
             string workspaceId,
@@ -248,6 +272,7 @@ public sealed class ToolCallPresentationEmissionTests
             LlmConfig? llmConfig = null,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
+            StreamRequests.Add(messages.ToArray());
             var response = Dequeue();
             for (var i = 0; i < (response.ToolCalls?.Count ?? 0); i++)
             {

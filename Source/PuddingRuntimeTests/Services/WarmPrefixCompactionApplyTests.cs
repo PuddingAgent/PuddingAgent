@@ -27,6 +27,8 @@ public sealed class WarmPrefixCompactionApplyTests
         Assert.IsTrue(verification.CanApply, verification.Reason);
         var checkpoint = verification.AppliedMessages![plan.ReplacementStart];
         StringAssert.Contains(checkpoint.Content, locator);
+        StringAssert.Contains(checkpoint.Content, PuddingContextHandoff.HandoffGuidance.RecoveryInstruction,
+            "Recovery instructions are host-owned even if the model omits the optional handoff note.");
         Assert.AreEqual(LlmRequestTextBudget.Measure(verification.AppliedMessages, null), verification.AfterTextBytes);
         Assert.AreEqual(store.MeasureLlmRequest(SessionId, verification.AppliedMessages, null, BuildConfig().ModelId).UsedTokens,
             verification.AfterSnapshot!.UsedTokens);

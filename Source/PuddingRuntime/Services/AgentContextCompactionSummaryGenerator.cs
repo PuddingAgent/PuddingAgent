@@ -96,6 +96,7 @@ public sealed class AgentContextCompactionSummaryGenerator : IContextCompactionS
         sb.AppendLine("区分用户明确要求、助手建议与工具报告；用户后续纠正优先。区分已完成操作和待办，不把历史动作变成新任务。未知内容明确标注，不推断授权。来源定位由宿主添加，不编造 Turn ID，也不复制旧的 <compaction-evidence> 块。");
         sb.AppendLine("必须包含一节 `## Memory Notes`，用短 bullet 列出本轮窗口内应该进入长期记忆系统的信息；没有则写 `- 无`。");
         sb.AppendLine("不要输出寒暄或标签外内容。");
+        sb.AppendLine(PuddingContextHandoff.HandoffGuidance.ForCompaction);
         sb.AppendLine();
         sb.AppendLine($"workspaceId: {request.WorkspaceId}");
         sb.AppendLine($"sessionId: {request.SessionId}");

@@ -16,6 +16,16 @@ namespace PuddingRuntimeTests.Services;
 public sealed class RuntimeServiceExtensionsTests
 {
     [TestMethod]
+    public void AddPuddingRuntime_RegistersHandoffToolAndAdvisoryHook()
+    {
+        var services = new ServiceCollection().AddLogging().AddPuddingRuntime();
+        Assert.IsTrue(services.Any(d => d.ServiceType == typeof(PuddingCode.Tools.IPuddingTool)
+            && d.ImplementationType == typeof(ContextHandoffTool)));
+        Assert.IsTrue(services.Any(d => d.ServiceType == typeof(IAgentLoopHook)
+            && d.ImplementationType == typeof(ContextHandoffHook)));
+    }
+
+    [TestMethod]
     public void AddPuddingRuntime_RegistersProviderIndependentToolDiscovery()
     {
         var services = new ServiceCollection()

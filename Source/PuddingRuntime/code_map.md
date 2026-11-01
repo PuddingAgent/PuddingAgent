@@ -152,6 +152,7 @@
 | `Services/HeartbeatService.cs` | 超时会话的资源清理扫描 | `HeartbeatService` | `Services/AgentSessionManager.cs` | 只管会话超时清理，不是 Agent 自主心跳编排 |
 | `Services/HistoryPrefixReconciler.cs` | 规范化历史与 canonical 转录的对齐 | `HistoryPrefixReconciler` | `Services/ContextWindowManager.cs` | 完整前缀验证后才传递持久身份；用户信封按源内容 hash 对齐，不向未投影工具消息推断 ID |
 | `Services/Hooks/HookPublisher.cs` | 生命周期事件到内部事件总线的薄适配 | `IHookPublisher` | `Services/Events/InternalEventBus.cs` | — |
+| `Services/AgentLoop/ContextHandoffHook.cs` | 上下文过半时建议工作模型留下交接摘要 | `ContextHandoffHook` | `DependencyInjection.cs`、Host Runtime DI | 冻结容量与用量快照；30 分钟冷却；保留 JSON 结构；不调用 LLM/数据库，不触发压缩 |
 | `Services/Hooks/SessionCompressedMemoryMaintenanceHook.cs` | 会话压缩事件到持久维护作业的桥接 | `SessionCompressedMemoryMaintenanceHook` | `Services/Background/SubconsciousWorkerService.cs` | — |
 | `Services/Improvement/Rsi/IRsiTrajectorySource.cs` | 轨迹取数的身份上下文契约 | `RsiScope` | `Services/Improvement/Rsi/RsiTrajectorySource.cs` | 身份由调用方给出，本层不推导 |
 | `Services/Improvement/Rsi/RsiToolOutcome.cs` | 工具调用结局的三态枚举 | `RsiToolOutcome` | `Services/Improvement/Rsi/RsiToolOutcomeDeriver.cs` | Unknown 占零值，缺省落在未知而非成功 |
@@ -335,6 +336,7 @@
 | `Tools/BuiltIns/CodeIntelligence/OutlineSyntaxVisitor.cs` | Roslyn 语法树的顶层结构遍历 | `OutlineSyntaxVisitor` | `Tools/BuiltIns/CodeIntelligence/OutlineNode.cs` | — |
 | `Tools/BuiltIns/CodeIntelligence/ProjectMapTool.cs` | `project_map`：项目模块概览 | `ProjectMapTool` | `Tools/BuiltIns/CodeIntelligence/CodeSummaryTool.cs` | — |
 | `Tools/BuiltIns/Context/SessionCompactTool.cs` | `compact_session`：会话上下文的手动压缩 | `SessionCompactTool` | `Services/ContextCompactionService.cs` | 当前轮围栏守卫优先于手动压缩 |
+| `Tools/BuiltIns/Context/ContextHandoffTool.cs` | `context_handoff`：工作模型 save/read 交接摘要 | `ContextHandoffTool` | `PuddingContextHandoff/HandoffStore.cs` | 6000 字节正文；宿主作用域和 Turn ID；save 仅回定位；原文/后续用户纠正优先 |
 | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | `agent_diagnostics`：Agent 自我诊断（含 runtime_identity 运行身份核实） | `AgentDiagnosticsTool` | `Services/Diagnostics/RuntimeDiagnosisEngine.cs` | 数据源不可用时显式报出，不当作无问题；运行身份只报磁盘事实，读不到时报 error 不编造 |
 | `Tools/BuiltIns/Documents/ReadOfficeDocumentTool.cs` | `read_office_document`：办公文档读取 | `ReadOfficeDocumentTool` | `Tools/BuiltIns/Files/FileChunkService.cs` | — |
 | `Tools/BuiltIns/Events/EventSubscriptionTool.cs` | `event_subscribe`：事件类型的订阅与退订 | `EventSubscriptionTool` | `Services/Events/EventDispatcher.cs` | — |

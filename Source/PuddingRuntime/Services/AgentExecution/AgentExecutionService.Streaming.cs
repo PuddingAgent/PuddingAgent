@@ -416,16 +416,6 @@ public sealed partial class AgentExecutionService
 
         history.Add(BuildCurrentUserChatMessage(request, streamingSystemPrompt.UserContextPrefix));
 
-        var loopCtx = new AgentLoopContext
-        {
-            SessionId       = request.SessionId,
-            AgentInstanceId = instance.AgentInstanceId,
-            WorkspaceId     = request.WorkspaceId,
-            AgentTemplateId = request.AgentTemplateId,
-            UserMessage     = request.MessageText,
-            MaxRounds       = request.MaxRounds > 0 ? request.MaxRounds : 5,
-        };
-
         var llmConfigStartedAt = DateTimeOffset.UtcNow;
         var llmConfigSw = System.Diagnostics.Stopwatch.StartNew();
         LlmConfig? effectiveLlmConfig;
@@ -496,6 +486,18 @@ public sealed partial class AgentExecutionService
         }
 
         turnTimings.LlmConfigResolveMs = llmConfigSw.ElapsedMilliseconds;
+
+        var loopCtx = new AgentLoopContext
+        {
+            SessionId = request.SessionId,
+            AgentInstanceId = instance.AgentInstanceId,
+            WorkspaceId = request.WorkspaceId,
+            AgentTemplateId = request.AgentTemplateId,
+            UserMessage = request.MessageText,
+            MaxRounds = request.MaxRounds > 0 ? request.MaxRounds : 5,
+            EffectiveInputLimit = LlmRequestBudgetGuard.ResolveEffectiveInputLimit(effectiveLlmConfig,
+                workUnitInputCapacity: request.UsageBudget?.MaxInputTokens),
+        };
 
         var streamCompletedSuccessfully = false;
         var pipelineDiagnostics = new StreamPipelineDiagnosticsAccumulator();
@@ -1820,6 +1822,7 @@ public sealed partial class AgentExecutionService
                     }
 
                     // 工具结果追加到历史（非 terminal 工具）
+                    result = await FireToolResultTransformersAsync(loopCtx, round, tc.Name, injectedArgsJson, result, ct);
                     var toolPayloadRaw = result.Success
                         ? $"✅ Tool '{tc.Name}' succeeded (exit={result.ExitCode}):\n{result.Output}"
                         : BuildToolFailurePayload(tc.Name, result, request.SessionId, isPermissionError:

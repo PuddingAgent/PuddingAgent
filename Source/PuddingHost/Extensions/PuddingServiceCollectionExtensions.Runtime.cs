@@ -396,6 +396,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<PuddingCode.Abstractions.ITerminalCommandAdmission>(
             sp => sp.GetRequiredService<DefaultTerminalCommandPolicy>());
         builder.Services.AddSingleton<IAgentLoopHook, LoggingAgentLoopHook>();
+        builder.Services.AddSingleton<IAgentLoopHook, ContextHandoffHook>();
         builder.Services.AddSingleton<IAgentLoopHook, EmbeddingGenerationHook>();
         builder.Services.AddSingleton<ISessionChunkIndexer, SessionChunkIndexer>();
         builder.Services.Configure<SubconsciousOptions>(

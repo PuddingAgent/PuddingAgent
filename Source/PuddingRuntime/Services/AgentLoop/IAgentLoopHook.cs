@@ -14,6 +14,8 @@ public sealed class AgentLoopContext
     public required string UserMessage     { get; init; }
     /// <summary>本次 Loop 允许的最大轮次（含工具调用）。</summary>
     public required int    MaxRounds       { get; init; }
+    /// <summary>本次调用已解析的有效输入上限；Hook 消费冻结容量，不重新解析模型配置。</summary>
+    public int? EffectiveInputLimit { get; init; }
 }
 
 // ── 停止原因 ──────────────────────────────────────────────────────────────
