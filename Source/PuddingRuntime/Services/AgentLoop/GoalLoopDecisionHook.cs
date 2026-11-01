@@ -27,14 +27,18 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
     /// <summary>本轮以来每会话的工具调用次数 —— 这是"上轮是否有推进"的唯一真实信号。</summary>
     private readonly Dictionary<string, int> _toolCalls = new(StringComparer.Ordinal);
 
+    private readonly GoalOpenItemsReader? _openItemsReader;
+
     public GoalLoopDecisionHook(
         GoalRegistry registry,
         ILogger<GoalLoopDecisionHook>? logger = null,
-        Func<bool>? isEnabled = null)
+        Func<bool>? isEnabled = null,
+        GoalOpenItemsReader? openItemsReader = null)
     {
         _registry = registry;
         _logger = logger;
         _isEnabled = isEnabled ?? (() => DefaultEnabled);
+        _openItemsReader = openItemsReader;
     }
 
     /// <summary>默认关闭：<c>PUDDING_GOAL_DECIDER=1</c> 才计算。关闭时零开销、零行为。</summary>
@@ -79,14 +83,14 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
         return Task.FromResult(result);
     }
 
-    public Task OnLoopCompleteAsync(
+    public async Task OnLoopCompleteAsync(
         AgentLoopContext context,
         string finalMessage,
         AgentLoopStopReason stopReason,
         CancellationToken ct = default)
     {
         if (!_isEnabled() || context is null)
-            return Task.CompletedTask;
+            return;
 
         try
         {
@@ -104,7 +108,7 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
                 StopReason = stopReason,
                 // 观测期不臆造进展信号：没有真实数据就按"没有推进"上报，
                 // 这样决策会给出 Stop(no-progress)，不会假装在推进。
-                OpenItems = 0,
+                OpenItems = await CountOpenItemsAsync(context, ct).ConfigureAwait(false),
                 LastRoundMadeProgress = ToolCallsFor(context.SessionId) > 0,
                 ConsecutiveIdleRounds = 0,
                 UserMessagePending = false,
@@ -127,7 +131,7 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
             _logger?.LogWarning(ex, "[GoalLoop] 决策失败，已跳过 session={Session}", context.SessionId);
         }
 
-        return Task.CompletedTask;
+        return;
     }
 
     private int ToolCallsFor(string sessionId)
@@ -147,5 +151,30 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
     {
         lock (_guards)
             _toolCalls.Remove(sessionId);
+    }
+
+    /// <summary>
+    /// 读取当前会话未完成待办数；未注入读取器或读取失败都按 0 处理。
+    /// <para>
+    /// 读取失败**不能**让决策变成"没事可做" —— 所以这里记 warning 后返回 0，
+    /// 让决策落到「清单空 → 继续收尾」而不是「无推进 → 停」，两种误判里后者更糟。
+    /// </para>
+    /// </summary>
+    private async Task<int> CountOpenItemsAsync(AgentLoopContext context, CancellationToken ct)
+    {
+        if (_openItemsReader is null)
+            return 0;
+
+        try
+        {
+            return await _openItemsReader
+                .CountOpenAsync(context.AgentInstanceId, context.SessionId, ct)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "[GoalLoop] 读取待办失败，按 0 处理 session={Session}", context.SessionId);
+            return 0;
+        }
     }
 }
