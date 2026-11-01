@@ -34,7 +34,9 @@ public sealed record GoalState(
     GoalPhase Phase,
     GoalActivation Activation,
     string? BlockCode = null,
-    string? BlockMessage = null)
+    string? BlockMessage = null,
+    /// <summary>完成时冻结的证据。非 Complete 阶段为空。</summary>
+    IReadOnlyList<GoalEvidence> Evidence = null!)
 {
     public GoalRef Ref => new(GoalId, Revision);
 }
@@ -68,6 +70,7 @@ public static class GoalLifecycle
 
     public const string InvalidTransition = "GOAL_INVALID_TRANSITION";
     public const string InvalidBlockReason = "GOAL_INVALID_BLOCK_REASON";
+    public const string CompletionEvidenceRequired = "GOAL_COMPLETION_EVIDENCE_REQUIRED";
 
     public static GoalState Create(string goalId, string objective, int maxRounds)
     {
@@ -106,14 +109,34 @@ public static class GoalLifecycle
         };
     }
 
-    public static GoalState Complete(GoalState state)
+    /// <summary>
+    /// 完成：**必须带可核验证据**。
+    /// <para>
+    /// 为什么不提供无参重载：`OpenItems == 0` 只是"清单空了"，模型最容易在这里
+    /// 宣布自己做完了。留下一个不带证据的入口，等于给假完成开绿灯。
+    /// </para>
+    /// </summary>
+    public static GoalState Complete(GoalState state, IReadOnlyList<GoalEvidence> evidence)
     {
         Require(state, "complete", GoalPhase.Active);
+
+        if (evidence is not { Count: > 0 })
+            throw new GoalTransitionException(
+                CompletionEvidenceRequired,
+                "completing a goal requires at least one verifiable evidence item");
+
+        var bad = evidence.FirstOrDefault(e => !e.IsVerifiable);
+        if (bad is not null)
+            throw new GoalTransitionException(
+                CompletionEvidenceRequired,
+                $"evidence of kind {bad.Kind} must carry a non-empty reference and summary");
+
         return state with
         {
             Revision = state.Revision + 1,
             Phase = GoalPhase.Complete,
             Activation = GoalActivation.Disarmed,
+            Evidence = evidence.ToArray(),
         };
     }
 

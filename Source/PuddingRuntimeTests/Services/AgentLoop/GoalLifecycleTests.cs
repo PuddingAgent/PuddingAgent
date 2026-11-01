@@ -14,6 +14,11 @@ public sealed class GoalLifecycleTests
 {
     private static GoalState Created() => GoalLifecycle.Create("g1", "把记忆库接上", maxRounds: 8);
 
+    private static IReadOnlyList<GoalEvidence> Evidence() =>
+    [
+        new GoalEvidence(GoalEvidenceKind.Test, "RepeatedActionGuardTests", "7/7 通过"),
+    ];
+
     [TestMethod]
     public void Create_starts_active_and_armed()
     {
@@ -53,11 +58,11 @@ public sealed class GoalLifecycleTests
     [TestMethod]
     public void Complete_disarms_and_cannot_complete_twice()
     {
-        var done = GoalLifecycle.Complete(Created());
+        var done = GoalLifecycle.Complete(Created(), Evidence());
 
         Assert.AreEqual(GoalPhase.Complete, done.Phase);
         Assert.AreEqual(GoalActivation.Disarmed, done.Activation);
-        Assert.ThrowsExactly<GoalTransitionException>(() => GoalLifecycle.Complete(done));
+        Assert.ThrowsExactly<GoalTransitionException>(() => GoalLifecycle.Complete(done, Evidence()));
     }
 
     [TestMethod]
@@ -108,16 +113,56 @@ public sealed class GoalLifecycleTests
     [DataRow("block")]
     public void Invalid_transition_from_complete_is_rejected(string operation)
     {
-        var done = GoalLifecycle.Complete(Created());
+        var done = GoalLifecycle.Complete(Created(), Evidence());
 
         var ex = Assert.ThrowsExactly<GoalTransitionException>(() => operation switch
         {
             "pause" => GoalLifecycle.Pause(done),
-            "complete" => GoalLifecycle.Complete(done),
+            "complete" => GoalLifecycle.Complete(done, Evidence()),
             _ => GoalLifecycle.Block(done, "some-code", "x"),
         });
 
         Assert.AreEqual(GoalLifecycle.InvalidTransition, ex.Code);
+    }
+
+    /// <summary>
+    /// 这一条是整个「完成证据链」的核心：没有证据不许标完成。
+    /// </summary>
+    [TestMethod]
+    public void Complete_without_evidence_is_rejected()
+    {
+        var ex = Assert.ThrowsExactly<GoalTransitionException>(
+            () => GoalLifecycle.Complete(Created(), []));
+
+        Assert.AreEqual(GoalLifecycle.CompletionEvidenceRequired, ex.Code);
+    }
+
+    [TestMethod]
+    public void Complete_rejects_unverifiable_evidence()
+    {
+        var blank = new[]
+        {
+            new GoalEvidence(GoalEvidenceKind.Command, "   ", "跑过了"),
+        };
+        var noSummary = new[]
+        {
+            new GoalEvidence(GoalEvidenceKind.File, "artifacts/report.md", ""),
+        };
+
+        Assert.AreEqual(GoalLifecycle.CompletionEvidenceRequired,
+            Assert.ThrowsExactly<GoalTransitionException>(() => GoalLifecycle.Complete(Created(), blank)).Code);
+        Assert.AreEqual(GoalLifecycle.CompletionEvidenceRequired,
+            Assert.ThrowsExactly<GoalTransitionException>(() => GoalLifecycle.Complete(Created(), noSummary)).Code);
+    }
+
+    [TestMethod]
+    public void Complete_freezes_evidence_on_the_state()
+    {
+        var done = GoalLifecycle.Complete(Created(), Evidence());
+
+        Assert.AreEqual(GoalPhase.Complete, done.Phase);
+        Assert.AreEqual(1, done.Evidence.Count);
+        Assert.AreEqual(GoalEvidenceKind.Test, done.Evidence[0].Kind);
     }
 
     [TestMethod]
