@@ -1,4 +1,4 @@
-﻿using PuddingCode.Configuration;
+using PuddingCode.Configuration;
 
 namespace PuddingCoreTests.Configuration;
 
@@ -149,7 +149,7 @@ public sealed class PuddingBuildOutputSyncTests
 
         var result = PuddingBuildOutputSync.DeployDirectoryTransactional(source, target);
 
-        Assert.IsTrue(result.Success);
+        Assert.IsTrue(result.Success, "部署失败：" + string.Join(" | ", result.Failures));
         Assert.AreEqual(1, result.Copied);
         Assert.AreEqual(1, result.Skipped);
         Assert.AreEqual("new-assembly", File.ReadAllText(Path.Combine(target, "PuddingAgent.dll")));
