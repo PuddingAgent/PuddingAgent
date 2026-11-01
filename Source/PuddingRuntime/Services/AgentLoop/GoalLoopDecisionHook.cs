@@ -51,6 +51,10 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
 
         try
         {
+            // 方案 3 临时入口：配置了 PUDDING_GOAL_OBJECTIVE 时，首次调用即建立目标，
+            // 让决策链不再永远返回 no-goal。未配置时这一步是空操作。
+            GoalBootstrap.FromEnvironment(_registry, context.SessionId);
+
             var goal = _registry.Get(context.SessionId);
             var ledger = _registry.GetLedger(context.SessionId);
 
