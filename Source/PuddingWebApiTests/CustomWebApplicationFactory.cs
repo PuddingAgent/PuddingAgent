@@ -95,14 +95,21 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<PlatformDbContext>();
             services.RemoveAll<IDbContextFactory<PlatformDbContext>>();
 
-            _platformConnection = new SqliteConnection("Data Source=:memory:");
+            // 共享缓存的内存库：每个 DbContext 用**独立连接**连到同一个库。
+            // 之前是把同一个 SqliteConnection 实例交给所有 DbContext（单例），
+            // 于是后台事件写入与请求内写入会挤在一条物理连接上，触发
+            // `SQLite Error 1: cannot start a transaction within a transaction`
+            // （实测见 PuddingWebApiTests 的 4 条失败，栈落在 ConversationEventStore.AppendAsync）。
+            // keep-alive 连接保证内存库在整个测试期间不被回收。
+            var platformConnectionString = $"Data Source=file:pudding-webapi-{Guid.NewGuid():N}?mode=memory&cache=shared";
+            _platformConnection = new SqliteConnection(platformConnectionString);
             _platformConnection.Open();
 
             services.AddSingleton(_platformConnection);
 
             services.AddDbContextFactory<PlatformDbContext>(options =>
             {
-                options.UseSqlite(_platformConnection)
+                options.UseSqlite(platformConnectionString)
                        .ConfigureWarnings(w => w.Ignore(RelationalEventId.AmbientTransactionWarning));
             }, ServiceLifetime.Singleton);
 
