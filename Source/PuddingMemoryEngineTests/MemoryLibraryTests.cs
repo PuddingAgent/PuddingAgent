@@ -1132,16 +1132,16 @@ public sealed class MemoryLibraryTests
     /// <summary>
     /// 本文件的 pipeline fixture。
     /// <para>
-    /// ⚠️ 2026-11-01 核实：这里的构造实参传了 <c>orchestrator: null</c>（<c>recallService</c> 也是 null），
-    /// 因此本文件里所有 ContextPipeline 用例跑的是**没有编排器的旧路径** —— 那条路径不组装历史层，
-    /// 层标签也是旧的。生产 DI 会注入 orchestrator，行为与这里不同。
+    /// ⚠️ 2026-11-01 更正：这里的 `orchestrator: null` <b>不是</b>本文件用例失败的原因 ——
+    /// 该参数类型是 ISubconsciousOrchestrator（潜意识编排），与上下文层组装无关。
     /// </para>
     /// <para>
-    /// 所以本文件的断言不构成「现行组装契约」的证据：判契约请以 <c>PuddingRuntimeTests</c> 里接线完整的
-    /// <c>ContextPipeline*LayerTests</c> 为准。背景与三次证伪过程见
-    /// <c>Docs/15_tasks/2026-11-01-MemoryEngineTests-6条预先存在失败-归因线索.md</c>。
+    /// 真正原因：`ContextPipelineLayers.BuildRecentHistoryLayer` 是**死代码**，
+    /// 全仓只有定义与一处注释引用，没有任何调用点；`ContextPipelineOrchestrator` 里的 11 次
+    /// RecordLayer 从未记录过「近期历史」层。因此任何断言该层存在的用例都无法通过。
+    /// 详见 `Docs/15_tasks/2026-11-01-MemoryEngineTests-6条预先存在失败-归因线索.md` 的更正节。
     /// </para>
-    /// </summary>
+    /// </summary>    /// </summary>
     private static ContextPipeline CreateContextPipeline()
     {
         var mockMemory = new Mock<IMemoryEngine>();

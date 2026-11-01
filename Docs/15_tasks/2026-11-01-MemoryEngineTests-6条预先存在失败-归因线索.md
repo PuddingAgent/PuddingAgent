@@ -223,3 +223,49 @@ PuddingMemoryEngineTests  301 条
 1. **先观测再改**：tmp 把断言换成 `Assert.Fail(对象)` dump 出来，比读十遍代码快；
 2. **改完必须取红**：把实现改回去，断言必须变红，否则就是恒真；
 3. **修好立刻从基线移除**：`TestScripts/staged-test-baseline.json` 只能减，加了不删会变成垃圾桶。
+
+## ⚠️ 更正（2026-11-01 12:05）：我之前判定的「fixture 缺 orchestrator」是**错的**
+
+### 错在哪
+
+我曾据 `CreateContextPipeline()` 里的 `orchestrator: null` 断定「没注入编排器 ⇒ 不组装历史层」。
+**这个判断只看了参数名，没看参数类型。**
+
+实测：该参数的类型是 **`ISubconsciousOrchestrator`（潜意识编排）**，与上下文层组装毫无关系；
+真正的层组装在 `ContextPipeline` 自己的 partial 里，与该参数无关。
+
+### 真正的原因（有结构证据）
+
+```
+ContextPipelineLayers.cs           BuildRecentHistoryLayer  出现 2 次（定义 + 一处注释）
+ContextPipelineOrchestrator.cs     BuildRecentHistoryLayer  出现 0 次
+ContextPipelineOrchestrator.cs     RecordLayer(             出现 11 次
+ContextPipelineLayers.cs           RecordLayer(             出现 0 次
+```
+
+也就是说：
+
+- **构建「近期历史」的函数从未被调用**（全仓无调用点，是死代码）；
+- **记录层的 11 个调用点里，没有任何一个记录「近期历史」**。
+
+⇒ 现行组装路径**根本不会产生「近期历史」层**，任何断言该层存在的用例都不可能通过。
+
+`git log -S"BuildRecentHistoryLayer(" -- Source/PuddingRuntime/Services/ContextPipelineLayers.cs`
+只命中一次：`99860e2 refactor: split ContextPipeline into partial classes (Layers+Orchestrator)`。
+该拆分把方法体搬进了 Layers partial，但调用点没有跟着出现在 Orchestrator partial。
+
+### 定性（重要，且需要决策）
+
+这**不是**测试写错标签，也**不是** fixture 少接线，而是二选一：
+
+| 可能 | 判据 | 后果 |
+|---|---|---|
+| A. 历史层被无意丢弃（回归） | 如果设计上模型仍应通过系统提示拿到近期历史 | **真缺陷**：模型丢失近期上下文 |
+| B. 历史层被有意退役 | 如果近期历史改为走 `messages` 而不是系统提示 | 测试陈旧，应退役该用例并删除死代码 |
+
+我倾向 **B**（现代做法是把历史作为消息传，而不是塞进系统提示），但**这属于设计判断，不该由我单方面裁定**。
+
+### 现状
+
+该用例仍是红的（`PuddingMemoryEngineTests` 300/301），且**红得有道理** —— 它准确指出了
+「构建函数存在但没人调用」这个事实。在 A/B 未定之前，它不应被改成绿。
