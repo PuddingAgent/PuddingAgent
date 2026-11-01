@@ -41,6 +41,8 @@ Pudding 是 Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 
 ⇒ 完整门禁、自检清单与反例见 **`Docs/10_conventions/组件化交付规程.md`**（S1~S5 五步与接入前 checklist）。**S5（接入）之前的任何一步都不得改动宿主。**
 
+**扩展行为走 Hook 注册，不走改 Core 或改工具**：实现 `IAgentLoopHook`（`Source/PuddingRuntime/Services/AgentLoop/IAgentLoopHook.cs`，12 个生命周期扩展点，其中 `OnToolResultTransformingAsync` 可改写工具结果）并在 DI 注册即可，新增检查/引导/统计能力不需要在任何工具或 Core 里加分支；**Hook 是建议层不是控制层**（抛异常只跳过该 Hook，绝不中断主执行链），架构、订阅与容错口径见 [`Docs/18_superpowers/specs/2026-06-30-hook-system-v2-design.md`](Docs/18_superpowers/specs/2026-06-30-hook-system-v2-design.md)。
+
 ## PuddingDesktop 产品边界（强制）
 
 **进程与依赖边界**
