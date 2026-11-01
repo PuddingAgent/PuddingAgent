@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    Harness 层「工具用法引导」叶子组件（规程 S1）。
+
+    职责单一：吃一次工具调用的**字面信息**（工具 id / shell 方言 / 命令文本 / 是否成功 / 错误），
+    吐一行「你用错了」的短提示，或什么都不吐。
+
+    刻意不知道：宿主、DI、tool 注册表、会话状态、统计库。
+    它会随每个工具调用被执行，任何依赖都会变成热路径上的成本。
+
+    ⚠️ 这里判定的是**用法**，不是**意图**：规则必须能在只看字面量的情况下判定，
+    判不了的（比如「用户到底想并行还是串行」）一律不提示 —— 猜错会变成噪声。
+  -->
+
+</Project>
