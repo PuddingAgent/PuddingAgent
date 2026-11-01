@@ -15,6 +15,12 @@ public enum MemoryCueKind
     UnfinishedTask = 3,
     /// <summary>纠正 / 否定：用户说「不对」时，必须招回被推翻的旧结论。</summary>
     Correction = 4,
+    /// <summary>
+    /// 进度 / 状态类提问：「检查进度」「总结一下」「做到哪了」。
+    /// 这类问题**天然预设了累积状态**，不查记忆就只能编。
+    /// （来自真实短对话抽样：它们此前一条线索都提不出来，属漏召回。）
+    /// </summary>
+    ProgressQuery = 5,
 }
 
 /// <summary>一条线索。Strength 用于决定召回预算（强线索放宽，弱线索只顺带）。</summary>
@@ -51,6 +57,22 @@ public static class MemoryCueExtractor
         "上次", "上回", "之前", "刚才", "早先", "那天", "昨天", "前天",
         "接着说", "还没说完", "上次说", "上次那个", "接着上次",
         "earlier", "last time", "previously", "as before",
+    ];
+
+    /// <summary>
+    /// 进度 / 状态类提问。**只收短语，不收裸词**。
+    /// <para>
+    /// 实测教训：第一版收了「进度 / 总结 / 状态 / 汇报 / summary / status」，
+    /// 结果长任务简报的触发率从 78.4% 飙到 98.4% —— 因为那些词在模板文字里到处都是，
+    /// 并不表示"在问进度"。所以这里要求「动词 + 对象」的短语形态。
+    /// </para>
+    /// </summary>
+    private static readonly string[] ProgressWords =
+    [
+        "检查进度", "看下进度", "当前进度", "进度如何", "进展如何",
+        "总结一下", "总结今天", "工作总结", "报告你的", "汇报一下",
+        "做到哪", "还剩什么", "剩下什么", "做完多少",
+        "自我诊断", "诊断一下",
     ];
 
     /// <summary>"继续干活"类词：说明任务没做完，不说明要想起过去。</summary>
@@ -127,6 +149,12 @@ public static class MemoryCueExtractor
                 Add(MemoryCueKind.UnfinishedTask, w, 0.6);
         }
 
+        foreach (var w in ProgressWords)
+        {
+            if (text.Contains(w, StringComparison.OrdinalIgnoreCase))
+                Add(MemoryCueKind.ProgressQuery, w, 0.9);
+        }
+
         foreach (var w in ResumeWords)
         {
             if (text.Contains(w, StringComparison.OrdinalIgnoreCase))
@@ -168,7 +196,7 @@ public static class MemoryCueExtractor
         //   · TimeReference —— 「上次」「之前」
         //   · UnfinishedTask（≥0.6）——「还没弄完」的真未完成语义（「继续」只算 0.5，不触发）
         return cues.Any(c =>
-            c.Kind is MemoryCueKind.Correction or MemoryCueKind.TimeReference
+            c.Kind is MemoryCueKind.Correction or MemoryCueKind.TimeReference or MemoryCueKind.ProgressQuery
             || (c.Kind == MemoryCueKind.UnfinishedTask && c.Strength >= 0.6));
     }
 }
