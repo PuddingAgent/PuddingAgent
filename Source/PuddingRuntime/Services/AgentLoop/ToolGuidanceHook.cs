@@ -27,12 +27,16 @@ public sealed class ToolGuidanceHook : IAgentLoopHook
 
     private readonly GuidanceEngine _engine;
     private readonly ConsecutiveFailureTracker _failures;
+    private readonly CommandOccurrenceTracker _occurrences;
 
     public ToolGuidanceHook(
-        GuidanceEngine? engine = null, ConsecutiveFailureTracker? failures = null)
+        GuidanceEngine? engine = null,
+        ConsecutiveFailureTracker? failures = null,
+        CommandOccurrenceTracker? occurrences = null)
     {
         _engine = engine ?? new GuidanceEngine();
         _failures = failures ?? new ConsecutiveFailureTracker();
+        _occurrences = occurrences ?? new CommandOccurrenceTracker();
     }
 
     public Task<SkillResult> OnToolResultTransformingAsync(
@@ -55,13 +59,19 @@ public sealed class ToolGuidanceHook : IAgentLoopHook
         if (ShellToolIds.Contains(toolName))
             (dialect, command) = Resolve(toolName, argsJson);
 
+        // 「同一条命令又跑了一遍」：用于提示跳过构建这类重复开销（成功不清零，与失败计数不同）。
+        var repeatedCommandCount = string.IsNullOrWhiteSpace(command)
+            ? 0
+            : _occurrences.Register(context.SessionId + "|" + command.Trim());
+
         var summary = _engine.Evaluate(new GuidanceInput(
             ToolId: toolName,
             ShellDialect: dialect,
             Command: command,
             Succeeded: result.Success,
             Error: result.Error,
-            ConsecutiveFailureCount: consecutiveFailures));
+            ConsecutiveFailureCount: consecutiveFailures,
+            RepeatedCommandCount: repeatedCommandCount));
 
         if (!summary.HasAdvice)
             return Task.FromResult(result);

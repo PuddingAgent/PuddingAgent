@@ -15,7 +15,7 @@ public sealed class GuidanceEngine
     /// <param name="maxAdvices">单次求值最多返回几条，默认 3，最小 1。</param>
     public GuidanceEngine(IEnumerable<IGuidanceRule>? rules = null, int maxAdvices = 3)
     {
-        _rules = (rules ?? Rules.ShellDialectRules.All).ToArray();
+        _rules = (rules ?? Rules.DefaultRules.All).ToArray();
         MaxAdvices = Math.Max(1, maxAdvices);
     }
 

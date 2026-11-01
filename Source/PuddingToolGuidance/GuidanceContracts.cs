@@ -14,13 +14,16 @@ namespace PuddingToolGuidance;
 /// <param name="Error">失败信息；成功时为 null。</param>
 /// <param name="ConsecutiveFailureCount">本次之后该调用的连续失败次数（成功为 0）；由调用方用
 /// <see cref="ConsecutiveFailureTracker"/> 维护。默认 0 不影响已有规则。</param>
+/// <param name="RepeatedCommandCount">本会话窗口内同一条命令（含本次）出现的次数；由调用方用
+/// <see cref="CommandOccurrenceTracker"/> 维护。默认 0/1 不影响已有规则。</param>
 public sealed record GuidanceInput(
     string ToolId,
     string? ShellDialect = null,
     string? Command = null,
     bool Succeeded = true,
     string? Error = null,
-    int ConsecutiveFailureCount = 0);
+    int ConsecutiveFailureCount = 0,
+    int RepeatedCommandCount = 0);
 
 /// <summary>一条短提示。<paramref name="RuleId"/> 用于去重与配额，不展示给模型。</summary>
 public sealed record GuidanceAdvice(string RuleId, string Message);
