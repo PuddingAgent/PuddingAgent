@@ -1,7 +1,12 @@
 namespace PuddingRuntime.Services.AgentLoop;
 
-/// <summary>一次轮次预约。绑定 {goalId, revision}，过期即作废。</summary>
-public sealed record GoalRoundReservation(string ReservationId, string GoalId, long Revision, DateTimeOffset ReservedAt);
+/// <summary>一次轮次预约。绑定 {goalId, revision, round}，三者任一不符即作废。</summary>
+public sealed record GoalRoundReservation(
+    string ReservationId,
+    string GoalId,
+    long Revision,
+    int Round,
+    DateTimeOffset ReservedAt);
 
 /// <summary>
 /// goal 轮次账本（纯状态机，无 IO）。
@@ -11,8 +16,9 @@ public sealed record GoalRoundReservation(string ReservationId, string GoalId, l
 /// 人类消息、过期预约、被竞争作废的预约都不计数。
 /// </para>
 /// <para>
-/// 为什么不能"发起即计数"：那样一次被取消/被人类插队的预约就会吃掉额度，
-/// 用户看到的是"上限到了"，而实际上模型一次都没跑。额度必须可审计。
+/// 准入校验与上游一致地要求 **round == roundsStarted + 1**：
+/// 只比 revision 挡不住「同一 revision 下的重复投递或跳号 prompt」，
+/// 而轮号连续性检查能同时挡住这两者。
 /// </para>
 /// </summary>
 public sealed class GoalRoundLedger
@@ -43,8 +49,12 @@ public sealed class GoalRoundLedger
 
     public bool IsExhausted => RoundsStarted >= MaxRounds;
 
+    /// <summary>下一个合法轮号（无预约时为 RoundsStarted + 1）。</summary>
+    public int NextRound => RoundsStarted + 1;
+
     /// <summary>
     /// 预约下一轮。轮次已耗尽时**不预约**，并记录一次 `round-limit` 阻塞。
+    /// 轮号固定取 <see cref="NextRound"/>，调用方不能自行指定。
     /// </summary>
     public GoalRoundReservation? TryReserve(string reservationId, long revision, DateTimeOffset now)
     {
@@ -56,29 +66,32 @@ public sealed class GoalRoundLedger
             return null;
         }
 
-        if (_pending.ContainsKey(reservationId))
-            return _pending[reservationId];
+        if (_pending.TryGetValue(reservationId, out var existing))
+            return existing;
 
-        var reservation = new GoalRoundReservation(reservationId, GoalId, revision, now);
+        var reservation = new GoalRoundReservation(reservationId, GoalId, revision, NextRound, now);
         _pending[reservationId] = reservation;
         return reservation;
     }
 
     /// <summary>
     /// 准入：确认预约仍然有效才计入轮次。返回 false 表示这次预约作废（不消耗额度）。
-    /// <para>
-    /// 作废的三种情形：预约不存在（已被释放/已被消费）、目标已切换、revision 已变（目标被编辑）。
-    /// </para>
+    /// <para>作废的四种情形：预约不存在、目标已切换、revision 已变、轮号不再连续。</para>
     /// </summary>
     public bool TryAdmit(string reservationId, string currentGoalId, long currentRevision)
     {
         if (!_pending.TryGetValue(reservationId, out var reservation))
             return false;
 
-        if (!string.Equals(reservation.GoalId, currentGoalId, StringComparison.Ordinal)
-            || reservation.Revision != currentRevision)
+        var stale = !string.Equals(reservation.GoalId, currentGoalId, StringComparison.Ordinal)
+                    || reservation.Revision != currentRevision
+                    // 对齐上游：source.round 必须等于 roundsStarted + 1。
+                    // 挡住同一 revision 下的重复投递与跳号 prompt。
+                    || reservation.Round != NextRound;
+
+        if (stale)
         {
-            // 过期预约：不计数，也不留痕为阻塞（这是正常的编辑/切换，不是上限）。
+            // 过期预约：不计数，也不记为阻塞（这是正常的编辑/切换，不是额度上限）。
             _pending.Remove(reservationId);
             return false;
         }

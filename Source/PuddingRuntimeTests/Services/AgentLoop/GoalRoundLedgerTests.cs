@@ -120,6 +120,72 @@ public sealed class GoalRoundLedgerTests
         Assert.AreEqual(1, ledger.PendingReservations.Count);
     }
 
+    /// <summary>
+    /// 轮号连续性：对齐上游 `source.round === roundsStarted + 1`。
+    /// 只比 revision 挡不住「同一 revision 下的重复投递或跳号 prompt」。
+    /// </summary>
+    [TestMethod]
+    public void Reservation_round_is_always_next_round()
+    {
+        var ledger = new GoalRoundLedger("g1", maxRounds: 5);
+
+        var first = ledger.TryReserve("r1", revision: 1, Now);
+        Assert.AreEqual(1, first!.Round);
+
+        ledger.TryAdmit("r1", "g1", 1);
+
+        var second = ledger.TryReserve("r2", revision: 1, Now);
+        Assert.AreEqual(2, second!.Round, "第二个预约的轮号必须是 2");
+    }
+
+    [TestMethod]
+    public void Admission_with_skipped_round_is_rejected()
+    {
+        var ledger = new GoalRoundLedger("g1", maxRounds: 5);
+        ledger.TryReserve("r1", 1, Now);
+        ledger.TryAdmit("r1", "g1", 1);
+
+        // 直接跳号到 3：没有经过 2，必须被拒
+        var skipped = ledger.TryReserve("skip", 1, Now);
+        Assert.AreEqual(2, skipped!.Round);
+
+        // 用另一条合法预约把 2 消费掉，再尝试让旧轮号通行
+        ledger.TryAdmit("skip", "g1", 1);
+        Assert.IsFalse(ledger.TryAdmit("skip", "g1", 1), "同一条预约不得二次准入");
+        Assert.AreEqual(2, ledger.RoundsStarted, "被拒的准入不计数");
+    }
+
+    /// <summary>
+    /// 两条并发预约都拿到轮号 1：第一条准入后，第二条的轮号不再连续，必须被拒。
+    /// 这正是「同一 revision 下重复投递」的真实形态 —— 只比 revision 挡不住。
+    /// </summary>
+    [TestMethod]
+    public void Second_concurrent_reservation_for_same_round_is_rejected()
+    {
+        var ledger = new GoalRoundLedger("g1", maxRounds: 5);
+
+        var a = ledger.TryReserve("a", revision: 1, Now);
+        var b = ledger.TryReserve("b", revision: 1, Now);
+        Assert.AreEqual(1, a!.Round);
+        Assert.AreEqual(1, b!.Round, "两条预约在准入前都拿到同一个下一轮号");
+
+        Assert.IsTrue(ledger.TryAdmit("a", "g1", 1));
+        Assert.IsFalse(ledger.TryAdmit("b", "g1", 1),
+            "轮号已不连续（期望 2，实际 1），第二条必须被拒");
+        Assert.AreEqual(1, ledger.RoundsStarted, "被拒的第二条不消耗额度");
+    }
+
+    [TestMethod]
+    public void Replayed_admission_does_not_double_count()
+    {
+        var ledger = new GoalRoundLedger("g1", maxRounds: 5);
+        ledger.TryReserve("r1", 1, Now);
+
+        Assert.IsTrue(ledger.TryAdmit("r1", "g1", 1));
+        Assert.IsFalse(ledger.TryAdmit("r1", "g1", 1), "重复投递同一预约必须被拒");
+        Assert.AreEqual(1, ledger.RoundsStarted);
+    }
+
     [TestMethod]
     public void Multiple_rounds_count_sequentially()
     {
