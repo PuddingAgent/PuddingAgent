@@ -7,20 +7,28 @@ author: 鲸鲸
 
 # DeepSeek Harness goal 模式解剖
 
-## 0. 源码位置（先把路径校正清楚）
+## 0. 源码位置（含一次我自己的错误更正）
 
-参考文档里写的 `E:\github\deepseek\deepseek-harness` 是**陈旧投影**（本机无 E: 盘）。
-现场实测本机只有它的**工作区与运行态**，没有源码：
+**正确路径（用户 2026-11-01 19:12 提供，已实测）**：
 
 ```
-C:\Users\hyfree\Documents\deepseek-harness\     仅 default-workspace，无 packages/
-D:\Users\huany\Documents\deepseek-harness\      同上
-C:\Users\hyfree\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\
-                                                运行态依赖，无 goal 相关文件（GOAL_FILES=0）
+F:\github\deepseek\deepseek-harness
+  packages\goal\goal\                 types.ts / domain.ts / fold.ts / index.ts / runtime.ts / client.ts
+  packages\goal\tool-goal\             index.ts / authority.ts / wrapup.ts
+  packages\goal\command-goal\
+  packages\goal\goal-round-driver\     index.ts(477) / prompt.ts(26)
 ```
 
-**真源码在 GitHub**：`deepseek-ai/deepseek-harness`（TypeScript，"Everything is a Plugin"）。
-本文件内容取自 `packages/goal/` 的 README（master 分支）。
+### 我此前错在哪
+
+我先前的扫描只遍历了 `D:\` 与 `C:\Users\hyfree`，据此得出「本机没有源码」——**结论是错的**，
+源码一直在 F: 盘。参考文档里写的 `E:\github\deepseek\deepseek-harness` 也只是盘符过时（E: 不存在），
+**目录结构本身是对的**（`github\deepseek\deepseek-harness`）。
+
+> **教训（已记入记忆）**：判定「某物不存在」之前，必须先枚举全部盘符
+> （`Get-PSDrive` / `os.listdrives`），否则「扫不到」只是扫描范围的函数，不是事实。
+
+下面的分析基于**实读源码**，不是 README 转述。
 
 ## 1. goal 组 = 4 个包，职责严格分离
 
@@ -115,3 +123,109 @@ idle 时：reserve(roundsStarted + 1) 绑定 { goalId, revision } → 入队一�
 - **不引入 Cordis 插件体系**：我们已有 DI + `IAgentLoopHook`，引入第二套生命周期会割裂；
 - **不做同会话之外的 fork/Ralph 式独立尝试**：DeepSeek 自己也说那属于另一插件层；
 - **不做 evaluator 认证**：DeepSeek 明确列为 deferred，我们更没有依据先做。
+
+## 6. 源码级实现（实读，2026-11-01 19:15）
+
+### 6.1 类型模型（`goal/src/types.ts`，149 行）
+
+```ts
+type GoalId = Branded<'GoalId'>
+interface GoalRef { id: GoalId; revision: number }        // CAS 身份：每次持久变更 revision++
+type GoalPhase = 'active' | 'paused' | 'blocked' | 'complete'
+interface GoalBlockReason { code: string; message: string }  // code 是稳定 lower-kebab
+interface GoalSnapshot extends GoalRef { objective; phase; blockedReason?; maxGoalRounds }
+type GoalActivation = 'armed' | 'disarmed'                 // 进程本地，永不持久化
+interface GoalProjection { goal: GoalSnapshot; roundsStarted; createdAt; updatedAt }
+```
+
+两个要点我们完全没有：
+
+- **revision 即 CAS**：所有变更都带 `GoalRef{id, revision}`，陈旧写不会覆盖新状态；
+- **activation 与 phase 分离**：phase 是持久生命周期，activation 是**进程本地**的续跑开关。
+  重启后 phase 仍是 active，但 activation 回到 disarmed —— 这正好实现「恢复后不自动乱跑」。
+
+`GoalProjection` 由 session log **严格折叠**得出（`fold.ts` 349 行），replay 失败记 `failure`
+而不是猜一个值。这解释了为什么它敢说「durable state as authority」。
+
+### 6.2 driver 的调度循环（`goal-round-driver/src/index.ts`，477 行）
+
+```ts
+interface RoundAttempt extends RoundIdentity {           // RoundIdentity = {goalId, revision, round}
+  messageId; content; phase: 'queued'|'claimed'|'admitted'; cancelled; stale
+}
+```
+
+`drive()` 的**实际顺序**（与 README 的说法一致，但有实现细节）：
+
+1. `readyToDrive`：插件 ACTIVE + 未 stopping + agent 仍是同一个 + `status==='idle'` + 无竞争 prompt；
+2. `needsCheckpoint` → `await ctx.sessions.flush(agent.session)`，**失败即 disarm 并 return**；
+   flush 后再 `readyAfterCheckpoint` 复核（期间可能来了变更或人类消息）；
+3. 有 attempt → 清空并置 `needsCheckpoint=true`（下一轮先落盘）；
+4. `drivable(goal)` = `phase==='active' && activation==='armed'`；
+5. **等子代理**：`await Promise.race([subagents.waitForChildren(agent), unloading.promise])`；
+6. `roundsStarted >= maxGoalRounds` → `goals.block(ref, {code:'round-limit'})`；
+7. `round = roundsStarted + 1` → 渲染 prompt → `createUserMessage({source:{kind:'goal',goalId,revision,round}})` → `agent.followup()`；
+8. 入队失败 → 若 goal 仍是同一 revision 且 active/armed，则 `block({code:'queue-failed'})`。
+
+### 6.3 三个围栏（事件驱动，不是定时轮询）
+
+| 事件 | 动作 |
+|---|---|
+| `agent/status → idle` | attempt 仍是 `queued` → `inbox.remove`（**人类输入不排在它后面**）；pause 条件成立 → `goals.pause` |
+| `agent/inbox/inserted` | 非本 attempt 的消息 → `competingQueued = true`，attempt 置 `stale` |
+| `agent/inbox/claimed` / `discarded` | attempt `phase='claimed'` / `cancelled=true` |
+| `session/event: user/message` | `id === attempt.messageId` → `phase='admitted'`（**只有此刻才计轮次**） |
+| `session/event: turn/end` | `max-tokens` → disarm；`aborted` → 在飞 attempt 置 cancelled，否则 disarm |
+| `goal/changed` | `needsCheckpoint = true`；host 发起 pause 且 agent running → `agent.cancel({kind:'user'})` |
+| `agent/pre-step` | `validReservation` 全量复核（见下），不合法 → stale + 移除 + `restoreOtherClaimed` + 重新调度 |
+
+```ts
+validReservation = fiber ACTIVE && !stopping
+  && attempt?.phase === 'claimed' && !attempt.stale
+  && 内容与来源完全一致
+  && goal 仍是 source.goalId/revision 且 phase==='active' && activation==='armed'
+  && source.round === goal.roundsStarted + 1
+```
+
+**注意最后一行**：round 号必须等于「当前+1」。这让重复/跳号的 prompt 无法通行 —— 比单纯比对
+revision 更强。
+
+### 6.4 给模型的 prompt（`prompt.ts`，26 行）
+
+```
+<goal_round>
+Objective: "<JSON 转义的目标>"
+Round: 3/8
+
+Continue working toward the objective in this same session. Treat the current workspace,
+tool results, and durable session state as authoritative; inspect them instead of assuming
+earlier narration is still current. Make concrete progress and verify the result. Before
+claiming completion, gather evidence that the whole objective is achieved, read the current
+goal, and mark it complete. If work remains, leave the goal active for the next round.
+Follow the configured goal-tool policy before reporting a blocker.
+</goal_round>
+```
+
+三个关键设计：**目标用 JSON 转义**（防止目标文本里的换行/引号改写指令结构）、
+**明说"不要相信先前的叙述"**（对抗上下文里的过期自述）、**收尾要求证据 + 读 goal + 标完成**。
+
+### 6.5 工具侧权限（`tool-goal/src/authority.ts`，117 行）
+
+```ts
+authority = {kind:'direct-human'} | {kind:'goal-round', goal}
+// 调用必须：agent === ctx.agents.get(agent.id) && status==='running' && currentInitiator()===agent
+// 且必须有 open model turn，否则 GOAL_TOOL_DRIVER_REQUIRED
+```
+
+即：**改动目标状态的工具只能在"确切的、活的、当前正在跑的那个 agent 的打开中的回合里"调用**。
+这挡住了「心跳/子代理/另一个 agent 顺手改目标」。
+
+## 7. 对我们 Step1 的反馈（实读后修正）
+
+我们的 `GoalRoundLedger` 已经对齐了「预约不计、admission 才计」，但对照源码还缺三点：
+
+1. **revision 要当 CAS 用**，不只是围栏值 —— 我们的 `TryReserve(id, revision)` 已有，但下层没有
+   "陈旧写被拒"的语义（因为没有持久层）；
+2. **activation 与 phase 分离** —— 我们的模型里还没有这个概念，直接导致「resume 后不自动 arm」无法表达；
+3. **round 号必须 == roundsStarted+1** —— 这是比 revision 更强的合法性检查，我们应该在
+   `TryAdmit` 里加 `expectedRound` 参数。
