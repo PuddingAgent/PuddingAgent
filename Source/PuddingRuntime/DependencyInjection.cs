@@ -102,6 +102,9 @@ public static class RuntimeServiceExtensions
         // Harness 层工具用法引导：只追加提示文本，不改成功位/退出码；失败必静默。
         services.AddSingleton<IAgentLoopHook, ToolGuidanceHook>();
         services.AddSingleton<IAgentLoopHook, ContextHandoffHook>();
+        // Autodream 触发钩子：默认关闭（PUDDING_MEMORY_DREAM=1 才启用），
+        // 且未注册 IMemoryDreamExecutor 时完全惰性 —— 只做判定，不做任何记忆读写。
+        services.AddSingleton<IAgentLoopHook, MemoryDreamSchedulerHook>();
         services.TryAddSingleton<IHookPublisher, HookPublisher>();
 
         var subconsciousChannel = Channel.CreateUnbounded<ConsolidationJob>(
