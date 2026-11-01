@@ -1324,6 +1324,9 @@ public sealed partial class AgentExecutionService
         AgentLoopContext loopCtx, int round, string toolName, string argsJson,
         SkillResult result, CancellationToken ct)
     {
+        // 整条链共用一份追加额度：否则谁都往工具输出里塞东西，没人管总量。
+        var originalLength = result.Output?.Length ?? 0;
+
         foreach (var hook in _hooks)
         {
             try
@@ -1331,8 +1334,24 @@ public sealed partial class AgentExecutionService
                 var transformed = await hook
                     .OnToolResultTransformingAsync(loopCtx, round, toolName, argsJson, result, ct)
                     .ConfigureAwait(false);
-                if (transformed is not null)
-                    result = transformed;
+
+                if (transformed is null)
+                    continue;
+
+                var newLength = transformed.Output?.Length ?? 0;
+                if (ToolResultAppendBudget.IsOverBudget(originalLength, newLength))
+                {
+                    _logger.LogWarning(
+                        "[AgentExec] Hook {Hook} appended {Appended} chars to tool result, over the {Budget}-char chain budget; append discarded. session={Session} tool={Tool}",
+                        hook.GetType().Name,
+                        ToolResultAppendBudget.AppendedChars(originalLength, newLength),
+                        ToolResultAppendBudget.MaxAppendedChars,
+                        loopCtx.SessionId,
+                        toolName);
+                    break;
+                }
+
+                result = transformed;
             }
             catch (Exception ex)
             {
