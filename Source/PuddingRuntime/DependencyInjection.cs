@@ -105,6 +105,12 @@ public static class RuntimeServiceExtensions
         // Autodream 触发钩子：默认关闭（PUDDING_MEMORY_DREAM=1 才启用），
         // 且未注册 IMemoryDreamExecutor 时完全惰性 —— 只做判定，不做任何记忆读写。
         services.AddSingleton<IAgentLoopHook, MemoryDreamSchedulerHook>();
+
+        // goal 决策链：注册表（按会话存目标与账本）+ 观测期钩子。
+        // 钩子挂既有的 OnLoopCompleteAsync，不改执行服务；默认关闭（PUDDING_GOAL_DECIDER=1 才计算），
+        // 开启后也只记决策日志、不改变控制流。
+        services.AddSingleton<GoalRegistry>();
+        services.AddSingleton<IAgentLoopHook, GoalLoopDecisionHook>();
         services.TryAddSingleton<IHookPublisher, HookPublisher>();
 
         var subconsciousChannel = Channel.CreateUnbounded<ConsolidationJob>(
