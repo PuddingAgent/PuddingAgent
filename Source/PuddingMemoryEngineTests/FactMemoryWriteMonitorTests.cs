@@ -1,3 +1,6 @@
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Services;
 
 namespace PuddingMemoryEngineTests;
@@ -91,5 +94,85 @@ public sealed class FactMemoryWriteMonitorTests
             var text = FactMemoryWriteMonitor.Describe(health);
             Assert.IsFalse(string.IsNullOrWhiteSpace(text), $"状态 {health} 缺少说明");
         }
+    }
+
+    // ── 端到端：判定接上真实数据源（in-memory sqlite，真实 EF 查询） ──────────
+
+    private static async Task<(TestScope Scope, FactMemoryService Service, FactMemoryWriteProbe Probe)> CreateProbeAsync()
+    {
+        var scope = await CreateScopeAsync();
+        var service = new FactMemoryService(scope.Factory);
+        return (scope, service, new FactMemoryWriteProbe(scope.Factory));
+    }
+
+    private static async Task<TestScope> CreateScopeAsync()
+    {
+        var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<MemoryLibraryDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        var factory = new TestDbContextFactory(options);
+        await using (var db = factory.CreateDbContext())
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        return new TestScope(connection, factory);
+    }
+
+    [TestMethod]
+    public async Task Probe_reports_never_written_on_an_empty_library()
+    {
+        var (scope, _, probe) = await CreateProbeAsync();
+        await using var _ = scope;
+
+        var health = await probe.CaptureAsync(writeEnabled: true, Now);
+
+        Assert.AreEqual(FactMemoryWriteHealth.NeverWritten, health);
+    }
+
+    [TestMethod]
+    public async Task Probe_reports_healthy_right_after_a_real_write()
+    {
+        var (scope, service, probe) = await CreateProbeAsync();
+        await using var _ = scope;
+
+        var sink = new FactMemorySink(service);
+        await sink.SinkAsync(new FactMemoryDraft("ws", "agent", "一条事实", "fact", "s1"));
+
+        // 落库时间由服务写，这里给一个足够宽的窗口以免时钟细节影响判定
+        var health = await probe.CaptureAsync(writeEnabled: true, DateTimeOffset.UtcNow.AddMinutes(1));
+
+        Assert.AreEqual(FactMemoryWriteHealth.Healthy, health);
+    }
+
+    [TestMethod]
+    public async Task Probe_reports_disabled_without_touching_the_database()
+    {
+        var (scope, _, probe) = await CreateProbeAsync();
+        await using var _ = scope;
+
+        var health = await probe.CaptureAsync(writeEnabled: false, Now);
+
+        Assert.AreEqual(FactMemoryWriteHealth.Disabled, health);
+    }
+
+    private sealed class TestScope(SqliteConnection connection, IDbContextFactory<MemoryLibraryDbContext> factory)
+        : IAsyncDisposable
+    {
+        private readonly SqliteConnection _connection = connection;
+
+        public IDbContextFactory<MemoryLibraryDbContext> Factory { get; } = factory;
+
+        public async ValueTask DisposeAsync() => await _connection.DisposeAsync();
+    }
+
+    private sealed class TestDbContextFactory(DbContextOptions<MemoryLibraryDbContext> options)
+        : IDbContextFactory<MemoryLibraryDbContext>
+    {
+        public MemoryLibraryDbContext CreateDbContext() => new(options);
     }
 }
