@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using PuddingRuntime.Services.Skills;
 
 namespace PuddingRuntime.Services.AgentLoop;
 
@@ -20,6 +21,12 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
     private readonly ILogger<GoalLoopDecisionHook>? _logger;
     private readonly Func<bool> _isEnabled;
 
+    /// <summary>每会话一个空转守卫：签名来自真实的工具名 + 参数。</summary>
+    private readonly Dictionary<string, RepeatedActionGuard> _guards = new(StringComparer.Ordinal);
+
+    /// <summary>本轮以来每会话的工具调用次数 —— 这是"上轮是否有推进"的唯一真实信号。</summary>
+    private readonly Dictionary<string, int> _toolCalls = new(StringComparer.Ordinal);
+
     public GoalLoopDecisionHook(
         GoalRegistry registry,
         ILogger<GoalLoopDecisionHook>? logger = null,
@@ -39,6 +46,38 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
 
     /// <summary>最近一次决策结果。</summary>
     public GoalLoopOutcome? LastOutcome { get; private set; }
+
+    /// <summary>
+    /// 观测工具结果：把「工具名 + 参数」当作动作签名喂给空转守卫，并累计调用次数。
+    /// <para>
+    /// 为什么必须在这里采集：`OnLoopCompleteAsync` 只给 (context, finalMessage, stopReason)，
+    /// 拿不到"这一轮到底动了没有"。没有这个信号，决策器只能靠猜 —— 而靠猜的续跑是最危险的。
+    /// </para>
+    /// </summary>
+    public Task<SkillResult> OnToolResultTransformingAsync(
+        AgentLoopContext context,
+        int round,
+        string toolName,
+        string argsJson,
+        SkillResult result,
+        CancellationToken ct = default)
+    {
+        if (_isEnabled() && context is not null && !string.IsNullOrWhiteSpace(context.SessionId))
+        {
+            var key = context.SessionId;
+            lock (_guards)
+            {
+                if (!_guards.TryGetValue(key, out var guard))
+                    _guards[key] = guard = new RepeatedActionGuard();
+
+                _toolCalls[key] = _toolCalls.GetValueOrDefault(key) + 1;
+                guard.Record($"{toolName}|{argsJson}");
+            }
+        }
+
+        // 语义上不改工具结果：本 hook 只观测。
+        return Task.FromResult(result);
+    }
 
     public Task OnLoopCompleteAsync(
         AgentLoopContext context,
@@ -66,16 +105,17 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
                 // 观测期不臆造进展信号：没有真实数据就按"没有推进"上报，
                 // 这样决策会给出 Stop(no-progress)，不会假装在推进。
                 OpenItems = 0,
-                LastRoundMadeProgress = false,
+                LastRoundMadeProgress = ToolCallsFor(context.SessionId) > 0,
                 ConsecutiveIdleRounds = 0,
                 UserMessagePending = false,
-                LoopDetected = false,
+                LoopDetected = IsLooping(context.SessionId),
                 ClaimsComplete = false,
             };
 
             var outcome = GoalLoopDecider.Decide(input);
             DecisionCount++;
             LastOutcome = outcome;
+            ResetRoundSignals(context.SessionId);
 
             _logger?.LogInformation(
                 "[GoalLoop] session={Session} action={Action} reason={Reason} detail={Detail}",
@@ -88,5 +128,24 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
         }
 
         return Task.CompletedTask;
+    }
+
+    private int ToolCallsFor(string sessionId)
+    {
+        lock (_guards)
+            return _toolCalls.GetValueOrDefault(sessionId);
+    }
+
+    private bool IsLooping(string sessionId)
+    {
+        lock (_guards)
+            return _guards.TryGetValue(sessionId, out var guard) && guard.Streak >= 3;
+    }
+
+    /// <summary>一次 Loop 结束后重置本轮计数；守卫保留历史，否则跨轮的空转就看不出来了。</summary>
+    private void ResetRoundSignals(string sessionId)
+    {
+        lock (_guards)
+            _toolCalls.Remove(sessionId);
     }
 }

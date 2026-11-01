@@ -65,6 +65,57 @@ public sealed class GoalLoopDecisionHookTests
         Assert.AreEqual(GoalLoopDecider.ReasonNothingToDo, hook.LastOutcome.ReasonCode);
     }
 
+    /// <summary>
+    /// 真实空转信号：同一工具 + 同一参数连续三次 → 决策给出 Block(loop-detected)。
+    /// <para>
+    /// 这条测的是「信号能不能真的从工具结果流到决策器」，而不是守卫本身（守卫另有 7 条测试）。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task Three_identical_tool_calls_block_with_loop_detected()
+    {
+        var registry = new GoalRegistry();
+        registry.Create("s1", "接完 goal 链路", maxRounds: 5);
+        var hook = new GoalLoopDecisionHook(registry, isEnabled: () => true);
+
+        for (var i = 0; i < 3; i++)
+            await hook.OnToolResultTransformingAsync(Ctx(), 1, "file_read", "{\"path\":\"a.cs\"}", null!);
+
+        await hook.OnLoopCompleteAsync(Ctx(), "done", AgentLoopStopReason.Done);
+
+        Assert.AreEqual(GoalLoopActionKind.Block, hook.LastOutcome!.Action);
+        Assert.AreEqual(GoalLoopDecider.ReasonLoopDetected, hook.LastOutcome.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task Different_tool_calls_are_not_a_loop()
+    {
+        var registry = new GoalRegistry();
+        registry.Create("s1", "接完 goal 链路", maxRounds: 5);
+        var hook = new GoalLoopDecisionHook(registry, isEnabled: () => true);
+
+        await hook.OnToolResultTransformingAsync(Ctx(), 1, "file_read", "{\"path\":\"a.cs\"}", null!);
+        await hook.OnToolResultTransformingAsync(Ctx(), 1, "file_write", "{\"path\":\"a.cs\"}", null!);
+        await hook.OnToolResultTransformingAsync(Ctx(), 1, "shell", "{\"command\":\"dir\"}", null!);
+
+        await hook.OnLoopCompleteAsync(Ctx(), "done", AgentLoopStopReason.Done);
+
+        Assert.AreNotEqual(GoalLoopDecider.ReasonLoopDetected, hook.LastOutcome!.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task Disabled_hook_does_not_record_tool_signals()
+    {
+        var hook = new GoalLoopDecisionHook(new GoalRegistry(), isEnabled: () => false);
+
+        for (var i = 0; i < 3; i++)
+            await hook.OnToolResultTransformingAsync(Ctx(), 1, "file_read", "{\"path\":\"a.cs\"}", null!);
+
+        await hook.OnLoopCompleteAsync(Ctx(), "done", AgentLoopStopReason.Done);
+
+        Assert.AreEqual(0, hook.DecisionCount, "关闭时连信号都不采集");
+    }
+
     [TestMethod]
     public async Task Hook_never_throws_even_for_hostile_input()
     {
