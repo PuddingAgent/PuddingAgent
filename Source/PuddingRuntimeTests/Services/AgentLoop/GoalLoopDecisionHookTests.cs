@@ -116,6 +116,34 @@ public sealed class GoalLoopDecisionHookTests
         Assert.AreEqual(0, hook.DecisionCount, "关闭时连信号都不采集");
     }
 
+    /// <summary>
+    /// 待办读取抛错时：钩子既不把一次正常结束变成故障，也不因此停止决策 ——
+    /// 按设计**吞掉异常并把 openItems 当 0**，于是决策落到 reason=nothing-to-do。
+    /// <para>
+    /// 这条用例纠正了我自己的一个错误预期：我原以为「读取失败 ⇒ 不该记成决策」，
+    /// 实际实现是「读取失败 ⇒ 按 0 继续决策」（见 `CountOpenItemsAsync` 的注释：
+    /// 两种误判里「当作清单空」比「当作没推进」安全）。测试按**真实设计**写，不按我的想象写。
+    /// </para>
+    /// <para>
+    /// 仍未直接断言的一点：`finally` 里清掉本轮工具计数的效果在公开面上不可观测
+    /// （openItems 为 0 时决策先命中 nothing-to-do，与 progress 无关），所以这里不假装测到。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task Reader_failure_falls_back_to_zero_open_items_and_still_decides()
+    {
+        var registry = new GoalRegistry();
+        registry.Create("s1", "接完 goal 链路", maxRounds: 5);
+        var reader = new GoalOpenItemsReader((_, _, _) => throw new InvalidOperationException("boom"));
+        var hook = new GoalLoopDecisionHook(registry, isEnabled: () => true, openItemsReader: reader);
+
+        await hook.OnLoopCompleteAsync(Ctx(), "done", AgentLoopStopReason.Done);
+
+        Assert.AreEqual(1, hook.DecisionCount, "读取失败仍要出决策，不能把会话卡住");
+        Assert.AreEqual(GoalLoopDecider.ReasonNothingToDo, hook.LastOutcome!.ReasonCode,
+            "openItems 回落为 0 ⇒ 落到「清单空 → 继续收尾」");
+    }
+
     [TestMethod]
     public async Task Hook_never_throws_even_for_hostile_input()
     {

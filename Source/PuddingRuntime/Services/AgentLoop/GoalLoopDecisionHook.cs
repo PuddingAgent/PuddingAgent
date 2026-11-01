@@ -106,8 +106,9 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
                 Goal = goal,
                 RoundsStarted = ledger?.RoundsStarted ?? 0,
                 StopReason = stopReason,
-                // 观测期不臆造进展信号：没有真实数据就按"没有推进"上报，
-                // 这样决策会给出 Stop(no-progress)，不会假装在推进。
+                // 未完成待办来自真实拆解表（ITodoStore）；未注入读取器时为 0。
+                // 注意：openItems 为 0 会让决策落到「清单空 → 继续收尾」，
+                // 而不是「无推进 → 停」—— 前者安全，后者会误杀还有活的会话。
                 OpenItems = await CountOpenItemsAsync(context, ct).ConfigureAwait(false),
                 LastRoundMadeProgress = ToolCallsFor(context.SessionId) > 0,
                 ConsecutiveIdleRounds = 0,
@@ -119,7 +120,6 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
             var outcome = GoalLoopDecider.Decide(input);
             DecisionCount++;
             LastOutcome = outcome;
-            ResetRoundSignals(context.SessionId);
 
             _logger?.LogInformation(
                 "[GoalLoop] session={Session} action={Action} reason={Reason} detail={Detail}",
@@ -130,8 +130,11 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
             // 决策是观测，不能因为它把一次正常结束变成故障。
             _logger?.LogWarning(ex, "[GoalLoop] 决策失败，已跳过 session={Session}", context.SessionId);
         }
-
-        return;
+        finally
+        {
+            // 成功与失败都要清：否则异常路径留下的调用计数会放大下一轮的"有推进"判断。
+            ResetRoundSignals(context.SessionId);
+        }
     }
 
     private int ToolCallsFor(string sessionId)
