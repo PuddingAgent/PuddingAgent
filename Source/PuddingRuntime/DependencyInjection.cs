@@ -109,7 +109,14 @@ public static class RuntimeServiceExtensions
         // goal 决策链：注册表（按会话存目标与账本）+ 观测期钩子。
         // 钩子挂既有的 OnLoopCompleteAsync，不改执行服务；默认关闭（PUDDING_GOAL_DECIDER=1 才计算），
         // 开启后也只记决策日志、不改变控制流。
-        services.AddSingleton<GoalRegistry>();
+        // 主干侧判定点（GoalContinuationGate）需要拿到同一份注册表；
+        // 这里用工厂在首次解析时完成配置，保证全局只有一个实例。
+        services.AddSingleton(sp =>
+        {
+            var registry = new GoalRegistry();
+            GoalContinuationGate.Configure(registry);
+            return registry;
+        });
         services.AddSingleton<IAgentLoopHook, GoalLoopDecisionHook>();
         services.TryAddSingleton<IHookPublisher, HookPublisher>();
 

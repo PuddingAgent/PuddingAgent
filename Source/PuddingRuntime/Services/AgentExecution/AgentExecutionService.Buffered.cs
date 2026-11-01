@@ -1737,6 +1737,24 @@ if (effectiveLlmConfig is not null)
                     _logger.LogInformation(
                         "[AgentExec] DONE round={Round} session={Session}", round + 1, request.SessionId);
                     await FireHooksAsync(h => h.OnCompletedAsync(loopCtx, finalMessage, ct));
+
+                    // goal 续跑（默认关）：模型说完成，但目标仍 active/armed 且账本还有余量 → 再来一轮。
+                    // 判定与轮次记账都在 GoalContinuationGate 里；关闭时本分支不成立，行为与改动前等价。
+                    if (GoalContinuationGate.TryContinue(request.SessionId, round, out var goalRound))
+                    {
+                        _logger.LogInformation(
+                            "[AgentExec:GoalContinue] round={Round} goalRound={GoalRound} session={Session}",
+                            round + 1, goalRound, request.SessionId);
+                        _journal.Record(request.SessionId, new TurnRecord
+                        {
+                            Round = round, StartedAt = turnStart, CompletedAt = DateTimeOffset.UtcNow,
+                            Status = "GOAL_CONTINUE", MessageSummary = Truncate(finalMessage, 512),
+                        });
+                        stopReason = AgentLoopStopReason.Done;
+                        execState = AgentExecutionState.Running;
+                        continue;
+                    }
+
                     break;
                 }
 
