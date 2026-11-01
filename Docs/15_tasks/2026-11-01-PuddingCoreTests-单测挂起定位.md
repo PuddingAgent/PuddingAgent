@@ -1,3 +1,9 @@
+---
+title: 2026-11-01 PuddingCoreTests 跑不完：**一个测试挂住**，不是套件慢
+status: active
+date: 2026-11-01
+author: 鲸鲸
+---
 # 2026-11-01 PuddingCoreTests 跑不完：**一个测试挂住**，不是套件慢
 
 ## 现象

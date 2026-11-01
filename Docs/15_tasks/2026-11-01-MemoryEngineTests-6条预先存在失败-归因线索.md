@@ -1,3 +1,9 @@
+---
+title: 2026-11-01 PuddingMemoryEngineTests 的 6 条预先存在失败（归因线索，未修）
+status: active
+date: 2026-11-01
+author: 鲸鲸
+---
 # 2026-11-01 PuddingMemoryEngineTests 的 6 条预先存在失败（归因线索，未修）
 
 ## 已证实

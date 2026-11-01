@@ -28,6 +28,13 @@
       "affected": [
         "ContextPipeline_ShouldTriggerGentleCompaction"
       ]
+    },
+    "desktopDocsFrontMatter": {
+      "recordedAt": "2026-11-01",
+      "reason": "Docs/*.md 的编码门禁：要求无 BOM 且以 front matter 开头。2026-11-01 实测 25 篇遗留文档不合规（多为 2026-10 的 14_reports，缺 front matter），属预先存在。本次已把当天新增的 5 篇补齐（违规数 30 → 25），遗留 25 篇需要逐篇确认真实 title / author / status，不做批量臆造。补齐后应从基线移除。",
+      "affected": [
+        "DesktopServiceTests.DocsMarkdownEncodingTests.DocsMarkdownHasNoBomAndStartsWithFrontMatter"
+      ]
     }
   },
   "knownFailures": [
@@ -39,6 +46,7 @@
     "SteeringEndpoint_AcceptsRunningTurn_AndCreatesRuntimeQueueItem",
     "SteeringEndpoint_RejectsTerminalTurn_WithoutCreatingQueueItem",
     "AgentExecutionService_Uses_UnifiedToolInvocationFacade",
-    "ContextPipeline_ShouldTriggerGentleCompaction"
+    "ContextPipeline_ShouldTriggerGentleCompaction",
+    "DesktopServiceTests.DocsMarkdownEncodingTests.DocsMarkdownHasNoBomAndStartsWithFrontMatter"
   ]
 }

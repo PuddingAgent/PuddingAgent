@@ -1,3 +1,9 @@
+---
+title: 2026-11-01 全仓构建口径：Desktop 锁 vs Core 可构建
+status: active
+date: 2026-11-01
+author: 鲸鲸
+---
 # 2026-11-01 全仓构建口径：Desktop 锁 vs Core 可构建
 
 ## 结论（实测）
