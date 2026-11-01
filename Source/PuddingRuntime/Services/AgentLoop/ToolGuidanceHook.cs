@@ -5,17 +5,18 @@ using PuddingToolGuidance;
 namespace PuddingRuntime.Services.AgentLoop;
 
 /// <summary>
-/// Harness 层「工具用法引导」插件：在工具结果末尾追加一行「你用错了」的短提示。
+/// Harness 层「工具用法引导」插件：在工具结果末尾追加一条短提示（最多 3 条）。
 /// <para>
 /// 它只实现 <see cref="IAgentLoopHook.OnToolResultTransformingAsync"/> —— 不碰 Core、不碰任何工具的
 /// <c>ExecuteAsync</c>。新增一类检查 = 往 <c>GuidanceEngine</c> 加一条规则，或再注册一个 Hook。
 /// </para>
 /// <para>
-/// 四条硬约束（与 Hook 契约一致）：
+/// 五条硬约束：
 /// ① 只追加文本，绝不改 <see cref="SkillResult.Success"/> / <see cref="SkillResult.ExitCode"/>；
 /// ② 参数解析失败、规则抛异常一律原样返回 —— 引导层不能把一次正常调用变成故障；
-/// ③ 只对 shell 类工具求值，其它工具直接短路；
-/// ④ **宁可漏提示，不可乱提示** —— 判不出来就返回 null，不猜。
+/// ③ 命令类规则只对 shell 工具求值（其它工具短路，省掉解析）；循环检测对所有工具生效；
+/// ④ 默认方言按工具分流（<c>shell=auto</c> 在 Windows 上是 PowerShell，<c>terminal_*</c> 是 cmd）；
+/// ⑤ **宁可漏提示，不可乱提示** —— 判不出来就返回 null，不猜。
 /// </para>
 /// </summary>
 public sealed class ToolGuidanceHook : IAgentLoopHook
@@ -25,9 +26,14 @@ public sealed class ToolGuidanceHook : IAgentLoopHook
         new(StringComparer.OrdinalIgnoreCase) { "shell", "terminal_start", "terminal_execute" };
 
     private readonly GuidanceEngine _engine;
+    private readonly ConsecutiveFailureTracker _failures;
 
-    public ToolGuidanceHook(GuidanceEngine? engine = null)
-        => _engine = engine ?? new GuidanceEngine();
+    public ToolGuidanceHook(
+        GuidanceEngine? engine = null, ConsecutiveFailureTracker? failures = null)
+    {
+        _engine = engine ?? new GuidanceEngine();
+        _failures = failures ?? new ConsecutiveFailureTracker();
+    }
 
     public Task<SkillResult> OnToolResultTransformingAsync(
         AgentLoopContext context,
@@ -37,19 +43,25 @@ public sealed class ToolGuidanceHook : IAgentLoopHook
         SkillResult result,
         CancellationToken ct = default)
     {
-        if (!ShellToolIds.Contains(toolName) || result is null)
+        if (result is null)
             return Task.FromResult(result!);
 
-        var (dialect, command) = Resolve(toolName, argsJson);
-        if (string.IsNullOrWhiteSpace(dialect) || string.IsNullOrWhiteSpace(command))
-            return Task.FromResult(result);
+        // 循环检测对所有工具生效：单次失败正常，连续同样的失败才是信号。
+        var failureKey = context.SessionId + "|" + toolName;
+        var consecutiveFailures = _failures.Register(failureKey, result.Success);
+
+        string? dialect = null;
+        string? command = null;
+        if (ShellToolIds.Contains(toolName))
+            (dialect, command) = Resolve(toolName, argsJson);
 
         var summary = _engine.Evaluate(new GuidanceInput(
             ToolId: toolName,
             ShellDialect: dialect,
             Command: command,
             Succeeded: result.Success,
-            Error: result.Error));
+            Error: result.Error,
+            ConsecutiveFailureCount: consecutiveFailures));
 
         if (!summary.HasAdvice)
             return Task.FromResult(result);
@@ -59,7 +71,7 @@ public sealed class ToolGuidanceHook : IAgentLoopHook
     }
 
     /// <summary>
-    /// 从参数里取出「方言 + 命令文本」。取不到就给空，调用方短路。
+    /// 从参数里取出「方言 + 命令文本」。取不到就给空，命令类规则自然不命中。
     /// <para>
     /// 默认方言<b>按工具分别取</b>，不能统一：<c>shell</c> 工具的 <c>shell=auto</c> 在 Windows 上是
     /// PowerShell，而 <c>terminal_*</c> 工具默认就是 cmd.exe。默认值搞反会让规则**系统性误报**，

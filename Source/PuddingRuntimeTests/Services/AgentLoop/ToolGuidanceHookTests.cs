@@ -100,6 +100,39 @@ public sealed class ToolGuidanceHookTests
     }
 
     [TestMethod]
+    public async Task Repeated_failures_get_a_loop_warning_on_the_third_failure()
+    {
+        var hook = new ToolGuidanceHook();
+        var failed = new SkillResult { Success = false, Output = "", Error = "boom", ExitCode = 1 };
+        const string args = """{"command":"dir","shell":"cmd"}""";
+
+        var first = await hook.OnToolResultTransformingAsync(Ctx(), 0, "shell", args, failed);
+        var second = await hook.OnToolResultTransformingAsync(Ctx(), 1, "shell", args, failed);
+        var third = await hook.OnToolResultTransformingAsync(Ctx(), 2, "shell", args, failed);
+
+        Assert.IsFalse(first.Output.Contains("连续失败"), "第 1 次失败不该被当成循环");
+        Assert.IsFalse(second.Output.Contains("连续失败"), "第 2 次失败仍是巧合");
+        StringAssert.Contains(third.Output, "连续失败 3 次", "第 3 次必须提示换方法");
+        Assert.IsFalse(third.Success, "引导层不得把失败改成成功");
+        Assert.AreEqual(1, third.ExitCode, "引导层不得改退出码");
+    }
+
+    [TestMethod]
+    public async Task Success_resets_the_failure_counter()
+    {
+        var hook = new ToolGuidanceHook();
+        var failed = new SkillResult { Success = false, Output = "", Error = "boom", ExitCode = 1 };
+        const string args = """{"command":"dir","shell":"cmd"}""";
+
+        await hook.OnToolResultTransformingAsync(Ctx(), 0, "shell", args, failed);
+        await hook.OnToolResultTransformingAsync(Ctx(), 1, "shell", args, failed);
+        await hook.OnToolResultTransformingAsync(Ctx(), 2, "shell", args, Ok("fine"));
+        var afterReset = await hook.OnToolResultTransformingAsync(Ctx(), 3, "shell", args, failed);
+
+        Assert.IsFalse(afterReset.Output.Contains("连续失败"), "成功后应重新从 1 计数");
+    }
+
+    [TestMethod]
     public async Task Terminal_tools_default_to_cmd_and_shell_tool_defaults_to_powershell()
     {
         var hook = new ToolGuidanceHook();

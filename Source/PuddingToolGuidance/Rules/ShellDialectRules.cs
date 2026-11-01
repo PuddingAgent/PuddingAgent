@@ -32,7 +32,9 @@ public static class ShellDialectRules
         new PowerShellCmdletInCmdRule(),
         new BashVariableOutsideBashRule(),
         new FindstrWithCjkRule(),
-        new CmdAmpersandChainRule()
+        new CmdAmpersandChainRule(),
+        // 低效循环检测与方言无关，对所有工具生效。
+        new RepeatedFailureRule()
     ];
 
     private static bool IsCmd(string? dialect) =>

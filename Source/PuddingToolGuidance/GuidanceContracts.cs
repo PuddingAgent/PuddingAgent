@@ -12,12 +12,15 @@ namespace PuddingToolGuidance;
 /// <param name="Command">命令文本（含参数）。非 shell 类工具为 null。</param>
 /// <param name="Succeeded">调用是否成功。<b>用法错误经常「成功」返回空结果</b>，所以规则不得只看这一位。</param>
 /// <param name="Error">失败信息；成功时为 null。</param>
+/// <param name="ConsecutiveFailureCount">本次之后该调用的连续失败次数（成功为 0）；由调用方用
+/// <see cref="ConsecutiveFailureTracker"/> 维护。默认 0 不影响已有规则。</param>
 public sealed record GuidanceInput(
     string ToolId,
     string? ShellDialect = null,
     string? Command = null,
     bool Succeeded = true,
-    string? Error = null);
+    string? Error = null,
+    int ConsecutiveFailureCount = 0);
 
 /// <summary>一条短提示。<paramref name="RuleId"/> 用于去重与配额，不展示给模型。</summary>
 public sealed record GuidanceAdvice(string RuleId, string Message);
