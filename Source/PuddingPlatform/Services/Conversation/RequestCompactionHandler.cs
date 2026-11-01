@@ -81,7 +81,18 @@ public sealed class RequestCompactionHandler(
                     new { compactionId = command.CompactionId, sessionId = command.ConversationId,
                         compaction = compacted, reason = "本次没有替换上下文，继续使用当前会话。" },
                     "skipped", command.TraceId, ct);
-                return new CompactionResult(command.CompactionId, compacted, command.ConversationId, null);
+                // 跳过时没有 successor，但顶层 newSessionId 仍回声当前会话（前端 useCompaction 已依赖该契约）。
+                // diagnostics 必须同口径，否则同一响应里两个字段互相矛盾（实测：顶层有值、diagnostics 为空）。
+                var skipped = compacted.Diagnostics is null
+                    ? compacted
+                    : compacted with
+                    {
+                        Diagnostics = compacted.Diagnostics with
+                        {
+                            NewSessionId = command.ConversationId,
+                        },
+                    };
+                return new CompactionResult(command.CompactionId, skipped, command.ConversationId, null);
             }
             phase = "session_handoff";
             var next = await successor.CreateAsync(
