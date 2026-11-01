@@ -2,6 +2,7 @@
 // save_memory — 写入/更新记忆条目
 // ═══════════════════════════════════════════════════════════════
 
+using PuddingMemoryEngine.Services;
 using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
@@ -28,19 +29,22 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
     private readonly ILogger<SaveMemoryTool> _logger;
     private readonly IImportantMemoryService? _importantMemory;
     private readonly MemoryQualityFilter? _qualityFilter;
+    private readonly IFactMemorySink? _factSink;
 
     public SaveMemoryTool(
         IMemoryLibraryConvenience library,
         IMemoryLibrary memLib,
         ILogger<SaveMemoryTool> logger,
         IImportantMemoryService? importantMemory = null,
-        MemoryQualityFilter? qualityFilter = null)
+        MemoryQualityFilter? qualityFilter = null,
+        IFactMemorySink? factSink = null)
     {
         _library = library;
         _memLib = memLib;
         _logger = logger;
         _importantMemory = importantMemory;
         _qualityFilter = qualityFilter;
+        _factSink = factSink;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -222,6 +226,11 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
                     _logger.LogWarning(srEx, "[SaveMemory] Failed to write SourceReference for chapter={ChapterId}", upsertResult.Chapter.ChapterId);
                 }
             }
+
+            // 双写第一步（2026-11-01）：文件型记忆已经写成功，这里再落一次结构化事实。
+            // 只告警不回滚 —— 用户的记忆写入不该因为第二个载体失败而报错。
+            // 但要留下痕迹：sink 失败必须可见，否则又会变成一次静默失效。
+            await TrySinkFactAsync(workspaceId, agentInstanceId, content, type, ct);
 
             output = JsonSerializer.Serialize(new
             {
@@ -463,5 +472,29 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
             ["source_label"] = args.SourceLabel,
             ["reference_type"] = args.ReferenceType,
         });
+    }
+
+    /// <summary>把本次写入同时落成一条结构化事实。未注入 sink 或内容为空时静默跳过。</summary>
+    private async Task TrySinkFactAsync(
+        string workspaceId, string agentInstanceId, string content, string type, CancellationToken ct)
+    {
+        if (_factSink is null || string.IsNullOrWhiteSpace(content) || string.IsNullOrWhiteSpace(agentInstanceId))
+            return;
+
+        try
+        {
+            await _factSink.SinkAsync(
+                new FactMemoryDraft(
+                    WorkspaceId: workspaceId,
+                    AgentId: agentInstanceId,
+                    Statement: content,
+                    FactType: type,
+                    SourceSessionId: string.Empty),
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[SaveMemory] fact sink failed; file memory already written");
+        }
     }
 }

@@ -110,6 +110,13 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<MemoryQualityFilter>();
         builder.Services.AddSingleton<IMemoryLibrarian, MemoryLibrarian>();
         builder.Services.AddSingleton<FactMemoryService>();
+        // 事实记忆落库出口：默认 Null（零副作用），只有显式开启才真正写 MemoryFacts。
+        // 背景（2026-11-01）：FactMemoryService 生产调用点为 0，MemoryFacts 恒 0 行。
+        // 开关打开后，save_memory 在文件写入成功后同时落一条结构化事实。
+        if (string.Equals(Environment.GetEnvironmentVariable("PUDDING_MEMORY_FACTS_WRITE"), "1", StringComparison.Ordinal))
+            builder.Services.AddSingleton<IFactMemorySink>(sp => new FactMemorySink(sp.GetRequiredService<FactMemoryService>()));
+        else
+            builder.Services.AddSingleton<IFactMemorySink>(NullFactMemorySink.Instance);
         builder.Services.AddScoped<PuddingPlatform.Services.IMemoryLibraryAdminService, PuddingPlatform.Services.MemoryLibraryAdminService>();
         builder.Services.AddSingleton<MemoryRecallService>();
         builder.Services.AddSingleton<IMemoryRecallService>(sp => sp.GetRequiredService<MemoryRecallService>());
