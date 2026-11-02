@@ -92,8 +92,10 @@ public sealed class AgentContextCompactionSummaryGenerator : IContextCompactionS
     {
         var sb = new StringBuilder();
         sb.AppendLine("请把以下即将压缩的旧会话消息总结为 <compact_summary>...</compact_summary>。");
-        sb.AppendLine("只保留事实、用户目标、关键决策、涉及文件、工具结果、错误修复、当前状态和下一步。");
+        sb.AppendLine("严格按下面 HandoffGuidance 给出的**小节结构**与**长度预算（2500–4000 字符）**输出。");
         sb.AppendLine("区分用户明确要求、助手建议与工具报告；用户后续纠正优先。区分已完成操作和待办，不把历史动作变成新任务。未知内容明确标注，不推断授权。来源定位由宿主添加，不编造 Turn ID，也不复制旧的 <compaction-evidence> 块。");
+        sb.AppendLine("**可核查事实（数字、坐标、句柄、路径、命令、错误码、版本号）必须原样保留**，这是下一轮回查的锚点。");
+        sb.AppendLine("**失败尝试与被实测推翻的假设必须保留**，写清“假设 → 实验 → 实测 → 结论”，不要省略。");
         sb.AppendLine("必须包含一节 `## Memory Notes`，用短 bullet 列出本轮窗口内应该进入长期记忆系统的信息；没有则写 `- 无`。");
         sb.AppendLine("不要输出寒暄或标签外内容。");
         sb.AppendLine(PuddingContextHandoff.HandoffGuidance.ForCompaction);
