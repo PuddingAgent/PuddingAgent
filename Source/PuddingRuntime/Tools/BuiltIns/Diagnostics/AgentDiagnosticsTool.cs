@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using PuddingMemoryEngine.Services;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -89,14 +90,64 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             "entropy_probe" => await GetEntropyProbeAsync(args, context, ct),
             "context_health" => await GetContextHealthAsync(args, context, ct),
             "runtime_identity" => GetRuntimeIdentity(args),
+            "fact_memory_health" => await GetFactMemoryHealthAsync(ct),
             "diagnose" => await GetDiagnosisAsync(args, context, ct),
-            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, goodput_attribution, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, context_health, runtime_identity, diagnose." })
+            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, goodput_attribution, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, context_health, runtime_identity, fact_memory_health, diagnose." })
         };
 
         return ToolExecutionResult.Ok(result);
     }
 
     // ── Diagnostic queries ─────────────────────────────────────────
+
+    /// <summary>
+    /// 事实记忆写入的**静默失效**检测。
+    /// <para>
+    /// 为什么需要它：`MemoryFacts` 长期 0 行，是翻库时才偶然发现的 —— 服务注册了、测试全绿、
+    /// 就是没人调用。这类失效不该靠人撞见，必须能被主动查出来。
+    /// </para>
+    /// <para>
+    /// 开关没开时报 Disabled 且 isAnomaly=false：**"没开启"是预期状态**，
+    /// 把它报成故障会让告警本身失去意义。
+    /// </para>
+    /// </summary>
+    private async Task<string> GetFactMemoryHealthAsync(CancellationToken ct)
+    {
+        var writeEnabled = string.Equals(
+            Environment.GetEnvironmentVariable("PUDDING_MEMORY_FACTS_WRITE"), "1", StringComparison.Ordinal);
+
+        using var scope = _scopeFactory.CreateScope();
+        var probe = scope.ServiceProvider.GetService<FactMemoryWriteProbe>();
+        if (probe is null)
+            return JsonSerializer.Serialize(new
+            {
+                available = false,
+                writeEnabled,
+                status = FactMemoryWriteHealth.Disabled.ToString(),
+                isAnomaly = false,
+                reason = "FactMemoryWriteProbe is not registered in this host.",
+            });
+
+        var health = await probe.CaptureAsync(writeEnabled, DateTimeOffset.UtcNow, staleDays: 7, ct: ct);
+        return JsonSerializer.Serialize(new
+        {
+            available = true,
+            writeEnabled,
+            status = health.ToString(),
+            isAnomaly = IsFactMemoryAnomaly(health),
+            hint = health switch
+            {
+                FactMemoryWriteHealth.Disabled => "PUDDING_MEMORY_FACTS_WRITE is off; nothing to verify.",
+                FactMemoryWriteHealth.NeverWritten => "Enabled but MemoryFacts is empty: the write path is not reached.",
+                FactMemoryWriteHealth.Stalled => "No new facts within the stale window: the writer may have broken.",
+                _ => "Recent writes observed.",
+            },
+        });
+    }
+
+    /// <summary>只有「开关开着却没写入」才算异常；Disabled 是预期状态。</summary>
+    internal static bool IsFactMemoryAnomaly(FactMemoryWriteHealth health) =>
+        health is FactMemoryWriteHealth.NeverWritten or FactMemoryWriteHealth.Stalled;
 
     private async Task<string> GetToolStatsAsync(string toolName, int limit, CancellationToken ct)
     {
