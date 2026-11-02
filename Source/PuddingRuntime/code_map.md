@@ -639,6 +639,5 @@
 | `Services/AgentLoop/GoalLoopDecisionHook.cs` | 挂既有 `OnLoopCompleteAsync` 的观测期钩子；采集工具签名喂空转守卫；读待办数 | `GoalLoopDecisionHook` | `GoalRegistry`、`GoalOpenItemsReader` | 默认关（`PUDDING_GOAL_DECIDER=1`），只记日志不改控制流 |
 | `Services/AgentLoop/GoalOpenItemsReader.cs` | 从 `ITodoStore` 按 (agent, session) 读未完成待办数 | `GoalOpenItemsReader` | `ITodoStore` | 按 `CompletedAtUtc` 结构判断，不解析 status 文本 |
 | `Services/AgentLoop/GoalBootstrap.cs` | 方案 3 临时入口：从 `PUDDING_GOAL_OBJECTIVE` 建目标 | `GoalBootstrap` | `GoalRegistry` | 仅开发验证用，不得演变为产品入口 |
-| `Services/AgentLoop/GoalContinuationQueue.cs` | 续跑请求队列（生产者侧），供宿主消费 | `GoalContinuationQueue`、`GoalContinuationRequest` | 待接主干 | 同会话去重，最多一条待消费 |
 | `Services/AgentLoop/GoalRoundPrompt.cs` | 续跑一轮的模型提示；目标 JSON 转义（含尖括号） | `GoalRoundPrompt` | `GoalState` | 目标文本不得破坏标签结构 |
 | `Services/AgentLoop/GoalRunEquivalence.cs` | 开关两态等价性比对（轮次/结束原因/工具序列） | `GoalRunEquivalence`、`GoalRunTrace` | — | 不比时间戳与耗时，避免假差异 |
