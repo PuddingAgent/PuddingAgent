@@ -359,3 +359,59 @@ HAS_UIA_PROBE=False
 - 在**确保窗口真在前台**的前提下，`SendInput` 能否成功写入 —— 需要强制置顶（会明显干扰用户），
   因此没有在心跳轮次执行。
 - `ValuePattern.SetValue` 与真实键盘事件在 ProseMirror 上的差异已确认：前者是影子，后者待测。
+
+## 十、决定性实验：前提全满足，`SendInput` 仍进不去
+
+上一节把根因归给「窗口没到前台」。本节用强制置顶把这条前提坐实，再测一次。
+
+```
+BOX rect=(3396,1000,713,44) target=(3752,1022)
+TOPMOST set=True    foregroundMatch=True    hitTest=True  (hitHwnd=0xCF0FCC)
+VALUE_BEFORE_LEN=13
+VALUE_AFTER_LEN=13
+VALUE_AFTER="和 Codex 一起工作\n"
+LANDED=False
+RESULT: FAIL still_not_landed
+```
+
+三项前置条件**全部通过**：
+
+| 检查 | 结果 | 含义 |
+|---|---|---|
+| `SetWindowPos(HWND_TOPMOST)` | True | 窗口已强制置顶 |
+| `GetForegroundWindow()==hwnd` | True | 系统报告它在最前 |
+| `WindowFromPoint(目标点)` 根窗口 == 目标 | True | **这一点确实属于它**（命中测试，比前台标志位可信） |
+
+**但输入没有落进去。**
+
+### 这排除了什么
+
+| 曾被怀疑的原因 | 状态 |
+|---|---|
+| 窗口被遮挡 | ❌ 排除（TOPMOST + 命中测试通过） |
+| 坐标错位 | ❌ 排除（cp 在 rect 内，且命中测试命中该窗口） |
+| 前台标志位骗人 | ❌ 排除（用了命中测试而非仅看返回值） |
+| `ValuePattern.SetValue` 无效 | ✅ 仍然成立（影子属性） |
+| **`SendInput` 的 Unicode 键盘事件进不了 ProseMirror** | ✅ **本节的结论** |
+
+### 为什么
+
+这是 Chromium/Electron 侧的输入注入限制，与我们的调用方式无关：
+
+- `KEYEVENTF_UNICODE` 注入的字符**不经过正常输入法管线**，也不必然触发编辑器监听的
+  `beforeinput` / `composition` 事件链；对 ProseMirror 这类依赖编辑事件的富文本控件，
+  结果就是「按键被系统接受了、编辑器没反应」。
+- 同一现象可以解释为什么 `SetValue` 也无效：它改的是 a11y 层的 Value 属性，
+  而真实状态由 React 的编辑器模型持有，二者本就不同源。
+
+### 下一候选：剪贴板粘贴
+
+业界对 Chromium 富文本的常见 workaround 是**用粘贴而不是打字**（`Ctrl+V` 触发 paste 事件，
+ProseMirror 会按正常路径处理）。代价是需要临时改写用户剪贴板，必须**保存原内容并在结束后恢复**。
+
+### 对架构的影响
+
+1. **输入通道要分层，且默认顺序不能是"先试打字"**：
+   `SetValue`（快但可能无效）→ **剪贴板粘贴**（对 Electron 有效）→ 逐键注入（最后手段）。
+2. 每次写入后**必须用 UIA Value 或截图复核**，"SendInput 返回值正常"完全不能证明落进去了。
+3. 这条结论应写进 CU3 的动作执行器设计：**写动作必须带后置验证**，否则会静默失败。
