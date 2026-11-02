@@ -1024,3 +1024,48 @@ PIXEL_DIFF 12066 px = 0.53%
    出现光标或占位符文字变化 —— 用截图逐点验证，不猜。
 2. 若点击已定位但文字仍不出现，则回到"文本注入"这一环（可能确实需要 TSF 或启动参数）。
 3. **每次操作前检查并最小化遮挡窗口**，把它做成流程里的固定步骤。
+
+## 二十二、用户定的两条纪律，以及 Python/GDI 的坑
+
+### 纪律 1：先缩略看全局，再裁局部高清
+
+全屏 4608x1440 直接送模型既慢又贵；正确做法是
+
+```
+整屏 → 缩略到长边 900px（scale≈0.195）→ 模型判读"去哪里" 
+     → 按程序给的坐标裁切局部原图 → 模型看细节
+```
+
+已写成 `temp/vision.py`：`screen` / `thumb` / `crop` / `detect` / `click` 五个子命令。
+
+### 纪律 2：坐标一律由程序计算，模型不许目测
+
+此前我用 `relX=164, relY=105` 目测坐标去点「新聊天」，即使点成功了也是**不可复现**的。
+正确分工是：
+
+- 模型：只说"点 #7"
+- 程序：`detect` 输出 `#7 → (x, y, w, h) → center`
+- 程序：`click center`
+
+`vision.py detect` 用 OpenCV 双通道给出编号 + 矩形 + 中心点，模型永远不碰坐标数字。
+
+### 踩到的坑：Python ctypes 调用 GDI 会静默返回 0
+
+`vision.py screen` 一开始抓到纯黑。逐步检查发现：
+
+```
+GetDIBits returned 0 (expected 1440)   ← 所有尺寸都失败
+mean=0.0  nonBlank=1.000               ← buffer 全是 0
+```
+
+原因：**ctypes 未声明 `GetDIBits` 的 argtypes，64 位下句柄被当 32 位整数截断**。
+同样的代码在 C#（`DllImport` 有明确签名）里一直正常。
+
+**结论：截图必须用 C#；Python 只负责 OpenCV 分析、缩略与裁剪。**
+
+### 仍未解决的核心问题
+
+Chromium 的 `Intermediate D3D Window` 层用 `PrintWindow`/`BitBlt` 都返回纯黑，
+而该层尺寸（1229x1434）比顶层窗口（2048x1104）更大 —— **可见内容的底部就在这一层**。
+
+下一步只有一条路：**`Windows.Graphics.Capture`**（WGC），它基于 D3D11 帧池，能抓 GPU 合成内容。
