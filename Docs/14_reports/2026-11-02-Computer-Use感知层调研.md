@@ -1069,3 +1069,51 @@ Chromium 的 `Intermediate D3D Window` 层用 `PrintWindow`/`BitBlt` 都返回�
 而该层尺寸（1229x1434）比顶层窗口（2048x1104）更大 —— **可见内容的底部就在这一层**。
 
 下一步只有一条路：**`Windows.Graphics.Capture`**（WGC），它基于 D3D11 帧池，能抓 GPU 合成内容。
+
+## 二十三、视觉工具改造为纯 C#：一次成功的技术栈统一
+
+用户建议用 C# 做图片处理以减少依赖。落地结果：**视觉工具全部改为 C#**，
+Python 只保留临时分析脚本的用途。
+
+### 依赖
+
+```xml
+<PackageReference Include="OpenCvSharp4" Version="4.10.0.20240616" />
+<PackageReference Include="OpenCvSharp4.runtime.win" Version="4.10.0.20240616" />
+<PackageReference Include="SkiaSharp" Version="3.119.0" />
+```
+
+选择理由：`findContours` 是元素检测的核心，只有 OpenCvSharp 提供；
+SkiaSharp 本就已在主工程使用（ImagePreprocessing），不引入新奇东西。
+
+### 结果对照
+
+| 环节 | Python 版 | C# 版 |
+|---|---|---|
+| 截图 | `GetDIBits returned 0`（句柄截断） | **`lines=1104 (expected 1104)`** ✅ |
+| 检测 | 67 候选（2048x1104） | **57 候选（2048x1104）**，框选等价 |
+| 坐标 | 需人工搬运 | 程序内直接产出，模型不接触 |
+
+标注图验证：`#35 新聊天` / `#37 你的 Dot` / `#23 面试` / `#19 MPCAL` / `#15 PuddingAgent`
+等条目均被准确框住，与 Python 版一致。
+
+### 为什么 C# 一次就对
+
+`DllImport` 的签名是**显式声明**的：
+
+```csharp
+[DllImport("gdi32.dll")] static extern int GetDIBits(
+    IntPtr hdc, IntPtr hbm, uint st, uint ln, byte[] bits,
+    ref BITMAPINFOHEADER bmi, uint usage);
+```
+
+而 ctypes 默认把未声明的参数当 `int`（32 位），64 位句柄被截断后 API 静默返回 0 —— **不抛异常、不报错**，
+只给出全零 buffer。这正是"阴性结论必须先做阳性对照"的又一个实例。
+
+### 工程含义
+
+视觉子系统应当作为 **C# 组件**存在，而不是"Python 脚本 + C# 调用"的混合形态：
+
+- 截图、检测、坐标计算、点击，全部在一个进程内，无跨语言边界
+- 与主工程共用 SkiaSharp，无额外原生依赖管理
+- 可单测（检测算法接受 Mat，输入输出都是纯数据）
