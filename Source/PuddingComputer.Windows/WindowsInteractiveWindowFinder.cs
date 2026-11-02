@@ -92,10 +92,10 @@ public static class WindowsInteractiveWindowFinder
             });
             var centerRoot = centerHwnd == IntPtr.Zero ? IntPtr.Zero : GetAncestor(centerHwnd, GaRoot);
 
-            // 返回 null 时不惩罚（可能是合成层，那类目标本就要靠 allowWithoutWindow）；
-            // 返回**别的窗口**时大幅降分。
-            if (centerHwnd != IntPtr.Zero && centerRoot != hwnd)
-                score *= 0.2;
+            score = ApplyOcclusionPenalty(
+                score,
+                centerHitSelf: centerHwnd != IntPtr.Zero && centerRoot == hwnd,
+                centerHitNull: centerHwnd == IntPtr.Zero);
 
             var title = new System.Text.StringBuilder(256);
             GetWindowTextW(hwnd, title, 256);
@@ -138,6 +138,39 @@ public static class WindowsInteractiveWindowFinder
         double areaBonus = Math.Min(1.0, (width * (double)height) / (1920.0 * 1080.0));
 
         return luminanceScore * (1.0 - colorPenalty) * (0.7 + 0.3 * areaBonus);
+    }
+
+    /// <summary>
+    /// 被遮挡时的分数衰减系数。
+    /// <para>
+    /// 0.2 而不是 0：即使中心点被盖住也不完全排除 —— 窗口可能部分可见，
+    /// 而且归零会让“所有候选都被盖住”时直接抛异常，
+    /// 丢掉“至少还能拿到一个参考矩形”的机会。
+    /// </para>
+    /// </summary>
+    internal const double OcclusionPenaltyFactor = 0.2;
+
+    /// <summary>
+    /// 根据窗口中心点的命中结果调整分数（纯函数，可单测）。
+    /// <para>三种情形（实测 2026-11-03）：</para>
+    /// <list type="bullet">
+    /// <item><b>命中自己</b>：正常，不惩罚。</item>
+    /// <item><b>命中 null</b>：可能是合成层（画面在 D3D 层但 Win32 命中测试为空），
+    ///   那类目标本就靠 <c>allowWithoutWindow</c> 处理，**不惩罚**。</item>
+    /// <item><b>命中别的窗口</b>：被遮挡，点击会被对方接走 —— 乘衰减系数。</item>
+    /// </list>
+    /// <para>
+    /// 这条判据的来源：ChatGPT 进程同时暴露两个顶层窗口，亮度高的那个
+    /// （mean 248）在 z-order 底部、被完全挡住。只按亮度选会选中个点不到的窗口，
+    /// 实测导致 120/202 个目标落点跑到别的窗口上。
+    /// </para>
+    /// </summary>
+    internal static double ApplyOcclusionPenalty(double score, bool centerHitSelf, bool centerHitNull)
+    {
+        if (centerHitSelf || centerHitNull)
+            return score;
+
+        return score * OcclusionPenaltyFactor;
     }
 
     private static (double MeanLuminance, int DistinctColorBuckets) Measure(Mat bgr)
