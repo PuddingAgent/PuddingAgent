@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>PuddingComputer.Automation</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+  </ItemGroup>
+
+  <!--
+    Computer Use 的**纯规则**组件（规程 S1）。CU1 切片，不接宿主。
+
+    职责边界：状态归约、准入、几何换算、观察失效、去重、回执判定 —— 全部是无 IO 的纯函数。
+    刻意不知道：UIA、窗口、输入、IPC、DI、数据库。那些属于 PuddingComputer.Windows /
+    Connection / Worker。
+
+    这样做的理由：动作矩阵、坐标换算、观察失效这些规则最容易写错，也最容易被"顺手改一下"
+    而不被发现。放在纯函数里可以逐条取红；一旦混进驱动层，就只能靠端到端测试碰运气。
+  -->
+
+</Project>
