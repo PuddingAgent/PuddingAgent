@@ -9,7 +9,7 @@ namespace PuddingAgent.Tools;
 
 /// <summary>Local acquisition/preprocessing for the calling Agent. Never invokes a model or Agent.</summary>
 [Tool(id: "image_reader", name: "Image Reader",
-    description: "Read/preprocess images for YOUR OWN vision; never calls another model or Agent. path: absolute local path, http(s) URL or artifact://vision-... (including user attachments). action=metadata returns metadata without image tokens; prepare returns a reusable processed artifact without image tokens; read returns native image content to YOU. Start large images with thumbnail/low, then call again on the SOURCE artifact with different crop rectangles for detail. Coordinates use upright source pixels. preprocess combines crop -> rotation -> resize -> grayscale/mild Gaussian denoise -> encoding. Originals remain unchanged. detail=low uses a <=512px preview; high/original/auto preserve detail subject to output limits. Quality saves bytes, not necessarily image tokens.",
+    description: "Read/preprocess images for YOUR OWN vision; never calls another model or Agent. path: absolute local path, http(s) URL or artifact://vision-... (including user attachments). action=metadata returns metadata without image tokens; prepare returns a reusable processed artifact without image tokens; read returns native image content to YOU. Start large images with thumbnail/low, then call again on the SOURCE artifact with different crop rectangles for detail. Coordinates use upright source pixels. preprocess combines crop -> rotation -> resize -> grayscale/mild Gaussian denoise/contrast/sharpen/red-channel -> encoding. Originals remain unchanged. detail=low uses a <=512px preview; high/original/auto preserve detail subject to output limits. Quality saves bytes, not necessarily image tokens.",
     category: ToolCategory.FileSystem, permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.RequiresNetwork, SortOrder = 35)]
 public sealed class ImageReaderTool(ImageReaderSourceResolver sourceResolver,
@@ -83,7 +83,7 @@ public sealed class ImageReaderTool(ImageReaderSourceResolver sourceResolver,
     private static ImageProcessingOptions? Options(ImageReaderArgs args, string detail, ImageFileInfo source)
     {
         var op = args.Transform?.Trim().ToLowerInvariant();
-        if (op is not (null or "" or "crop" or "rotate" or "zoom_in" or "zoom_out" or "thumbnail" or "grayscale" or "denoise" or "convert" or "preprocess"))
+        if (op is not (null or "" or "crop" or "rotate" or "zoom_in" or "zoom_out" or "thumbnail" or "grayscale" or "denoise" or "enhance" or "convert" or "preprocess"))
             throw new VisionPipelineException(VisionErrorCodes.SourceInvalid, "Unknown transform.");
         if ((op == "zoom_in" && args.Scale is not > 1 or > 8) || (op == "zoom_out" && args.Scale is not > 0 or >= 1)
             || (op == "rotate" && args.Rotation is null) || (op == "crop" && args.CropWidth is null) || (op == "convert" && args.Format is null))
@@ -96,9 +96,11 @@ public sealed class ImageReaderTool(ImageReaderSourceResolver sourceResolver,
         if ((source.Width > 8192 || source.Height > 8192) && args.CropWidth is null) edge ??= 1536;
         var needed = !string.IsNullOrEmpty(op) || edge is not null || args.Grayscale || args.Denoise || args.Format is not null
             || args.Quality is not null || args.CropX is not null || args.CropY is not null || args.CropWidth is not null || args.CropHeight is not null
-            || args.Rotation is not null || args.Scale is not null || source.MimeType is "image/gif" or "image/bmp" || source.Orientation != "TopLeft";
+            || args.Rotation is not null || args.Scale is not null || source.MimeType is "image/gif" or "image/bmp" || source.Orientation != "TopLeft"
+            || args.Contrast is not null || args.Sharpen is not null || !string.IsNullOrWhiteSpace(args.ChannelMode);
         return !needed ? null : new ImageProcessingOptions(args.CropX,args.CropY,args.CropWidth,args.CropHeight,args.Rotation ?? 0,
-            args.Scale ?? 1,edge,args.Grayscale || op == "grayscale",args.Denoise || op == "denoise",args.Format,args.Quality ?? 85);
+            args.Scale ?? 1,edge,args.Grayscale || op == "grayscale",args.Denoise || op == "denoise",args.Format,args.Quality ?? 85,
+            args.Contrast ?? 1.0,args.Sharpen ?? 0,args.ChannelMode);
     }
 }
 
@@ -136,4 +138,10 @@ public sealed record ImageReaderArgs
     public string? Format { get; init; }
     [ToolParam("JPEG/WebP quality [1,100], default 85; PNG is lossless and ignores quality. Saves bytes, not necessarily tokens")]
     public int? Quality { get; init; }
+    [ToolParam("Contrast stretch [0.1,4.0], default 1.0 (no-op); widens the gap between dark and bright")]
+    public double? Contrast { get; init; }
+    [ToolParam("Unsharp-mask strength [0,5], default 0 (no-op); run after denoise. Note: a stronger upscale is not always more readable")]
+    public double? Sharpen { get; init; }
+    [ToolParam("none (default) | red. 'red' keeps R-(G+B)/2, so a red sign turns bright and its white glyphs turn dark -- exactly what grayscale destroys")]
+    public string? ChannelMode { get; init; }
 }
