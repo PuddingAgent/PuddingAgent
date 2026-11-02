@@ -1,4 +1,13 @@
 # ASCII only: Windows PowerShell 5.1 decodes BOM-less UTF-8 as ANSI.
+#
+# Practical note (2026-11-02, measured on a 2048x1152 dashcam-style photo):
+#   - For glyphs ~10 px tall, a SMALL factor (4-6x) reads better than a large one
+#     (16-20x). High-magnification bicubic turns strokes into smooth blobs; a modest
+#     factor keeps the original pixel edges.
+#   - Grayscale destroys red-sign / white-glyph contrast: use -Mode red (R - max(G,B)).
+#   - Neither trick recovers information that is not in the source. ~10x12 px per
+#     Chinese glyph is already below the threshold where strokes separate -- report
+#     "unreadable" instead of guessing the characters.
 param(
     [Parameter(Mandatory=$true)][string]$Source,
     [Parameter(Mandatory=$true)][int]$X,
