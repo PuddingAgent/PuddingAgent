@@ -481,3 +481,61 @@ ProseMirror 会按正常路径处理）。代价是需要临时改写用户剪�
 | `KILL_ON_JOB_CLOSE` 5ms 杀成员 | 强（探针 #3） |
 | `SetValue` 对 ProseMirror 不触发编辑器状态 | 中（需在可见界面复核） |
 | `SendInput`/粘贴是否可用 | **未验证**（测到了幽灵元素上） |
+
+## 十二、Codex 裁决与决定性诊断：焦点在窗口，不在编辑器
+
+四种注入方式（SetValue / SendInput / Ctrl+V / TextPattern 读回）全部失败后，按用户指示请 Codex 做技术裁决。
+它给出了一条我此前漏掉的诊断路径，直接定位了根因。
+
+### Codex 的关键判断
+
+> `Invoke` 通过 Chromium 的 AX action 直接执行，所以 UIA 点按钮能成；
+> 但键盘只投向前台线程。「AX 焦点 ≠ Win32 前台键盘焦点」，`GetForegroundWindow()==root`
+> **不能证明输入队列归属**，而 `HasKeyboardFocus` 也只是 AX 语义。
+
+### 实测证实
+
+```
+GetForegroundWindow = 0xCF0FCC   target = 0xCF0FCC   match=True
+target threadId=12480
+  hwndActive = 0xCF0FCC
+  hwndFocus  = 0xCF0FCC          ← 焦点在窗口上
+  hwndCaret  = 0x0               ← **没有插入符**
+TEXT = "随心输入" (占位符，5 字符)
+```
+
+甚至用 `AttachThreadInput` + `SetFocus` 强制之后，`hwndFocus` 仍是窗口级、`hwndCaret` 仍是 0。
+
+**结论：点击让窗口拿到了键盘焦点，但从未把焦点交给 DOM 编辑器。**
+按键于是投给了窗口壳，而窗口没有把它路由进 ProseMirror —— 所以四种注入方式全部石沉大海。
+`hwndCaret == 0` 是最硬的证据：真聚焦在 contenteditable 上时，Chromium 会给出插入符。
+
+### 这也解释了「幽灵元素」的成因
+
+那个 `Edit` 元素的 `BoundingRectangle` 与 `ClickablePoint` 自洽，但**点击它并不会让 DOM 聚焦**。
+不是坐标错，是**这个 a11y 元素与真实可编辑区域不是同一层对象**。
+
+### Codex 给出的后继选项（按成功率）
+
+1. **TSF 文本服务**：`ITfTextInputProcessorEx` → `ITfContext::RequestEditSession` → `ITfRange::SetText`。
+   这是最强的非按键方案，但需要 C++ COM/TIP 注册，不是普通跨进程 C# 调用。
+2. 定位真实 `hwndFocus` 或 `Chrome_RenderWidgetHostHWND`，`PostMessage(WM_CHAR)`。
+   **成功率低**，且 `WM_SETTEXT` 对 DOM 无效。
+3. 若以上都不行：**Windows 上没有可靠且受支持的桌面注入接口**。
+
+### 我的判断（需用户裁决）
+
+在**不修改目标应用启动参数**的前提下（不能加 `--force-renderer-accessibility` 或调试端口），
+桌面 UIA 路线对 Electron 富文本编辑器**不可靠**。
+
+三条可选路线：
+
+| 路线 | 可行性 | 代价 |
+|---|---|---|
+| 桌面 UIA + TSF 文本服务 | 技术可行，但需 C++ COM/TIP 组件 | 高（跨语言、需注册、与现有 C# 架构割裂） |
+| **网页版 + CDP/Playwright** | **已具备**（现有 browser_* 工具链可直接驱动） | 低；但不是"桌面客户端" |
+| OpenAI API 直连 | 最可靠 | 完全不是 Computer Use |
+
+**建议：第一个目标（操作 ChatGPT）改用网页版走 CDP。**
+桌面客户端这条线保留给 Win32 原生应用（实测 UIA 完整：217 节点 / 140 个可交互元素），
+把"Electron 富文本"明确列为桌面 UIA 的能力盲区，写进 CU1 的能力矩阵。
