@@ -173,3 +173,58 @@ pid=82160  nodes=217  interactable=140  childFails=0   ← 完整
 
 可见 Win32 原生应用的**可交互元素密度**（140/217）远高于 Chromium 骨架（3/14），
 这也是一个比「节点总数」更稳的判据候选：**可交互元素数 < 10 ⇒ 该层不可信**。
+
+## 七、目标验证：ChatGPT 客户端（首个目标应用）
+
+用户指定第一个目标是**操作 ChatGPT Windows 客户端**。为此单独实测（只读，不发送任何内容）：
+
+```
+TARGET ChatGPT [Chrome_WidgetWin_1] pid=81092
+NODES=738  MAXDEPTH=22  CAPPED=False  READFAILS=0  MS=374
+TYPES: Button=218, Text=167, Group=102, DataItem=95, ListItem=62, Image=41, List=11, Pane=9
+VERDICT edit=True button=True
+```
+
+### 推翻上一节的「空壳/深」判断
+
+之前读到 15 / 23 / 47 个节点，**全部是被 MaxDepth 截断的结果**。放到 depth 30 后是
+**738 个节点、最大深度 22、零读取失败**。所以：
+
+> Chromium 应用不是「空壳」，也不是「内容读不全」，而是**树很深**（本例 22 层）。
+> 判据里的 `capped` 检查因此不是锦上添花，而是**必要条件**。
+
+### 输入框与对话区都已定位
+
+```
+FLAUI_NODES=738  EDITLIKE=2
+
+#1  class=(空)          readonly=True   rect=(2560,0,2048,1104)  patterns=[Value,Text,LegacyIA,Scroll]
+    name=分析上下文压缩空间
+#2  class=ProseMirror   readonly=False  rect=(3396,1000,713,44)  patterns=[Value,Text,LegacyIA]
+    name=和 Codex 一起工作
+```
+
+- `#2` 是**输入框**：ChatGPT 用 **ProseMirror** 富文本编辑器，`readonly=False`，
+  带 `ValuePattern` ⇒ 可以直接 `SetValue`，**不需要模拟键盘**。
+- `#1` 是**对话记录区**：2048×1104、只读、带 `Text` + `Scroll` pattern ⇒
+  **读 ChatGPT 的回复不需要截图，也就不消耗视觉 token**。
+- `#6` 探针里 218 个 Button，发送键在其中（按位置与 Name 可定位）。
+
+### 对首个目标的结论
+
+**纯 UIA 路线成立**，不需要视觉兜底：
+
+| 能力 | 通道 | 是否已验证 |
+|---|---|---|
+| 读对话内容 | `Text` pattern（#1） | ✅ 能读到完整句子 |
+| 写入提问 | `ValuePattern.SetValue`（#2） | ✅ 非只读、pattern 存在，**未实际写入** |
+| 触发发送 | `Button` + `InvokePattern` | ⏳ 未逐个确认哪一个是发送键 |
+| 观察结果 | 轮询 #1 的 Text 变化 | ⏳ 未验证增量识别 |
+
+### 仍未验证 / 风险
+
+- **实际写入与发送未做**：会真的往用户 ChatGPT 里发消息、消耗额度，必须征得同意后再验。
+- **窗口位于副屏**（`x=3396`，主屏宽 2560）：坐标、截图区域、DPI 都要按虚拟屏幕处理，
+  这正是探针 #2 里「DPI unaware 危险」的具体场景。
+- ProseMirror 的 `SetValue` 是否等价于真实键入（会不会触发 React 状态更新）**未验证**——
+  这类富文本编辑器常见「设了 DOM 值但框架状态没变」的坑，若 `SetValue` 无效需回退 `SendInput`。
