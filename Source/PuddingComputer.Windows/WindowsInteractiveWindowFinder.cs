@@ -78,13 +78,7 @@ public static class WindowsInteractiveWindowFinder
 
             // 打分：界面底色通常亮度很高或很低，且颜色种类少（UI 灰阶为主）
             // 壁纸混入会拉低亮度、拉高颜色种类
-            double luminanceScore = Math.Abs(stats.MeanLuminance - 250) < Math.Abs(stats.MeanLuminance - 128)
-                ? stats.MeanLuminance / 255.0                       // 偏亮：越白越好
-                : 1.0 - stats.MeanLuminance / 255.0;                 // 偏暗：越黑越好
-            double colorPenalty = Math.Clamp(stats.DistinctColorBuckets / 200.0, 0.0, 1.0);
-            double areaBonus = Math.Min(1.0, (bounds.Width * (double)bounds.Height) / (1920.0 * 1080.0));
-
-            double score = luminanceScore * (1.0 - colorPenalty) * (0.7 + 0.3 * areaBonus);
+            double score = ScoreFor(stats.MeanLuminance, stats.DistinctColorBuckets, bounds.Width, bounds.Height);
 
             var title = new System.Text.StringBuilder(256);
             GetWindowTextW(hwnd, title, 256);
@@ -99,6 +93,34 @@ public static class WindowsInteractiveWindowFinder
         }, IntPtr.Zero);
 
         return candidates.OrderByDescending(c => c.Score).FirstOrDefault();
+    }
+
+    /// <summary>
+    /// 窗口可交互性评分（纯函数，可单测）。
+    /// <para>
+    /// 判据的物理意义：真实界面窗口的像素几乎全是界面底色（接近纯白或纯深色），
+    /// 颜色种类少；而“阴影 + 壁纸”混合矩形会包含大量彩色像素。
+    /// </para>
+    /// </summary>
+    /// <param name="meanLuminance">窗口区域的平均亮度 0..255。</param>
+    /// <param name="colorBuckets">量化后的颜色种类数（32 级 / 通道）。</param>
+    /// <param name="width">窗口宽。</param>
+    /// <param name="height">窗口高。</param>
+    /// <returns>0..1 的分数，越高越可能是真实界面。</returns>
+    internal static double ScoreFor(double meanLuminance, int colorBuckets, int width, int height)
+    {
+        // 亮度分：偏亮则越白越高，偏暗则越黑越高（中间灰的界面很少见）
+        double luminanceScore = Math.Abs(meanLuminance - 250) < Math.Abs(meanLuminance - 128)
+            ? meanLuminance / 255.0
+            : 1.0 - meanLuminance / 255.0;
+
+        // 颜色罚：壁纸混入会拉高颜色种类
+        double colorPenalty = Math.Clamp(colorBuckets / 200.0, 0.0, 1.0);
+
+        // 面积奖：大窗口优先（但不能干过前两项）
+        double areaBonus = Math.Min(1.0, (width * (double)height) / (1920.0 * 1080.0));
+
+        return luminanceScore * (1.0 - colorPenalty) * (0.7 + 0.3 * areaBonus);
     }
 
     private static (double MeanLuminance, int DistinctColorBuckets) Measure(Mat bgr)
