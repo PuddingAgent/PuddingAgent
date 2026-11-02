@@ -6,7 +6,12 @@ namespace PuddingPlatform.Services;
 public sealed record ImageProcessingOptions(
     int? CropX = null, int? CropY = null, int? CropWidth = null, int? CropHeight = null,
     int Rotation = 0, double Scale = 1, int? MaxEdge = null,
-    bool Grayscale = false, bool Denoise = false, string? Format = null, int Quality = 85);
+    bool Grayscale = false, bool Denoise = false, string? Format = null, int Quality = 85,
+    // Enhancement knobs (2026-11-02). All three are no-ops at their defaults, so existing
+    // callers and byte-for-byte behaviour are unchanged.
+    double Contrast = 1.0,
+    double Sharpen = 0,
+    string? ChannelMode = null);
 
 public sealed record ImageFileInfo(
     string MimeType, int Width, int Height, int EncodedWidth, int EncodedHeight,
@@ -93,11 +98,15 @@ public static class ImagePreprocessing
             case 270: surface.Canvas.Translate(0, width); surface.Canvas.RotateDegrees(270); break;
         }
         using var paint = new SKPaint { IsAntialias = true };
-        using var gray = options.Grayscale ? SKColorFilter.CreateColorMatrix([
-            .2126f,.7152f,.0722f,0,0, .2126f,.7152f,.0722f,0,0,
-            .2126f,.7152f,.0722f,0,0, 0,0,0,1,0]) : null;
+        using var colorFilter = BuildColorFilter(options);
         using var blur = options.Denoise ? SKImageFilter.CreateBlur(1.2f, 1.2f) : null;
-        paint.ColorFilter = gray; paint.ImageFilter = blur;
+        // Sharpen runs on top of the (optional) denoise blur so the two never fight.
+        using var sharpen = options.Sharpen > 0
+            ? SKImageFilter.CreateMatrixConvolution(
+                new SKSizeI(3, 3), BuildSharpenKernel((float)options.Sharpen),
+                gain: 1f, bias: 0f, new SKPointI(1, 1), SKShaderTileMode.Clamp, convolveAlpha: false, input: blur)
+            : null;
+        paint.ColorFilter = colorFilter; paint.ImageFilter = sharpen ?? blur;
         surface.Canvas.DrawImage(uprightImage, new SKRect(x,y,x+width,y+height), new SKRect(0,0,width,height),
             new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear), paint);
         ct.ThrowIfCancellationRequested();
@@ -119,6 +128,64 @@ public static class ImagePreprocessing
             case 7: canvas.Translate(width,height); canvas.RotateDegrees(90); canvas.Scale(-1,1); break;
             case 8: canvas.Translate(0,height); canvas.RotateDegrees(270); break;
         }
+    }
+
+    /// <summary>
+    /// One matrix instead of a filter chain: channel selection and contrast are both affine
+    /// 3x3+offset transforms, so composing them by hand keeps the disposable lifetime trivial.
+    /// </summary>
+    private static SKColorFilter? BuildColorFilter(ImageProcessingOptions options)
+    {
+        var channel = (options.ChannelMode ?? "none").Trim().ToLowerInvariant();
+        if (channel is not ("none" or "red"))
+            throw Error(VisionErrorCodes.SourceInvalid, "channel_mode must be none or red.");
+        if (!double.IsFinite(options.Contrast) || options.Contrast is < 0.1 or > 4.0)
+            throw Error(VisionErrorCodes.SourceInvalid, "contrast must be within 0.1..4.0.");
+        if (!double.IsFinite(options.Sharpen) || options.Sharpen is < 0 or > 5)
+            throw Error(VisionErrorCodes.SourceInvalid, "sharpen must be within 0..5.");
+
+        // "red" is a linear approximation of redness (R - (G+B)/2): a red sign turns bright
+        // while its white glyphs turn dark -- exactly the contrast that grayscale destroys.
+        float[]? basis =
+            channel == "red"
+                ? [1f, -0.5f, -0.5f, 0, 0, 1f, -0.5f, -0.5f, 0, 0, 1f, -0.5f, -0.5f, 0, 0, 0, 0, 0, 1, 0]
+                : options.Grayscale
+                    ? [.2126f, .7152f, .0722f, 0, 0, .2126f, .7152f, .0722f, 0, 0,
+                       .2126f, .7152f, .0722f, 0, 0, 0, 0, 0, 1, 0]
+                    : null;
+
+        var c = (float)options.Contrast;
+        float[]? contrast = Math.Abs(c - 1f) > 1e-4f
+            ? [c, 0, 0, 0, 0.5f * (1 - c), 0, c, 0, 0, 0.5f * (1 - c),
+               0, 0, c, 0, 0.5f * (1 - c), 0, 0, 0, 1, 0]
+            : null;
+
+        if (basis is null) return contrast is null ? null : SKColorFilter.CreateColorMatrix(contrast);
+        if (contrast is null) return SKColorFilter.CreateColorMatrix(basis);
+        return SKColorFilter.CreateColorMatrix(Multiply(contrast, basis));
+    }
+
+    /// <summary>Affine multiply a*b (b first), 4x5 row-major color matrices.</summary>
+    private static float[] Multiply(float[] a, float[] b)
+    {
+        var m = new float[20];
+        for (var row = 0; row < 4; row++)
+        {
+            for (var col = 0; col < 5; col++)
+            {
+                var sum = col == 4 ? a[row * 5 + 4] : 0f;
+                for (var k = 0; k < 4; k++)
+                    sum += a[row * 5 + k] * b[k * 5 + col];
+                m[row * 5 + col] = sum;
+            }
+        }
+        return m;
+    }
+
+    private static float[] BuildSharpenKernel(float amount)
+    {
+        var k = amount;
+        return [0, -k, 0, -k, 1 + 4 * k, -k, 0, -k, 0];
     }
 
     private static VisionPipelineException Error(string code, string message) => new(code, message);
