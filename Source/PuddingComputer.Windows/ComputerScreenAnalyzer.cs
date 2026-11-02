@@ -183,7 +183,11 @@ public static class ComputerScreenAnalyzer
         try
         {
             var effectiveDetector = detector ?? new OpenCvElementDetector();
-            var detections = effectiveDetector.Detect(bgr, capture.Bounds);
+
+            // 只在「按进程分析」时传关心区域：它会额外启用两个修复（List 轮廓 + 相对区域的尺寸上限）。
+            // Analyze（调用方自己指定窗口）保持旧行为，避免未验证的噪声涌进整屏分析。
+            var detections = effectiveDetector.Detect(bgr, capture.Bounds,
+                restrictToWindow ? effectiveWindow : null);
 
             // 按进程分析时只保留窗口内的目标。
             // 不过滤的话，整屏检测会把其它应用（实测：同一桌面上 169 个 PuddingDesktop 元素）

@@ -42,7 +42,29 @@ public sealed class OpenCvElementDetector
     }
 
     /// <summary>在整屏图像上检测候选元素（坐标已是屏幕绝对坐标）。</summary>
-    public IReadOnlyList<RawDetection> Detect(Mat bgr, PhysicalRect screenBounds)
+    /// <param name="bgr">整屏图像。</param>
+    /// <param name="screenBounds">该图像对应的屏幕矩形，用于把图内坐标换算成全局坐标。</param>
+    /// <param name="focusRect">
+    /// 关心区域（屏幕坐标）。传入后会改变两件事：
+    /// <list type="number">
+    /// <item>轮廓提取从 <c>RetrievalModes.External</c> 改为 <c>List</c>；</item>
+    /// <item>尺寸上限从“相对整屏”改为“相对该区域”。</item>
+    /// </list>
+    /// <para>
+    /// **为什么必须两者配合**（2026-11-03 实测）：Canny + 形态学闭运算会把整个屏幕的
+    /// 边缘连成**一个 5120×1440 的连通体**，<c>External</c> 只返回这一个外轮廓；
+    /// 副屏所有元素都被裹在它内部，因此没有任何独立轮廓 —— 实测副屏窗口内
+    /// 轮廓数为 0。改用 <c>List</c> 后同参数下变成 116（edge）/ 656（diff）。
+    /// </para>
+    /// <para>
+    /// 但只用 <c>List</c> 不够：那个“整个窗口”的大块仍会作为候选留下，
+    /// 因为旧的尺寸上限按整屏算（4864×1368），1600×1038 的窗口远小于它。
+    /// 把上限改成相对关心区域后，这类“包住全部内容的壳”才会被排除。
+    /// </para>
+    /// <para>省略该参数时保持旧行为（External + 相对整屏），供整屏分析使用。</para>
+    /// </param>
+    public IReadOnlyList<RawDetection> Detect(Mat bgr, PhysicalRect screenBounds,
+        PhysicalRect? focusRect = null)
     {
         ArgumentNullException.ThrowIfNull(bgr);
 
@@ -55,14 +77,14 @@ public sealed class OpenCvElementDetector
         var background = bgr.At<Vec3b>(0, 0);
 
         var candidates = new List<RawDetection>();
-        candidates.AddRange(DetectByBackgroundDiff(bgr, background, w, h, screenBounds));
-        candidates.AddRange(DetectByCanny(gray, w, h, screenBounds));
+        candidates.AddRange(DetectByBackgroundDiff(bgr, background, w, h, screenBounds, focusRect));
+        candidates.AddRange(DetectByCanny(gray, w, h, screenBounds, focusRect));
 
         return SuppressOverlaps(candidates);
     }
 
     private IEnumerable<RawDetection> DetectByBackgroundDiff(
-        Mat bgr, Vec3b background, int w, int h, PhysicalRect screenBounds)
+        Mat bgr, Vec3b background, int w, int h, PhysicalRect screenBounds, PhysicalRect? focusRect)
     {
         using var diff = new Mat();
         using var abs = new Mat();
@@ -74,25 +96,37 @@ public sealed class OpenCvElementDetector
         using (var kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(5, 3)))
             Cv2.MorphologyEx(diff, diff, MorphTypes.Close, kernel);
 
-        return ExtractRects(diff, w, h, screenBounds, "diff");
+        return ExtractRects(diff, w, h, screenBounds, focusRect, "diff");
     }
 
-    private IEnumerable<RawDetection> DetectByCanny(Mat gray, int w, int h, PhysicalRect screenBounds)
+    private IEnumerable<RawDetection> DetectByCanny(Mat gray, int w, int h,
+        PhysicalRect screenBounds, PhysicalRect? focusRect)
     {
         using var edges = new Mat();
         Cv2.Canny(gray, edges, 40, 120);
         using (var kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(5, 5)))
             Cv2.MorphologyEx(edges, edges, MorphTypes.Close, kernel, null, 2);
 
-        return ExtractRects(edges, w, h, screenBounds, "edge");
+        return ExtractRects(edges, w, h, screenBounds, focusRect, "edge");
     }
 
-    private List<RawDetection> ExtractRects(Mat mask, int w, int h, PhysicalRect screenBounds, string kind)
+    private List<RawDetection> ExtractRects(Mat mask, int w, int h,
+        PhysicalRect screenBounds, PhysicalRect? focusRect, string kind)
     {
         var list = new List<RawDetection>();
 
+        // 给了关心区域时用 List：External 只返回连通体的最外层，
+        // 当闭运算把整屏连成一块时，区域内的所有元素都会“被包进去”而消失。
+        var mode = focusRect is null ? RetrievalModes.External : RetrievalModes.List;
+
         Cv2.FindContours(mask, out Point[][] contours, out _,
-            RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+            mode, ContourApproximationModes.ApproxSimple);
+
+        // 尺寸上限的基准：有关心区域就用它的尺寸，否则用整屏。
+        // 按整屏算时，“包住全部内容的外壳”永远在限内，于是永远过不了滤也没意义。
+        int capW = focusRect?.Width ?? w;
+        int capH = focusRect?.Height ?? h;
+        const double capRatio = 0.95;
 
         foreach (var contour in contours)
         {
@@ -102,7 +136,7 @@ public sealed class OpenCvElementDetector
                 continue;
             if (rect.Width * rect.Height < _minArea)
                 continue;
-            if (rect.Width > w * 0.95 || rect.Height > h * 0.95)
+            if (rect.Width > capW * capRatio || rect.Height > capH * capRatio)
                 continue;
 
             double area = Cv2.ContourArea(contour);
