@@ -80,6 +80,23 @@ public static class WindowsInteractiveWindowFinder
             // 壁纸混入会拉低亮度、拉高颜色种类
             double score = ScoreFor(stats.MeanLuminance, stats.DistinctColorBuckets, bounds.Width, bounds.Height);
 
+            // 可点性：在窗口中心问一句“这一点上是哪个窗口”。
+            // 若返回别的窗口，说明本窗口被**完全或部分遮挡**，选中它等于点不到。
+            // 实测（2026-11-03）：ChatGPT 进程有两个同尺寸级别的顶层窗口，
+            // 亮度高的那个在 z-order 底部，所有点击都被上面那个接走 ——
+            // 归属校验因而拒掉了 120/202 个目标。
+            var centerHwnd = WindowFromPoint(new NativePoint
+            {
+                X = bounds.X + bounds.Width / 2,
+                Y = bounds.Y + bounds.Height / 2,
+            });
+            var centerRoot = centerHwnd == IntPtr.Zero ? IntPtr.Zero : GetAncestor(centerHwnd, GaRoot);
+
+            // 返回 null 时不惩罚（可能是合成层，那类目标本就要靠 allowWithoutWindow）；
+            // 返回**别的窗口**时大幅降分。
+            if (centerHwnd != IntPtr.Zero && centerRoot != hwnd)
+                score *= 0.2;
+
             var title = new System.Text.StringBuilder(256);
             GetWindowTextW(hwnd, title, 256);
             var cls = new System.Text.StringBuilder(256);
@@ -168,6 +185,16 @@ public static class WindowsInteractiveWindowFinder
 
     private const int DwmwaExtendedFrameBounds = 9;
 
+    /// <summary>GetAncestor 的 GA_ROOT。</summary>
+    private const uint GaRoot = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect
     {
@@ -196,4 +223,10 @@ public static class WindowsInteractiveWindowFinder
 
     [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")]
     private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out NativeRect value, int size);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(NativePoint point);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
 }
