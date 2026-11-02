@@ -632,7 +632,6 @@
 | `Services/AgentLoop/GoalLifecycle.cs` | 目标生命周期状态机；phase 持久 / activation 进程本地；完成必须带可核验证据 | `GoalLifecycle`、`GoalState`、`GoalPhase`、`GoalActivation` | `GoalEvidence` | 纯函数，无 IO；activation 永不落盘 |
 | `Services/AgentLoop/GoalEvidence.cs` | 完成证据（Command/Test/File/Url，引用与说明均非空） | `GoalEvidence`、`GoalEvidenceKind` | `GoalLifecycle` | — |
 | `Services/AgentLoop/GoalRoundLedger.cs` | 轮次准入记账：只有进入历史的 round 才计额度；轮号必须 == 已用+1 | `GoalRoundLedger`、`GoalRoundReservation` | `GoalRegistry` | 纯状态机，无 IO |
-| `Services/AgentLoop/ContinuationPolicy.cs` | 续跑三条件（有待办 + 有余量 + 上轮有推进） | `ContinuationPolicy`、`ContinuationDecision` | `GoalLoopDecider` | — |
 | `Services/AgentLoop/RepeatedActionGuard.cs` | 空转检测：同一动作**连续**重复即判循环 | `RepeatedActionGuard` | `GoalLoopDecisionHook` | 按连续而非窗口计数（窗口会误判交替读写） |
 | `Services/AgentLoop/GoalRegistry.cs` | 按会话绑定状态与账本；`ApplyRestart` 只 disarm 保留 phase 与轮次 | `GoalRegistry`、`GoalSlot` | `GoalLifecycle`、`GoalRoundLedger` | 进程内，不持久化 |
 | `Services/AgentLoop/GoalLoopDecider.cs` | 统一决策入口，输出 Continue/Complete/Yield/Stop/Block + 稳定原因码 | `GoalLoopDecider`、`GoalLoopInput`、`GoalLoopOutcome` | 上述四个判定 | 顺序即规则：用户消息优先于一切 |

@@ -3,7 +3,7 @@ namespace PuddingRuntime.Services.AgentLoop;
 /// <summary>
 /// 无效循环检测（纯状态，无 IO）。
 /// <para>
-/// 目标模式有两侧钳制：一侧是「别停太早」（<see cref="ContinuationPolicy"/>），
+/// 目标模式有两侧钳制：一侧是「别停太早」（见 <see cref="GoalLoopDecider"/> 的决策顺序），
 /// 另一侧是「该停就停」——本类负责后者：**同一个动作连续重复**说明这一轮没有产出，
 /// 继续跑只是烧 token。
 /// </para>
