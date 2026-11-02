@@ -87,12 +87,16 @@ try {
     $stream.Close()
 }
 
-# Matched on the full prefix the hook actually emits:
-#   "[GoalLoop] session=... action=... reason=..."
-# A bare '[GoalLoop]' would also hit any log line that merely *mentions* the tag
-# (e.g. an AgentSleep work_summary describing this check) - that produced a false
-# "wiring is live" on 2026-11-02 while the host still had no env.
-$hits = @($text -split "`r?`n" | Where-Object { $_.Contains('[GoalLoop] session=') })
+# A real decision line is emitted by the hook as:
+#   "[GoalLoop] session={Session} action={Action} reason={Reason} detail={Detail}"
+# Match on TWO tokens so that prose merely *quoting* the tag cannot pass. This file
+# learned the hard way (2026-11-02, twice):
+#   1st false positive - bare '[GoalLoop]' hit an AgentSleep work_summary;
+#   2nd false positive - '[GoalLoop] session=' hit the next work_summary that
+#                        described the fix in those very words (self-reference).
+$hits = @($text -split "`r?`n" | Where-Object {
+    $_.Contains('[GoalLoop] session=') -and $_.Contains('action=') -and $_.Contains('reason=')
+})
 if ($hits.Count -gt 0) {
     Write-Output ("GoalLoopLines: {0} (wiring is live)" -f $hits.Count)
     $hits | Select-Object -First 3 | ForEach-Object { Write-Output ("  {0}" -f $_) }
