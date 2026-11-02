@@ -70,6 +70,10 @@ public static class GoalContinuationGate
         if (reservation is null)
             return false;
 
+        // 失败时**不需要** Release：TryAdmit 在所有 false 分支里已自行 _pending.Remove
+        // （预约不存在 / 目标已切 / revision 变 / 轮号不连续 —— 都清），
+        // 所以这里直接 return false 不会泄漏预约，也不消耗额度。
+        // Release 是留给「人类插队 / 取消 / 竞争落败」那些**主动放弃**路径的。
         if (!ledger.TryAdmit(reservation.ReservationId, goal.GoalId, goal.Revision))
             return false;
 
