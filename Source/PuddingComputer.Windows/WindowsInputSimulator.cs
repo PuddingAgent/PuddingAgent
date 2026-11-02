@@ -79,14 +79,22 @@ public static class WindowsInputSimulator
     /// 现在签名强制要求几何，漏传会直接编译失败。
     /// </para>
     /// </param>
+    /// <param name="authorizedRoot">
+    /// 被授权窗口的根句柄，透传给 <see cref="ClickAt"/>。
+    /// <para>
+    /// 传 <see cref="ScreenAnalysis.AuthorizedRoot"/> 即可：它会打开归属校验，
+    /// 让落在其他窗口（弹窗/通知/别的应用）上的点击被拒绝。
+    /// </para>
+    /// </param>
     public static ClickOutcome Click(
         AnnotatedTarget target,
         ComputerImageGeometry geometry,
-        bool allowOutsideWindow = false)
+        bool allowOutsideWindow = false,
+        IntPtr? authorizedRoot = null)
     {
         var resolution = ResolveClick(target, geometry, allowOutsideWindow);
         return resolution.IsOk
-            ? ClickAt(resolution.Point, allowOutsideWindow)
+            ? ClickAt(resolution.Point, allowOutsideWindow, authorizedRoot)
             : resolution.Failure!.Value;
     }
 

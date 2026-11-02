@@ -32,6 +32,30 @@ public sealed class ScreenAnalysis : IDisposable
     /// </summary>
     public WindowCandidate? ResolvedWindow { get; }
 
+    /// <summary>
+    /// 本次分析选中的窗口句柄，用作点击时的归属校验根。
+    /// <para>
+    /// 将它传给 <see cref="WindowsInputSimulator.Click"/> 的 <c>authorizedRoot</c> 参数后，
+    /// 落在其他窗口上的点击会被拒绝（<see cref="ClickOutcome.RejectedUnexpectedWindowAtPoint"/>）。
+    /// 不传的话归属检查不生效。
+    /// </para>
+    /// <para>走“调用方自己指定窗口”的路径时为 null，此时无从校验，应保持 null。</para>
+    /// </summary>
+    public IntPtr? AuthorizedRoot => ResolvedWindow?.Handle;
+
+    /// <summary>
+    /// 构造与本次分析产物配套的图像几何。
+    /// <para>
+    /// 为什么由分析器提供而不是让调用方自己拼：图内尺寸必须与**这一张**截图一致，
+    /// 采集方式必须是 <see cref="ComputerCaptureMode.ScreenPixels" />。
+    /// 让调用方手写这两项，就有写错的机会，而坐标写错不会报错。
+    /// </para>
+    /// </summary>
+    public ComputerImageGeometry CreateGeometry() =>
+        new(ScreenBounds, _bgr.Width, _bgr.Height,
+            ComputerCaptureMode.ScreenPixels,
+            CoordinateInputAllowed: true);
+
     /// <summary>带编号与三套坐标的目标表。模型只应看到 Id 与 Kind。</summary>
     public IReadOnlyList<AnnotatedTarget> Targets { get; }
 
