@@ -40,23 +40,35 @@ public enum ClickOutcome
 public static class WindowsInputSimulator
 {
     /// <summary>点击一个已标注目标。会先校验 <see cref="AnnotatedTarget.InsideWindow"/>。</summary>
-    public static ClickOutcome Click(AnnotatedTarget target)
+    /// <param name="allowOutsideWindow">
+    /// 允许点击标为可窗口外（合成层）的目标。见 <see cref="ClickAt"/> 的说明。
+    /// </param>
+    public static ClickOutcome Click(AnnotatedTarget target, bool allowOutsideWindow = false)
     {
         ArgumentNullException.ThrowIfNull(target);
 
-        if (!target.InsideWindow)
+        if (!target.InsideWindow && !allowOutsideWindow)
             return ClickOutcome.RejectedOutsideWindow;
 
-        return ClickAt(target.Clickable);
+        return ClickAt(target.Clickable, allowOutsideWindow);
     }
 
     /// <summary>在屏幕坐标处点击。逐项检查后才发事件。</summary>
-    public static ClickOutcome ClickAt(ImagePoint point)
+    /// <param name="allowWithoutWindow">
+    /// 当 <c>WindowFromPoint</c> 返回 NULL 时是否仍然点击。
+    /// <para>
+    /// 默认 false。只在一种情况下需要开启：目标渲染在 Win32 窗口 rect 之外的合成层里。
+    /// 实测 ChatGPT 的输入框/发送键就是这种：画面可见（D3D 层高 1434），
+    /// 但所属窗口只报 1155 高，因此 <c>WindowFromPoint</c> 对整块区域返回 NULL。
+    /// </para>
+    /// <para>开启后风险明确：点击可能穿透到桌面。调用方应该知道自己在干什么。</para>
+    /// </param>
+    public static ClickOutcome ClickAt(ImagePoint point, bool allowWithoutWindow = false)
     {
         if (!IsOnScreen(point))
             return ClickOutcome.RejectedOffScreen;
 
-        if (!HasWindowAt(point))
+        if (!HasWindowAt(point) && !allowWithoutWindow)
             return ClickOutcome.RejectedNoWindowAtPoint;
 
         SetCursorPosition(point);
@@ -91,13 +103,10 @@ public static class WindowsInputSimulator
 
     private static bool IsOnScreen(ImagePoint point)
     {
-        int x = GetSystemMetrics(SmXVirtualScreen);
-        int y = GetSystemMetrics(SmYVirtualScreen);
-        int w = GetSystemMetrics(SmCxVirtualScreen);
-        int h = GetSystemMetrics(SmCyVirtualScreen);
-
-        return point.X >= x && point.X < x + w
-            && point.Y >= y && point.Y < y + h;
+        // 必须用**真实显示器**范围，而不是 SM_*VIRTUALSCREEN。
+        // 实测：SM_CYVIRTUALSCREEN=1440，但副屏只有 1152 高，
+        // 落在 1152..1440 的坐标会被系统静默夹到 1151 —— 点击就跑偏了。
+        return WindowsMonitorEnumerator.IsOnRealMonitor(point);
     }
 
     private static bool HasWindowAt(ImagePoint point)

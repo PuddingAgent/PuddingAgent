@@ -44,15 +44,20 @@ public static class WindowsScreenCapturer
 {
     public static ScreenCapture CaptureVirtualScreen()
     {
-        int x = GetSystemMetrics(SmXVirtualScreen);
-        int y = GetSystemMetrics(SmYVirtualScreen);
-        int w = GetSystemMetrics(SmCxVirtualScreen);
-        int h = GetSystemMetrics(SmCyVirtualScreen);
+        // 不能直接用 SM_CYVIRTUALSCREEN：它会比真实显示器范围大一截
+        // （实测 1440 vs 副屏 1152），多出来的部分 BitBlt 给的是残影，
+        // 会被检测器当成真控件，而点击时坐标会被系统夹到屏幕边缘。
+        // 所以这里取所有**真实显示器**的并集。
+        var monitors = WindowsMonitorEnumerator.Enumerate();
+        if (monitors.Count == 0)
+            throw new InvalidOperationException("未枚举到任何显示器。");
 
-        if (w <= 0 || h <= 0)
-            throw new InvalidOperationException($"虚拟屏幕尺寸无效：{w}x{h}");
+        int left = monitors.Min(m => m.Bounds.X);
+        int top = monitors.Min(m => m.Bounds.Y);
+        int right = monitors.Max(m => m.Bounds.X + m.Bounds.Width);
+        int bottom = monitors.Max(m => m.Bounds.Y + m.Bounds.Height);
 
-        return CaptureRegion(new PhysicalRect(x, y, w, h));
+        return CaptureRegion(new PhysicalRect(left, top, right - left, bottom - top));
     }
 
     public static ScreenCapture CaptureRegion(PhysicalRect region)
