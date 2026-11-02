@@ -117,3 +117,34 @@ unaware 进程会同时吃到两个错误：
 - **负坐标副屏未验证**：本机副屏在主屏右侧，虚拟屏原点仍是 (0,0)，
   设计 §7.1「左侧/上方副屏可为负数」的分支在本机无法覆盖，需要多显示器布局或模拟。
 - Unicode 输入送达率、取消语义、Worker 回收仍未验证。
+
+## 第三轮：Job Object 回收语义（探针 #3）
+
+设计 §9.2 有一条硬约束：「目标应用不能加入 Worker 的 Job Object，否则停止执行器会杀掉用户应用」。
+它到底有多危险，取决于 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 是否真的连带成员进程。实测：
+
+```
+JOB created handle=756
+JOB kill_on_close set=True
+CHILD pid=57084
+JOB assigned=True
+CHILD exited=True afterMs=5 exitCode=0
+RESULT: OK killed_on_job_close
+```
+
+**5 毫秒**内成员进程就被回收（子进程是一个无害的 `timeout /t 30`，未碰任何用户窗口）。
+
+### 含义
+
+1. 这条约束**不能只写在文档里**：应用进程一旦误入 Job，用户未保存的文档会被直接终结，
+   而且没有补救窗口（5 ms）。
+2. 设计 §14 说「应用启动必须由 Supervisor 的专用应用启动端口执行，目标应用不能加入 Worker 的
+   Job Object」——这一条必须落成**代码级不变量**：`AssignProcessToJobObject` 只允许对 Worker
+   自身调用，并配一条断言测试（构造一个"尝试把外部进程加入 Job"的路径，必须被拒绝）。
+
+### 仍未覆盖
+
+- **取消语义**：设计 §9.1 要求「宿主超时只表示不再等待，不能宣称 COM 已取消」。
+  这条要验证的是 FlaUI/UIA 调用在 `Task.WhenAny` 返回后**确实仍在执行**，需要专门的探针。
+- Unicode 输入送达率（需短暂抢焦点，等用户确认时机）。
+- 负坐标副屏。
