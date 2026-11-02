@@ -111,9 +111,16 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
                 // 而不是「无推进 → 停」—— 前者安全，后者会误杀还有活的会话。
                 OpenItems = await CountOpenItemsAsync(context, ct).ConfigureAwait(false),
                 LastRoundMadeProgress = ToolCallsFor(context.SessionId) > 0,
+                // 恒 0：Decider 的「清单空 → 继续收尾」(⑥) 排在「连续空转 → 停」(⑦) 之前，
+                // 所以在 openItems 接入真实拆解表之前，本字段根本走不到。
+                // 接上 todo 后必须改成真实累计，否则 ⑦ 的 Idle>=2 判据永远不成立。
                 ConsecutiveIdleRounds = 0,
                 UserMessagePending = false,
                 LoopDetected = IsLooping(context.SessionId),
+                // 恒 false —— 这是**刻意**的保守，不是漏接（2026-11-02 复核）。
+                // 目前没有显式的「标记完成」信号源；若按 stopReason==Done 之类去推，
+                // 第一轮结束就会被判 Complete，目标模式从此永不续跑 —— 比现在更糟。
+                // 接上显式完成信号（工具或协议字段）之后再改这里。
                 ClaimsComplete = false,
             };
 
