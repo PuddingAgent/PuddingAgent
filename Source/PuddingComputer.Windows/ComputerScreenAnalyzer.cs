@@ -9,15 +9,28 @@ public sealed class ScreenAnalysis : IDisposable
 {
     private readonly Mat _bgr;
 
-    internal ScreenAnalysis(Mat bgr, PhysicalRect screenBounds, IReadOnlyList<AnnotatedTarget> targets)
+    internal ScreenAnalysis(Mat bgr, PhysicalRect screenBounds, IReadOnlyList<AnnotatedTarget> targets,
+        WindowCandidate? resolvedWindow = null)
     {
         _bgr = bgr;
         ScreenBounds = screenBounds;
         Targets = targets;
+        ResolvedWindow = resolvedWindow;
     }
 
     /// <summary>截图覆盖的屏幕区域。</summary>
     public PhysicalRect ScreenBounds { get; }
+
+    /// <summary>
+    /// 本次分析实际选中的参考窗口。
+    /// <para>
+    /// 仅当走 <see cref="ComputerScreenAnalyzer.AnalyzeForProcess"/> 这条路径时有值；
+    /// 调用方自己传 <c>referenceWindow</c> 时为 null。
+    /// 把它暴露出来是因为“选了哪个窗口”本身就是个需要核对的事实：
+    /// 同一进程可能有多个同名顶层窗口，选错会导致所有 <c>InsideWindow</c> 判定失真。
+    /// </para>
+    /// </summary>
+    public WindowCandidate? ResolvedWindow { get; }
 
     /// <summary>带编号与三套坐标的目标表。模型只应看到 Id 与 Kind。</summary>
     public IReadOnlyList<AnnotatedTarget> Targets { get; }
@@ -85,17 +98,71 @@ public static class ComputerScreenAnalyzer
         OpenCvElementDetector? detector = null)
     {
         ArgumentNullException.ThrowIfNull(capture);
+        return AnalyzeCore(capture, referenceWindow ?? capture.Bounds, resolvedWindow: null, detector);
+    }
 
+    /// <summary>
+    /// 截整屏，并按进程**自动定位真窗口**，用它作为参考矩形进行分析。
+    /// <para>
+    /// 为什么不要求调用方自己传 <c>referenceWindow</c>：实测同一进程会同时暴露多个同名顶层窗口，
+    /// 其中“阴影 + 桌面壁纸”的混合矩形面积更大但内容为空
+    /// （详见 <see cref="WindowsInteractiveWindowFinder"/>）。传错窗口会让
+    /// 所有 <c>InsideWindow</c> 判定失真，而判别依据要看像素，只能由本层来选。
+    /// </para>
+    /// <para>
+    /// 找不到可用窗口时**抛异常而不是退回整屏**：退回整屏会让所有
+    /// <c>InsideWindow</c> 恒为 true，等于默默丢掉合成层检测 —— 那正是
+    /// “点了没反应”这类故障的源头。
+    /// </para>
+    /// </summary>
+    /// <param name="processId">目标进程 ID。</param>
+    /// <param name="detector">自定义检测器；省略时用默认 OpenCV 检测器。</param>
+    /// <param name="minimumWindowSize">候选窗口的最小边长，默认 300。</param>
+    public static ScreenAnalysis AnalyzeForProcess(
+        int processId,
+        OpenCvElementDetector? detector = null,
+        int minimumWindowSize = 300)
+    {
+        using var capture = WindowsScreenCapturer.CaptureVirtualScreen();
+        return AnalyzeForProcess(capture, processId, detector, minimumWindowSize);
+    }
+
+    /// <inheritdoc cref="AnalyzeForProcess(int, OpenCvElementDetector?, int)"/>
+    public static ScreenAnalysis AnalyzeForProcess(
+        ScreenCapture capture,
+        int processId,
+        OpenCvElementDetector? detector = null,
+        int minimumWindowSize = 300)
+    {
+        ArgumentNullException.ThrowIfNull(capture);
+
+        var window = WindowsInteractiveWindowFinder.FindBest(processId, capture, minimumWindowSize);
+        if (window is null)
+        {
+            throw new InvalidOperationException(
+                $"进程 {processId} 没有可用于坐标参考的可见窗口（最小边长 {minimumWindowSize}）。" +
+                "拒绝分析而不是退回整屏 —— 退回整屏会让 InsideWindow 恒为 true，" +
+                "等于丢掉合成层检测，故障会以\"点了没反应\"的形式显现。");
+        }
+
+        return AnalyzeCore(capture, window.Bounds, window, detector);
+    }
+
+    private static ScreenAnalysis AnalyzeCore(
+        ScreenCapture capture,
+        PhysicalRect effectiveWindow,
+        WindowCandidate? resolvedWindow,
+        OpenCvElementDetector? detector)
+    {
         var bgr = capture.ToBgr();
         try
         {
             var effectiveDetector = detector ?? new OpenCvElementDetector();
             var detections = effectiveDetector.Detect(bgr, capture.Bounds);
 
-            var effectiveWindow = referenceWindow ?? capture.Bounds;
             var targets = ComputerSnapshotAnnotator.Annotate(detections, effectiveWindow);
 
-            return new ScreenAnalysis(bgr, capture.Bounds, targets);
+            return new ScreenAnalysis(bgr, capture.Bounds, targets, resolvedWindow);
         }
         catch
         {
