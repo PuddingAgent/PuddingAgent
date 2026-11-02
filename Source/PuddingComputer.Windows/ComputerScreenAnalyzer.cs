@@ -74,21 +74,23 @@ public static class ComputerScreenAnalyzer
     /// <see cref="AnnotatedTarget.InsideWindow"/> = false（这类目标点击会被穿透）。
     /// 省略时视为整屏都是有效区域。
     /// </param>
-    public static ScreenAnalysis Analyze(PhysicalRect? referenceWindow = null)
+    public static ScreenAnalysis Analyze(PhysicalRect? referenceWindow = null,
+        OpenCvElementDetector? detector = null)
     {
         using var capture = WindowsScreenCapturer.CaptureVirtualScreen();
-        return Analyze(capture, referenceWindow);
+        return Analyze(capture, referenceWindow, detector);
     }
 
-    public static ScreenAnalysis Analyze(ScreenCapture capture, PhysicalRect? referenceWindow = null)
+    public static ScreenAnalysis Analyze(ScreenCapture capture, PhysicalRect? referenceWindow = null,
+        OpenCvElementDetector? detector = null)
     {
         ArgumentNullException.ThrowIfNull(capture);
 
         var bgr = capture.ToBgr();
         try
         {
-            var detector = new OpenCvElementDetector();
-            var detections = detector.Detect(bgr, capture.Bounds);
+            var effectiveDetector = detector ?? new OpenCvElementDetector();
+            var detections = effectiveDetector.Detect(bgr, capture.Bounds);
 
             var effectiveWindow = referenceWindow ?? capture.Bounds;
             var targets = ComputerSnapshotAnnotator.Annotate(detections, effectiveWindow);
