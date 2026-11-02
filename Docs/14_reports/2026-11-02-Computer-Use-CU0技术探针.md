@@ -73,3 +73,47 @@ CU0 剩余四项探针 → 全部通过后进入 CU1（Contracts/Computer + Auto
 S1–S4 独立门禁，只加新类型、不挂 union、不动宿主）。
 
 CU5 才接宿主，且以前面所有独立门禁通过为前提。
+
+## 第二轮：GDI 采集与 DPI（探针 #2）
+
+只读屏幕、不产生任何输入，不干扰用户窗口。
+
+```
+VIRTUAL_SCREEN  0,0 4608x1440
+PRIMARY_SCREEN  2560x1440
+DPI             system=96 deviceCaps=(96,96) scale=1.00x monitors=2
+DPI_AWARENESS   code=0
+CAPTURE         ok=True rect=(2104,600,400,240) ms=21
+PIXELS          sampled=96000 meanLuma=248.3 nonBlackRatio=1.000
+MAPPING         imageX=200 -> screenX=2304 (expect 2304)
+RESULT: OK
+```
+
+### 关键发现：默认进程是 **DPI unaware**
+
+`DPI_AWARENESS code=0` 即 `DPI_AWARENESS_UNAWARE`。当前系统 DPI 是 96（1.00x），
+所以还看不出偏差；一旦用户把显示缩放调成 125% / 150%（Windows 上很常见），
+unaware 进程会同时吃到两个错误：
+
+- 拿到的窗口/光标坐标是**被系统虚拟化过的逻辑坐标**，与真实物理像素不一致；
+- `BitBlt` 截出的图会被系统拉伸，尺寸也与实际不符。
+
+设计 §9.3 写的是「DPI 上下文的设置/抓图/恢复必须在同一线程同步完成」——方向是对的，
+但对 unaware 进程来说**坐标系从起点就是错的，事后再同步设置也补不回来**。
+因此 CU1/CU3 应把这条前置条件写死：**Worker 进程启动时即声明 per-monitor-v2 awareness**，
+并配一条断言测试（读取自身 awareness 必须等于 per-monitor-v2）。
+
+### 其它结论
+
+| 项 | 值 | 说明 |
+|---|---|---|
+| 虚拟屏幕 | 0,0 — 4608x1440（双屏） | 副屏在主屏右侧 |
+| 主屏 | 2560x1440 | — |
+| GDI BitBlt 400x240 | **21 ms** | 单帧开销可接受 |
+| 画面非黑比例 | **1.000** | 该区域无 GPU/受保护内容黑屏 |
+
+### 本轮暴露的未覆盖项
+
+- **负坐标副屏未验证**：本机副屏在主屏右侧，虚拟屏原点仍是 (0,0)，
+  设计 §7.1「左侧/上方副屏可为负数」的分支在本机无法覆盖，需要多显示器布局或模拟。
+- Unicode 输入送达率、取消语义、Worker 回收仍未验证。
