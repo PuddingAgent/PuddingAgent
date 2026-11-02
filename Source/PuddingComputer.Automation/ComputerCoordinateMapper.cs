@@ -14,9 +14,23 @@ public enum CoordinateMapStatus
     OutOfBounds,
 }
 
-public readonly record struct CoordinateMapResult(CoordinateMapStatus Status, int X, int Y)
+/// <summary>
+/// 坐标映射结果。
+/// <para>
+/// 成功时携带 <see cref="ScreenPoint"/>（而不是裸 int）—— 这是刻意设计的类型壁垒：
+/// 调用方拿到屏幕坐标后只能传给接受 <see cref="ScreenPoint"/> 的 API，
+/// 想把它当 <see cref="ImagePoint"/> 用会直接编译失败。
+/// </para>
+/// </summary>
+public readonly record struct CoordinateMapResult(CoordinateMapStatus Status, ScreenPoint Point)
 {
     public bool IsOk => Status == CoordinateMapStatus.Ok;
+
+    /// <summary>成功时的屏幕 X；失败时无意义，调用前必须判 <see cref="IsOk"/>。</summary>
+    public int X => Point.X;
+
+    /// <summary>成功时的屏幕 Y；失败时无意义，调用前必须判 <see cref="IsOk"/>。</summary>
+    public int Y => Point.Y;
 }
 
 /// <summary>
@@ -45,15 +59,15 @@ public static class ComputerCoordinateMapper
         ArgumentNullException.ThrowIfNull(geometry);
 
         if (!geometry.CoordinateInputAllowed || geometry.CaptureMode != ComputerCaptureMode.ScreenPixels)
-            return new CoordinateMapResult(CoordinateMapStatus.CoordinateInputNotAllowed, 0, 0);
+            return new CoordinateMapResult(CoordinateMapStatus.CoordinateInputNotAllowed, default);
 
         if (geometry.ImageWidth <= 0 || geometry.ImageHeight <= 0)
-            return new CoordinateMapResult(CoordinateMapStatus.OutOfBounds, 0, 0);
+            return new CoordinateMapResult(CoordinateMapStatus.OutOfBounds, default);
 
         // 图像内部原点在左上角，合法区间是 [0, ImageWidth)
         if (point.X < 0 || point.X >= geometry.ImageWidth ||
             point.Y < 0 || point.Y >= geometry.ImageHeight)
-            return new CoordinateMapResult(CoordinateMapStatus.OutOfBounds, 0, 0);
+            return new CoordinateMapResult(CoordinateMapStatus.OutOfBounds, default);
 
         var rect = geometry.SourceRect;
         var screenX = rect.X + point.X * rect.Width / geometry.ImageWidth;
@@ -61,7 +75,8 @@ public static class ComputerCoordinateMapper
 
         return new CoordinateMapResult(
             CoordinateMapStatus.Ok,
-            (int)Math.Round(screenX, MidpointRounding.AwayFromZero),
-            (int)Math.Round(screenY, MidpointRounding.AwayFromZero));
+            new ScreenPoint(
+                (int)Math.Round(screenX, MidpointRounding.AwayFromZero),
+                (int)Math.Round(screenY, MidpointRounding.AwayFromZero)));
     }
 }

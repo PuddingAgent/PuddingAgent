@@ -43,14 +43,32 @@ public static class WindowsInputSimulator
     /// <param name="allowOutsideWindow">
     /// 允许点击标为可窗口外（合成层）的目标。见 <see cref="ClickAt"/> 的说明。
     /// </param>
-    public static ClickOutcome Click(AnnotatedTarget target, bool allowOutsideWindow = false)
+    /// <param name="geometry">
+    /// 生成这个 <paramref name="target"/> 的那次观察的图像几何。
+    /// <para>
+    /// **必须传**：<c>target.Clickable</c> 是图内坐标，不是屏幕坐标。
+    /// 旧版直接把图内坐标交给 <see cref="ClickAt"/>，中间没有映射 ——
+    /// 这就是“点击总是偏几百像素却从不报错”的根源（2026-11-03 实测定位）。
+    /// 现在签名强制要求几何，漏传会直接编译失败。
+    /// </para>
+    /// </param>
+    public static ClickOutcome Click(
+        AnnotatedTarget target,
+        ComputerImageGeometry geometry,
+        bool allowOutsideWindow = false)
     {
         ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(geometry);
 
         if (!target.InsideWindow && !allowOutsideWindow)
             return ClickOutcome.RejectedOutsideWindow;
 
-        return ClickAt(target.Clickable, allowOutsideWindow);
+        // 先映射，再点。顺序不能反 —— 没映射就点等于用错坐标系。
+        var mapped = ComputerCoordinateMapper.Map(geometry, target.Clickable);
+        if (!mapped.IsOk)
+            return ClickOutcome.RejectedOffScreen;
+
+        return ClickAt(mapped.Point, allowOutsideWindow);
     }
 
     /// <summary>在屏幕坐标处点击。逐项检查后才发事件。</summary>
@@ -63,7 +81,7 @@ public static class WindowsInputSimulator
     /// </para>
     /// <para>开启后风险明确：点击可能穿透到桌面。调用方应该知道自己在干什么。</para>
     /// </param>
-    public static ClickOutcome ClickAt(ImagePoint point, bool allowWithoutWindow = false)
+    public static ClickOutcome ClickAt(ScreenPoint point, bool allowWithoutWindow = false)
     {
         if (!IsOnScreen(point))
             return ClickOutcome.RejectedOffScreen;
@@ -83,7 +101,7 @@ public static class WindowsInputSimulator
     }
 
     /// <summary>把光标移到该点（不点击）。用于悬停后再决定的场景。</summary>
-    public static ClickOutcome MoveCursorTo(ImagePoint point)
+    public static ClickOutcome MoveCursorTo(ScreenPoint point)
     {
         if (!IsOnScreen(point))
             return ClickOutcome.RejectedOffScreen;
@@ -93,15 +111,15 @@ public static class WindowsInputSimulator
         return ClickOutcome.Clicked;
     }
 
-    private static void SetCursorPosition(ImagePoint point) =>
-        SetCursorPos((int)Math.Round(point.X), (int)Math.Round(point.Y));
+    private static void SetCursorPosition(ScreenPoint point) =>
+        SetCursorPos(point.X, point.Y);
 
     private static void SendMouseButton(bool down) =>
         mouse_event(down ? MouseEventLeftDown : MouseEventLeftUp, 0, 0, 0, UIntPtr.Zero);
 
     private static void Pause(int ms) => Thread.Sleep(ms);
 
-    private static bool IsOnScreen(ImagePoint point)
+    private static bool IsOnScreen(ScreenPoint point)
     {
         // 必须用**真实显示器**范围，而不是 SM_*VIRTUALSCREEN。
         // 实测：SM_CYVIRTUALSCREEN=1440，但副屏只有 1152 高，
@@ -109,12 +127,12 @@ public static class WindowsInputSimulator
         return WindowsMonitorEnumerator.IsOnRealMonitor(point);
     }
 
-    private static bool HasWindowAt(ImagePoint point)
+    private static bool HasWindowAt(ScreenPoint point)
     {
         var native = new NativePoint
         {
-            X = (int)Math.Round(point.X),
-            Y = (int)Math.Round(point.Y)
+            X = point.X,
+            Y = point.Y
         };
         return WindowFromPoint(native) != IntPtr.Zero;
     }

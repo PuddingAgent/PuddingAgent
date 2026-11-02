@@ -42,11 +42,11 @@ public static class WindowsMonitorEnumerator
     }
 
     /// <summary>屏幕坐标是否落在某个真实显示器内（用于点击前的最终校验）。</summary>
-    public static bool IsOnRealMonitor(ImagePoint point, IReadOnlyList<MonitorBounds>? monitors = null)
+    public static bool IsOnRealMonitor(ScreenPoint point, IReadOnlyList<MonitorBounds>? monitors = null)
     {
         var list = monitors ?? Enumerate();
-        int x = (int)Math.Round(point.X);
-        int y = (int)Math.Round(point.Y);
+        int x = point.X;
+        int y = point.Y;
 
         return list.Any(m =>
             x >= m.Bounds.X && x < m.Bounds.X + m.Bounds.Width &&

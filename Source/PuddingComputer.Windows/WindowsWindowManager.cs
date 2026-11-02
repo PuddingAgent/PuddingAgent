@@ -100,12 +100,12 @@ public static class WindowsWindowManager
     public static bool Minimize(nint handle) => IsWindow(handle) && ShowWindow(handle, SwMinimize);
 
     /// <summary>查询某屏幕坐标处属于哪个窗口（不做任何推断）。</summary>
-    public static nint WindowAt(ImagePoint point)
+    public static nint WindowAt(ScreenPoint point)
     {
         var native = new NativePoint
         {
-            X = (int)Math.Round(point.X),
-            Y = (int)Math.Round(point.Y)
+            X = point.X,
+            Y = point.Y
         };
         return WindowFromPoint(native);
     }

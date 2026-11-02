@@ -7,6 +7,24 @@ public readonly record struct PhysicalRect(int X, int Y, int Width, int Height);
 public readonly record struct ImagePoint(double X, double Y);
 
 /// <summary>
+/// 屏幕物理像素点（虚拟桌面坐标系，原点是虚拟桌面左上角）。
+/// <para>
+/// **与 <see cref="ImagePoint"/> 是两个不同坐标系，故意做成不同类型，
+/// 让“把图内坐标直接拿去点击”在编译期就失败。**
+/// </para>
+/// <para>
+/// 合法获取途径只有两种：
+/// <list type="number">
+/// <item><c>ComputerCoordinateMapper.Map(...)</c> 把图内点经几何映射得出</item>
+/// <item>直接调 Win32 几何 API（如 <c>GetCursorPos</c>）读到的实际位置</item>
+/// </list>
+/// 不要从 <see cref="ImagePoint"/> 强转，也不要手写 <c>new ScreenPoint(result.X, result.Y)</c> ——
+/// 未经映射的坐标点下去会偏几百像素，而它不会报错，只会“点到了别的地方”。
+/// </para>
+/// </summary>
+public readonly record struct ScreenPoint(int X, int Y);
+
+/// <summary>
 /// 采集方式。
 /// <para>
 /// <see cref="ScreenPixels"/> 是屏幕合成结果，可用于坐标输入；
@@ -69,7 +87,9 @@ public sealed record ComputerElementTarget(
     ComputerObservationId SnapshotId,
     string ElementRef) : ComputerActionTarget;
 
-/// <summary>图像点目标（视觉落点）。坐标来自某次观察的图内坐标，须经几何映射后才能点击。</summary>
+/// <summary>
+/// 图像点目标（视觉落点）。坐标来自某次观察的图内坐标，须经几何映射后才能点击。
+/// </summary>
 public sealed record ComputerPixelTarget(
     ComputerWindowId WindowId,
     ComputerObservationId ObservationId,
