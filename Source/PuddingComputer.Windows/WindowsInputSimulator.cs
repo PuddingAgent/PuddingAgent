@@ -18,6 +18,16 @@ public enum ClickOutcome
 
     /// <summary>坐标不在屏幕范围内。</summary>
     RejectedOffScreen,
+
+    /// <summary>
+    /// 该坐标有窗口，但**不是被授权的目标窗口**。
+    /// <para>
+    /// 这类点击比“没窗口”更阴险：窗口是存在的，鼠标事件确实会发出去，
+    /// 只是落到了弹窗 / 通知 / 别的应用上。调用方看到 <c>Clicked</c> 就以为成功了，
+    /// 目标却毫无反应。
+    /// </para>
+    /// </summary>
+    RejectedUnexpectedWindowAtPoint,
 }
 
 /// <summary>
@@ -115,13 +125,34 @@ public static class WindowsInputSimulator
     /// </para>
     /// <para>开启后风险明确：点击可能穿透到桌面。调用方应该知道自己在干什么。</para>
     /// </param>
-    public static ClickOutcome ClickAt(ScreenPoint point, bool allowWithoutWindow = false)
+    /// <param name="authorizedRoot">
+    /// 被授权的目标窗口的**根祖先**句柄。传入后，若坐标上的窗口根不是它，直接拒绝。
+    /// <para>
+    /// 为什么需要：只检查「该坐标有窗口」是不够的 —— 弹窗、系统通知、别的应用
+    /// 都能让这个条件成立，事件照发，调用方看到 <c>Clicked</c> 就以为成功了，
+    /// 目标却毫无反应。2026-11-03 实测：一次点击落在错误窗口上，
+    /// 两类返回都是“成功”。
+    /// </para>
+    /// <para>省略（null）表示不检查窗口身份，保持旧行为。</para>
+    /// </param>
+    public static ClickOutcome ClickAt(ScreenPoint point, bool allowWithoutWindow = false,
+        IntPtr? authorizedRoot = null)
     {
         if (!IsOnScreen(point))
             return ClickOutcome.RejectedOffScreen;
 
-        if (!HasWindowAt(point) && !allowWithoutWindow)
-            return ClickOutcome.RejectedNoWindowAtPoint;
+        // 先把“该坐标上到底是谁”问清楚，再做归属判定。
+        var hwndAtPoint = WindowFromPoint(new NativePoint { X = point.X, Y = point.Y });
+        var rootAtPoint = hwndAtPoint == IntPtr.Zero ? IntPtr.Zero : RootOf(hwndAtPoint);
+
+        var verdict = EvaluateWindowOwnership(
+            hasWindowAtPoint: hwndAtPoint != IntPtr.Zero,
+            windowAtPointRoot: rootAtPoint,
+            authorizedRoot: authorizedRoot,
+            allowWithoutWindow: allowWithoutWindow);
+
+        if (verdict is { } rejected)
+            return rejected;
 
         SetCursorPosition(point);
         Pause(200);
@@ -165,20 +196,41 @@ public static class WindowsInputSimulator
         return WindowsMonitorEnumerator.IsOnRealMonitor(point);
     }
 
-    private static bool HasWindowAt(ScreenPoint point)
+    /// <summary>
+    /// 判定「这个坐标上的窗口能否信任」。纯逻辑，句柄由调用方查好传进来，
+    /// 这样四种组合都能在没有真实窗口的环境里断言。
+    /// <para>
+    /// 旧的实现只有「有没有窗口」两个分支（<see cref="ClickOutcome.RejectedNoWindowAtPoint"/> 与放行），
+    /// 漏掉了「有窗口但不是目标」这一类。
+    /// </para>
+    /// </summary>
+    /// <returns>拒绝原因；返回 <c>null</c> 表示可以点击。</returns>
+    internal static ClickOutcome? EvaluateWindowOwnership(
+        bool hasWindowAtPoint,
+        IntPtr windowAtPointRoot,
+        IntPtr? authorizedRoot,
+        bool allowWithoutWindow)
     {
-        var native = new NativePoint
-        {
-            X = point.X,
-            Y = point.Y
-        };
-        return WindowFromPoint(native) != IntPtr.Zero;
+        if (!hasWindowAtPoint)
+            return allowWithoutWindow ? null : ClickOutcome.RejectedNoWindowAtPoint;
+
+        // 没指定授权根就不检查归属（旧行为）；指定了就必须匹配。
+        if (authorizedRoot is { } authorized && windowAtPointRoot != authorized)
+            return ClickOutcome.RejectedUnexpectedWindowAtPoint;
+
+        return null;
     }
+
+    /// <summary>求窗口的根祖先。点击可能落在子控件上，归属判定要比到根。</summary>
+    private static IntPtr RootOf(IntPtr hwnd) => GetAncestor(hwnd, GaRoot);
 
     private const int SmXVirtualScreen = 76;
     private const int SmYVirtualScreen = 77;
     private const int SmCxVirtualScreen = 78;
     private const int SmCyVirtualScreen = 79;
+
+    /// <summary>GetAncestor 的 GA_ROOT。</summary>
+    private const uint GaRoot = 2;
     private const uint MouseEventLeftDown = 0x0002;
     private const uint MouseEventLeftUp = 0x0004;
 
@@ -191,6 +243,7 @@ public static class WindowsInputSimulator
 
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(NativePoint point);
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
     [DllImport("user32.dll")] private static extern int GetSystemMetrics(int nIndex);
     [DllImport("user32.dll")] private static extern void mouse_event(
         uint flags, int dx, int dy, uint data, UIntPtr extraInfo);
