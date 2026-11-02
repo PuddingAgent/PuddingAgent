@@ -87,14 +87,20 @@ try {
     $stream.Close()
 }
 
-$hits = @($text -split "`r?`n" | Where-Object { $_.Contains('[GoalLoop]') })
+# Matched on the full prefix the hook actually emits:
+#   "[GoalLoop] session=... action=... reason=..."
+# A bare '[GoalLoop]' would also hit any log line that merely *mentions* the tag
+# (e.g. an AgentSleep work_summary describing this check) - that produced a false
+# "wiring is live" on 2026-11-02 while the host still had no env.
+$hits = @($text -split "`r?`n" | Where-Object { $_.Contains('[GoalLoop] session=') })
 if ($hits.Count -gt 0) {
     Write-Output ("GoalLoopLines: {0} (wiring is live)" -f $hits.Count)
     $hits | Select-Object -First 3 | ForEach-Object { Write-Output ("  {0}" -f $_) }
 } else {
-    Write-Output 'GoalLoopLines: 0'
-    Write-Output '  Either the env is not visible to the host (restart still needed),'
-    Write-Output '  or no agent loop has finished since the process started.'
+    Write-Output ('GoalLoopLines: 0')
+    Write-Output '  The host has not emitted a [GoalLoop] decision line yet.'
+    Write-Output '  If the env was written with setx, a full launch-chain restart is required:'
+    Write-Output '  Guardian -> Desktop -> Agent each inherit their own startup snapshot.'
 }
 
 Write-Output ''
