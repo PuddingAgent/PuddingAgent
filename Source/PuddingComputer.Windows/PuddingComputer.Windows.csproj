@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>PuddingComputer.Windows</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+    <ProjectReference Include="..\PuddingComputer.Automation\PuddingComputer.Automation.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenCvSharp4" Version="4.10.0.20240616" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.10.0.20240616" />
+  </ItemGroup>
+
+  <!--
+    Computer Use 的**平台相关**组件（Windows 实现层）。
+
+    职责：截屏（GDI）、元素检测（OpenCV）、把检测结果交给
+    PuddingComputer.Automation.ComputerSnapshotAnnotator 附加编号与三套坐标。
+
+    为什么单独成工程：Automation 是纯规则、可单测；截图与 OpenCV 有原生依赖，
+    不能污染纯规则层。依赖方向由 ProjectReference 强制：Windows → Automation → Contracts。
+
+    ⚠️ 已知边界（实测）：
+      - BitBlt 抓不到 Chromium 的 Intermediate D3D Window（返回纯黑），
+        但**整屏 BitBlt 是正常的**，所以统一走"整屏截图 + 在整屏上检测"。
+      - 渲染在窗口 rect 之外的合成层不参与 Win32 命中测试，点击会被穿透；
+        这类目标由 Annotator 的 InsideWindow 标记出来。
+  -->
+
+</Project>
