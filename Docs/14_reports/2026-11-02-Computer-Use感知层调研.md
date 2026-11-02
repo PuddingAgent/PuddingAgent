@@ -1117,3 +1117,43 @@ SkiaSharp 本就已在主工程使用（ImagePreprocessing），不引入新奇�
 - 截图、检测、坐标计算、点击，全部在一个进程内，无跨语言边界
 - 与主工程共用 SkiaSharp，无额外原生依赖管理
 - 可单测（检测算法接受 Mat，输入输出都是纯数据）
+
+## 二十四、WGC 选型遇阻：Win2D 1.2.0 与 .NET 10 的 RID 死循环
+
+要抓 Chromium 的 D3D 合成层，`Windows.Graphics.Capture`（WGC）是唯一正路。
+它的 C# 路径通常借 Win2D（`Microsoft.Graphics.Win2D`）简化 `IDirect3DDevice` 的创建。
+实测这条路走不通。
+
+### 两种配置都失败
+
+```
+配置 A：UseRidGraph=false（.NET 10 默认）
+  → NETSDK1083: 无法识别指定 RuntimeIdentifier "win10-x64"
+    （Win2D 1.2.0 的 targets 里硬编码了旧 RID）
+
+配置 B：UseRidGraph=true（恢复旧 RID 图）
+  → NETSDK1082: Microsoft.NETCore.App 没有运行时包
+    用于 RuntimeIdentifier "win10-arm" / "win10-arm-aot"
+    （旧 RID 图展开出 ARM 变体，而 .NET 10 已不再为它提供运行时包）
+```
+
+再叠加 `RuntimeIdentifier=win-x64` 与 `PlatformTarget=x64` 也无济于事 —— 报错仍然是 ARM 那两个。
+
+**结论：Win2D 1.2.0 与 .NET 10 SDK（10.0.401）不兼容，不是配置问题。**
+
+### 明天要走的替代路线
+
+放弃 Win2D，改为**纯 interop**：
+
+1. `D3D11CreateDevice`（P/Invoke 到 d3d11.dll）→ `ID3D11Device`
+2. `CreateDirect3D11DeviceFromDXGIDevice`（d3d11.dll 导出）→ WinRT `IDirect3DDevice`
+3. `IGraphicsCaptureItemInterop.CreateForWindow(hwnd)` → `GraphicsCaptureItem`
+4. `Direct3D11CaptureFramePool.Create(...)` + `session.StartCapture()`
+5. `FrameArrived` → `IDirect3DSurface` → `GetDXGIInterface` → `Map` 读像素
+
+好处：不依赖 Win2D，RID 冲突消失；坏处：约 200 行 interop，需要小心 COM 引用计数。
+
+### 本轮同时确认的事
+
+- `OpenCvSharp4` + `SkiaSharp` 在 .NET 10 下**完全正常**（检测已跑通，57 候选）
+- 只有 Win2D 这一个包与 .NET 10 有 RID 冲突
