@@ -115,6 +115,11 @@ public sealed class GoalLoopDecisionHook : IAgentLoopHook
                 // 所以在 openItems 接入真实拆解表之前，本字段根本走不到。
                 // 接上 todo 后必须改成真实累计，否则 ⑦ 的 Idle>=2 判据永远不成立。
                 ConsecutiveIdleRounds = 0,
+                // 恒 false：本 hook 拿不到「该会话是否有待处理的用户消息」（AgentLoopContext 没有该字段）。
+                // 但这**不影响安全**，因为用户中途插话由 AgentExecutionService 的 steering 机制
+                // 在本 hook/gate **之前**消费（TryInjectSteeringMessageAsync，有 steering 就直接
+                // continue，根本走不到 goal 续跑分支）。
+                // ⚠️ 顺序依赖：若将来把 goal 续跑挪到 steering 检查之前，用户插话就会被续跑压过。
                 UserMessagePending = false,
                 LoopDetected = IsLooping(context.SessionId),
                 // 恒 false —— 这是**刻意**的保守，不是漏接（2026-11-02 复核）。
