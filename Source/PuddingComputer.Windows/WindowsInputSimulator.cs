@@ -21,6 +21,23 @@ public enum ClickOutcome
 }
 
 /// <summary>
+/// <see cref="WindowsInputSimulator.ResolveClick"/> 的结局：要么给出可点击的屏幕坐标，要么说明为什么拒绝。
+/// <para>
+/// 刻意不用输出参数或可空元组：这两种写法都能让调用方无条件拿到一个 <see cref="ScreenPoint"/>，
+/// 而这个 Point 在失败时是 <c>default</c>（即屏幕原点）。拿它去点就是在左上角乱点。
+/// </para>
+/// </summary>
+internal readonly record struct ClickResolution(ClickOutcome? Failure, ScreenPoint Point)
+{
+    /// <summary>只有在 <see cref="Point"/> 可信时才为 true。</summary>
+    public bool IsOk => Failure is null;
+
+    public static ClickResolution Ok(ScreenPoint point) => new(null, point);
+
+    public static ClickResolution Reject(ClickOutcome outcome) => new(outcome, default);
+}
+
+/// <summary>
 /// 鼠标输入模拟。所有点击都必须先过三道检查，任一不过就**不发事件**并返回原因。
 /// <para>
 /// 这三道检查都来自 2026-11-02 的实测，不是预防性设计：
@@ -57,18 +74,35 @@ public static class WindowsInputSimulator
         ComputerImageGeometry geometry,
         bool allowOutsideWindow = false)
     {
+        var resolution = ResolveClick(target, geometry, allowOutsideWindow);
+        return resolution.IsOk
+            ? ClickAt(resolution.Point, allowOutsideWindow)
+            : resolution.Failure!.Value;
+    }
+
+    /// <summary>
+    /// <see cref="Click"/> 的第一阶段：校验 + 坐标映射，**不碰任何 Win32**。
+    /// <para>
+    /// 抽成独立函数是为了让「必须先映射」这条约束能被**断言**。
+    /// 只靠编译期能拦住「没传 geometry」，拦不住「传了错的 geometry」
+    /// 或「映射结果被忽略」—— 这两种只能靠断言钉住。
+    /// </para>
+    /// </summary>
+    internal static ClickResolution ResolveClick(
+        AnnotatedTarget target,
+        ComputerImageGeometry geometry,
+        bool allowOutsideWindow)
+    {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(geometry);
 
         if (!target.InsideWindow && !allowOutsideWindow)
-            return ClickOutcome.RejectedOutsideWindow;
+            return ClickResolution.Reject(ClickOutcome.RejectedOutsideWindow);
 
-        // 先映射，再点。顺序不能反 —— 没映射就点等于用错坐标系。
         var mapped = ComputerCoordinateMapper.Map(geometry, target.Clickable);
-        if (!mapped.IsOk)
-            return ClickOutcome.RejectedOffScreen;
-
-        return ClickAt(mapped.Point, allowOutsideWindow);
+        return mapped.IsOk
+            ? ClickResolution.Ok(mapped.Point)
+            : ClickResolution.Reject(ClickOutcome.RejectedOffScreen);
     }
 
     /// <summary>在屏幕坐标处点击。逐项检查后才发事件。</summary>
@@ -121,9 +155,13 @@ public static class WindowsInputSimulator
 
     private static bool IsOnScreen(ScreenPoint point)
     {
-        // 必须用**真实显示器**范围，而不是 SM_*VIRTUALSCREEN。
-        // 实测：SM_CYVIRTUALSCREEN=1440，但副屏只有 1152 高，
-        // 落在 1152..1440 的坐标会被系统静默夹到 1151 —— 点击就跑偏了。
+        // 用**真实显示器**范围，而不是 SM_*VIRTUALSCREEN。
+        //
+        // 2026-11-03 更正：本节旧注释曾写「SM_CYVIRTUALSCREEN=1440 但副屏只有 1152 高」，
+        // 那个 1152 是**进程 DPI-Unaware 下的虚拟化读数**，不是真实分辨率。
+        // 声明 Per-Monitor V2 后实测副屏是 2560x1440，与主屏一致，没有残影带。
+        // 所以本处用 IsOnRealMonitor 的理由不是「SM_* 偏大」，而是「以显示器枚举为准、
+        // 不依赖 SM_* 的语义」—— 后者在混合 DPI 下含义模糊。
         return WindowsMonitorEnumerator.IsOnRealMonitor(point);
     }
 

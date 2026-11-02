@@ -28,8 +28,8 @@ public sealed class ComputerCoordinateMapperTests
         var result = ComputerCoordinateMapper.Map(geometry, new ImagePoint(200, 120));
 
         Assert.IsTrue(result.IsOk);
-        Assert.AreEqual(2304, result.X, "2104 + 200 * 400 / 400 = 2304（探针 #2 实测值）");
-        Assert.AreEqual(720, result.Y, "600 + 120 * 240 / 240 = 720");
+        Assert.AreEqual(2304, result.Point.X, "2104 + 200 * 400 / 400 = 2304（探针 #2 实测值）");
+        Assert.AreEqual(720, result.Point.Y, "600 + 120 * 240 / 240 = 720");
     }
 
     [TestMethod]
@@ -41,8 +41,8 @@ public sealed class ComputerCoordinateMapperTests
         var result = ComputerCoordinateMapper.Map(geometry, new ImagePoint(100, 60));
 
         Assert.IsTrue(result.IsOk);
-        Assert.AreEqual(2304, result.X);
-        Assert.AreEqual(720, result.Y);
+        Assert.AreEqual(2304, result.Point.X);
+        Assert.AreEqual(720, result.Point.Y);
     }
 
     [TestMethod]
@@ -54,8 +54,8 @@ public sealed class ComputerCoordinateMapperTests
         var result = ComputerCoordinateMapper.Map(geometry, new ImagePoint(400, 240));
 
         Assert.IsTrue(result.IsOk);
-        Assert.AreEqual(2304, result.X);
-        Assert.AreEqual(720, result.Y);
+        Assert.AreEqual(2304, result.Point.X);
+        Assert.AreEqual(720, result.Point.Y);
     }
 
     [TestMethod]
@@ -115,8 +115,8 @@ public sealed class ComputerCoordinateMapperTests
         var result = ComputerCoordinateMapper.Map(geometry, new ImagePoint(960, 540));
 
         Assert.IsTrue(result.IsOk);
-        Assert.AreEqual(-960, result.X);
-        Assert.AreEqual(540, result.Y);
+        Assert.AreEqual(-960, result.Point.X);
+        Assert.AreEqual(540, result.Point.Y);
     }
 
     [TestMethod]

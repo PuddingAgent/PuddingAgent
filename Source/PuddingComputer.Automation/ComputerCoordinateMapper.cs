@@ -21,16 +21,15 @@ public enum CoordinateMapStatus
 /// 调用方拿到屏幕坐标后只能传给接受 <see cref="ScreenPoint"/> 的 API，
 /// 想把它当 <see cref="ImagePoint"/> 用会直接编译失败。
 /// </para>
+/// <para>
+/// 2026-11-03 收紧：原先还提供了 <c>X</c>/<c>Y</c> 两个裸 int 便捷访问器，
+/// 它们让“拿到 int 再自己拼一个 ImagePoint”这条路又通了，壁垒等于没有。
+/// 已删除，取坐标只能走 <see cref="Point"/>。
+/// </para>
 /// </summary>
 public readonly record struct CoordinateMapResult(CoordinateMapStatus Status, ScreenPoint Point)
 {
     public bool IsOk => Status == CoordinateMapStatus.Ok;
-
-    /// <summary>成功时的屏幕 X；失败时无意义，调用前必须判 <see cref="IsOk"/>。</summary>
-    public int X => Point.X;
-
-    /// <summary>成功时的屏幕 Y；失败时无意义，调用前必须判 <see cref="IsOk"/>。</summary>
-    public int Y => Point.Y;
 }
 
 /// <summary>
