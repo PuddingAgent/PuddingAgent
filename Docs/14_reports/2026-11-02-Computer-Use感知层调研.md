@@ -1214,3 +1214,47 @@ win2 (0xE51328) (3666,0)  946x1155   ← y=1327 超出 1155
    或者接受"底部区域不可点"，改用**键盘 Enter 发送**（若该编辑器支持）。
 3. 另一条更稳的路：**直接对整个窗口截图并让检测只在窗口 rect 内工作**，
    把"点击"限制在 rect 内，避免落在不可命中的区域。
+
+## 二十六、Windows 层补齐：键盘、窗口管理，以及两个 P/Invoke 坑
+
+在感知层（截图+检测+坐标）之后，补齐了 Windows 层剩下的能力，全部落到组件：
+
+```
+WindowsScreenCapturer     整屏截图
+OpenCvElementDetector     双通道检测
+ComputerScreenAnalyzer    截屏 → 检测 → 附加坐标
+WindowsInputSimulator     鼠标 + 三道守卫
+WindowsKeyboardSimulator  键盘（Unicode 逐字 / 单键 / 组合键 / 清空输入框）
+WindowsWindowManager      枚举 / 描述 / 置顶 / 最小化 / WindowAt / RootOf
+```
+
+### 坑一：DllImport 默认 CharSet.Ansi，StringBuilder 第一个字符后就被截断
+
+枚举出来的类名全是 `P`、`W`、`C` 这样的单字符：
+
+```
+修复前：0x000101A4 ... P    P
+        0x00CF0FCC ... C    C        ← Chrome_WidgetWin_1 被截成 "C"
+修复后：0x000101A4 ... Progman / Program Manager
+        0x00CF0FCC ... Chrome_WidgetWin_1 / ChatGPT
+```
+
+后果很直接：按标题匹配 `ChatGPT` 得到 **0 个窗口**，而窗口明明开着。
+这与早些时候的 `GetDIBits` argtypes 属于同一类错误 —— **P/Invoke 的默认编组静默出错、不抛异常**。
+
+### 坑二：公开方法调同名私有方法 → 无限递归
+
+`MoveTo(ImagePoint)` 内部调 `MoveTo(point)`，写成了自己。改名 `SetCursorPosition` 解决。
+这类错误编译期不报，运行期栈溢出，属于"必须靠命名纪律防"的一类。
+
+### 顺带确认了那条核心事实
+
+修好 CharSet 后重新枚举，**同进程两个同名窗口依然存在**：
+
+```
+0x00E51328  pid=81092   946x1155  @(3666,0)  Chrome_WidgetWin_1  'ChatGPT'
+0x00CF0FCC  pid=81092  2048x1104  @(2560,0)  Chrome_WidgetWin_1  'ChatGPT'
+```
+
+这正是「按标题取第一个会随机漂移」的实证。所以 `WindowsWindowManager` 只提供显式枚举，
+不做任何"帮你选一个"的便利方法 —— 选择必须由调用方按句柄或几何显式做出。
