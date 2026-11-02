@@ -71,11 +71,19 @@ public static class ComputerSnapshotAnnotator
             // 中心点用整数除法，避免 0.5 造成相邻两次标注结果不一致
             var clickable = new ImagePoint(r.X + r.Width / 2, r.Y + r.Height / 2);
 
-            // 窗口内外判定：整块矩形必须落在窗口内才算"可安全点击"
-            var inside = r.X >= windowRect.X
-                && r.Y >= windowRect.Y
-                && r.X + r.Width <= windowRect.X + windowRect.Width
-                && r.Y + r.Height <= windowRect.Y + windowRect.Height;
+            // 窗口内外判定：按**点击落点**（中心）判定，而不是整块矩形。
+            //
+            // 2026-11-03 实测修正：点击只作用在中心点上，整块是否完全在窗口内
+            // 不决定可点性。当时一个 232x20 的目标因左边界超出窗口 100px 被判为
+            // “窗口外”，而它的中心点 (3959,712) 稳稳落在窗口内、WindowFromPoint
+            // 也确实命中该窗口 —— 结果 Click 因这个标记直接拒绝，端到端跑不通。
+            //
+            // 中心点用半开区间 [windowRect.X, windowRect.X + Width)，与
+            // ComputerCoordinateMapper 的图内边界判定保持一致。
+            var inside = clickable.X >= windowRect.X
+                && clickable.Y >= windowRect.Y
+                && clickable.X < windowRect.X + windowRect.Width
+                && clickable.Y < windowRect.Y + windowRect.Height;
 
             result.Add(new AnnotatedTarget(id, d.Kind, r, local, clickable, inside));
         }
