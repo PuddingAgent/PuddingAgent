@@ -169,20 +169,31 @@ public static class ComputerScreenAnalyzer
                 "等于丢掉合成层检测，故障会以\"点了没反应\"的形式显现。");
         }
 
-        return AnalyzeCore(capture, window.Bounds, window, detector);
+        return AnalyzeCore(capture, window.Bounds, window, detector, restrictToWindow: true);
     }
 
     private static ScreenAnalysis AnalyzeCore(
         ScreenCapture capture,
         PhysicalRect effectiveWindow,
         WindowCandidate? resolvedWindow,
-        OpenCvElementDetector? detector)
+        OpenCvElementDetector? detector,
+        bool restrictToWindow = false)
     {
         var bgr = capture.ToBgr();
         try
         {
             var effectiveDetector = detector ?? new OpenCvElementDetector();
             var detections = effectiveDetector.Detect(bgr, capture.Bounds);
+
+            // 按进程分析时只保留窗口内的目标。
+            // 不过滤的话，整屏检测会把其它应用（实测：同一桌面上 169 个 PuddingDesktop 元素）
+            // 全带回来，而这些目标即使标了 InsideWindow=false 也只会淹没真正的目标。
+            if (restrictToWindow)
+            {
+                detections = detections
+                    .Where(d => IsCenterInside(d.Rect, effectiveWindow))
+                    .ToList();
+            }
 
             var targets = ComputerSnapshotAnnotator.Annotate(detections, effectiveWindow);
 
@@ -193,5 +204,20 @@ public static class ComputerScreenAnalyzer
             bgr.Dispose();
             throw;
         }
+    }
+
+    /// <summary>
+    /// 判断检测框**中心**是否落在窗口内。
+    /// <para>
+    /// 用中心而不是“相交”：半截身子在窗口外的元素，其真实可点位置不可预测，
+    /// 按它算出来的中心往往已经在窗口外，点了大概率偏。
+    /// </para>
+    /// </summary>
+    internal static bool IsCenterInside(PhysicalRect rect, PhysicalRect window)
+    {
+        var cx = rect.X + rect.Width / 2;
+        var cy = rect.Y + rect.Height / 2;
+        return cx >= window.X && cx < window.X + window.Width
+            && cy >= window.Y && cy < window.Y + window.Height;
     }
 }
