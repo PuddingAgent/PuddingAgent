@@ -65,6 +65,18 @@ public sealed class FlaUiInspector : IUiaInspector, IDisposable
 
             rootRef = "n0";
             nodes.Add(Normalize(root, rootRef, parentRef: null));
+
+            // 预热：Chromium 系窗口的 UIA 树是增量构建的，第一次探测往往只能看到 0~1 个子节点。
+            // 窗口有界，且一旦读到子节点立即停止；读不到就照常采集，不把等待当成成功。
+            var warmupWindow = UiaStabilization.EffectiveWarmup(options.EffectiveTimeout, UiaStabilization.DefaultWarmupWindow);
+            var warmupClock = Stopwatch.StartNew();
+            var childrenSeen = ProbeChildCount(root);
+            while (UiaStabilization.ShouldKeepWarming(childrenSeen, warmupClock.Elapsed, warmupWindow))
+            {
+                Thread.Sleep(UiaStabilization.DefaultPollInterval);
+                childrenSeen = ProbeChildCount(root);
+            }
+
             queue.Enqueue((root, 0, rootRef));
         }
         catch (Exception ex)
@@ -138,6 +150,21 @@ public sealed class FlaUiInspector : IUiaInspector, IDisposable
         };
 
         return new UiaSnapshot(availability, nodes, reason);
+    }
+
+    /// <summary>
+    /// 探测一次根节点的子节点数。只用于预热判断；失败按 0 处理，不改变后续采集流程。
+    /// </summary>
+    private static int ProbeChildCount(AutomationElement root)
+    {
+        try
+        {
+            return root.FindAllChildren().Length;
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     /// <summary>
