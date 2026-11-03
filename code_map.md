@@ -88,6 +88,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingBrowser.WinUI/` | WinUI 浏览器表面宿主（与 WPF 适配层共享驱动源文件） | [code_map](Source/PuddingBrowser.WinUI/code_map.md) |
 | `Source/PuddingBrowser.Authorization/` | 独立会话授权规则，由 DesktopService 持有；票据/写世代与可信 owner，见 ADR-097 | [code_map](Source/PuddingBrowser.Authorization/code_map.md) |
 | `Source/PuddingBrowser.Automation/` | 🔑 浏览器自动化可靠性组件（叶子）：统一控制权状态机、页面授权与执行租约、证据化回执判定、变更类后置条件、operationId 账本（见下「关键语义」） | [code_map](Source/PuddingBrowser.Automation/code_map.md) |
+| `Source/PuddingComputer.Windows/` | Windows Computer Use：采集、分析窗口视觉评分、检测与输入；评分和实际落点授权分开 | [code_map](Source/PuddingComputer.Windows/code_map.md) |
 | `Source/PuddingDiagnostics/` | 🔑 可诊断基础设施叶子组件：稳定因果码/分类器/有界证据/脱敏/事故投影/故障场景；不得引用任何 Pudding 程序集 | [code_map](Source/PuddingDiagnostics/code_map.md) |
 
 **关键语义（§2「子项目索引」表·用途列逐字原文）**
@@ -200,6 +201,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | `Source/PuddingDiagnosticsTests/` | 可诊断基础设施独立测试：故障场景→期望因果码全量、事故复刻与证据、脱敏与证据预算、事故投影、S1–S4 边界断言（含探测器自检与取红） |
 | `Source/PuddingDeepSeekWebTests/` | DeepSeek Search/Fetch 协议叶子组件独立测试：请求形状/参数校验矩阵/响应解析/HTTP 错误映射/有界重试与 `Retry-After`/传输异常与取消/端点归一 + S1–S4 边界断言（含探测器取红）+ 真实 API Live（Search→Fetch，无凭据时 Inconclusive） |
 | `Source/PuddingBrowser.AutomationTests/` | 浏览器自动化可靠性组件独立测试：控制权/接管与世代、页面授权与子代理范围、回执与重试裁定、变更类后置条件、交互回执、引用身份与三个观察事实、operationId 账本、S1–S4 边界断言与用例守恒 |
+| `Source/PuddingComputer.WindowsTests/` | 分析窗口视觉评分、检测几何与实际落点授权；[文件索引](Source/PuddingComputer.WindowsTests/code_map.md) |
 | `Source/PuddingPathFilteringTests/` · `Source/PuddingVectorIndexTests/` · `Source/PuddingFullTextIndexTests/` · `Source/PuddingMemoryEngineBenchmarks/` · `Tests/PuddingBrowser.WebView2.Smoke/` | 路径忽略、向量与全文索引叶子组件 · BenchmarkDotNet 基准 · 浏览器 smoke |
 | `Source/PuddingRetrievalEvalTests/` · `Source/PuddingRetrievalEvalProbe/` · `Source/PuddingFullTextIndex.Cli.Tests/` | 检索评测（`ISearchProbe` 端口）与全文索引 CLI |
 | `Source/PuddingSshTests/` | SSH 组件独立测试（只引用组件，**289 例**）：known_hosts 明文/逗号/哈希/撤销与 pin 验证（**真实 OpenSSH fixture**）、POSIX 封装与请求校验、错误分类矩阵、有界采集白盒、**假传输故障矩阵（准入/排队/deadline/清理/停止）**、S1–S4 边界断言（变异取红两次均 3/5 红） |

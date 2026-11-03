@@ -7,13 +7,9 @@ namespace PuddingComputer.WindowsTests;
 /// <summary>
 /// <see cref="WindowsInteractiveWindowFinder.ScoreFor"/> 的边界测试。
 /// <para>
-/// 这些用例锁定的是一组**实测过的判别事实**（2026-11-03）：
-/// 同一个 ChatGPT 进程同时暴露两个顶层窗口，必须选中前者：
+/// 验证仍被 FindBest 消费的亮度、颜色与面积评分。固定样本只锁定分数关系，
+/// 不证明真实窗口的遮挡状态、输入接收关系或点击效果。
 /// </para>
-/// <code>
-/// 0xCF0FCC  (3292,106) 1600x1038  mean=247.2  颜色桶= 22  ← 真窗口
-/// 0xE51328  (3943,0)  1183x1444  mean=179.4  颜色桶≈?   ← 阴影+壁纸
-/// </code>
 /// </summary>
 [TestClass]
 public sealed class InteractiveWindowScoreTests

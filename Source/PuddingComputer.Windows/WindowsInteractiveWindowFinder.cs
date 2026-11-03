@@ -4,7 +4,7 @@ using Pudding.Contracts.Computer;
 
 namespace PuddingComputer.Windows;
 
-/// <summary>一个候选窗口及其可交互性评分。</summary>
+/// <summary>一个候选分析窗口及其视觉评分；评分不证明输入可达性。</summary>
 public sealed record WindowCandidate(
     IntPtr Handle,
     int ProcessId,
@@ -16,24 +16,13 @@ public sealed record WindowCandidate(
     double Score);
 
 /// <summary>
-/// 从同进程的多个顶层窗口中挑出"真正在显示、真正可交互"的那个。
+/// 从同进程的可见顶层窗口中，按截图内容选择用于分析的候选窗口。
 /// <para>
-/// **存在的理由**（2026-11-03 实测）：同一个 ChatGPT 进程会同时暴露两个
-/// <c>Chrome_WidgetWin_1</c> 顶层窗口：
-/// </para>
-/// <code>
-/// 0xCF0FCC  (3292,106) 1600x1038   mean=248.8  蓝像素  3,143  ← 真窗口（白底界面）
-/// 0xE51328  (3943,0)  1183x1444   mean=179.4  蓝像素 501,327 ← 30% 是蓝色桌面壁纸
-/// </code>
-/// <para>
-/// 后者看起来"面积更大"，实际上它是一个**把真窗口右半截和桌面壁纸混在一起的
-/// 阴影矩形**。对着它截图永远是空白，对着它点击永远没反应 —— 实测因此排查了
-/// 一整个晚上，先后误判为"输入框不存在""副屏高度不够""鼠标事件被吞"。
+/// 评分使用亮度、颜色种类与面积。它是视觉启发式，不证明窗口身份、遮挡状态或点击效果。
 /// </para>
 /// <para>
-/// 判据很简单：**真窗口的像素几乎全是界面底色（接近纯白或纯深色），
-/// 彩色像素占比很低；混合矩形会包含大量桌面壁纸的颜色**。所以按
-/// 「平均亮度」和「颜色种类数」两项打分即可区分。
+/// 分析窗口与输入接收窗口可以不同。同进程覆盖层承接中心点命中，不作为评分惩罚；
+/// 实际点击落点的授权检查由输入执行器负责。
 /// </para>
 /// </summary>
 public static class WindowsInteractiveWindowFinder
@@ -80,22 +69,7 @@ public static class WindowsInteractiveWindowFinder
             // 壁纸混入会拉低亮度、拉高颜色种类
             double score = ScoreFor(stats.MeanLuminance, stats.DistinctColorBuckets, bounds.Width, bounds.Height);
 
-            // 可点性：在窗口中心问一句“这一点上是哪个窗口”。
-            // 若返回别的窗口，说明本窗口被**完全或部分遮挡**，选中它等于点不到。
-            // 实测（2026-11-03）：ChatGPT 进程有两个同尺寸级别的顶层窗口，
-            // 亮度高的那个在 z-order 底部，所有点击都被上面那个接走 ——
-            // 归属校验因而拒掉了 120/202 个目标。
-            var centerHwnd = WindowFromPoint(new NativePoint
-            {
-                X = bounds.X + bounds.Width / 2,
-                Y = bounds.Y + bounds.Height / 2,
-            });
-            var centerRoot = centerHwnd == IntPtr.Zero ? IntPtr.Zero : GetAncestor(centerHwnd, GaRoot);
-
-            score = ApplyOcclusionPenalty(
-                score,
-                centerHitSelf: centerHwnd != IntPtr.Zero && centerRoot == hwnd,
-                centerHitNull: centerHwnd == IntPtr.Zero);
+            // 同进程覆盖窗口可能承接中心点命中；中心点命中归属不参与窗口评分。
 
             var title = new System.Text.StringBuilder(256);
             GetWindowTextW(hwnd, title, 256);
@@ -113,10 +87,10 @@ public static class WindowsInteractiveWindowFinder
     }
 
     /// <summary>
-    /// 窗口可交互性评分（纯函数，可单测）。
+    /// 分析窗口的视觉评分（纯函数，可单测）。
     /// <para>
-    /// 判据的物理意义：真实界面窗口的像素几乎全是界面底色（接近纯白或纯深色），
-    /// 颜色种类少；而“阴影 + 壁纸”混合矩形会包含大量彩色像素。
+    /// 启发式偏好接近纯白或纯深色、颜色种类少的区域，并给予有限的面积奖励。
+    /// 分数仅用于候选排序，不是对窗口可交互性的判定。
     /// </para>
     /// </summary>
     /// <param name="meanLuminance">窗口区域的平均亮度 0..255。</param>
@@ -138,39 +112,6 @@ public static class WindowsInteractiveWindowFinder
         double areaBonus = Math.Min(1.0, (width * (double)height) / (1920.0 * 1080.0));
 
         return luminanceScore * (1.0 - colorPenalty) * (0.7 + 0.3 * areaBonus);
-    }
-
-    /// <summary>
-    /// 被遮挡时的分数衰减系数。
-    /// <para>
-    /// 0.2 而不是 0：即使中心点被盖住也不完全排除 —— 窗口可能部分可见，
-    /// 而且归零会让“所有候选都被盖住”时直接抛异常，
-    /// 丢掉“至少还能拿到一个参考矩形”的机会。
-    /// </para>
-    /// </summary>
-    internal const double OcclusionPenaltyFactor = 0.2;
-
-    /// <summary>
-    /// 根据窗口中心点的命中结果调整分数（纯函数，可单测）。
-    /// <para>三种情形（实测 2026-11-03）：</para>
-    /// <list type="bullet">
-    /// <item><b>命中自己</b>：正常，不惩罚。</item>
-    /// <item><b>命中 null</b>：可能是合成层（画面在 D3D 层但 Win32 命中测试为空），
-    ///   那类目标本就靠 <c>allowWithoutWindow</c> 处理，**不惩罚**。</item>
-    /// <item><b>命中别的窗口</b>：被遮挡，点击会被对方接走 —— 乘衰减系数。</item>
-    /// </list>
-    /// <para>
-    /// 这条判据的来源：ChatGPT 进程同时暴露两个顶层窗口，亮度高的那个
-    /// （mean 248）在 z-order 底部、被完全挡住。只按亮度选会选中个点不到的窗口，
-    /// 实测导致 120/202 个目标落点跑到别的窗口上。
-    /// </para>
-    /// </summary>
-    internal static double ApplyOcclusionPenalty(double score, bool centerHitSelf, bool centerHitNull)
-    {
-        if (centerHitSelf || centerHitNull)
-            return score;
-
-        return score * OcclusionPenaltyFactor;
     }
 
     private static (double MeanLuminance, int DistinctColorBuckets) Measure(Mat bgr)
@@ -218,16 +159,6 @@ public static class WindowsInteractiveWindowFinder
 
     private const int DwmwaExtendedFrameBounds = 9;
 
-    /// <summary>GetAncestor 的 GA_ROOT。</summary>
-    private const uint GaRoot = 2;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativePoint
-    {
-        public int X;
-        public int Y;
-    }
-
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect
     {
@@ -257,9 +188,4 @@ public static class WindowsInteractiveWindowFinder
     [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")]
     private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out NativeRect value, int size);
 
-    [DllImport("user32.dll")]
-    private static extern IntPtr WindowFromPoint(NativePoint point);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
 }
