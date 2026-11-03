@@ -1,0 +1,12 @@
+{
+  "id": "puddingagent-message",
+  "name": "PuddingAgent HTTP 消息与回执",
+  "version": "1.0.0",
+  "description": "从 Codex 或外部客户端向 PuddingAgent 内的 Agent 发送消息，保存幂等请求并查询投递与执行回执。",
+  "summary": "本机 External API v1 的可靠消息客户端；202 接单、投递确认、终态回复分开报告。",
+  "author": "pudding-workspace",
+  "created": "2026-11-03",
+  "tags": ["external-api", "messages", "receipts"],
+  "keywords": ["PuddingAgent", "HTTP消息", "回执", "幂等", "鲸鲸"],
+  "path": "skills/puddingagent-message"
+}
