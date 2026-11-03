@@ -30,6 +30,21 @@ internal static class Program
         var outPath = ArgValue(args, "--out");
         var lines = new List<string>();
 
+        if (args.Any(a => a == "--sample"))
+        {
+            var sampleHwnd = ParseLong(ArgValue(args, "--hwnd"));
+            if (sampleHwnd == 0)
+            {
+                Console.WriteLine("usage: --sample --hwnd <n> [--rounds N] [--interval ms]");
+                return 2;
+            }
+
+            var rounds = int.TryParse(ArgValue(args, "--rounds"), out var r) ? r : 8;
+            var interval = int.TryParse(ArgValue(args, "--interval"), out var i) ? i : 400;
+            var first = ArgValue(args, "--first") ?? "wpf-uia";
+            return Sampling.Run((nint)sampleHwnd, rounds, interval, first);
+        }
+
         if (args.Any(a => a == "--write"))
         {
             var writeHwnd = ParseLong(ArgValue(args, "--hwnd"));
