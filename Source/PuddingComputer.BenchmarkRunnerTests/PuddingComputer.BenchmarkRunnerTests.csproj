@@ -1,0 +1,18 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <UseVSTest>true</UseVSTest>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>PuddingComputer.BenchmarkRunnerTests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingComputer.BenchmarkRunner\PuddingComputer.BenchmarkRunner.csproj" />
+  </ItemGroup>
+
+</Project>
