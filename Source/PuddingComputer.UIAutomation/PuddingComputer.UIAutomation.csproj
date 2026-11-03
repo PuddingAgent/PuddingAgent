@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <!-- 5.0.0 已在 .NET 10 上验证可用（`temp``/uia-probe` 实探过计算器与记事本）。 -->
+    <PackageReference Include="FlaUI.UIA2" Version="5.0.0" />
     <PackageReference Include="FlaUI.UIA3" Version="5.0.0" />
   </ItemGroup>
 

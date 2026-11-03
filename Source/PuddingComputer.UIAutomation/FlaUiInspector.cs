@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using FlaUI.Core.AutomationElements;
+using FlaUI.UIA2;
 using FlaUI.UIA3;
 using Pudding.Contracts.Computer;
 
@@ -59,6 +60,10 @@ public sealed class FlaUiInspector : IUiaInspector, IDisposable
 
         try
         {
+            // 先唤醒再取根：Chromium 系的树不会被 UIA3 唤醒，而在唤醒前拿到的 UIA3 根元素
+            // 会缓存一个空子树，导致本次采集白白失败。MSAA 探测同时承担唤醒职责。
+            _ = ProbeChildCount(windowHandle);
+
             var root = _automation.FromHandle(windowHandle);
             if (root is null)
                 return UiaSnapshot.Empty(UiaAvailability.Unavailable, "FromHandle 返回 null（句柄无效或窗口已关闭）");
@@ -70,11 +75,11 @@ public sealed class FlaUiInspector : IUiaInspector, IDisposable
             // 窗口有界，且一旦读到子节点立即停止；读不到就照常采集，不把等待当成成功。
             var warmupWindow = UiaStabilization.EffectiveWarmup(options.EffectiveTimeout, UiaStabilization.DefaultWarmupWindow);
             var warmupClock = Stopwatch.StartNew();
-            var childrenSeen = ProbeChildCount(root);
+            var childrenSeen = ProbeChildCount(windowHandle);
             while (UiaStabilization.ShouldKeepWarming(childrenSeen, warmupClock.Elapsed, warmupWindow))
             {
                 Thread.Sleep(UiaStabilization.DefaultPollInterval);
-                childrenSeen = ProbeChildCount(root);
+                childrenSeen = ProbeChildCount(windowHandle);
             }
 
             queue.Enqueue((root, 0, rootRef));
@@ -153,13 +158,20 @@ public sealed class FlaUiInspector : IUiaInspector, IDisposable
     }
 
     /// <summary>
-    /// 探测一次根节点的子节点数。只用于预热判断；失败按 0 处理，不改变后续采集流程。
+    /// 用 MSAA 通道探测根节点的子节点数。
+    /// <para>
+    /// 为什么不用 UIA3 自己探：实测（2026-11-04）Chromium 系窗口的 UIA 无障碍树**不会被 UIA3 唤醒**——
+    /// 同一进程内 uia3 首次只读到 1 个节点，而先跑一次 uia2 后 uia3 立刻能读到子节点。
+    /// 因此这里既在“看”也在“唤醒”，双重职责是有意的。
+    /// </para>
     /// </summary>
-    private static int ProbeChildCount(AutomationElement root)
+    private static int ProbeChildCount(IntPtr windowHandle)
     {
         try
         {
-            return root.FindAllChildren().Length;
+            using var automation = new UIA2Automation();
+            var root = automation.FromHandle(windowHandle);
+            return root?.FindAllChildren().Length ?? 0;
         }
         catch
         {
