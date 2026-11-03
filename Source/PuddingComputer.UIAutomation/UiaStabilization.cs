@@ -14,8 +14,16 @@ namespace PuddingComputer.UIAutomation;
 /// </summary>
 public static class UiaStabilization
 {
-    /// <summary>预热窗口上限。取小值是为了让「本来就只有一个面板」的应用不被无谓拖慢。</summary>
-    public static readonly TimeSpan DefaultWarmupWindow = TimeSpan.FromMilliseconds(800);
+    /// <summary>
+    /// 预热窗口上限。
+    /// <para>
+    /// 取 300ms 的依据（2026-11-04 实测）：MSAA 通道的**首次**探测就能读到子节点
+    /// （VS Code 首探=3、douyin 首探=4），说明唤醒是即时生效的，长时间等待没有收益；
+    /// 而本来就无子节点的窗口会白等满整个窗口（曾用 800ms，实测单次采集 933ms）。
+    /// 保留有限重试是为了幂住“启动瞬间”的应用，不是为了等树长大。
+    /// </para>
+    /// </summary>
+    public static readonly TimeSpan DefaultWarmupWindow = TimeSpan.FromMilliseconds(300);
 
     /// <summary>两次探测之间的间隔。</summary>
     public static readonly TimeSpan DefaultPollInterval = TimeSpan.FromMilliseconds(100);
