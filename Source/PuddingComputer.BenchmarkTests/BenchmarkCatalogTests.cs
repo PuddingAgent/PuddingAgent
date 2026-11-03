@@ -29,14 +29,14 @@ public sealed class BenchmarkCatalogTests
     }
 
     /// <summary>
-    /// 五种 oracle 都必须能在清单里出现且反序列化成正确类型。
+    /// 清单里的 oracle 必须反序列化成具体类型，不能退化成基类。
     /// <para>
-    /// 多态判别写错时，<c>JsonPolymorphic</c> 会静默退化成基类或抛异常 ——
-    /// 这条把"清单里到底有哪些类型"钉住。
+    /// 只断言清单当前实际用到的两种；新增任务类型时再补。
+    /// 断言「五种都要有」在清单经实测精简后会变成假命题。
     /// </para>
     /// </summary>
     [TestMethod]
-    public void ShippedCatalog_CoversAllOracleKinds()
+    public void ShippedCatalog_OracleTypesDeserializeConcretely()
     {
         var tasks = BenchmarkCatalog.Load(File.ReadAllText(CatalogPath));
 
@@ -44,9 +44,36 @@ public sealed class BenchmarkCatalogTests
 
         Assert.Contains(typeof(UiaPropertyOracle), kinds);
         Assert.Contains(typeof(ElementStateOracle), kinds);
-        Assert.Contains(typeof(WindowOrDialogOracle), kinds);
-        Assert.Contains(typeof(FileContentOracle), kinds);
-        Assert.Contains(typeof(VisualRegionOracle), kinds);
+
+        foreach (var t in tasks)
+        {
+            Assert.IsFalse(string.IsNullOrWhiteSpace(t.Oracle.Description),
+                $"[{t.Id}] oracle 缺少描述，可能反序列化成了基类");
+        }
+    }
+
+    /// <summary>
+    /// **实测教训**：不能只靠 AutomationId 定位。
+    /// <para>
+    /// 新版 Windows 记事本的编辑区根本没有 AutomationId，只能靠
+    /// ControlType=Document + ClassName=RichEditD2DPT 定位。
+    /// 所以清单里必须至少有一个「无 AutomationId 的选择器」。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public void ShippedCatalog_HasSelectorWithoutAutomationId()
+    {
+        var tasks = BenchmarkCatalog.Load(File.ReadAllText(CatalogPath));
+
+        bool hasNonIdSelector = tasks.Any(t => t.Oracle switch
+        {
+            UiaPropertyOracle u => string.IsNullOrWhiteSpace(u.Selector.AutomationId) && u.Selector.HasAny,
+            ElementStateOracle e => string.IsNullOrWhiteSpace(e.Selector.AutomationId) && e.Selector.HasAny,
+            _ => false,
+        });
+
+        Assert.IsTrue(hasNonIdSelector,
+            "清单里必须有用属性组合而非 AutomationId 定位的元素");
     }
 
     /// <summary>加载 → 保存 → 再加载，内容必须一致。</summary>

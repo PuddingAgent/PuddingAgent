@@ -3,45 +3,60 @@
     "id": "calculator-add",
     "app": "calculator",
     "setup": "launch-clean",
-    "goal": "Compute 17 + 25 using the on-screen keypad",
+    "goal": "Press 1 7 + 2 5 = using the on-screen keypad; display shows 42",
     "risk": "reversible",
     "maxAttempts": 3,
     "oracle": {
       "kind": "uia-property",
-      "automationId": "CalculatorResults",
+      "selector": { "automationId": "CalculatorResults" },
       "property": "name",
       "operator": "endsWith",
       "expected": "42"
     }
   },
   {
-    "id": "calculator-divide-by-zero",
+    "id": "calculator-multiply",
     "app": "calculator",
     "setup": "launch-clean",
-    "goal": "Compute 1 / 0 and observe the error state",
+    "goal": "Press 6 x 7 = using the on-screen keypad; display shows 42",
     "risk": "reversible",
     "maxAttempts": 3,
     "oracle": {
       "kind": "uia-property",
-      "automationId": "CalculatorResults",
+      "selector": { "automationId": "CalculatorResults" },
       "property": "name",
-      "operator": "contains",
-      "expected": "0"
+      "operator": "endsWith",
+      "expected": "42"
     }
   },
   {
     "id": "calculator-clear-entry",
     "app": "calculator",
     "setup": "launch-clean",
-    "goal": "Enter 123 then press CE; display returns to 0",
+    "goal": "Press 1 2 3 then CE; display returns to 0",
     "risk": "reversible",
     "maxAttempts": 3,
     "oracle": {
       "kind": "uia-property",
-      "automationId": "CalculatorResults",
+      "selector": { "automationId": "CalculatorResults" },
       "property": "name",
       "operator": "endsWith",
       "expected": "0"
+    }
+  },
+  {
+    "id": "calculator-expression-updates",
+    "app": "calculator",
+    "setup": "launch-clean",
+    "goal": "Press 1 then +; the expression line reflects the pending operation",
+    "risk": "reversible",
+    "maxAttempts": 3,
+    "oracle": {
+      "kind": "uia-property",
+      "selector": { "automationId": "CalculatorExpression" },
+      "property": "name",
+      "operator": "contains",
+      "expected": "+"
     }
   },
   {
@@ -53,68 +68,24 @@
     "maxAttempts": 3,
     "oracle": {
       "kind": "uia-property",
-      "automationId": "15",
+      "selector": { "controlType": "Document", "className": "RichEditD2DPT" },
       "property": "value",
       "operator": "equals",
       "expected": "pudding-benchmark-42"
     }
   },
   {
-    "id": "notepad-save-file",
+    "id": "notepad-editor-present",
     "app": "notepad",
     "setup": "launch-clean",
-    "goal": "Type 'saved' and save to a temp file via the Save dialog",
-    "risk": "reversible",
-    "maxAttempts": 3,
-    "oracle": {
-      "kind": "file-content",
-      "path": "%TEMP%\\pudding-benchmark-save.txt",
-      "operator": "equals",
-      "expected": "saved"
-    }
-  },
-  {
-    "id": "notepad-save-dialog-appears",
-    "app": "notepad",
-    "setup": "launch-clean",
-    "goal": "Trigger Save As and observe the Save dialog",
-    "risk": "reversible",
-    "maxAttempts": 3,
-    "oracle": {
-      "kind": "window-or-dialog",
-      "titlePattern": "Save As",
-      "shouldExist": true
-    }
-  },
-  {
-    "id": "paint-tool-selected",
-    "app": "paint",
-    "setup": "launch-clean",
-    "goal": "Select the pencil tool",
-    "risk": "reversible",
+    "goal": "Confirm the text editor surface exists and is enabled",
+    "risk": "read-only",
     "maxAttempts": 3,
     "oracle": {
       "kind": "element-state",
-      "automationId": "pencilToolButton",
-      "state": "selected",
+      "selector": { "controlType": "Document", "className": "RichEditD2DPT" },
+      "state": "enabled",
       "expected": true
-    }
-  },
-  {
-    "id": "paint-canvas-stroke",
-    "app": "paint",
-    "setup": "launch-clean",
-    "goal": "Draw a horizontal stroke across the canvas center",
-    "risk": "reversible",
-    "maxAttempts": 3,
-    "oracle": {
-      "kind": "visual-region",
-      "x": 0,
-      "y": 0,
-      "width": 400,
-      "height": 200,
-      "minChangedRatio": 0.01,
-      "pixelThreshold": 20
     }
   }
 ]

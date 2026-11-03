@@ -27,25 +27,25 @@ public abstract record OutcomeOracle
 /// 无障碍属性断言 —— 最可靠的一种，因为值由应用自己提供，不受渲染影响。
 /// </summary>
 public sealed record UiaPropertyOracle(
-    string AutomationId,
+    ElementSelector Selector,
     string Property,
     string Operator,
     string Expected) : OutcomeOracle
 {
     public override string Description =>
-        $"uia[{AutomationId}].{Property} {Operator} \"{Expected}\"";
+        $"uia[{Selector}].{Property} {Operator} \"{Expected}\"";
 }
 
 /// <summary>
 /// 元素状态断言（存在 / 可见 / 可用 / 选中 / 聚焦）。
 /// </summary>
 public sealed record ElementStateOracle(
-    string AutomationId,
+    ElementSelector Selector,
     string State,
     bool Expected = true) : OutcomeOracle
 {
     public override string Description =>
-        $"uia[{AutomationId}].{State} == {Expected}";
+        $"uia[{Selector}].{State} == {Expected}";
 }
 
 /// <summary>

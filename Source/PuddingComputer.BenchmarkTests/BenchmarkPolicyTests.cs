@@ -17,7 +17,9 @@ public sealed class BenchmarkPolicyTests
 {
     private static BenchmarkTask Task(RiskClass risk, int maxAttempts = 3) =>
         new("t1", "calculator", "launch-clean", "Compute 17 + 25", risk, maxAttempts,
-            new UiaPropertyOracle("CalculatorResults", "name", "endsWith", "42"));
+            new UiaPropertyOracle(
+                new ElementSelector(AutomationId: "CalculatorResults"),
+                "name", "endsWith", "42"));
 
     private static OracleEvaluation Pass() =>
         OracleEvaluation.Pass("name = \"42\"", "uia[CalculatorResults].name");
