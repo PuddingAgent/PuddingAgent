@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>PuddingComputer.Benchmark</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    Computer Use 的**基准任务与判定规则**组件（规程 S1）。
+
+    刻意**零 ProjectReference**：它只描述"什么算做完"，不碰任何观察或执行能力。
+    这样一来 oracle 判定可以完全脱离窗口、UIA、截图、输入来单测 ——
+    而这些判定恰恰是最容易写错、又最容易被"顺手改一下"而不被发现的部分。
+
+    Codex 两轮规划给的硬约束落在这里：
+      - 只有 Pass 允许声明成功
+      - 非幂等动作在 Unknown 下不得盲重试
+      - "像素变了"不能作为成功证据，必须给出 typed oracle 与具体证据
+
+    刻意不知道：UIA、窗口、截图、OCR、输入、DI、宿主。
+    这些在 S1–S4 阶段全部不存在于此工程，S5 才考虑接线。
+  -->
+
+</Project>
