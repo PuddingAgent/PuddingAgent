@@ -66,6 +66,7 @@ public static class WindowsWindowManager
     /// <summary>枚举所有可见的顶层窗口。</summary>
     public static IReadOnlyList<WindowInfo> EnumerateTopLevel()
     {
+        using var dpi = WindowsDpiEnforcer.EnterPhysicalCoordinates();
         var results = new List<WindowInfo>();
 
         EnumWindows((handle, _) =>
@@ -84,8 +85,11 @@ public static class WindowsWindowManager
     }
 
     /// <summary>按句柄查窗口；句柄失效时返回 null。</summary>
-    public static WindowInfo? Describe(nint handle) =>
-        IsWindow(handle) ? BuildInfo(handle) : null;
+    public static WindowInfo? Describe(nint handle)
+    {
+        using var dpi = WindowsDpiEnforcer.EnterPhysicalCoordinates();
+        return IsWindow(handle) ? BuildInfo(handle) : null;
+    }
 
     /// <summary>把窗口提到最前并激活。返回是否成功。</summary>
     public static bool BringToFront(nint handle)
@@ -102,6 +106,7 @@ public static class WindowsWindowManager
     /// <summary>查询某屏幕坐标处属于哪个窗口（不做任何推断）。</summary>
     public static nint WindowAt(ScreenPoint point)
     {
+        using var dpi = WindowsDpiEnforcer.EnterPhysicalCoordinates();
         var native = new NativePoint
         {
             X = point.X,

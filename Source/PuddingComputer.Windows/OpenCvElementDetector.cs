@@ -19,7 +19,7 @@ namespace PuddingComputer.Windows;
 /// <see cref="ComputerSnapshotAnnotator"/> 附加，那是纯规则、可单测的部分。
 /// </para>
 /// </summary>
-public sealed class OpenCvElementDetector
+public sealed class OpenCvElementDetector : IComputerElementDetector
 {
     private readonly int _minWidth;
     private readonly int _minHeight;
@@ -152,7 +152,7 @@ public sealed class OpenCvElementDetector
                     screenBounds.Y + rect.Y,
                     rect.Width,
                     rect.Height),
-                kind));
+                kind, Source: "opencv"));
         }
 
         return list;

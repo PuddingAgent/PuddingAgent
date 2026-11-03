@@ -33,20 +33,19 @@ public sealed class ScreenCapture : IDisposable
 }
 
 /// <summary>
-/// 整屏截图。
+/// 从可见桌面采集整屏或物理区域。
 /// <para>
-/// 刻意只提供"整屏"一个入口：实测 BitBlt 抓 Chromium 的 D3D 合成层会返回纯黑，
-/// 但整屏 BitBlt 完全正常。与其在窗口层纠缠，不如统一截整屏、在整屏上做检测——
-/// 这样拿到的就是用户真正看到的东西。
+/// 使用屏幕 DC 的 BitBlt，不向 Chromium 窗口请求后台渲染。
+/// 截图包含实际遮挡；它不证明被遮挡窗口中的内容或控件状态。
 /// </para>
 /// </summary>
 public static class WindowsScreenCapturer
 {
     public static ScreenCapture CaptureVirtualScreen()
     {
-        // 不能直接用 SM_CYVIRTUALSCREEN：它会比真实显示器范围大一截
-        // （实测 1440 vs 副屏 1152），多出来的部分 BitBlt 给的是残影，
-        // 会被检测器当成真控件，而点击时坐标会被系统夹到屏幕边缘。
+        using var dpi = WindowsDpiEnforcer.EnterPhysicalCoordinates();
+        // 所有范围在同一物理坐标上下文中取得。显示器并集的包围框仍可能有空洞，
+        // 点击前必须另用 IsOnRealMonitor 检查实际显示区域。
         // 所以这里取所有**真实显示器**的并集。
         var monitors = WindowsMonitorEnumerator.Enumerate();
         if (monitors.Count == 0)
@@ -62,6 +61,7 @@ public static class WindowsScreenCapturer
 
     public static ScreenCapture CaptureRegion(PhysicalRect region)
     {
+        using var dpi = WindowsDpiEnforcer.EnterPhysicalCoordinates();
         int w = region.Width, h = region.Height;
         if (w <= 0 || h <= 0)
             throw new ArgumentException($"截图区域无效：{region}", nameof(region));

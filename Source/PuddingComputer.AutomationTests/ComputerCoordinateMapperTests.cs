@@ -129,4 +129,21 @@ public sealed class ComputerCoordinateMapperTests
         Assert.AreEqual(CoordinateMapStatus.OutOfBounds,
             ComputerCoordinateMapper.Map(geometry, new ImagePoint(0, 0)).Status);
     }
+
+    [TestMethod]
+    [DataRow(double.NaN)]
+    [DataRow(double.PositiveInfinity)]
+    [DataRow(double.NegativeInfinity)]
+    public void NonFiniteCoordinatesAreRejected(double value)
+    {
+        Assert.AreEqual(CoordinateMapStatus.OutOfBounds,
+            ComputerCoordinateMapper.Map(ScreenPixels(400, 240), new ImagePoint(value, 10)).Status);
+    }
+
+    [TestMethod]
+    public void FractionalEdgeCannotRoundOutsideCapturedPixels()
+    {
+        Assert.AreEqual(CoordinateMapStatus.OutOfBounds,
+            ComputerCoordinateMapper.Map(ScreenPixels(400, 240), new ImagePoint(399.9, 10)).Status);
+    }
 }

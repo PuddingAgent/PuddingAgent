@@ -199,7 +199,8 @@ public static class ComputerScreenAnalyzer
                     .ToList();
             }
 
-            var targets = ComputerSnapshotAnnotator.Annotate(detections, effectiveWindow);
+            var targets = ComputerSnapshotAnnotator.Annotate(detections, effectiveWindow,
+                new(capture.Bounds, bgr.Width, bgr.Height, ComputerCaptureMode.ScreenPixels, true));
 
             return new ScreenAnalysis(bgr, capture.Bounds, targets, resolvedWindow);
         }

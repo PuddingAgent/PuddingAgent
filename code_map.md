@@ -88,7 +88,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingBrowser.WinUI/` | WinUI 浏览器表面宿主（与 WPF 适配层共享驱动源文件） | [code_map](Source/PuddingBrowser.WinUI/code_map.md) |
 | `Source/PuddingBrowser.Authorization/` | 独立会话授权规则，由 DesktopService 持有；票据/写世代与可信 owner，见 ADR-097 | [code_map](Source/PuddingBrowser.Authorization/code_map.md) |
 | `Source/PuddingBrowser.Automation/` | 🔑 浏览器自动化可靠性组件（叶子）：统一控制权状态机、页面授权与执行租约、证据化回执判定、变更类后置条件、operationId 账本（见下「关键语义」） | [code_map](Source/PuddingBrowser.Automation/code_map.md) |
-| `Source/PuddingComputer.Windows/` | Windows Computer Use：采集、分析窗口视觉评分、检测与输入；评分和实际落点授权分开 | [code_map](Source/PuddingComputer.Windows/code_map.md) |
+| `Source/PuddingComputer.Windows/` | Windows Computer Use：物理截图、候选 ID、原生焦点与有回执的输入；Host computer_observe → 共享观察会话 → Runtime computer_input → 新截图验证 | [code_map](Source/PuddingComputer.Windows/code_map.md) |
 | `Source/PuddingDiagnostics/` | 🔑 可诊断基础设施叶子组件：稳定因果码/分类器/有界证据/脱敏/事故投影/故障场景；不得引用任何 Pudding 程序集 | [code_map](Source/PuddingDiagnostics/code_map.md) |
 
 **关键语义（§2「子项目索引」表·用途列逐字原文）**
@@ -203,6 +203,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | `Source/PuddingDeepSeekWebTests/` | DeepSeek Search/Fetch 协议叶子组件独立测试：请求形状/参数校验矩阵/响应解析/HTTP 错误映射/有界重试与 `Retry-After`/传输异常与取消/端点归一 + S1–S4 边界断言（含探测器取红）+ 真实 API Live（Search→Fetch，无凭据时 Inconclusive） |
 | `Source/PuddingBrowser.AutomationTests/` | 浏览器自动化可靠性组件独立测试：控制权/接管与世代、页面授权与子代理范围、回执与重试裁定、变更类后置条件、交互回执、引用身份与三个观察事实、operationId 账本、S1–S4 边界断言与用例守恒 |
 | `Source/PuddingComputer.WindowsTests/` | 分析窗口视觉评分、检测几何与实际落点授权；[文件索引](Source/PuddingComputer.WindowsTests/code_map.md) |
+| `TestScripts/ComputerUseSmoke/` | 可选交互式 WebView2 验收；[入口脚本](TestScripts/test-computer-use.ps1) 使用生产输入路径，DOM 只读核对焦点/值/按钮效果 |
 | `Source/PuddingPathFilteringTests/` · `Source/PuddingVectorIndexTests/` · `Source/PuddingFullTextIndexTests/` · `Source/PuddingMemoryEngineBenchmarks/` · `Tests/PuddingBrowser.WebView2.Smoke/` | 路径忽略、向量与全文索引叶子组件 · BenchmarkDotNet 基准 · 浏览器 smoke |
 | `Source/PuddingRetrievalEvalTests/` · `Source/PuddingRetrievalEvalProbe/` · `Source/PuddingFullTextIndex.Cli.Tests/` | 检索评测（`ISearchProbe` 端口）与全文索引 CLI |
 | `Source/PuddingSshTests/` | SSH 组件独立测试（只引用组件，**289 例**）：known_hosts 明文/逗号/哈希/撤销与 pin 验证（**真实 OpenSSH fixture**）、POSIX 封装与请求校验、错误分类矩阵、有界采集白盒、**假传输故障矩阵（准入/排队/deadline/清理/停止）**、S1–S4 边界断言（变异取红两次均 3/5 红） |
@@ -250,6 +251,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | [全生命周期注册点目录](Docs/12_features/Agent全生命周期Hook事件与动作注册点目录-2026-10-09.md) · [管道架构](Docs/12_features/Agent生命周期与Hook管道架构设计-2026-10-09.md) · [代码设计](Docs/12_features/Agent生命周期与Hook管道代码设计-2026-10-09.md) · [现状审计](Docs/14_reports/2026-10-09-Agent生命周期与Hook边界审计.md) | 提案：动作/Hook 注册点与管道、生命周期收口（见下「关键语义」） |
 | [浏览器自动化可靠性与渐进阅读设计](Docs/12_features/浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md) | 浏览器控制权与页面授权、动作回执、稳定 ref、渐进 DOM/markdown 阅读、截图视觉和受约束委派的目标设计与交付门禁（提案） |
 | [Computer Use 代码设计](Docs/12_features/Computer-Use代码设计与分阶段施工方案-2026-10-20.md) | 提案：Windows 控件与键鼠工具、独立执行器、控制权和观察契约、分阶段接入 |
+| [搜索框输入诊断方案](Docs/12_features/Computer-Use搜索框输入诊断与实现方案-2026-11-03.md) | 焦点/合成输入交叉对照、菜单粘贴、无障碍写值及 IME/HID 边界；先独立探针后接工具 |
 | [B1 身份准入与下一阶段施工](Docs/12_features/B1身份准入接线与浏览器交付下一阶段实施方案-2026-10-09.md) | Core 可信身份跨进程传递、任务授权签发、Desktop 准入/复检、B6 接线及外部验收顺序 |
 | [浏览器交付修订施工](Docs/12_features/浏览器交付修订施工方案-2026-10-12.md) · [DeepSeek 施工指令](Docs/15_tasks/2026-10-13-DeepSeek浏览器修订施工指令.md) | 两条传输的共用执行器、不可变许可、任务选择绑定、完整指纹账本、Runtime 委派和原生截图输出的逐文件规格；R1–R6 顺序、反例与交付验收要求 |
 | [Agent 生成式交互界面与浏览器应用运行时](Docs/12_features/Agent生成式交互界面与浏览器应用运行时设计方案-2026-10-08.md) | HTML/表单/SVG/图表/涂鸦作品、页面 SDK、持久状态、实时版本更新、具名 JS 调用与用户提交闭环的目标设计（提案） |

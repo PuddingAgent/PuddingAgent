@@ -36,6 +36,7 @@ public static class WindowsInteractiveWindowFinder
     /// <returns>评分最高的候选；没有任何候选时为 null。</returns>
     public static WindowCandidate? FindBest(int processId, ScreenCapture capture, int minimumSize = 300)
     {
+        using var dpi = WindowsDpiEnforcer.EnterPhysicalCoordinates();
         ArgumentNullException.ThrowIfNull(capture);
 
         using var bgr = capture.ToBgr();

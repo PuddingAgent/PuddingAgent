@@ -29,6 +29,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\PuddingComputer.Windows\PuddingComputer.Windows.csproj" />
     <ProjectReference Include="..\PuddingCodeIntelligence\PuddingCodeIntelligence.csproj" />
     <ProjectReference Include="..\PuddingCodeIndex\PuddingCodeIndex.csproj" />
     <ProjectReference Include="..\PuddingToolGuidance\PuddingToolGuidance.csproj" />

@@ -60,7 +60,9 @@ public static class ComputerCoordinateMapper
         if (!geometry.CoordinateInputAllowed || geometry.CaptureMode != ComputerCaptureMode.ScreenPixels)
             return new CoordinateMapResult(CoordinateMapStatus.CoordinateInputNotAllowed, default);
 
-        if (geometry.ImageWidth <= 0 || geometry.ImageHeight <= 0)
+        if (geometry.ImageWidth <= 0 || geometry.ImageHeight <= 0 ||
+            geometry.SourceRect.Width <= 0 || geometry.SourceRect.Height <= 0 ||
+            !double.IsFinite(point.X) || !double.IsFinite(point.Y))
             return new CoordinateMapResult(CoordinateMapStatus.OutOfBounds, default);
 
         // 图像内部原点在左上角，合法区间是 [0, ImageWidth)
@@ -72,10 +74,11 @@ public static class ComputerCoordinateMapper
         var screenX = rect.X + point.X * rect.Width / geometry.ImageWidth;
         var screenY = rect.Y + point.Y * rect.Height / geometry.ImageHeight;
 
-        return new CoordinateMapResult(
-            CoordinateMapStatus.Ok,
-            new ScreenPoint(
-                (int)Math.Round(screenX, MidpointRounding.AwayFromZero),
-                (int)Math.Round(screenY, MidpointRounding.AwayFromZero)));
+        var roundedX = Math.Round(screenX, MidpointRounding.AwayFromZero);
+        var roundedY = Math.Round(screenY, MidpointRounding.AwayFromZero);
+        if (roundedX < rect.X || roundedY < rect.Y || roundedX >= (long)rect.X + rect.Width ||
+            roundedY >= (long)rect.Y + rect.Height || roundedX > int.MaxValue || roundedY > int.MaxValue)
+            return new CoordinateMapResult(CoordinateMapStatus.OutOfBounds, default);
+        return new CoordinateMapResult(CoordinateMapStatus.Ok, new ScreenPoint((int)roundedX, (int)roundedY));
     }
 }

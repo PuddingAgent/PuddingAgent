@@ -10,19 +10,18 @@ public sealed record MonitorBounds(PhysicalRect Bounds, bool IsPrimary);
 /// <summary>
 /// 枚举真实显示器范围。
 /// <para>
-/// **存在的理由**（2026-11-02 实测）：<c>SM_CYVIRTUALSCREEN</c> 报 1440，
-/// 但副屏实际只有 1152 高。按虚拟屏尺寸截图会多截 288px 的**无效区域**，
-/// 那片区域是 BitBlt 留下的残影 —— 看起来像真的控件，实际不存在。
+/// 在 Per-Monitor V2 线程上下文中枚举，避免把 DPI 虚拟化坐标当作物理像素。
 /// </para>
 /// <para>
-/// 后果实测：`SetCursorPos(3000,1200)` 被系统夹到 `(3000,1151)`。
-/// 也就是说任何落在无效区域的坐标，点击都会跑到屏幕边缘。
+/// 多屏包围框可能包含无显示器区域；落点必须在至少一个显示器内，
+/// 且移动后读回光标，防止系统夹取导致误点。
 /// </para>
 /// </summary>
 public static class WindowsMonitorEnumerator
 {
     public static IReadOnlyList<MonitorBounds> Enumerate()
     {
+        using var dpi = WindowsDpiEnforcer.EnterPhysicalCoordinates();
         var list = new List<MonitorBounds>();
 
         EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr hMon, IntPtr hdc, ref NativeRect rect, IntPtr data) =>

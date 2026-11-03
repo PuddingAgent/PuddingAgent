@@ -146,6 +146,7 @@ public static class WindowsInputSimulator
     public static ClickOutcome ClickAt(ScreenPoint point, bool allowWithoutWindow = false,
         IntPtr? authorizedRoot = null)
     {
+        using var dpi = WindowsDpiEnforcer.EnterPhysicalCoordinates();
         if (!IsOnScreen(point))
             return ClickOutcome.RejectedOffScreen;
 
@@ -176,6 +177,7 @@ public static class WindowsInputSimulator
     /// <summary>把光标移到该点（不点击）。用于悬停后再决定的场景。</summary>
     public static ClickOutcome MoveCursorTo(ScreenPoint point)
     {
+        using var dpi = WindowsDpiEnforcer.EnterPhysicalCoordinates();
         if (!IsOnScreen(point))
             return ClickOutcome.RejectedOffScreen;
 

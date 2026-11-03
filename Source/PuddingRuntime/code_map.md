@@ -588,6 +588,9 @@
 
 ## 工具效率测试入口
 
+- [ComputerInputTool](Tools/BuiltIns/Computer/ComputerInputTool.cs)：Windows GUI 输入适配器；显式窗口、截图 ID/图内点、Unicode/剪贴板与结构化派发回执。平台逻辑在 [Windows 组件](../PuddingComputer.Windows/code_map.md)，共享观察会话由 [工具注册](Tools/Platform/PuddingToolServiceCollectionExtensions.cs) 装配。
+- [ComputerUseCompositionTests](../../Tests/PuddingHost.Tests/Tools/ComputerUseCompositionTests.cs)：Host 工具注册唯一性及 observe/input 会话同一性。
+
 - [TerminalStartEfficiencyTests](../PuddingRuntimeTests/Tools/TerminalStartEfficiencyTests.cs)：短任务同次返回、零等待、截断、超时与非法参数不启动。
 - [GitStatusEfficiencyTests](../PuddingRuntimeTests/Tools/GitStatusEfficiencyTests.cs)：忽略文件默认排除、真实改动保留与显式查询。
 

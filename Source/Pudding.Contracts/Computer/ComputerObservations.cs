@@ -7,7 +7,7 @@ public readonly record struct PhysicalRect(int X, int Y, int Width, int Height);
 public readonly record struct ImagePoint(double X, double Y);
 
 /// <summary>
-/// 屏幕物理像素点（虚拟桌面坐标系，原点是虚拟桌面左上角）。
+/// 屏幕物理像素点（虚拟桌面坐标系，原点是主显示器左上角；左侧/上方显示器坐标可为负）。
 /// <para>
 /// **与 <see cref="ImagePoint"/> 是两个不同坐标系，故意做成不同类型，
 /// 让“把图内坐标直接拿去点击”在编译期就失败。**

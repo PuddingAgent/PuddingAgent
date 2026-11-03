@@ -12,8 +12,25 @@ namespace PuddingComputer.AutomationTests;
 [TestClass]
 public sealed class ComputerSnapshotAnnotatorTests
 {
+    [TestMethod]
+    [DataRow(2104, 600, 400, 240, 400, 240)]
+    [DataRow(-2560, -200, 2560, 1440, 1280, 720)]
+    public void DetectionToAnnotationToInput_RoundTripsNonzeroCaptureOrigin(
+        int x, int y, int width, int height, int imageWidth, int imageHeight)
+    {
+        var rect = new PhysicalRect(x, y, width, height);
+        var geometry = new ComputerImageGeometry(rect, imageWidth, imageHeight, ComputerCaptureMode.ScreenPixels, true);
+        var raw = new[] { new RawDetection(new(x + 40, y + 30, 80, 40), "candidate") };
+        var target = ComputerSnapshotAnnotator.Annotate(raw, rect, geometry).Single();
+        var point = ComputerCoordinateMapper.Map(geometry, target.Clickable);
+        Assert.IsTrue(point.IsOk);
+        Assert.AreEqual(new ScreenPoint(x + 80, y + 50), point.Point);
+        Assert.IsTrue(target.InsideWindow);
+    }
+
     /// <summary>实测的窗口几何：ChatGPT 主窗口 (2560,0) 2048x1104。</summary>
     private static PhysicalRect Window => new(2560, 0, 2048, 1104);
+    private static ComputerImageGeometry Geometry => new(new(0, 0, 5120, 1440), 5120, 1440, ComputerCaptureMode.ScreenPixels, true);
 
     [TestMethod]
     public void Ids_are_sequential_from_one()
@@ -25,7 +42,7 @@ public sealed class ComputerSnapshotAnnotatorTests
             new RawDetection(new PhysicalRect(300, 300, 40, 20), "text"),
         };
 
-        var targets = ComputerSnapshotAnnotator.Annotate(raw, Window);
+        var targets = ComputerSnapshotAnnotator.Annotate(raw, Window, Geometry);
 
         CollectionAssert.AreEqual(new[] { 1, 2, 3 }, targets.Select(t => t.Id).ToArray());
     }
@@ -35,7 +52,7 @@ public sealed class ComputerSnapshotAnnotatorTests
     {
         var raw = new[] { new RawDetection(new PhysicalRect(2660, 100, 40, 20), "button") };
 
-        var t = ComputerSnapshotAnnotator.Annotate(raw, Window).Single();
+        var t = ComputerSnapshotAnnotator.Annotate(raw, Window, Geometry).Single();
 
         Assert.AreEqual(2660, t.Global.X);
         Assert.AreEqual(100, t.Global.Y);
@@ -50,7 +67,7 @@ public sealed class ComputerSnapshotAnnotatorTests
     {
         var raw = new[] { new RawDetection(new PhysicalRect(2660, 100, 40, 20), "button") };
 
-        var t = ComputerSnapshotAnnotator.Annotate(raw, Window).Single();
+        var t = ComputerSnapshotAnnotator.Annotate(raw, Window, Geometry).Single();
 
         Assert.AreEqual(2680, t.Clickable.X, "2660 + 40/2");
         Assert.AreEqual(110, t.Clickable.Y, "100 + 20/2");
@@ -62,7 +79,7 @@ public sealed class ComputerSnapshotAnnotatorTests
         // 实测过的情况：发送键渲染在 y=1327，而窗口只到 1104
         var raw = new[] { new RawDetection(new PhysicalRect(4483, 1327, 35, 35), "button") };
 
-        var t = ComputerSnapshotAnnotator.Annotate(raw, Window).Single();
+        var t = ComputerSnapshotAnnotator.Annotate(raw, Window, Geometry).Single();
 
         Assert.IsFalse(t.InsideWindow,
             "该点 WindowFromPoint 返回 NULL，点击会被穿透到桌面，必须标为不可点");
@@ -73,7 +90,7 @@ public sealed class ComputerSnapshotAnnotatorTests
     {
         var raw = new[] { new RawDetection(new PhysicalRect(2660, 100, 40, 20), "button") };
 
-        var t = ComputerSnapshotAnnotator.Annotate(raw, Window).Single();
+        var t = ComputerSnapshotAnnotator.Annotate(raw, Window, Geometry).Single();
 
         Assert.IsTrue(t.InsideWindow);
     }
@@ -90,7 +107,7 @@ public sealed class ComputerSnapshotAnnotatorTests
         // WindowFromPoint 也确实命中该窗口。点击只作用在中心，所以按中心判。
         var raw = new[] { new RawDetection(new PhysicalRect(2560 + 2048 - 30, 100, 40, 20), "button") };
 
-        var t = ComputerSnapshotAnnotator.Annotate(raw, Window).Single();
+        var t = ComputerSnapshotAnnotator.Annotate(raw, Window, Geometry).Single();
 
         Assert.IsTrue(t.InsideWindow, "中心点在窗内 → 可点；整块越界不决定可点性");
     }
@@ -101,7 +118,7 @@ public sealed class ComputerSnapshotAnnotatorTests
         // X=4603,W=40 → 中心 4623 > 窗右界 4608，中心本身就在窗外
         var raw = new[] { new RawDetection(new PhysicalRect(2560 + 2048 - 5, 100, 40, 20), "button") };
 
-        var t = ComputerSnapshotAnnotator.Annotate(raw, Window).Single();
+        var t = ComputerSnapshotAnnotator.Annotate(raw, Window, Geometry).Single();
 
         Assert.IsFalse(t.InsideWindow, "中心点在窗外 → 不可点");
     }
@@ -115,7 +132,7 @@ public sealed class ComputerSnapshotAnnotatorTests
             new RawDetection(new PhysicalRect(200, 200, 40, 20), "button"),
         };
 
-        var targets = ComputerSnapshotAnnotator.Annotate(raw, Window);
+        var targets = ComputerSnapshotAnnotator.Annotate(raw, Window, Geometry);
 
         Assert.AreEqual(1, targets.Count);
         Assert.AreEqual(1, targets[0].Id, "丢弃后编号仍从 1 连续");
@@ -125,7 +142,7 @@ public sealed class ComputerSnapshotAnnotatorTests
     public void Rendered_table_contains_coordinates_not_guesses()
     {
         var raw = new[] { new RawDetection(new PhysicalRect(2660, 100, 40, 20), "button") };
-        var targets = ComputerSnapshotAnnotator.Annotate(raw, Window);
+        var targets = ComputerSnapshotAnnotator.Annotate(raw, Window, Geometry);
 
         var text = ComputerSnapshotAnnotator.Render(targets);
 

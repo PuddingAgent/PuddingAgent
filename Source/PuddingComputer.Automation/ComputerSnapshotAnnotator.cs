@@ -2,13 +2,14 @@ using Pudding.Contracts.Computer;
 
 namespace PuddingComputer.Automation;
 
-/// <summary>检测器给出的原始结果：只有一个矩形和类别，没有任何坐标解释。</summary>
-public readonly record struct RawDetection(PhysicalRect Rect, string Kind);
+/// <summary>检测器候选：屏幕物理矩形及来源信息，不证明是可交互控件。</summary>
+public readonly record struct RawDetection(PhysicalRect Rect, string Kind,
+    string Source = "unknown", string? Label = null, double? Confidence = null);
 
 /// <summary>
-/// 一个可点击目标：带编号、三套坐标、以及"能不能点"的判定。
+/// 一个视觉候选：带编号、三套坐标、以及中心是否在窗口范围内的几何判定。
 /// <para>
-/// 模型只应该看到 <see cref="Id"/> 和 <see cref="Kind"/>；坐标由程序提供，模型不参与计算。
+/// 程序提供坐标映射；模型选 ID，或参考本图纠正点击点。
 /// </para>
 /// </summary>
 public sealed record AnnotatedTarget(
@@ -17,7 +18,12 @@ public sealed record AnnotatedTarget(
     PhysicalRect Global,
     PhysicalRect WindowLocal,
     ImagePoint Clickable,
-    bool InsideWindow);
+    bool InsideWindow)
+{
+    public string Source { get; init; } = "unknown";
+    public string? Label { get; init; }
+    public double? Confidence { get; init; }
+}
 
 /// <summary>
 /// 把原始检测结果转成"带参考坐标的目标表"（用户 2026-11-02 明确要求：
@@ -28,12 +34,11 @@ public sealed record AnnotatedTarget(
 /// <list type="bullet">
 /// <item><see cref="AnnotatedTarget.Global"/>：屏幕绝对坐标，用于 <c>SetCursorPos</c>/<c>SendInput</c>；</item>
 /// <item><see cref="AnnotatedTarget.WindowLocal"/>：相对窗口左上角，用于日志、比对与跨屏迁移；</item>
-/// <item><see cref="AnnotatedTarget.Clickable"/>：元素中心，且**已用窗口几何校验过**。</item>
+/// <item><see cref="AnnotatedTarget.Clickable"/>：候选中心在输出图中的坐标，不证明可交互性。</item>
 /// </list>
 /// <para>
-/// <see cref="AnnotatedTarget.InsideWindow"/> 不是装饰：实测发现 Chromium 会把内容渲染到
-/// 窗口 rect 之外的合成层，那部分不参与 Win32 命中测试，点下去会被穿透到桌面。
-/// 把这种目标标出来，比让调用方点了没反应要好。
+/// <see cref="AnnotatedTarget.InsideWindow"/> 只描述中心与参考窗口的几何关系。
+/// 实际命中窗口、焦点与应用效果必须在输入和后续观察路径分别检查。
 /// </para>
 /// </summary>
 public static class ComputerSnapshotAnnotator
@@ -47,9 +52,14 @@ public static class ComputerSnapshotAnnotator
     public static IReadOnlyList<AnnotatedTarget> Annotate(
         IReadOnlyList<RawDetection> detections,
         PhysicalRect windowRect,
+        ComputerImageGeometry geometry,
         int minSize = 8)
     {
         ArgumentNullException.ThrowIfNull(detections);
+        ArgumentNullException.ThrowIfNull(geometry);
+        if (geometry.SourceRect.Width <= 0 || geometry.SourceRect.Height <= 0 ||
+            geometry.ImageWidth <= 0 || geometry.ImageHeight <= 0)
+            throw new ArgumentException("Image geometry must have positive dimensions.", nameof(geometry));
 
         var result = new List<AnnotatedTarget>(detections.Count);
         var id = 0;
@@ -69,7 +79,11 @@ public static class ComputerSnapshotAnnotator
                 r.Height);
 
             // 中心点用整数除法，避免 0.5 造成相邻两次标注结果不一致
-            var clickable = new ImagePoint(r.X + r.Width / 2, r.Y + r.Height / 2);
+            var centerX = r.X + r.Width / 2;
+            var centerY = r.Y + r.Height / 2;
+            var clickable = new ImagePoint(
+                (centerX - geometry.SourceRect.X) * (double)geometry.ImageWidth / geometry.SourceRect.Width,
+                (centerY - geometry.SourceRect.Y) * (double)geometry.ImageHeight / geometry.SourceRect.Height);
 
             // 窗口内外判定：按**点击落点**（中心）判定，而不是整块矩形。
             //
@@ -80,12 +94,13 @@ public static class ComputerSnapshotAnnotator
             //
             // 中心点用半开区间 [windowRect.X, windowRect.X + Width)，与
             // ComputerCoordinateMapper 的图内边界判定保持一致。
-            var inside = clickable.X >= windowRect.X
-                && clickable.Y >= windowRect.Y
-                && clickable.X < windowRect.X + windowRect.Width
-                && clickable.Y < windowRect.Y + windowRect.Height;
+            var inside = centerX >= windowRect.X
+                && centerY >= windowRect.Y
+                && centerX < windowRect.X + windowRect.Width
+                && centerY < windowRect.Y + windowRect.Height;
 
-            result.Add(new AnnotatedTarget(id, d.Kind, r, local, clickable, inside));
+            result.Add(new AnnotatedTarget(id, d.Kind, r, local, clickable, inside)
+            { Source = d.Source, Label = d.Label, Confidence = d.Confidence });
         }
 
         return result;
