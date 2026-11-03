@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -28,6 +29,35 @@ internal static class Program
 
         var outPath = ArgValue(args, "--out");
         var lines = new List<string>();
+
+        if (args.Any(a => a == "--write"))
+        {
+            var writeHwnd = ParseLong(ArgValue(args, "--hwnd"));
+            var text = ArgValue(args, "--text") ?? "probe";
+            if (writeHwnd == 0)
+            {
+                Console.WriteLine("usage: --write --hwnd <n> --l .. --t .. --r .. --b .. --text <value>");
+                return 2;
+            }
+
+            return A11yWrite.Run((nint)writeHwnd,
+                ParseInt(ArgValue(args, "--l")), ParseInt(ArgValue(args, "--t")),
+                ParseInt(ArgValue(args, "--r")), ParseInt(ArgValue(args, "--b")), text);
+        }
+
+        if (args.Any(a => a == "--a11y"))
+        {
+            var a11yHwnd = ParseLong(ArgValue(args, "--hwnd"));
+            if (a11yHwnd == 0)
+            {
+                Console.WriteLine("usage: --a11y --hwnd <n> --l <screenL> --t <screenT> --r <screenR> --b <screenB>");
+                return 2;
+            }
+
+            return A11y.Run((nint)a11yHwnd,
+                ParseInt(ArgValue(args, "--l")), ParseInt(ArgValue(args, "--t")),
+                ParseInt(ArgValue(args, "--r")), ParseInt(ArgValue(args, "--b")));
+        }
 
         Target target;
         if (args.Any(a => a == "--self"))
