@@ -31,35 +31,53 @@ public static class UiaNodeMatching
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(selector);
 
+        return MatchesFields(selector, node.AutomationId, node.Name, node.ControlType, node.ClassName);
+    }
+
+    /// <summary>
+    /// 字段级匹配规则（唯一真源）。
+    /// <para>
+    /// 观察层的 <see cref="UiaNode"/> 与直接操作 FlaUI 元素的写入器都走这里。
+    /// 两处各写一套比较很容易悄悄分叉：改了大小写策略只改了一处，
+    /// 于是"能观察到"和"能写入"对同一个选择器给出不同答案。
+    /// </para>
+    /// <para>
+    /// 规则：AutomationId / Name 精确比较（应用给的值，大小写有语义）；
+    /// ControlType / ClassName 忽略大小写（类型标识，各家输出习惯不一致）；空选择器不匹配任何元素。
+    /// </para>
+    /// </summary>
+    public static bool MatchesFields(
+        ElementSelector selector,
+        string? automationId,
+        string? name,
+        string? controlType,
+        string? className)
+    {
+        ArgumentNullException.ThrowIfNull(selector);
+
         if (!selector.HasAny)
             return false;
 
-        if (!string.IsNullOrWhiteSpace(selector.AutomationId))
-        {
-            if (!string.Equals(node.AutomationId, selector.AutomationId, StringComparison.Ordinal))
-                return false;
-        }
+        if (!string.IsNullOrWhiteSpace(selector.AutomationId) &&
+            !string.Equals(automationId, selector.AutomationId, StringComparison.Ordinal))
+            return false;
 
-        if (!string.IsNullOrWhiteSpace(selector.Name))
-        {
-            if (!string.Equals(node.Name, selector.Name, StringComparison.Ordinal))
-                return false;
-        }
+        if (!string.IsNullOrWhiteSpace(selector.Name) &&
+            !string.Equals(name, selector.Name, StringComparison.Ordinal))
+            return false;
 
-        if (!string.IsNullOrWhiteSpace(selector.ControlType))
-        {
-            if (!string.Equals(node.ControlType, selector.ControlType, StringComparison.OrdinalIgnoreCase))
-                return false;
-        }
+        if (!string.IsNullOrWhiteSpace(selector.ControlType) &&
+            !string.Equals(controlType, selector.ControlType, StringComparison.OrdinalIgnoreCase))
+            return false;
 
-        if (!string.IsNullOrWhiteSpace(selector.ClassName))
-        {
-            if (!string.Equals(node.ClassName, selector.ClassName, StringComparison.OrdinalIgnoreCase))
-                return false;
-        }
+        if (!string.IsNullOrWhiteSpace(selector.ClassName) &&
+            !string.Equals(className, selector.ClassName, StringComparison.OrdinalIgnoreCase))
+            return false;
 
         return true;
     }
+
+
 
     /// <summary>
     /// 找出快照中所有满足选择器的节点。
