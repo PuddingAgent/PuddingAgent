@@ -220,6 +220,7 @@ public static class PuddingToolServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IPuddingTool, RequestToolApprovalTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IPuddingTool, ListToolApprovalsTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IPuddingTool, ClassifierStatusTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IPuddingTool, ComputerInputTool>());
         services.TryAddSingleton<IPuddingToolExecutionService, PuddingToolExecutionService>();
 
         return services;
