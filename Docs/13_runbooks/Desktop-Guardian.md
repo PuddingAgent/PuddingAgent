@@ -2,7 +2,7 @@
 title: Desktop Guardian 运行手册
 author: hyfree
 date: 2026-10-26
-last_reviewed: 2026-10-26
+last_reviewed: 2026-11-03
 status: active
 description: 独立守护进程通过本地认证 HTTP 编译和重启 Desktop/Core，并在健康检查失败时回滚程序集。
 categories: [docs, runbooks]
@@ -44,6 +44,8 @@ Desktop 从自身实际路径、DataRoot 和该配置生成 `<DesktopHome>/guard
 
 初次安装本功能或更新 Guardian 自身，需要外部部署：先退出 Desktop/Core，停止对应 Guardian，部署完整发布包，再启动 Desktop。后续 Desktop/Core 更新即可由 Guardian 完成。Guardian 目录从更新/回滚清单中排除，不支持运行中的自我替换。
 
+仅更新独立 Guardian 时，也可保留健康的 Desktop/Core：先确认 `busy=false`、`pending=false`，核验 Guardian 的 PID、启动时间、可执行路径并备份其文件；只停止该 Guardian，替换完整 Guardian 发布文件，再以原配置和 `--adopt-pid <Desktop PID>` 启动。外部控制器须核对新 Guardian PID、认证状态端点及 Desktop/Core 健康；失败恢复 Guardian 备份。不得杀死 Desktop 进程树或删除租约文件。
+
 ## Agent 与 HTTP 命令
 
 Agent 调用示例：
@@ -80,6 +82,8 @@ X-Control-Token: <从配置读取，勿输出>
 ## 健康检查与回滚
 
 候选构建成功前保持旧进程运行。部署前对当前健康包做独立快照，保存每个文件 SHA-256，再持久化 `Pending` 事务，停止对应进程，替换文件并删除候选中已移除的旧文件。路径不允许越界或 reparse point。部分复制失败也可恢复；回滚删除候选新增文件。
+
+Core 安装根下历史遗留的 `data/`、`temp/` 和 `.pudding/context-tool-results/` 属于运行数据，排除在枚举、校验、复制与删除之外；Desktop 整包部署对其随包 Core 使用相同边界。消费旧快照清单也必须排除这些路径，避免日志变化阻塞备份，或回滚覆盖运行证据。`default-data/`、`wwwroot/data/`、`.pudding/skills/` 仍是产品资源，保留哈希与部署校验。这不替代将运行输出迁至 DataRoot 的长期治理。
 
 Desktop 内部 `GET /desktop/guardian/health` 必须完成 UI dispatcher 往返；返回的进程 PID/启动时间/路径、DataRoot 及 Core 父关系由 Guardian 检验。Core 必须处于 `Ready`，且它报告的 loopback 地址 `/health/ready` 返回成功；Shell 工作台须完成初始化，`WorkbenchFailed` 不算健康。短暂成功不能通过验收：默认持续 15 秒健康才接受。启动默认限 120 秒；平时默认每 5 秒检查、连续 3 次失败恢复。
 

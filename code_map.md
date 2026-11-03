@@ -170,7 +170,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | 层 / 项目 | 符号 | 一句话作用 |
 |----------|------|----------|
 | `Desktop → Core` | `PuddingDesktop/Hosting` → `PuddingHost/Hosting` | Shell 以子进程点火 Core：`STARTING`（每 5s 带协议/PID/序号）→ 全部 hosted service 就绪后 `READY` |
-| `bootstrap_reboot → Guardian → Desktop → Core` | `PuddingRuntime/Tools/BuiltIns/Management/BootstrapRebootTool.cs` → `PuddingDesktop.Guardian` → `PuddingDesktop/Hosting/DesktopApplicationCoordinator.Guardian.cs` | 独立进程先构建候选，认证 HTTP 控制停止/启动，UI 响应与 readiness 稳定验收；失败恢复旧包，不回滚用户数据 |
+| `bootstrap_reboot → Guardian → Desktop → Core` | `PuddingRuntime/Tools/BuiltIns/Management/BootstrapRebootTool.cs` → `PuddingDesktop.Guardian` → `PuddingDesktop/Hosting/DesktopApplicationCoordinator.Guardian.cs` | 独立进程先构建候选，认证 HTTP 控制停止/启动，UI 响应与 readiness 稳定验收；快照排除 Core 安装根下运行数据，失败恢复旧包，不回滚用户数据 |
 | `Core 组合根` | `Source/PuddingHost/` | HTTP 宿主、本机控制地址、Browser Bridge、飞书连接器的装配起点 |
 | `入口薄壳` | `Source/PuddingAgent/Program.cs` | Console 与 DesktopChild 两种模式分派；Console 只用于开发/诊断 |
 | `WebUI → Runtime` | `TurnExecutorAdapter` → `AgentExecutionAdmissionCoordinator` | 前台 Turn 准入并抢占同 agent 后台执行，旧执行立即 defer 回队列 |

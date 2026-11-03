@@ -30,6 +30,67 @@ public sealed class GuardianTests
         Assert.Equal(["core"], f.Runtime.Stops);
     }
 
+    [Theory]
+    [InlineData("core")]
+    [InlineData("desktop")]
+    public void LiveCoreRuntimeFilesDoNotInvalidatePackageSnapshot(string target)
+    {
+        using var f = new Fixture();
+        var core = f.Settings.TargetDirectory("core");
+        var runtimeFiles = new[] { "data/logs/session.md", "temp/build/result.txt", ".pudding/context-tool-results/result.txt" };
+        foreach (var relative in runtimeFiles)
+        {
+            var path = Path.Combine(core, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "before snapshot");
+        }
+        var snapshot = f.Store.Inspect(f.Settings.TargetDirectory(target), target);
+        foreach (var relative in runtimeFiles) File.AppendAllText(Path.Combine(core, relative), " live output");
+
+        // The old implementation throws Artifact hash mismatch for the live log here.
+        f.Store.Verify(snapshot);
+        Assert.DoesNotContain(snapshot.Files, file => runtimeFiles.Any(relative =>
+            file.Path.Replace('\\', '/').Equals(target == "core" ? relative : "core/" + relative, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [Theory]
+    [InlineData("core")]
+    [InlineData("desktop")]
+    public void LegacySnapshotCannotRestoreOrDeleteCoreRuntimeFiles(string target)
+    {
+        using var f = new Fixture();
+        var core = f.Settings.TargetDirectory("core");
+        var relative = target == "core" ? "data/logs/session.md" : "core/data/logs/session.md";
+        var liveLog = Path.Combine(core, "data/logs/session.md");
+        Directory.CreateDirectory(Path.GetDirectoryName(liveLog)!);
+        File.WriteAllText(liveLog, "current evidence");
+        var clean = f.Store.Capture(target);
+        // A pre-fix manifest contains runtime data; its old file may already be gone.
+        var legacy = clean with { Files = clean.Files.Concat([new ArtifactFile(relative, "obsolete-runtime-hash")]).ToArray() };
+
+        f.Store.Restore(new PendingDeployment(legacy, clean));
+        Assert.Equal("current evidence", File.ReadAllText(liveLog));
+        f.Store.Deploy(new PendingDeployment(legacy, clean));
+        Assert.Equal("current evidence", File.ReadAllText(liveLog));
+    }
+
+    [Fact]
+    public void RuntimeExclusionKeepsShippedDataAndStillDetectsAssemblyChanges()
+    {
+        using var f = new Fixture();
+        var core = f.Settings.TargetDirectory("core");
+        foreach (var relative in new[] { "default-data/preset.json", "wwwroot/data/example.json", ".pudding/skills/example/SKILL.md" })
+        {
+            var path = Path.Combine(core, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "shipped content");
+        }
+        var snapshot = f.Store.Inspect(core, "core");
+        Assert.Equal(4, snapshot.Files.Count);
+        File.WriteAllText(f.Settings.CoreExecutablePath, "tampered executable");
+        Assert.Throws<InvalidDataException>(() => f.Store.Verify(snapshot));
+    }
+
     [Fact]
     public async Task FailedHealthRollsBackAndRemovesCandidateOnlyAssemblies()
     {

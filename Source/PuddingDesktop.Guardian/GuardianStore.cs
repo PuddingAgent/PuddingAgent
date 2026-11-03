@@ -68,8 +68,11 @@ public sealed class GuardianStore(GuardianSettings settings)
         {
             foreach (var entry in Directory.EnumerateFileSystemEntries(root))
             {
-                SafeFiles.NoLinks(entry);
                 var child = Path.Combine(relative, Path.GetFileName(entry));
+                // Core may have historical/runtime output below its install directory.
+                // It is live user evidence, never part of an assembly deployment transaction.
+                if (IsCoreRuntimeData(child, target)) continue;
+                SafeFiles.NoLinks(entry);
                 // The independent supervisor is never replaced or rolled back with its subjects.
                 if (target == "desktop" && child.Equals("guardian", StringComparison.OrdinalIgnoreCase)) continue;
                 if (Directory.Exists(entry)) Visit(entry, child);
@@ -91,7 +94,7 @@ public sealed class GuardianStore(GuardianSettings settings)
 
     public void Verify(ArtifactSnapshot snapshot)
     {
-        foreach (var file in snapshot.Files)
+        foreach (var file in PackageFiles(snapshot))
             if (!SafeFiles.Hash(SafeFiles.Resolve(snapshot.Directory, file.Path)).Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Artifact hash mismatch: " + file.Path);
     }
@@ -132,8 +135,8 @@ public sealed class GuardianStore(GuardianSettings settings)
 
     private void DeleteRemoved(ArtifactSnapshot previous, ArtifactSnapshot current)
     {
-        var retained = current.Files.Select(x => x.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var added in previous.Files.Where(x => !retained.Contains(x.Path)))
+        var retained = PackageFiles(current).Select(x => x.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var added in PackageFiles(previous).Where(x => !retained.Contains(x.Path)))
         {
             var path = SafeFiles.Resolve(settings.TargetDirectory(current.Target), added.Path);
             if (File.Exists(path)) File.Delete(path);
@@ -143,7 +146,7 @@ public sealed class GuardianStore(GuardianSettings settings)
     private void Copy(ArtifactSnapshot snapshot, string destination)
     {
         Verify(snapshot);
-        foreach (var file in snapshot.Files)
+        foreach (var file in PackageFiles(snapshot))
         {
             var to = SafeFiles.Resolve(destination, file.Path);
             Directory.CreateDirectory(Path.GetDirectoryName(to)!);
@@ -151,5 +154,29 @@ public sealed class GuardianStore(GuardianSettings settings)
             if (!SafeFiles.Hash(to).Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new IOException("Copied artifact hash mismatch: " + file.Path);
         }
+    }
+
+    // Apply the boundary when consuming old manifests too: their runtime files must
+    // neither fail verification nor be restored/deleted during rollback or deployment.
+    private IEnumerable<ArtifactFile> PackageFiles(ArtifactSnapshot snapshot) =>
+        snapshot.Files.Where(file => !IsCoreRuntimeData(file.Path, snapshot.Target));
+
+    private bool IsCoreRuntimeData(string relative, string target)
+    {
+        var path = relative.Replace('\\', '/');
+        if (target == "desktop")
+        {
+            var coreDirectory = Path.GetRelativePath(settings.TargetDirectory("desktop"), settings.TargetDirectory("core")).Replace('\\', '/');
+            if (coreDirectory != ".")
+            {
+                var prefix = coreDirectory + "/";
+                if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return false;
+                path = path[prefix.Length..];
+            }
+        }
+        return IsDirectory("data") || IsDirectory("temp") || IsDirectory(".pudding/context-tool-results");
+
+        bool IsDirectory(string directory) => path.Equals(directory, StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(directory + "/", StringComparison.OrdinalIgnoreCase);
     }
 }
