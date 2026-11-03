@@ -261,8 +261,30 @@ python dev-up.py --status          # 查看状态
 
 1. **任务完成即提交**：每个原子任务完成并通过验证后立刻 `git commit`，禁止把多个任务的改动攒在一起；中断/转交前先提交已验证部分。**工作树不允许长期处于脏状态。**
 2. **精确暂存**：使用 `git add <明确文件路径列表>`，禁止裸 `git add -A` / `git add .`（工作树常混有他方并行 WIP）。
-3. **临时产物一律进 `temp/`**（已 ignore），且必须落在这三个子目录之一：编译/发布输出 → `temp\build\`，测试输出与结果 → `temp\test-out\`，临时脚本/草稿/报告 → `temp\` 根；禁止散落在仓库根或源码目录。
-   - ⚠️ **`temp\build\` 同时是宿主的运行目录**（2026-11-03 实测）：
+3. **临时产物统一进 `.work/<任务>/<运行标识>/`**（已 ignore）
+
+   ```
+   .work/<任务>/<运行标识>/
+     ├── build.log        编译日志
+     ├── test-out.txt     测试输出
+     ├── <probe>.ps1      临时脚本
+     └── <report>.md      临时报告
+   ```
+
+   - **`<任务>`**：本次工作的短名，如 `computer-use`、`storage-cleanup`、`srcu`
+   - **`<运行标识>`**：可区分单次运行的值，如 `20261103-1315`、commit 短 sha、或两者拼接
+   - **禁止在项目根目录生成任何编译日志、测试输出、临时脚本**
+   - **禁止**把临时产物散落在源码目录（`Source/`、`Docs/`、`Tests/`）
+
+   **执行要点**：
+   - 编译/测试命令必须显式重定向：
+     `dotnet build ... > .work/<task>/<run>/build.log 2>&1`
+   - 一次性脚本写到 `.work/<task>/<run>/`，不再写 `temp/`
+   - 需要长期保留的结论写 `Docs/`（并遵守 front matter 规范），不留在 `.work/`
+
+   **历史目录 `temp/` 的处置**：
+   - `temp/` 是**旧约定**，仍有残留内容；**不再作为新产物的落点**
+   - ⚠️ **`temp/build/` 是宿主的运行目录**（2026-11-03 实测）：
      ```
      PuddingAgent                 → temp\build\...\core\PuddingAgent.exe
      PuddingDesktop               → temp\build\...\PuddingDesktop.exe
@@ -270,16 +292,12 @@ python dev-up.py --status          # 查看状态
      PuddingDesktop.ExitObserver  → temp\build\...\observer\
      ```
      删除它**不会立刻杀死进程**（DLL 已加载进内存），但 **Guardian 下次重启宿主时
-     找不到 exe，宿主会永久起不来**。所以清理前必须先确认无进程占用：
+     找不到 exe，宿主会永久起不来**。清理前必须先确认无进程占用：
      ```powershell
      Get-Process | Where-Object { $_.Path -like '*temp\build*' } | Select Id, ProcessName, Path
      ```
-     - 宿主运行时：**只能清理非当前版本的历史子目录**，不能整目录删除
-     - 宿主停止时：可整目录清理，下次 `dev-up` 会重建
-     - `temp\test-out\` 无此约束，可随时清理
-   - 一次性清理（**仅 test-out 无条件**）：`Remove-Item temp\test-out\* -Recurse -Force -ErrorAction SilentlyContinue`；
-     `temp\build\*` 需先通过上面的进程检查再单独处理。
-   - `dev-up.py --clear` 已把这些路径纳入白名单；`temp\` 根下的人类可读笔记（`.md`/`.patch`）不受清理影响。
+     保护名单应**从进程路径动态推导**，不要硬编码目录名
+   - 清理旧 `temp/` 内容时，只删非当前运行的历史子目录
 4. **提交前自检**：`git status` 只含本次预期文件 → `git diff --cached --stat` 无 `bin/`、`obj/`、`pub/`、`temp/build/` → 无 `??` 临时/密钥/大文件 → 一个 commit 只做一件事。
 5. **只推自己的 commit**：不代推他方未完成的改动；推送前确认没有夹带。
 
