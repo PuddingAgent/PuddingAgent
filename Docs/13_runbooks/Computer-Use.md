@@ -84,3 +84,29 @@ Windows 前台窗口与 GUI 线程焦点 → Chromium Aura 窗口事件分发/�
 交互式回归入口：[test-computer-use.ps1](../../TestScripts/test-computer-use.ps1)。它打开自己的 WebView2 窗口，在各显示器上验证实际输入；会移动鼠标、短暂占用焦点和写入测试剪贴板。只在空闲的交互桌面运行。脚本将构建、截图和断言日志放入 `.work/computer-use-smoke/`。页面脚本仅用于读取验收结果，不参与点击或填值。
 
 部署由 [Desktop Guardian](Desktop-Guardian.md) 执行，外部控制器验证 `healthy` 与新 Desktop/Core 进程，不能只报告 202 已受理。
+
+## 焦点探针（ComputerUseFocusProbe，2026-11-03）
+
+`TestScripts/ComputerUseFocusProbe` 把「点击是否取得编辑焦点」与「文字是否真的进入控件」拆开观测。
+判据只用原生可观测状态：前台窗口、目标 GUI 线程的 `hwndFocus` / `hwndCaret`、目标控件文本长度与哈希；
+任一项拿不到记 `n/a`，不推断。
+
+用法：
+
+```
+dotnet run --project TestScripts/ComputerUseFocusProbe -- --self --out .work/<任务>/<运行>/self.txt
+dotnet run --project TestScripts/ComputerUseFocusProbe -- --hwnd <n> --x <客户区x> --y <客户区y>
+```
+
+正对照（`--self`，六阶段，实测于 2026-11-03）：
+
+| 阶段 | 观测 | 判读 |
+|---|---|---|
+| A 基线 | focus=根窗口，caret=0 | 尚未建立编辑焦点 |
+| B 窗口消息点击 | **focus=Edit，caret=Edit** | 窗口消息能建立原生焦点 |
+| C SendInput 点击 | 保持 Edit | 与 B 结果一致 |
+| D SendInput Unicode | text_len 0 → 9 | 按键注入生效 |
+| E 剪贴板 + Ctrl+V | 9 → 13 | 中文经剪贴板进入 |
+| F WM_CHAR 直投根窗口 | 13 → 13 | 无效；焦点在子控件，投给根窗口不生效 |
+
+`--self` 是取红用的：任何通道在自有窗口上失效，先怀疑探针本身，再怀疑目标应用。
