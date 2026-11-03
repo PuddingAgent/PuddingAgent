@@ -35,18 +35,25 @@
       "affected": [
         "DesktopServiceTests.DocsMarkdownEncodingTests.DocsMarkdownHasNoBomAndStartsWithFrontMatter"
       ]
+    },
+    "desktopWatchdogFakeClock": {
+      "recordedAt": "2026-11-03",
+      "reason": "PuddingDesktop.Tests 的 watchdog 用例偶发超时：同一二进制单独复跑 3 次为 失败/失败/通过；失败时 15 s 超时（Condition was not reached before the test timeout），通过时 348 ms。3 次均为单进程独立运行，不是并发负载导致。本轮改动只在 PuddingComputer.* / PuddingHost / PuddingRuntime，与该工程无共享代码，判为预先存在的竞态；定位修复后应从基线移除。",
+      "affected": [
+        "PuddingDesktop.Tests.Browser.DesktopBrowserBridgeClientTests.Watchdog_AdvancingFakeClock_CancelsBlockedReceive"
+      ]
     }
   },
   "knownFailures": [
     "PuddingHost.Tests.BrowserBridge.BrowserBridgeServiceCollectionExtensionsTests.DesktopChild_RegistersRemoteRuntimeAndAllBrowserTools",
     "PuddingHost.Tests.BrowserBridge.ConfiguredAgentBrowserSnapshotPolicyExecutionTests.ConfiguredAgent_BrowserSnapshotTool_TraversesPolicyExecutionAndAuthenticatedBridge",
-    "PuddingHost.Tests.BrowserBridge.BrowserAgentToolBridgeIntegrationTests.PreviewDocumentTool_IsDiscoveredAndFailsHonestlyWithoutCapabilityChannel",
     "PuddingHost.Tests.BrowserBridge.BrowserAgentToolBridgeIntegrationTests.BrowserContextTool_TraversesAuthenticatedBridgeAndReturnsDesktopResult",
     "PuddingHost.Tests.BrowserBridge.BrowserAgentToolBridgeIntegrationTests.BrowserSnapshotTool_TraversesAuthenticatedBridgeAndReturnsVersionedRefs",
     "SteeringEndpoint_AcceptsRunningTurn_AndCreatesRuntimeQueueItem",
     "SteeringEndpoint_RejectsTerminalTurn_WithoutCreatingQueueItem",
     "AgentExecutionService_Uses_UnifiedToolInvocationFacade",
     "ContextPipeline_ShouldTriggerGentleCompaction",
-    "DesktopServiceTests.DocsMarkdownEncodingTests.DocsMarkdownHasNoBomAndStartsWithFrontMatter"
+    "DesktopServiceTests.DocsMarkdownEncodingTests.DocsMarkdownHasNoBomAndStartsWithFrontMatter",
+    "PuddingDesktop.Tests.Browser.DesktopBrowserBridgeClientTests.Watchdog_AdvancingFakeClock_CancelsBlockedReceive"
   ]
 }

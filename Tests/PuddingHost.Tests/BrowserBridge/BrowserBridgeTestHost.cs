@@ -84,6 +84,10 @@ internal sealed class BrowserBridgeTestHost : IAsyncDisposable
             builder.Services.AddSingleton<IDesktopBrowserCommandBroker, DesktopBrowserCommandBroker>();
         }
         builder.Services.AddSingleton<IBrowserBridgeClock>(clock);
+        // 工具注册表会实例化全部 IPuddingTool，其中面板工具依赖 IPanelCanvasStore。
+        // 生产宿主在 PuddingServiceCollectionExtensions.Platform 里注册持久化实现，
+        // 测试宿主没有那一层，必须补一个内存实现，否则注册表一解析就抛。
+        builder.Services.AddSingleton<PuddingCore.Panels.IPanelCanvasStore, PuddingCore.Panels.InMemoryPanelCanvasStore>();
         builder.Services.AddPuddingToolRegistry();
         builder.Services.AddSingleton<SandboxExecutor>();
         builder.Services.AddSingleton(new DesktopControlTokenValidator(dataRoot));
