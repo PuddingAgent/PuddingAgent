@@ -684,7 +684,6 @@ public sealed partial class AgentExecutionService
     {
         var sb = new StringBuilder();
         sb.AppendLine("[RUNTIME TAIL CONTEXT]");
-        sb.AppendLine($"Date: {DateTimeOffset.Now:yyyy-MM-dd}");
         if (!string.IsNullOrWhiteSpace(userContextPrefix))
             sb.Append(userContextPrefix.Trim()).AppendLine();
         sb.AppendLine("[/RUNTIME TAIL CONTEXT]");
@@ -693,7 +692,8 @@ public sealed partial class AgentExecutionService
     }
 
     private static string BuildCurrentTurnOpening(RuntimeDispatchRequest request)
-        => $"[CURRENT USER TURN input_sha256={ComputeCurrentTurnInputHash(request)}]\n" +
+        => $"[turn-time {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}]\n" +
+           $"[CURRENT USER TURN input_sha256={ComputeCurrentTurnInputHash(request)}]\n" +
            "This is the user's latest input and the active request for this turn. " +
            "Treat it as authoritative even when it looks like a quoted assistant answer, " +
            "review report, log, or document. Do not resume an earlier user request unless " +
