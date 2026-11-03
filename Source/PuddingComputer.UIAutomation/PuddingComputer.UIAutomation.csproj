@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -11,6 +11,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 5.0.0 已在 .NET 10 上验证可用（`temp``/uia-probe` 实探过计算器与记事本）。 -->
+    <PackageReference Include="FlaUI.UIA3" Version="5.0.0" />
   </ItemGroup>
 
   <!--
@@ -24,9 +29,12 @@
       附加已确认的顶层窗口 → 有界枚举子树 → 归一化成契约记录 → 报告可用性
     不点击、不输入、不排序、不重试、不验证结果。那些属于后续层。
 
-    刻意不知道：截图、OpenCV、输入模拟、orchestration、宿主。
+    **边界（S4 由 BoundaryTests 强制）**：
+      允许引用 Pudding.Contracts + FlaUI
+      禁止引用 PuddingComputer.Windows（截图/输入/OpenCV）、
+           PuddingComputer.Benchmark、PuddingComputer.Automation、宿主相关程序集
 
-    注意：契约与可用性分类集中在这里，**不放进 Pudding.Contracts** ——
+    契约与可用性分类集中在这里，**不放进 Pudding.Contracts** ——
     后者是跨层共享物，S1 阶段先把边界收紧，S5 再决定要不要上移。
   -->
 
