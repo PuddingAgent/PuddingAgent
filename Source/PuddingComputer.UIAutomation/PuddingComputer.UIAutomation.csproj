@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>PuddingComputer.UIAutomation</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+  </ItemGroup>
+
+  <!--
+    Computer Use 的**无障碍发现**层（规程 S1）。
+
+    定位：路由栈的第一跳。Codex 两轮规划的核心论断是
+    「不要把通用视觉分割当成主控制面」—— 原生 Win32 / WinUI 应用里，
+    UIA 能直接给出控件类型、名称、包围盒、可用状态，比任何像素方法都可靠。
+
+    本工程只做**只读观察**：
+      附加已确认的顶层窗口 → 有界枚举子树 → 归一化成契约记录 → 报告可用性
+    不点击、不输入、不排序、不重试、不验证结果。那些属于后续层。
+
+    刻意不知道：截图、OpenCV、输入模拟、orchestration、宿主。
+
+    注意：契约与可用性分类集中在这里，**不放进 Pudding.Contracts** ——
+    后者是跨层共享物，S1 阶段先把边界收紧，S5 再决定要不要上移。
+  -->
+
+</Project>
