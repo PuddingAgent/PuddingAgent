@@ -1,0 +1,120 @@
+[
+  {
+    "id": "calculator-add",
+    "app": "calculator",
+    "setup": "launch-clean",
+    "goal": "Compute 17 + 25 using the on-screen keypad",
+    "risk": "reversible",
+    "maxAttempts": 3,
+    "oracle": {
+      "kind": "uia-property",
+      "automationId": "CalculatorResults",
+      "property": "name",
+      "operator": "endsWith",
+      "expected": "42"
+    }
+  },
+  {
+    "id": "calculator-divide-by-zero",
+    "app": "calculator",
+    "setup": "launch-clean",
+    "goal": "Compute 1 / 0 and observe the error state",
+    "risk": "reversible",
+    "maxAttempts": 3,
+    "oracle": {
+      "kind": "uia-property",
+      "automationId": "CalculatorResults",
+      "property": "name",
+      "operator": "contains",
+      "expected": "0"
+    }
+  },
+  {
+    "id": "calculator-clear-entry",
+    "app": "calculator",
+    "setup": "launch-clean",
+    "goal": "Enter 123 then press CE; display returns to 0",
+    "risk": "reversible",
+    "maxAttempts": 3,
+    "oracle": {
+      "kind": "uia-property",
+      "automationId": "CalculatorResults",
+      "property": "name",
+      "operator": "endsWith",
+      "expected": "0"
+    }
+  },
+  {
+    "id": "notepad-type-and-read",
+    "app": "notepad",
+    "setup": "launch-clean",
+    "goal": "Type the exact text 'pudding-benchmark-42' into the editor",
+    "risk": "reversible",
+    "maxAttempts": 3,
+    "oracle": {
+      "kind": "uia-property",
+      "automationId": "15",
+      "property": "value",
+      "operator": "equals",
+      "expected": "pudding-benchmark-42"
+    }
+  },
+  {
+    "id": "notepad-save-file",
+    "app": "notepad",
+    "setup": "launch-clean",
+    "goal": "Type 'saved' and save to a temp file via the Save dialog",
+    "risk": "reversible",
+    "maxAttempts": 3,
+    "oracle": {
+      "kind": "file-content",
+      "path": "%TEMP%\\pudding-benchmark-save.txt",
+      "operator": "equals",
+      "expected": "saved"
+    }
+  },
+  {
+    "id": "notepad-save-dialog-appears",
+    "app": "notepad",
+    "setup": "launch-clean",
+    "goal": "Trigger Save As and observe the Save dialog",
+    "risk": "reversible",
+    "maxAttempts": 3,
+    "oracle": {
+      "kind": "window-or-dialog",
+      "titlePattern": "Save As",
+      "shouldExist": true
+    }
+  },
+  {
+    "id": "paint-tool-selected",
+    "app": "paint",
+    "setup": "launch-clean",
+    "goal": "Select the pencil tool",
+    "risk": "reversible",
+    "maxAttempts": 3,
+    "oracle": {
+      "kind": "element-state",
+      "automationId": "pencilToolButton",
+      "state": "selected",
+      "expected": true
+    }
+  },
+  {
+    "id": "paint-canvas-stroke",
+    "app": "paint",
+    "setup": "launch-clean",
+    "goal": "Draw a horizontal stroke across the canvas center",
+    "risk": "reversible",
+    "maxAttempts": 3,
+    "oracle": {
+      "kind": "visual-region",
+      "x": 0,
+      "y": 0,
+      "width": 400,
+      "height": 200,
+      "minChangedRatio": 0.01,
+      "pixelThreshold": 20
+    }
+  }
+]

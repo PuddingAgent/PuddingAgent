@@ -9,6 +9,11 @@
     <RootNamespace>PuddingComputer.Benchmark</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- 任务清单随程序集一起输出：它是数据不是代码，但测试与跑批都需要读到。 -->
+    <None Update="benchmarks\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!--
     Computer Use 的**基准任务与判定规则**组件（规程 S1）。
 
