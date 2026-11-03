@@ -1,3 +1,4 @@
+using Pudding.Contracts.Computer;
 using PuddingComputer.Benchmark;
 
 namespace PuddingComputer.BenchmarkTests;

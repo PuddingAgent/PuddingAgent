@@ -14,10 +14,21 @@
     <None Update="benchmarks\**\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      只引 Pudding.Contracts（纯契约，net10.0、无原生依赖）。
+      「不依赖实现层」的原意不变：Contracts 不是实现。
+      ElementSelector 必须同时被 Benchmark（描述要找什么）与
+      UIAutomation（观察到了什么）使用，而这两层互不允许引用，
+      放在共享契约是唯一不造成双向依赖的位置。
+    -->
+    <ProjectReference Include="..\Pudding.Contracts\Pudding.Contracts.csproj" />
+  </ItemGroup>
+
   <!--
     Computer Use 的**基准任务与判定规则**组件（规程 S1）。
 
-    刻意**零 ProjectReference**：它只描述"什么算做完"，不碰任何观察或执行能力。
+    刻意**不依赖任何实现层**：它只描述“什么算做完”，不碰任何观察或执行能力。
     这样一来 oracle 判定可以完全脱离窗口、UIA、截图、输入来单测 ——
     而这些判定恰恰是最容易写错、又最容易被"顺手改一下"而不被发现的部分。
 

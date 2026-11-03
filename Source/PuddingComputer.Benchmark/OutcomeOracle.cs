@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Pudding.Contracts.Computer;
 
 namespace PuddingComputer.Benchmark;
 

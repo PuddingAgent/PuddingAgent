@@ -1,4 +1,4 @@
-namespace PuddingComputer.Benchmark;
+namespace Pudding.Contracts.Computer;
 
 /// <summary>
 /// 元素定位条件。所有给出的字段都必须匹配；至少给一个。
@@ -11,6 +11,11 @@ namespace PuddingComputer.Benchmark;
 /// <para>
 /// 反过来，只用 Name 也不行：Name 会随界面语言和值变化（计算器显示区的 Name
 /// 就是"显示为 42"），拿它当唯一键会在值一变就失效。
+/// </para>
+/// <para>
+/// 放在共享契约而不是某一个实现层：它描述的是"如何指认一个元素"，
+/// Benchmark（描述要找什么）与 UIAutomation（观察到了什么）都要用它，
+/// 而这两层之间**不允许互相引用**。
 /// </para>
 /// </summary>
 /// <param name="AutomationId">应用的自动化标识，最稳定但**可能不存在**。</param>
