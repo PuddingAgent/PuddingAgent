@@ -110,3 +110,25 @@ dotnet run --project TestScripts/ComputerUseFocusProbe -- --hwnd <n> --x <客户
 | F WM_CHAR 直投根窗口 | 13 → 13 | 无效；焦点在子控件，投给根窗口不生效 |
 
 `--self` 是取红用的：任何通道在自有窗口上失效，先怀疑探针本身，再怀疑目标应用。
+
+## Chromium 系应用：采集前必须先唤醒（2026-11-04）
+
+**症状**：对 Chromium 内核的桌面应用（Electron / WebView2 / 内置 CEF）调用 `FlaUiInspector.Capture`，
+恒得到 `nodes=1`、`availability=Sparse`，无论等多久、无论新建还是复用 inspector 实例。
+
+**原因**：这类应用的无障碍树是**按需构建**的，而 **UIA3 通道唤不醒它**。
+同进程对照实测：
+
+```
+uia3 首次 = 1 节点
+uia2 首次 = 4 节点        ← MSAA / IAccessible 通道能唤醒
+uia3 再来 = 4 节点        ← 被唤醒后 UIA3 立即可读
+```
+
+**当前实现（`FlaUiInspector`）**：`FromHandle` **之前**先用 `FlaUI.UIA2` 做一次廉价读取（读根节点子数），
+既探测也唤醒。顺序不能颠倒——UIA3 根元素若在唤醒前取得，会缓存一个空子树，这一次采集就白跑。
+
+**排障要点**：
+- 看到 Chromium 应用恒 `Sparse` 时，先确认是不是「没唤醒」，不要急着判「该应用不支持无障碍」。
+- 换页后节点数会变（推荐页 78、直播间页 4），**这是页面内容差异，不是采集缺陷**；实测唤醒后 8 秒内不再增长。
+- `Sparse` 的含义是「可操作节点 < 阈值 3」，不等于「读不到」，两者在 `reason` 里是分开写的。
