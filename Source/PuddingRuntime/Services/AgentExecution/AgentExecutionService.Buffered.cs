@@ -2180,9 +2180,7 @@ if (effectiveLlmConfig is not null)
 
                     var toolMsgRaw = skillResult.Success
                         ? $"✅ Tool '{toolName}' succeeded (exit={skillResult.ExitCode}):\n{skillResult.Output}"
-                        : $"❌ Tool '{toolName}' FAILED (exit={skillResult.ExitCode})\n" +
-                          $"   Error: {skillResult.Error}\n" +
-                          $"   💡 Suggestion: Try an alternative approach or use a different tool if this one has access restrictions.";
+                        : BuildFailurePayloadWithoutFuse(toolName, skillResult);
                     var toolMsg = await ToolResultContextPolicy.MaterializeAsync(
                         toolMsgRaw,
                         request.WorkingDirectory,

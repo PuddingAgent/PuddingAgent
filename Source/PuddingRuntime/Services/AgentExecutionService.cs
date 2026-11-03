@@ -1976,6 +1976,7 @@ public sealed partial class AgentExecutionService
         var sb = new StringBuilder();
         sb.AppendLine($"❌ Tool '{toolName}' FAILED (exit={result.ExitCode})");
         sb.AppendLine($"   Error: {result.Error}");
+        AppendFailureOutput(sb, result.Output);
 
         // ── 熔断预警 ──
         var status = _runtimeControl?.GetStatus(sessionId).Session;
@@ -1998,6 +1999,33 @@ public sealed partial class AgentExecutionService
                 "If the tool has access restrictions, try an alternative approach.");
         }
 
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 把工具自身的输出补进失败回执。
+    /// 失败时 <c>Error</c> 往往只有退出码，真正的原因在 stdout/stderr 里；
+    /// 不回传会逼调用方重跑一次命令去取，等于为同一份信息付两次成本。
+    /// 空输出不产出任何内容，避免给失败回执添加无意义的空行。
+    /// </summary>
+    internal static void AppendFailureOutput(StringBuilder sb, string? output)
+    {
+        if (string.IsNullOrWhiteSpace(output)) return;
+        sb.AppendLine("   Output:");
+        sb.AppendLine(output);
+    }
+
+    /// <summary>
+    /// 不含熔断预警的失败回执（旧版执行路径使用）。
+    /// 与 <see cref="BuildToolFailurePayload"/> 共享头三行，保证两条路径的失败信息一致。
+    /// </summary>
+    internal static string BuildFailurePayloadWithoutFuse(string toolName, SkillResult result)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"❌ Tool '{toolName}' FAILED (exit={result.ExitCode})");
+        sb.AppendLine($"   Error: {result.Error}");
+        AppendFailureOutput(sb, result.Output);
+        sb.AppendLine("   💡 Suggestion: Try an alternative approach or use a different tool if this one has access restrictions.");
         return sb.ToString();
     }
 
