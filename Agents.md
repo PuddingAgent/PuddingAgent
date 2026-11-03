@@ -262,9 +262,64 @@ python dev-up.py --status          # 查看状态
 1. **任务完成即提交**：每个原子任务完成并通过验证后立刻 `git commit`，禁止把多个任务的改动攒在一起；中断/转交前先提交已验证部分。**工作树不允许长期处于脏状态。**
 2. **精确暂存**：使用 `git add <明确文件路径列表>`，禁止裸 `git add -A` / `git add .`（工作树常混有他方并行 WIP）。
 3. **临时产物一律进 `temp/`**（已 ignore），且必须落在这三个子目录之一：编译/发布输出 → `temp\build\`，测试输出与结果 → `temp\test-out\`，临时脚本/草稿/报告 → `temp\` 根；禁止散落在仓库根或源码目录。
-   - 一次性清理：`Remove-Item temp\build\*, temp\test-out\* -Recurse -Force -ErrorAction SilentlyContinue`（每次构建/测试跑完立即执行）。
+   - ⚠️ **`temp\build\` 同时是宿主的运行目录**（2026-11-03 实测）：
+     ```
+     PuddingAgent                 → temp\build\...\core\PuddingAgent.exe
+     PuddingDesktop               → temp\build\...\PuddingDesktop.exe
+     PuddingDesktop.Guardian      → temp\build\...\guardian\
+     PuddingDesktop.ExitObserver  → temp\build\...\observer\
+     ```
+     删除它**不会立刻杀死进程**（DLL 已加载进内存），但 **Guardian 下次重启宿主时
+     找不到 exe，宿主会永久起不来**。所以清理前必须先确认无进程占用：
+     ```powershell
+     Get-Process | Where-Object { $_.Path -like '*temp\build*' } | Select Id, ProcessName, Path
+     ```
+     - 宿主运行时：**只能清理非当前版本的历史子目录**，不能整目录删除
+     - 宿主停止时：可整目录清理，下次 `dev-up` 会重建
+     - `temp\test-out\` 无此约束，可随时清理
+   - 一次性清理（**仅 test-out 无条件**）：`Remove-Item temp\test-out\* -Recurse -Force -ErrorAction SilentlyContinue`；
+     `temp\build\*` 需先通过上面的进程检查再单独处理。
    - `dev-up.py --clear` 已把这些路径纳入白名单；`temp\` 根下的人类可读笔记（`.md`/`.patch`）不受清理影响。
 4. **提交前自检**：`git status` 只含本次预期文件 → `git diff --cached --stat` 无 `bin/`、`obj/`、`pub/`、`temp/build/` → 无 `??` 临时/密钥/大文件 → 一个 commit 只做一件事。
 5. **只推自己的 commit**：不代推他方未完成的改动；推送前确认没有夹带。
+
+### 编译中间产物 `Source/**/bin`、`obj`
+
+这两类目录是**编译中间产物**，与运行时目录分开：宿主的运行副本在 `temp\build\`，
+`Source` 下的 `bin`/`obj` 只是构建过程的落点。
+
+- **可随时删除**，`dotnet build` 会重建
+- **代价**：下次构建变成全量。2026-11-03 实测清掉后 `Source` 从 41.7 GB 降到 7.5 GB，
+  但首次构建明显变慢
+- 已在 `.gitignore` 内，`git status` 不会显示它们；`git diff --cached --stat` 出现
+  `bin/`、`obj/` 说明暂存有误
+
+### 运行时数据目录 `D:\Data`
+
+Pudding 的**持久化数据不在仓库内**，在 `D:\Data`（根路径由 `PathHelper` 决定，
+可被环境变量或启动参数覆盖）。
+
+| 子目录 | 内容 | 可删性 |
+|---|---|---|
+| `databases/` | SQLite 主库（`pudding_platform.db` / `pudding_memory.db` / `code-index/`） | **不可删**，活跃数据 |
+| `browser/` | 浏览器 profile 与缓存 | 缓存目录可清；删 profile 会丢登录态 |
+| `workspaces/` | 工作区产物 | 逐个确认后处理 |
+| `logs/` | 运行日志 | 可按时间清理 |
+| `fulltext-index/` | 全文索引 | 可删，会重建 |
+| `retention-archive/` | 归档事件 | 按保留策略处理 |
+| `agents/<agentId>/` | 各 Agent 私有 `goal.md` / `memory/` / `archives/` | **不可删** |
+
+**数据库清理的硬规则**：
+
+1. **先用锁判断哪个是活跃库**：能独占打开的是废弃产物，打不开的是活跃库。
+   ```powershell
+   try { $fs=[IO.File]::Open($p,'Open','ReadWrite','None'); $fs.Close(); 'UNLOCKED' }
+   catch { 'LOCKED' }
+   ```
+2. **时间戳 + 锁，双证齐全才可删**。2026-11-03 实测：
+   `pudding_platform_compact.db` 最后修改 10-28 17:00 且未被锁定 ⇒ 废弃压缩产物；
+   `pudding_platform.db` 当天仍在写且被锁 ⇒ 活跃主库。只凭文件名或大小判断会误删。
+3. **删库前先记录证据**：大小、创建时间、修改时间、锁状态，写进报告后再动手。
+4. **`-wal` / `-shm` 必须随主文件一起处理**，单独删会让主库损坏。
 
 > 对照断言：`Source/PuddingPlatformTests/Services/AgentTemplateFileServiceTests.cs` 的 `RepoGeneralAssistantPreset_AgentsPrompt_Contains_RepoHygieneClause` 会校验产品预设 `general-assistant.json` 的 `agentsPrompt` 含上述条款，两处需同步维护。
