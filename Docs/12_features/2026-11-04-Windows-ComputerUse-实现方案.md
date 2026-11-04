@@ -88,5 +88,8 @@ Pudding.CuHelper（拟）       ← 独立进程：承载 UIAutomation，JSON-RP
 
 1. **提交类动作**：按钮在树上无名字时如何定位并触发（douyin 当前页 `Edit=0`，无法推进）
 2. **独立 helper 的协议与超时**：JSON-RPC over pipe，需定请求预算与取消语义
-3. **截图通道**：WGC 在本机的可用性与被遮挡窗口表现（未测）
+3. **截图通道**：当前实现 (`WindowsScreenCapturer`) 用的是**屏幕 DC 的 BitBlt**
+   （源码注释写明“不向 Chromium 窗口请求后台渲染”）。这意味着**被遮挡或最小化时拿不到内容**。
+   Codex 走的是 WGC（`GraphicsCaptureItem` + `Direct3D11CaptureFramePool`，可截被遮挡窗口），
+   本机未实测 WGC 的可用性与性能。若后续需要“后台可截”，这是必选项。
 4. **多显示器 / DPI**：已有组件，但跨屏负坐标场景未实测
