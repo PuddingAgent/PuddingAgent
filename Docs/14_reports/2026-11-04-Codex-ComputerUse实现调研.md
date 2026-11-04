@@ -3,7 +3,7 @@ title: Codex 的 computer use 实现调研
 author: 鲸鲸
 date: 2026-11-04
 last_reviewed: 2026-11-04
-status: accepted
+status: active
 description: 拆解 Codex 桌面包：UIA 读树 + SendInput 注入 + WGC 截图，独立原生 helper 走 JSON-RPC，浏览器另走 CDP。
 categories: [docs, reports]
 tags: [computer-use, accessibility, chromium, research]
@@ -259,7 +259,7 @@ type BrowserInfo = { id: string; name?: string; family?: string;
 
 | 目标 | 机制 | 证据 |
 |---|---|---|
-| 原生 Windows 应用 | **系统 API**：UIA 读树 + SendInput 注入 + WGC 截图 | `windows/SKILL.md:14`；swift helper 的 `IUIAutomation`×123 / `SendInput`×7 / `GraphicsCaptureItem`×12 |
+| 原生 Windows 应用 | **系统 API**：UIA 读树 + SendInput 注入 + WGC 截图 | `windows/SKILL.md:14`；运行时模块表见本文 §运行时修正（UIA 由 `codex-computer-use.exe` 承载，不是 swift helper） |
 | 浏览器标签页 | **浏览器协议**：CDP（+ Playwright 定位器） | `browser-service.mjs` 的 `Page.captureScreenshot` / `Input.dispatchMouseEvent` / `Accessibility.getFullAXTree` |
 | 视觉模型 | **辅助角色**：截图回流给模型看布局与判读结果；坐标点击仅在 AX 元素缺失时使用，且必须带 `screenshotId` 防坐标失效 | `windows/SKILL.md:203`、`:170-185`；`@oai/cua` 文档 `ScreenshotInputOptions = { screenshotId?: string } // Windows only` |
 
@@ -352,3 +352,33 @@ view_image                               stable             true
 ## 附：一句话工程启示
 
 Codex 的 CU 不是"模型看屏幕"，而是**给模型一副结构化的手眼**：AX 树提供"这是什么可点的东西（稳定 id + 命名动作）"，WGC 提供"现在长什么样"，SendInput 提供"怎么真的按下去"，而截图坐标只是三者失效时的兜底。这种分层（元素级 → 坐标级 → 视觉判读）值得作为本机同类实现的设计基线。
+
+---
+
+## 运行时修正（2026-11-04 21:50，实测推翻静态推断）
+
+上文结论 3 曾写「`codex-computer-use-swift.exe`（53.92 MB）是 UIA 主体」。**这条是错的**，
+错因是拿二进制里的字符串计数（`IUIAutomation` ×123）当成了调用路径 —— 字符串在 ≠ 被调用。
+
+当时两个 helper 同时在运行，直接看它们各自加载了什么模块即可分辨：
+
+| 进程 | PID | 启动 | 模块数 | 无障碍相关模块 |
+|---|---|---|---|---|
+| `codex-computer-use.exe` | 29752 | 18:35:43 | 92 | **`uiautomationcore.dll` 7.2.26100.9949** |
+| `codex-computer-use-swift.exe` | 86432 | 16:49:03 | 64 | **无**（`uia`/`oleacc`/`accessib` 全部零命中） |
+
+`codex-computer-use-swift.exe` 加载的是 `d3d11.dll`、`dxgi.dll`、`dcomp.dll`、`d2d1.dll`、
+`dwmapi.dll`、`amdenc64.dll`（AMD 硬件编码器），且它创建了标题为
+`ChatGPT is using your computer. Esc to cancel` 的全屏覆盖窗口 —— 也就是那个"硬中断提示层"。
+
+### 修正后的分工
+
+- **`codex-computer-use.exe`（1.51 MB）**：承载 UIA 读树与动作执行（`uiautomationcore.dll`）。
+- **`codex-computer-use-swift.exe`（53.92 MB）**：D3D 捕获 + 硬件编码 + 覆盖提示层，**不做无障碍**。
+
+### 方法学记账
+
+1. 二进制字符串只证明"符号存在于文件"，不证明"该路径被运行"；要区分必须看**运行时模块表**或调用栈。
+2. 两个 helper 同时驻留，说明它们是**并列分工**而非"二选一的降级方案" —— 此前标为「未证实」的
+   "运行期选择逻辑"因此不需要再猜：不是选择，是同时使用。
+3. 该结论的取证脚本：`temp/cu-probe/codex-cu-modules{2,3}.ps1`（只读，`Get-Process ... .Modules`）。
