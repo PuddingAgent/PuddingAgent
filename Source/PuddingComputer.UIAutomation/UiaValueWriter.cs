@@ -28,6 +28,12 @@ public enum UiaWriteStatus
 
     /// <summary>UIA 调用抛错（provider 阻塞、元素失效等）。</summary>
     Failed,
+
+    /// <summary>
+    /// 遍历被截断：既不能断言唯一命中，也不能断言不存在。
+    /// 单独成状态是因为把它归入 NotFound 会把「没看完」伪装成「没有」。
+    /// </summary>
+    PartialTree,
 }
 
 /// <summary>写值结果。只有 <see cref="Verified"/> 才算成功。</summary>
@@ -50,6 +56,9 @@ public enum UiaInvokeStatus
     NotInvocable,
     Invoked,
     Failed,
+
+    /// <summary>遍历被截断，无法断言目标是否唯一。</summary>
+    PartialTree,
 }
 
 /// <summary>
@@ -168,12 +177,16 @@ public sealed class UiaValueWriter : IDisposable
         }
     }
 
-    private enum ResolveStatus { Ok, NotFound, Ambiguous, Failed }
+    private enum ResolveStatus { Ok, NotFound, Ambiguous, Partial, Failed }
 
     private readonly record struct ResolveResult(ResolveStatus Status, AutomationElement? Element, string? Detail);
 
     private ResolveResult Resolve(IntPtr windowHandle, ElementSelector selector)
     {
+        // 必须在 FromHandle 之前唤醒：唤醒前取得的根元素会缓存一个空子树，
+        // 后续无论怎样遍历都只会得到空结果，而且看起来像「应用没有无障碍树」。
+        UiaPreprobe.Wake(windowHandle);
+
         var clock = Stopwatch.StartNew();
         var root = _automation.FromHandle(windowHandle);
         if (root is null)
@@ -181,6 +194,7 @@ public sealed class UiaValueWriter : IDisposable
 
         var hits = new List<AutomationElement>(capacity: 2);
         var visited = 0;
+        var truncated = false;
         var stack = new Stack<(AutomationElement Element, int Depth)>();
         stack.Push((root, 0));
 
@@ -201,7 +215,8 @@ public sealed class UiaValueWriter : IDisposable
             }
             catch
             {
-                // 单个元素的属性读不到就跳过，不影响整体解析。
+                // 属性读不到：无法判定这个元素是否命中，因此这次遍历不能算完整。
+                truncated = true;
             }
 
             if (depth >= MaxDepth)
@@ -214,14 +229,18 @@ public sealed class UiaValueWriter : IDisposable
             }
             catch
             {
-                // 子树中断：已收集的命中仍然有效。
+                // 子树中断：已收集的命中仍然有效，但遍历已不完整。
+                truncated = true;
             }
         }
 
-        return hits.Count switch
+        return SelectorResolution.Decide(hits.Count, truncated) switch
         {
-            0 => new ResolveResult(ResolveStatus.NotFound, null, "未命中任何元素"),
-            _ => new ResolveResult(ResolveStatus.Ok, hits[0], null),
+            ResolutionOutcome.Ambiguous => new ResolveResult(ResolveStatus.Ambiguous, null, $"命中 {hits.Count} 个以上元素，拒绝任选其一"),
+            ResolutionOutcome.Ok => new ResolveResult(ResolveStatus.Ok, hits[0], null),
+            ResolutionOutcome.Partial => new ResolveResult(ResolveStatus.Partial, null,
+                $"遍历被截断，无法断言唯一性（已命中 {hits.Count} 个）"),
+            _ => new ResolveResult(ResolveStatus.NotFound, null, "未命中任何元素"),
         };
     }
 
@@ -253,6 +272,7 @@ public sealed class UiaValueWriter : IDisposable
     {
         ResolveStatus.NotFound => UiaWriteStatus.NotFound,
         ResolveStatus.Ambiguous => UiaWriteStatus.Ambiguous,
+        ResolveStatus.Partial => UiaWriteStatus.PartialTree,
         _ => UiaWriteStatus.Failed,
     };
 
@@ -260,6 +280,7 @@ public sealed class UiaValueWriter : IDisposable
     {
         ResolveStatus.NotFound => UiaInvokeStatus.NotFound,
         ResolveStatus.Ambiguous => UiaInvokeStatus.Ambiguous,
+        ResolveStatus.Partial => UiaInvokeStatus.PartialTree,
         _ => UiaInvokeStatus.Failed,
     };
 

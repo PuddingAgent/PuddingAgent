@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using FlaUI.Core.AutomationElements;
-using FlaUI.UIA2;
 using FlaUI.UIA3;
 using Pudding.Contracts.Computer;
 
@@ -172,19 +171,7 @@ public sealed class FlaUiInspector : IUiaInspector, IDisposable
     /// 所以“UIA2 有效、UIA3 无效”是**动作序列**层面的观测，底层机制尚未被单独证明。
     /// </para>
     /// </summary>
-    private static int ProbeChildCount(IntPtr windowHandle)
-    {
-        try
-        {
-            using var automation = new UIA2Automation();
-            var root = automation.FromHandle(windowHandle);
-            return root?.FindAllChildren().Length ?? 0;
-        }
-        catch
-        {
-            return 0;
-        }
-    }
+    private static int ProbeChildCount(IntPtr windowHandle) => UiaPreprobe.Probe(windowHandle);
 
     /// <summary>
     /// 把一个 UIA 元素归一化为契约记录。
