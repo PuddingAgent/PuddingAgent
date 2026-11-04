@@ -1,0 +1,92 @@
+---
+title: Windows Computer Use 实现方案（基于 2026-11-03/04 实测）
+author: 鲸鲸
+date: 2026-11-04
+last_reviewed: 2026-11-04
+status: proposed
+description: 用本机实测证据给出 Windows 桌面自动化的能力阶梯、各层可靠性边界与组件划分，明确哪些是已证、哪些待验。
+categories: [docs, features]
+tags: [computer-use, windows, uia, accessibility, design]
+related_docs:
+  - Docs/14_reports/2026-11-03-抖音客户端输入通道实测.md
+  - Docs/14_reports/2026-11-04-Codex-ComputerUse实现调研.md
+  - Docs/14_reports/2026-11-04-DeepSeekHarness-ComputerUse调研.md
+  - Docs/13_runbooks/Computer-Use.md
+related_files: []
+slug: features-windows-computer-use-2026-11-04
+draft: false
+---
+
+# Windows Computer Use 实现方案
+
+> 本文只写**本机实测过**的东西，或明确标注为「未验证」。凡未验证的，不写成设计前提。
+
+## 一、结论先行
+
+Windows CU 的难点不在 API 稀缺，而在**语义隐式**：同一段代码在不同应用、不同页面、
+不同时序下结果不同，且失败常常是静默的。因此设计的第一原则是：
+
+**每一步都必须能产出「可核对的证据」，而不是「已派发」的回执。**
+
+## 二、能力阶梯（按可靠性排序）
+
+| 层 | 手段 | 本机证据 | 结论 |
+|---|---|---|---|
+| L1 观察 | UIA 树（UIA3）+ **先 MSAA 唤醒** | Chromium 首采 1 → 唤醒后 4；VS Code 3 | 可用，但顺序敏感 |
+| L1 观察 | 截图（WGC 优先于 BitBlt） | 未实测 | 待验，Codex 用 WGC 可截遮挡窗口 |
+| L2 定位 | 元素选择器（AutomationId/Name/Type/Class） | 已有组件与 41 用例 | 可用；多命中必须报歧义 |
+| L2 定位 | 截图坐标 | 曾因坐标换算错而连错多次 | **仅在元素不可用时降级**，且必须带截图凭据 |
+| L3 输入 | 无障碍写值（ValuePattern） | douyin 搜索框写值 6/6 读回一致，且推荐词重算 | **首选**，不依赖键盘 |
+| L3 输入 | 无障碍调用（InvokePattern） | 组件已实现；douyin 当前页无按钮可验 | 待验（需页面配合） |
+| L3 输入 | 窗口消息点击（WM_LBUTTON*） | douyin 导航切页有效、搜索框下拉开合有效 | 可用，但**不建立编辑焦点** |
+| L3 输入 | SendInput 鼠标 | douyin 播放页无效、ChatGPT 客户端无效 | **不可依赖** |
+| L3 输入 | SendInput 键盘 | douyin 全通道无反应（含空格、Unicode、Ctrl+V） | **不可依赖** |
+| L3 输入 | 驱动级 HID | 未实测 | 最后手段，见 §五 |
+
+**一条贯穿证据**：输入"被系统接受"（`SendInput` 返回 n/n）与"应用真的收到"是两件事。
+本机所有键盘失败案例，`SendInput` 都返回全部接受。
+
+## 三、三个已证伪的错误假设（不要重犯）
+
+1. **「树会长大，等久一点就有」** —— 唤醒后 8 秒内节点数恒为 4，不再增长；78 与 4 是**不同页面**。
+2. **「换个 UIA 库就能解决」** —— WPF / FlaUI / 裸 COM 在稳定态下完全一致（18/18 采样全为 78）；
+   差别只在**谁能唤醒树**。
+3. **「点击不生效就是被应用过滤」** —— 首次点击常常只用于**激活窗口**；先证明窗口已激活，再谈是否被过滤。
+
+## 四、组件划分建议
+
+```
+Pudding.Contracts            ← 契约（ElementSelector / 快照 / 写值结果）
+PuddingComputer.UIAutomation ← 观察 + 写值 + 调用（含 MSAA 唤醒），只读树，不含输入注入
+PuddingComputer.Windows      ← 窗口枚举 / 坐标换算 / SendInput（注入通道）
+PuddingComputer.Automation   ← 纯规则（可用性分类、快照标注），不碰 IO
+Pudding.CuHelper（拟）       ← 独立进程：承载 UIAutomation，JSON-RPC 暴露给宿主
+```
+
+**为什么需要独立进程**：`PuddingRuntime` 是 `net10.0`，`UIAutomation` 必须 `net10.0-windows`
+（FlaUI 只提供 `-windows` 资产），二者无法在同一程序集图里共存。独立进程同时解决
+**TFM 边界**与**provider 阻塞隔离**两个问题，代价是超时与生命周期管理。
+
+## 五、驱动级 HID 的准入条件
+
+只有同时满足才考虑：①应用层路径（写值/调用/菜单命令）全部无效 ②有交叉对照证明
+「实体输入可行、合成输入被拒」 ③用户明确授权安装内核或 UMDF 驱动。
+
+代价：需管理员、可能要重启、与 Secure Boot/内存完整性存在兼容风险；
+且**装完驱动后原来的 `SendInput` 不会自动改走 HID**，必须换发送 API。
+
+## 六、验收判据（每个动作都要能取红）
+
+| 动作 | 成功判据 | 失败时该说什么 |
+|---|---|---|
+| 观察 | 节点数 + 可操作数 + 可用性分类，且锚点（根类名）可读 | 「读到 N 个，可能是页面本身如此」 |
+| 写值 | **重新解析后读回一致**；更强：页面据此重算（如推荐词） | 「写了但读回不符」或「页面无变化」 |
+| 调用 | 调用成功 **≠** 生效；必须另有观察证据 | 「已调用，效果未确认」 |
+| 点击 | 落点命中测试 + 目标窗口已激活 + 之后状态变化 | 「已派发，未观察到位移」 |
+
+## 七、未解问题（按优先级）
+
+1. **提交类动作**：按钮在树上无名字时如何定位并触发（douyin 当前页 `Edit=0`，无法推进）
+2. **独立 helper 的协议与超时**：JSON-RPC over pipe，需定请求预算与取消语义
+3. **截图通道**：WGC 在本机的可用性与被遮挡窗口表现（未测）
+4. **多显示器 / DPI**：已有组件，但跨屏负坐标场景未实测
