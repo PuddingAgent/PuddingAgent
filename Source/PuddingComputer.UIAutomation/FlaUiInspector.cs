@@ -60,8 +60,10 @@ public sealed class FlaUiInspector : IUiaInspector, IDisposable
 
         try
         {
-            // 先唤醒再取根：Chromium 系的树不会被 UIA3 唤醒，而在唤醒前拿到的 UIA3 根元素
-            // 会缓存一个空子树，导致本次采集白白失败。MSAA 探测同时承担唤醒职责。
+            // 先唤醒再取根：Chromium 系的树不会被 UIA3 客户端唤醒，而在唤醒前拿到的 UIA3 根元素
+            // 会缓存一个空子树，导致本次采集白白失败。UIA2 客户端探测同时承担唤醒职责。
+            // 机制说明仅为当前工作假设：FlaUI.UIA2 实际引用的是托管 UIAutomationClient（见 2026-11-04 核实），
+            // 因此不能把差异归因于“MSAA 与 UIA”之别，只能归因于“UIA2 客户端先探一次”这个动作顺序。
             _ = ProbeChildCount(windowHandle);
 
             var root = _automation.FromHandle(windowHandle);
@@ -158,11 +160,16 @@ public sealed class FlaUiInspector : IUiaInspector, IDisposable
     }
 
     /// <summary>
-    /// 用 MSAA 通道探测根节点的子节点数。
+    /// 用 UIA2 客户端（FlaUI.UIA2）探测根节点的子节点数。
     /// <para>
-    /// 为什么不用 UIA3 自己探：实测（2026-11-04）Chromium 系窗口的 UIA 无障碍树**不会被 UIA3 唤醒**——
+    /// 为什么不用 UIA3 自己探：实测（2026-11-04）Chromium 系窗口的无障碍树**不会被 UIA3 客户端唤醒**——
     /// 同一进程内 uia3 首次只读到 1 个节点，而先跑一次 uia2 后 uia3 立刻能读到子节点。
     /// 因此这里既在“看”也在“唤醒”，双重职责是有意的。
+    /// </para>
+    /// <para>
+    /// 命名保留为 UIA2 而非 MSAA：2026-11-04 核实 FlaUI.UIA2.dll 的 AssemblyRef 指向
+    /// UIAutomationClient / System.Windows.Automation（托管 UIA 客户端），不是 IAccessible。
+    /// 所以“UIA2 有效、UIA3 无效”是**动作序列**层面的观测，底层机制尚未被单独证明。
     /// </para>
     /// </summary>
     private static int ProbeChildCount(IntPtr windowHandle)
