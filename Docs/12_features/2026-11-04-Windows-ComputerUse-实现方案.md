@@ -112,3 +112,44 @@ PRINTWINDOW ok=True  samples=10608  nonBlackRatio=1
 
 在此之前，文档里“被遮挡时拿不到内容”的结论**只对当前 BitBlt 实现成立**，
 不能推广成“Windows 做不到后台截图”。
+---
+
+## 补充证据：向 Electron 应用（ChatGPT 桌面客户端）发送消息，2026-11-04 16:56
+
+**目标动作**：把一个 1421 字的方案请求写进 Composer 并提交。
+
+**通道（已验证成功）**
+
+1. `ValuePattern.SetValue` 写入编辑器
+2. **重新解析元素并读回**，与实际文本比对一致（1420 vs 1421，差一个尾部换行）
+3. `SetFocus()`
+4. `keybd_event(0x0D)` 按下 + 抬起
+
+**成功证据**：消息全文出现在会话记录里，GPT 随后开始回复。
+
+### 三条可复用的经验
+
+**① 用 `ClassNameProperty='ProseMirror'` 精确匹配会失配**
+实际 class 是 `ProseMirror ProseMirror-focused`（带状态后缀）。
+可靠定位方式是 `ControlType.Edit` 找候选，再校验 class 前缀。
+
+**② 「编辑器被清空」不是有效的提交判据**
+编辑器为空时，`ValuePattern.Value` 返回的是**占位提示文本**（本例 13 字），
+不是空串。若以 `Length == 0` 判提交，会把成功判成失败。
+有效判据是：**发送的文本出现在会话正文中**。
+
+**③ 这个应用接受 `keybd_event`**
+对照测试：`SetFocus` 后发 `VK_A`，编辑器内容变为 `a`（1 字）。
+而同期的抖音客户端，`SendInput` 键盘、Unicode、Ctrl+V、ESC 全部无效。
+⇒ **「键盘是否可达」必须按应用分别记录，不能写成平台级结论。**
+
+### 一个操作陷阱
+
+`SetValue('')` 对清空有效，但读回仍是占位文本长度，
+所以「清空是否成功」同样不能用 `Length == 0` 判断，要看正文是否消失。
+
+### 本轮未完成
+
+提交后约 30 分钟，应用界面被一个 Slack OAuth 的 Edge 错误页（`ERR_CONNECTION_CLOSED`）遮挡，
+会话视图也被切到了 `dot` 页面，因此**尚未取回 GPT 的完整答复**。
+会话仍在左侧「最近」列表中，需要先切回该会话才能继续读取。
