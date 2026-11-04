@@ -93,3 +93,22 @@ Pudding.CuHelper（拟）       ← 独立进程：承载 UIAutomation，JSON-RP
    Codex 走的是 WGC（`GraphicsCaptureItem` + `Direct3D11CaptureFramePool`，可截被遮挡窗口），
    本机未实测 WGC 的可用性与性能。若后续需要“后台可截”，这是必选项。
 4. **多显示器 / DPI**：已有组件，但跨屏负坐标场景未实测
+
+## 后台截图：PrintWindow 初步结果（未定论，2026-11-04 09:30）
+
+对 douyin 窗口（2304×1315）试 `PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT=2)`：
+
+```
+PRINTWINDOW ok=True  samples=10608  nonBlackRatio=1
+```
+
+**这个结果不足以定论**：`nonBlackRatio=1` 既可能是“真的截到了内容”，
+也可能是“截到的是一张全非黑的垃圾图”（噪声图的非黑比例同样接近 1）。
+判据本身不成立——我用的指标区分不了这两种情况。
+
+要做成结论，至少需要：
+1. 同一时刻再用 BitBlt 截一张，**逐像素比对两张图的相似度**（而不是各看各的非黑比例）
+2. 把窗口遮挡住（或用另一窗口覆盖）后再截一次，看是否仍一致
+
+在此之前，文档里“被遮挡时拿不到内容”的结论**只对当前 BitBlt 实现成立**，
+不能推广成“Windows 做不到后台截图”。
