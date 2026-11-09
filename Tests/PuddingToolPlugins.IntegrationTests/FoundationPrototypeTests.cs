@@ -82,6 +82,8 @@ public sealed class FoundationPrototypeTests
             services.AddSingleton(Mock.Of<IVisualArtifactLocalFileResolver>());
             services.AddScoped<IConversationAcceptanceStore, ConversationAcceptanceStore>();
             services.AddScoped<ISubmitTurnHandler, SubmitTurnHandler>();
+            var controlSink = new ControlSink();
+            services.AddSingleton<IExecutionControlService>(controlSink);
             services.AddAgentWorkApi();
             await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
             var agent = new AgentRef("ws", "agent");
@@ -231,6 +233,12 @@ public sealed class FoundationPrototypeTests
             var cancelWorkDispatcher = new RuntimeAgentDispatcher(cancelLoop, new AgentExecutionStateRegistry());
             var cancelRun = cancelWorkDispatcher.DispatchAsync(cancelDispatch);
             await blocking.Started.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            var workControl = new CanonicalAgentWorkControlBackend(provider.GetRequiredService<IServiceScopeFactory>(),
+                provider.GetRequiredService<IAgentWorkBackend>());
+            var cancelResult = await workControl.CancelAsync(new WorkCaller("prototype"), cancelAgent,
+                "prototype", "cancel-work", cancelReceipt.AcceptedSequence, "user.cancelled", default);
+            Assert.AreEqual("requested", cancelResult.Effect, "the canonical Work control authority accepts the cancel");
+            Assert.AreEqual(ControlMessageKind.CancelRequested, controlSink.Commands.Single().Kind);
             cancelControl.Cancel(cancelReceipt.ConversationId);
             try { await cancelRun.WaitAsync(TimeSpan.FromSeconds(20)); }
             catch (OperationCanceledException) { }
@@ -455,6 +463,16 @@ public sealed class FoundationPrototypeTests
     private sealed class DbFactory(DbContextOptions<PlatformDbContext> options) : IDbContextFactory<PlatformDbContext>
     {
         public PlatformDbContext CreateDbContext() => new(options);
+    }
+
+    private sealed class ControlSink : IExecutionControlService
+    {
+        public List<ExecutionControlCommand> Commands { get; } = [];
+        public Task<ControlReceipt> SubmitAsync(ExecutionControlCommand command, CancellationToken ct)
+        {
+            Commands.Add(command);
+            return Task.FromResult(new ControlReceipt(Guid.NewGuid().ToString("N"), Commands.Count, Commands.Count));
+        }
     }
 
     private sealed class BlockingScriptModel(ExecutablePluginService plugins) : IRuntimeLlmClient
