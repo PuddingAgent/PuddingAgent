@@ -112,7 +112,7 @@ public sealed class FoundationPrototypeTests
                 .ReturnsAsync(FirewallDecision.Allow());
             var executor = new PuddingToolExecutionService(registry, new SandboxExecutor(NullLogger<SandboxExecutor>.Instance),
                 NullLogger<PuddingToolExecutionService>.Instance, firewall: firewall.Object);
-            var loop = BuildLoop(new PrototypeScriptModel(plugins, receipt.WorkId), new ToolInvocationService(executor),
+            var (loop, _) = BuildLoop(new PrototypeScriptModel(plugins, receipt.WorkId), new ToolInvocationService(executor),
                 new PuddingToolSchemaService(registry), [new ExecutablePluginHook(plugins)], root);
             var dispatch = new RuntimeDispatchRequest
             {
@@ -201,6 +201,42 @@ public sealed class FoundationPrototypeTests
             Assert.IsTrue(afterReload.Acknowledged >= 1, "reloaded observer processes pending/new artifacts");
             Assert.AreEqual(1, (await archive.ListAsync("ws", v3Event.EventId)).Count);
 
+            // B scenario: cancel a controlled blocking Work; no artifact is committed, terminal is Cancelled.
+            var cancelAgent = new AgentRef("ws2", "agent2");
+            var cancelSdk = new AgentWorkClient(provider.GetRequiredService<AgentWorkApiFactory>()
+                .ForManagementUser(principal, cancelAgent)).For(cancelAgent);
+            var cancelReceipt = await cancelSdk.SubmitAsync(new("cancel-work", "执行阻塞工具并取消。"));
+            var blocking = new BlockingScriptModel(plugins);
+            var (cancelLoop, cancelControl) = BuildLoop(blocking, new ToolInvocationService(executor),
+                new PuddingToolSchemaService(registry), [new ExecutablePluginHook(plugins)], root);
+            var cancelDispatch = new RuntimeDispatchRequest
+            {
+                SessionId = cancelReceipt.ConversationId,
+                AgentInstanceId = cancelAgent.AgentId,
+                WorkspaceId = cancelAgent.WorkspaceId,
+                AgentTemplateId = "prototype",
+                WorkingDirectory = root,
+                MessageText = "执行阻塞工具并取消。",
+                MaxRounds = 3,
+                SuppressContextAutoCompaction = true,
+                CapabilityPolicy = new()
+                {
+                    DefaultToolNames = ["hang"],
+                    AllowedToolNames = ["hang"],
+                },
+                LlmConfig = new() { ModelId = "scripted-model", MaxContextTokens = 16_384 },
+            };
+            var cancelRun = cancelLoop.ExecuteAsync(cancelDispatch);
+            await blocking.Started.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            cancelControl.Cancel(cancelReceipt.ConversationId);
+            try { await cancelRun.WaitAsync(TimeSpan.FromSeconds(20)); }
+            catch (OperationCanceledException) { }
+            await FinishWorkAsync(provider, cancelReceipt, TurnTerminal.Cancelled, "ws2");
+            var cancelSnapshot = await cancelSdk.GetAsync("cancel-work");
+            Assert.AreEqual(AgentWorkStatus.Cancelled, cancelSnapshot!.Status);
+            Assert.IsNull(await artifacts.GetAsync("ws2", cancelReceipt.WorkId, "1.0.0"),
+                "cancelled Work must not commit an artifact");
+
             var output = JsonSerializer.Serialize(new
             {
                 workId = receipt.WorkId,
@@ -216,6 +252,8 @@ public sealed class FoundationPrototypeTests
                 replay = new { replay.Delivered, archiveCount = (await archive.ListAsync("ws", evt.EventId)).Count },
                 unload = new { afterUnload.Delivered, archived = unloadArchived },
                 reload = new { afterReload.Acknowledged, archived = (await archive.ListAsync("ws", v3Event.EventId)).Count },
+                cancel = new { status = cancelSnapshot.Status.ToString(),
+                    artifact = (await artifacts.GetAsync("ws2", cancelReceipt.WorkId, "1.0.0")) is not null },
             });
             var receiptPath = Environment.GetEnvironmentVariable("PUDDING_PROTOTYPE_RECEIPT")
                 ?? Path.Combine(root, "receipt.json");
@@ -229,7 +267,7 @@ public sealed class FoundationPrototypeTests
         }
     }
 
-    private static async Task FinishWorkAsync(IServiceProvider provider, AgentWorkReceipt receipt, TurnTerminal terminal)
+    private static async Task FinishWorkAsync(IServiceProvider provider, AgentWorkReceipt receipt, TurnTerminal terminal, string workspaceId = "ws")
     {
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
@@ -239,15 +277,16 @@ public sealed class FoundationPrototypeTests
         command.RunId = runId;
         var turn = await db.ConversationTurns.SingleAsync(x => x.TurnId == receipt.TurnId);
         turn.Status = "running";
-        db.ExecutionRuns.Add(new ExecutionRunEntity
+        var run = new ExecutionRunEntity
         {
             RunId = runId, CommandId = command.CommandId, ConversationId = receipt.ConversationId,
             TurnId = receipt.TurnId, Attempt = 1, WorkerId = "prototype", Status = "running",
             LeaseUntil = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeMilliseconds(),
-        });
+        };
+        db.ExecutionRuns.Add(run);
         await db.SaveChangesAsync();
-        var lease = new ExecutionLease(command.CommandId, "prototype", "ws", receipt.ConversationId,
-            receipt.TurnId, runId, 1, DateTimeOffset.UtcNow.AddMinutes(1)) { TraceId = null };
+        var lease = new ExecutionLease(command.CommandId, "prototype", workspaceId, receipt.ConversationId,
+            receipt.TurnId, runId, run.FencingToken, DateTimeOffset.UtcNow.AddMinutes(1)) { TraceId = null };
         var journal = new SqliteExecutionJournal(provider.GetRequiredService<IServiceScopeFactory>(),
             new NoSignal(), NullLogger<SqliteExecutionJournal>.Instance);
         await journal.CommitTerminalAsync(lease, terminal, [], default);
@@ -415,7 +454,43 @@ public sealed class FoundationPrototypeTests
         public PlatformDbContext CreateDbContext() => new(options);
     }
 
-    private static AgentExecutionService BuildLoop(IRuntimeLlmClient llm, IToolInvocationService tools,
+    private sealed class BlockingScriptModel(ExecutablePluginService plugins) : IRuntimeLlmClient
+    {
+        private int _calls;
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private LlmResponse Next(IReadOnlyList<LlmToolDefinition>? tools)
+        {
+            if (++_calls == 1)
+            {
+                var hang = plugins.Manager.List().Where(a => a.State == "Active")
+                    .SelectMany(a => a.ToolNames).First(n => n.EndsWith("_hang"));
+                Started.TrySetResult();
+                return new(null, [new("hang", hang, "{\"text\":\"blocked\"}")]);
+            }
+            return new("{\"status\":\"DONE\"}", null);
+        }
+
+        public Task<LlmResponse> ChatAsync(string workspaceId, string sessionId, string agentTemplateId,
+            IReadOnlyList<ChatMessage> messages, IReadOnlyList<LlmToolDefinition>? tools = null,
+            LlmConfig? llmConfig = null, CancellationToken ct = default) => Task.FromResult(Next(tools));
+
+        public async IAsyncEnumerable<StreamDelta> ChatStreamAsync(string workspaceId, string sessionId,
+            string agentTemplateId, IReadOnlyList<ChatMessage> messages,
+            IReadOnlyList<LlmToolDefinition>? tools = null, LlmConfig? llmConfig = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            var response = Next(tools);
+            foreach (var call in response.ToolCalls ?? [])
+                yield return new() { ToolCallIndex = 0, ToolCallId = call.Id, ToolCallNameDelta = call.Name,
+                    ToolCallArgsDelta = call.ArgumentsJson };
+            yield return new() { ContentDelta = response.Content,
+                FinishReason = response.ToolCalls?.Count > 0 ? "tool_calls" : "stop" };
+            await Task.CompletedTask;
+        }
+    }
+
+    private static (AgentExecutionService Loop, ExecutionControlRegistry Control) BuildLoop(IRuntimeLlmClient llm, IToolInvocationService tools,
         PuddingToolSchemaService schemas, IAgentLoopHook[] hooks, string root)
     {
         var sessions = new AgentSessionManager(NullLogger<AgentSessionManager>.Instance);
@@ -435,10 +510,10 @@ public sealed class FoundationPrototypeTests
         var pipeline = new ContextPipeline(memory, skills, packages, prompt, new MemoryCache(new MemoryCacheOptions()),
             new ContextAssemblyStore(), NullLogger<ContextPipeline>.Instance, environment, dataPaths: paths);
         var manager = new ContextWindowManager(sessions, store, control, journal, NullLogger<ContextWindowManager>.Instance);
-        return new(sessions, store, memory, sandbox, llm, skills, new AgentExecutionGuardrails(), control, journal,
+        return (new(sessions, store, memory, sandbox, llm, skills, new AgentExecutionGuardrails(), control, journal,
             new CompletionPolicy(), packages, new SkillPackageDownloadService(Mock.Of<IHttpClientFactory>(),
                 NullLogger<SkillPackageDownloadService>.Instance), hooks, pipeline, manager,
             NullLogger<AgentExecutionService>.Instance, new SessionExecutionGate(NullLogger<SessionExecutionGate>.Instance),
-            toolInvocationService: tools, toolSchemaService: schemas);
+            toolInvocationService: tools, toolSchemaService: schemas), control);
     }
 }

@@ -44,6 +44,8 @@ try {
     if ($json.unload.Delivered -ne 0) { throw "Unloaded observer must not receive new events (delivered=$($json.unload.Delivered))." }
     if ($json.unload.archived -ne 0) { throw "Unloaded observer must not archive new artifacts (archived=$($json.unload.archived))." }
     if ($json.reload.archived -ne 1) { throw "Reloaded observer must archive the next artifact (archived=$($json.reload.archived))." }
+    if ($json.cancel.status -ne 'Cancelled') { throw "Cancelled Work snapshot is '$($json.cancel.status)', expected Cancelled." }
+    if ($json.cancel.artifact -ne $false) { throw "Cancelled Work must not commit an artifact (artifact=$($json.cancel.artifact))." }
     Write-Host 'Receipt:'
     Write-Host ($json | ConvertTo-Json -Compress)
     Write-Host "Foundation prototype passed. Evidence: $run"
