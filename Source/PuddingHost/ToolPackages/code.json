@@ -1,0 +1,17 @@
+{
+  "id": "pudding.code",
+  "version": "1.0.0",
+  "exports": {
+    "code_callees": "PuddingRuntime.Services.Tools.CodeCalleesTool",
+    "code_callers": "PuddingRuntime.Services.Tools.CodeCallersTool",
+    "code_explore": "PuddingRuntime.Services.Tools.CodeExploreTool",
+    "code_impact": "PuddingRuntime.Services.Tools.CodeImpactTool",
+    "code_index_list_projects": "PuddingRuntime.Services.Tools.CodeProjectListTool",
+    "code_index_register_project": "PuddingRuntime.Services.Tools.CodeProjectAddTool",
+    "code_index_status": "PuddingRuntime.Services.Tools.CodeIndexStatusTool",
+    "code_index_unregister_project": "PuddingRuntime.Services.Tools.CodeProjectRemoveTool",
+    "code_outline": "PuddingRuntime.Services.Tools.CodeOutlineTool",
+    "code_summary": "PuddingRuntime.Services.Tools.CodeSummaryTool",
+    "code_symbol_search": "PuddingRuntime.Services.Tools.CodeSymbolSearchTool"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "pudding.messaging",
+  "version": "1.0.0",
+  "exports": {
+    "list_feishu_recipients": "PuddingRuntime.Services.Tools.ListFeishuRecipientsTool",
+    "receive_messages": "PuddingRuntime.Services.Tools.ReceiveMessagesTool",
+    "send_image": "PuddingAgent.Tools.SendImageTool",
+    "send_message": "PuddingRuntime.Services.Tools.SendMessageTool",
+    "send_voice": "PuddingAgent.Tools.SendVoiceTool",
+    "slack_lookup_member": "PuddingAgent.Tools.SlackLookupMemberTool"
+  }
+}

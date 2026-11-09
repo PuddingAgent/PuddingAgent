@@ -87,8 +87,10 @@
 | `Services/WorkspaceAgentReasoningEffortStore.cs` | `IAgentReasoningEffortStore` 的落地适配器（/effort 命令） | `WorkspaceAgentReasoningEffortStore` | `Services/WorkspaceAgentFileService.cs`、`PuddingCore/Platform/IAgentReasoningEffortStore.cs` | 合法性不在这一层重复判断（写入口有两个：本适配器与 HTTP 窄端点），统一交给 `ReasoningEffortPolicy.TryNormalizeSelection` |
 | `Services/AgentTemplateFileService.cs` | 模板文件服务（27KB） | `AgentTemplateFileService` | `Services/AgentTemplateProvider.cs` | 单文件承载模板读写 |
 | `Services/AgentTemplateProvider.cs` | 模板提供 | `AgentTemplateProvider` | `Services/AgentTemplateFileService.cs` | — |
+| `Services/AgentRuntimeProfileResolver.cs` | 将持久化工具选择映射为会话策略 | `AgentRuntimeProfileResolver` | `IPuddingToolCatalogService` | 可配置已安装的工具，Shell 执行取显式配置 |
 | `Services/AgentLLMConfigResolver.cs` | LLM 配置解析 | `AgentLLMConfigResolver` | `Services/AgentRuntimeProfileResolver.cs` | 把选中模型的协议写入 LlmConfig |
-| `Services/AgentRuntimeProfileResolver.cs` | Runtime Profile 解析（16KB） | `AgentRuntimeProfileResolver` | `Services/AgentLLMConfigResolver.cs` | 单文件承载 Profile 解析 |
+| `Services/AgentRuntimeProfileResolver.cs` | Runtime Profile 解析（16KB） | `AgentRuntimeProfileResolver` | `Services/AgentRuntimeProfileResolver.cs` | 将持久化工具选择映射为会话策略 | `AgentRuntimeProfileResolver` | `IPuddingToolCatalogService` | 可配置已安装的工具，Shell 执行取显式配置 |
+| `Services/AgentLLMConfigResolver.cs` | 单文件承载 Profile 解析 |
 | `Services/AgentConversationLogService.cs` | 对话日志 | `AgentConversationLogService` | `Services/WorkspaceAgentFileService.cs` | — |
 ## 认证与当前用户
 

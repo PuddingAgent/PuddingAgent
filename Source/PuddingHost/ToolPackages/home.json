@@ -1,0 +1,10 @@
+{
+  "id": "pudding.home",
+  "version": "1.0.0",
+  "exports": {
+    "ha_call_service": "PuddingAgent.Tools.HaCallServiceTool",
+    "ha_history": "PuddingAgent.Tools.HaHistoryTool",
+    "ha_instances": "PuddingAgent.Tools.HaInstancesTool",
+    "ha_states": "PuddingAgent.Tools.HaStatesTool"
+  }
+}

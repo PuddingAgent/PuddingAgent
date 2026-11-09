@@ -1,0 +1,16 @@
+{
+  "id": "pudding.agents",
+  "version": "1.0.0",
+  "exports": {
+    "list_agents": "PuddingRuntime.Services.Tools.ListAgentsTool",
+    "query_sub_agents": "PuddingRuntime.Services.Tools.QuerySubAgentsTool",
+    "smart_deploy": "PuddingRuntime.Services.Tools.SmartDeployTool",
+    "smart_develop": "PuddingRuntime.Services.Tools.SmartDevelopTool",
+    "smart_explore": "PuddingRuntime.Services.Tools.SmartExploreTool",
+    "smart_plan": "PuddingRuntime.Services.Tools.SmartPlanTool",
+    "smart_research": "PuddingRuntime.Services.Tools.SmartResearchTool",
+    "smart_review": "PuddingRuntime.Services.Tools.SmartReviewTool",
+    "smart_test": "PuddingRuntime.Services.Tools.SmartTestTool",
+    "spawn_sub_agent": "PuddingRuntime.Services.Skills.SubAgentTool"
+  }
+}

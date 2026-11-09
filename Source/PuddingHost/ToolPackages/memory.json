@@ -1,0 +1,16 @@
+{
+  "id": "pudding.memory",
+  "version": "1.0.0",
+  "exports": {
+    "compact_session": "PuddingRuntime.Services.Tools.SessionCompactTool",
+    "context_handoff": "PuddingRuntime.Services.Tools.ContextHandoffTool",
+    "grep_memory": "PuddingRuntime.Services.Tools.GrepMemoryTool",
+    "manage_memory": "PuddingRuntime.Services.Tools.ManageMemoryTool",
+    "query_session_logs": "PuddingRuntime.Services.Tools.QuerySessionLogsTool",
+    "query_sessions": "PuddingRuntime.Services.Tools.QuerySessionsTool",
+    "save_memory": "PuddingRuntime.Services.Tools.SaveMemoryTool",
+    "save_preference": "PuddingRuntime.Services.Tools.SavePreferenceTool",
+    "search_memory": "PuddingRuntime.Services.Tools.MemoryLibraryTool",
+    "subconscious_trigger": "PuddingRuntime.Services.Tools.SubconsciousTriggerTool"
+  }
+}

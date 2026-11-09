@@ -1,0 +1,20 @@
+{
+  "id": "pudding.goals",
+  "version": "1.0.0",
+  "exports": {
+    "goal_cancel": "PuddingRuntime.Services.TaskTools.GoalCancelTool",
+    "goal_pause": "PuddingRuntime.Services.TaskTools.GoalPauseTool",
+    "goal_read": "PuddingRuntime.Services.Tools.GoalReadTool",
+    "goal_resume": "PuddingRuntime.Services.TaskTools.GoalResumeTool",
+    "goal_start": "PuddingRuntime.Services.TaskTools.GoalStartTool",
+    "goal_update": "PuddingRuntime.Services.Tools.GoalUpdateTool",
+    "task_claim": "PuddingRuntime.Services.TaskTools.TaskClaimTool",
+    "task_get": "PuddingRuntime.Services.TaskTools.TaskGetTool",
+    "task_goal_start": "PuddingRuntime.Services.TaskTools.TaskGoalStartTool",
+    "task_list": "PuddingRuntime.Services.TaskTools.TaskListTool",
+    "task_update": "PuddingRuntime.Services.TaskTools.TaskUpdateTool",
+    "todo_check": "PuddingRuntime.Services.TodoTools.TodoCheckTool",
+    "todo_read": "PuddingRuntime.Services.TodoTools.TodoReadTool",
+    "todo_write": "PuddingRuntime.Services.TodoTools.TodoWriteTool"
+  }
+}

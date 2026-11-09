@@ -1,4 +1,4 @@
-﻿<Project>
+<Project>
   <!--
     Shared content items for Console (PuddingAgent) and Desktop (PuddingDesktop) hosts.
     Imported by consuming projects. Paths are relative to MSBuildThisFileDirectory (Build/).
@@ -8,6 +8,30 @@
     <PuddingAdminDistPath Condition="'$(PuddingAdminDistPath)' == ''">$(MSBuildThisFileDirectory)..\..\PuddingPlatformAdmin\dist</PuddingAdminDistPath>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Build-order edge only. Core cannot reference the worker executable as a library. -->
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\..\Pudding.ToolPlugins.Worker\Pudding.ToolPlugins.Worker.csproj" ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+  <Target Name="BundleToolPluginWorker" AfterTargets="Build">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)..\..\Pudding.ToolPlugins.Worker\Pudding.ToolPlugins.Worker.csproj"
+             Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_PluginWorkerTarget" />
+    </MSBuild>
+    <PropertyGroup><_PluginWorkerDirectory>@(_PluginWorkerTarget->'%(RootDir)%(Directory)')</_PluginWorkerDirectory></PropertyGroup>
+    <ItemGroup>
+      <_PluginWorkerFiles Include="$(_PluginWorkerDirectory)**\*" Exclude="$(_PluginWorkerDirectory)**\*.pdb" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PluginWorkerFiles)" DestinationFiles="@(_PluginWorkerFiles->'$(TargetDir)tools\plugin-worker\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="PublishToolPluginWorker" BeforeTargets="ComputeFilesToPublish" DependsOnTargets="BundleToolPluginWorker">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="@(_PluginWorkerFiles)">
+        <RelativePath>tools/plugin-worker/%(_PluginWorkerFiles.RecursiveDir)%(_PluginWorkerFiles.Filename)%(_PluginWorkerFiles.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+  <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)..\ToolPackages\*.json" Link="tools/host-packages/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <!-- default-data tree -->
     <Content Include="$(MSBuildThisFileDirectory)..\default-data\**\*"
              Exclude="$(MSBuildThisFileDirectory)..\default-data\assets\agent-avatars\**\*.png"

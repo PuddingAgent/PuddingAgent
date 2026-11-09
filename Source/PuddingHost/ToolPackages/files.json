@@ -1,0 +1,13 @@
+{
+  "id": "pudding.files",
+  "version": "1.0.0",
+  "exports": {
+    "file_patch": "PuddingRuntime.Services.Tools.FilePatchTool",
+    "file_read": "PuddingRuntime.Services.Tools.FileReadTool",
+    "file_search": "PuddingRuntime.Services.Tools.FileSearchTool",
+    "file_write": "PuddingRuntime.Services.Tools.FileWriteTool",
+    "read_office_document": "PuddingRuntime.Services.Skills.ReadOfficeDocumentTool",
+    "search_grep": "PuddingRuntime.Services.Skills.SearchGrepTool",
+    "workspace_search": "PuddingRuntime.Services.Tools.WorkspaceSearchTool"
+  }
+}

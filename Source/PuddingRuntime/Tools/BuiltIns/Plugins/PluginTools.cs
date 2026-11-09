@@ -7,8 +7,8 @@ using PuddingRuntime.Services.Plugins;
 
 namespace PuddingRuntime.Services.Tools;
 
-[Tool("plugin_catalog", "plugin_catalog", "List installed executable plugins, SDK location, current scope and live activations. Develop a net10.0 DLL against the SDK, ZIP it with plugin.json, import, then load. Loading and unloading do not restart Core.", ToolCategory.Query, ToolPermissionLevel.Low, ToolSafetyFlags.ReadOnly)]
-public sealed class PluginCatalogTool(ExecutablePluginService plugins) : PuddingToolBase<PluginEmptyArgs, object>
+[Tool("plugin_catalog", "plugin_catalog", "List visible product tool packages, installed executable plugins, SDK location, current scope and live activations. Develop a net10.0 DLL against the SDK, ZIP it with plugin.json, import, then load. Loading and unloading do not restart Core.", ToolCategory.Query, ToolPermissionLevel.Low, ToolSafetyFlags.ReadOnly)]
+public sealed class PluginCatalogTool(ExecutablePluginService plugins, HostToolContributions? host = null) : PuddingToolBase<PluginEmptyArgs, object>
 {
     protected override Task<object> ExecuteCoreAsync(PluginEmptyArgs args, ToolExecutionContext context, CancellationToken ct)
     {
@@ -18,7 +18,7 @@ public sealed class PluginCatalogTool(ExecutablePluginService plugins) : Pudding
             exampleDirectory = System.IO.Path.Combine(ExecutablePluginService.SdkDirectory, "sdk-example"),
             workerInstalled = File.Exists(ExecutablePluginService.WorkerPath), coreProcessId = Environment.ProcessId,
             scope = ExecutablePluginService.Scope(context), revision = plugins.Revision,
-            catalog, activations = plugins.Manager.List(ExecutablePluginService.Scope(context)),
+            catalog, hostTools = host?.Catalog(context), activations = plugins.Manager.List(ExecutablePluginService.Scope(context)),
             instructions = "Import immutable ZIP with plugin_import; plugin_load requires approval to execute local code. Use the returned generation-specific toolNames on the next model round. Unload explicitly when finished. Hook contributions are advisory. Workers run as the current user; process isolation is not a security sandbox." });
     }
 }
@@ -33,18 +33,18 @@ public sealed class PluginImportTool(ExecutablePluginService plugins) : PuddingT
         return await plugins.Packages.ImportAsync(file, ct);
     }
 }
-[Tool("plugin_load", "plugin_load", "Execute an installed plugin in an isolated worker and bind tools/hooks only to this execution agent and session. Requires native-code execution approval. Supply exact contentHash, approvedCapabilities and enableHooks from its manifest. Returns live tool names; use them next round. No Core restart.", ToolCategory.Execute, ToolPermissionLevel.High, ToolSafetyFlags.RequiresShell)]
-public sealed class PluginLoadTool(ExecutablePluginService plugins) : PuddingToolBase<PluginLoadArgs>
+[Tool("plugin_load", "plugin_load", "Mount an installed product tool package or run an SDK plugin in its own Worker for this agent and session. Requires native-code execution approval. Use its contentHash. Product packages take no capabilities or hooks and keep the agent tool policy. SDK packages require the manifest grants. Returns live tool names; use them next round. No Core restart.", ToolCategory.Execute, ToolPermissionLevel.High)]
+public sealed class PluginLoadTool(ExecutablePluginService plugins, HostToolContributions? host = null) : PuddingToolBase<PluginLoadArgs>
 {
     protected override Task<ToolExecutionResult> ExecuteCoreAsync(PluginLoadArgs args, ToolExecutionContext context, CancellationToken ct)
-        => PluginLifecycleResult.RunAsync(() => plugins.Manager.LoadAsync(args.OperationId, plugins.Find(args.ContentHash), ExecutablePluginService.Scope(context),
-            new(true, args.ApprovedCapabilities.ToHashSet(StringComparer.Ordinal), args.EnableHooks), args.ExpectedRevision, ct), "Active");
+        => PluginLifecycleResult.RunAsync(() => ToolPluginLifecycle.LoadAsync(plugins, host, args.ContentHash, args.OperationId, ExecutablePluginService.Scope(context),
+            new(true, args.ApprovedCapabilities.ToHashSet(StringComparer.Ordinal), args.EnableHooks), args.ExpectedRevision, ct, context), "Active");
 }
 [Tool("plugin_unload", "plugin_unload", "Revoke this session's plugin tools/hooks immediately and stop its worker and children. Returns Unloaded only after exit is observed. No Core restart. Does not remove installed packages.", ToolCategory.Security, ToolPermissionLevel.Low)]
-public sealed class PluginUnloadTool(ExecutablePluginService plugins) : PuddingToolBase<PluginUnloadArgs>
+public sealed class PluginUnloadTool(ExecutablePluginService plugins, HostToolContributions? host = null) : PuddingToolBase<PluginUnloadArgs>
 {
     protected override Task<ToolExecutionResult> ExecuteCoreAsync(PluginUnloadArgs args, ToolExecutionContext context, CancellationToken ct)
-        => PluginLifecycleResult.RunAsync(() => plugins.Manager.UnloadAsync(args.ActivationId, ExecutablePluginService.Scope(context), args.ExpectedRevision, ct), "Unloaded");
+        => PluginLifecycleResult.RunAsync(() => ToolPluginLifecycle.UnloadAsync(plugins, host, args.ActivationId, ExecutablePluginService.Scope(context), args.ExpectedRevision, ct), "Unloaded");
 }
 internal static class PluginLifecycleResult
 {
@@ -61,11 +61,11 @@ internal static class PluginLifecycleResult
     }
 }
 [Tool("plugin_diagnostics", "plugin_diagnostics", "Inspect this session's plugin states and bounded diagnostic failures. Distinguishes initialization, protocol, timeout, callback denial and unconfirmed stop.", ToolCategory.Query, ToolPermissionLevel.Low, ToolSafetyFlags.ReadOnly)]
-public sealed class PluginDiagnosticsTool(ExecutablePluginService plugins) : PuddingToolBase<PluginEmptyArgs, object>
+public sealed class PluginDiagnosticsTool(ExecutablePluginService plugins, HostToolContributions? host = null) : PuddingToolBase<PluginEmptyArgs, object>
 {
     protected override Task<object> ExecuteCoreAsync(PluginEmptyArgs args, ToolExecutionContext context, CancellationToken ct)
         => Task.FromResult<object>(new { revision = plugins.Revision, activations = plugins.Manager.List(ExecutablePluginService.Scope(context)),
-            failures = plugins.Manager.Diagnostics(ExecutablePluginService.Scope(context)) });
+            hostTools = host?.Catalog(context), failures = plugins.Manager.Diagnostics(ExecutablePluginService.Scope(context)) });
 }
 public sealed record PluginEmptyArgs;
 public sealed record PluginImportArgs { [ToolParam("ZIP path relative to this execution's working directory; use forward slashes.")] public required string Path { get; init; } }

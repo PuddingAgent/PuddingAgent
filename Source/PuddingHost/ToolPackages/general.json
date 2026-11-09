@@ -1,0 +1,7 @@
+{
+  "id": "pudding.general",
+  "version": "1.0.0",
+  "exports": {
+    "bootstrap_reboot": "PuddingRuntime.Services.Tools.BootstrapRebootTool"
+  }
+}

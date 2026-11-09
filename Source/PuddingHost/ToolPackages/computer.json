@@ -1,0 +1,9 @@
+{
+  "id": "pudding.computer",
+  "version": "1.0.0",
+  "exports": {
+    "computer_input": "PuddingRuntime.Services.Tools.ComputerInputTool",
+    "computer_observe": "PuddingAgent.Tools.ComputerObserveTool",
+    "screen_capture": "PuddingAgent.Tools.ScreenCaptureTool"
+  }
+}

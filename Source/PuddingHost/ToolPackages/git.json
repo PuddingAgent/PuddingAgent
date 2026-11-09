@@ -1,0 +1,26 @@
+{
+  "id": "pudding.git",
+  "version": "1.0.0",
+  "exports": {
+    "git_add": "PuddingRuntime.Services.Tools.GitAddTool",
+    "git_blame": "PuddingRuntime.Services.Tools.GitBlameTool",
+    "git_branch_create": "PuddingRuntime.Services.Tools.GitBranchCreateTool",
+    "git_branch_list": "PuddingRuntime.Services.Tools.GitBranchListTool",
+    "git_branch_switch": "PuddingRuntime.Services.Tools.GitBranchSwitchTool",
+    "git_checkout": "PuddingRuntime.Services.Tools.GitCheckoutTool",
+    "git_clone": "PuddingRuntime.Services.Tools.GitCloneTool",
+    "git_commit": "PuddingRuntime.Services.Tools.GitCommitTool",
+    "git_diff": "PuddingRuntime.Services.Tools.GitDiffTool",
+    "git_fetch": "PuddingRuntime.Services.Tools.GitFetchTool",
+    "git_init": "PuddingRuntime.Services.Tools.GitInitTool",
+    "git_log": "PuddingRuntime.Services.Tools.GitLogTool",
+    "git_merge": "PuddingRuntime.Services.Tools.GitMergeTool",
+    "git_pull": "PuddingRuntime.Services.Tools.GitPullTool",
+    "git_push": "PuddingRuntime.Services.Tools.GitPushTool",
+    "git_remote": "PuddingRuntime.Services.Tools.GitRemoteTool",
+    "git_reset": "PuddingRuntime.Services.Tools.GitResetTool",
+    "git_stash": "PuddingRuntime.Services.Tools.GitStashTool",
+    "git_status": "PuddingRuntime.Services.Tools.GitStatusTool",
+    "git_tag": "PuddingRuntime.Services.Tools.GitTagTool"
+  }
+}

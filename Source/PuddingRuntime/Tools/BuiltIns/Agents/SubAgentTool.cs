@@ -1065,8 +1065,9 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         if (!string.Equals(permissionMode, SubAgentPermissionModes.Low, StringComparison.OrdinalIgnoreCase))
             return basePolicy;
 
-        var registry = _services.GetService<IPuddingToolRegistry>();
-        if (registry is null)
+        var descriptors = _services.GetService<IPuddingToolCatalogService>()?.ListTools(request.WorkspaceId)
+            ?? _services.GetService<IPuddingToolRegistry>()?.ListDescriptors();
+        if (descriptors is null)
             return basePolicy with
             {
                 AllowShellExecution = false,
@@ -1075,7 +1076,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 RequiresGrantToolNames = [],
             };
 
-        var lowToolIds = registry.ListDescriptors()
+        var lowToolIds = descriptors
             .Where(d => d.PermissionLevel == ToolPermissionLevel.Low)
             .Select(d => d.ToolId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);

@@ -1,0 +1,18 @@
+{
+  "id": "pudding.filesystem",
+  "version": "1.0.0",
+  "exports": {
+    "agent_skill": "PuddingRuntime.Services.Tools.AgentSkillTool",
+    "agent_state": "PuddingRuntime.Services.Tools.AgentStateTool",
+    "apply_patch": "PuddingRuntime.Services.Tools.ApplyPatchTool",
+    "asr": "PuddingAgent.Tools.AsrTool",
+    "clear_panel": "PuddingBrowser.AgentTools.ClearPanelTool",
+    "image_reader": "PuddingAgent.Tools.ImageReaderTool",
+    "list_dir": "PuddingRuntime.Services.Tools.ListDirectoryTool",
+    "list_panels": "PuddingBrowser.AgentTools.ListPanelsTool",
+    "preview_document": "PuddingBrowser.AgentTools.PreviewDocumentTool",
+    "read_panel": "PuddingBrowser.AgentTools.ReadPanelTool",
+    "render_panel": "PuddingBrowser.AgentTools.RenderPanelTool",
+    "skill_hub": "PuddingRuntime.Services.Tools.SkillHubTool"
+  }
+}

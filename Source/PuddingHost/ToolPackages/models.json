@@ -1,0 +1,9 @@
+{
+  "id": "pudding.models",
+  "version": "1.0.0",
+  "exports": {
+    "list_llm_providers": "PuddingRuntime.Services.Tools.ListLlmProvidersTool",
+    "llm_resource_pool": "PuddingRuntime.Services.Tools.LlmResourcePoolTool",
+    "provider_balance": "PuddingRuntime.Services.Tools.ProviderBalanceTool"
+  }
+}

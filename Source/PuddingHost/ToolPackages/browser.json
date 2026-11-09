@@ -1,0 +1,15 @@
+{
+  "id": "pudding.browser",
+  "version": "1.0.0",
+  "exports": {
+    "browser_context": "PuddingBrowser.AgentTools.BrowserContextTool",
+    "browser_evaluate": "PuddingBrowser.AgentTools.BrowserEvaluateTool",
+    "browser_interact": "PuddingBrowser.AgentTools.BrowserInteractTool",
+    "browser_locate": "PuddingBrowser.AgentTools.BrowserLocateTool",
+    "browser_navigate": "PuddingBrowser.AgentTools.BrowserNavigateTool",
+    "browser_screenshot": "PuddingBrowser.AgentTools.BrowserScreenshotTool",
+    "browser_snapshot": "PuddingBrowser.AgentTools.BrowserSnapshotTool",
+    "browser_tabs": "PuddingBrowser.AgentTools.BrowserTabsTool",
+    "browser_wait_for": "PuddingBrowser.AgentTools.BrowserWaitForTool"
+  }
+}

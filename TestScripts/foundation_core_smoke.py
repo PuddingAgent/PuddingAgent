@@ -11,7 +11,7 @@ from urllib.error import URLError
 from urllib.request import build_opener, ProxyHandler
 
 
-def smoke(executable: Path, run: Path) -> bool:
+def smoke(executable: Path, run: Path, verify=None, configure=None) -> bool:
     run.mkdir()  # A prior process's log or database cannot satisfy this run.
     data = run / "data"
     system_keys = {
@@ -28,6 +28,8 @@ def smoke(executable: Path, run: Path) -> bool:
         path.mkdir(exist_ok=True)
         env[name] = str(path)
 
+    if configure is not None:
+        configure(data)
     env["ASPNETCORE_URLS"] = "http://127.0.0.1:0"
     args = [str(executable), "--data-root", str(data), "--urls", env["ASPNETCORE_URLS"]]
     http = build_opener(ProxyHandler({}))
@@ -60,6 +62,10 @@ def smoke(executable: Path, run: Path) -> bool:
                     except (URLError, OSError, ValueError, KeyError):
                         pass  # Kestrel can bind before initialization finishes.
                 time.sleep(0.5)
+            if result["passed"] and verify is not None:
+                result["passed"] = False
+                verify(result["address"], process.pid, data)
+                result["passed"] = True
         finally:
             result["exitBeforeCleanup"] = process.poll()
             if result["exitBeforeCleanup"] is not None:

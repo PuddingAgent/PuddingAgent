@@ -18,7 +18,8 @@
 | `Models/MemoryCropModels.cs` | 记忆裁剪前后的原始数据包模型 | `RawContentBundle` | `Services/CroppedLayersProvider.cs` | — |
 | `Models/SessionRuntimeRecord.cs` | 会话运行时记录模型 | `SessionRuntimeRecord` | `Services/InMemoryRuntimeSessionStore.cs` | — |
 | `Controllers/NativeCapabilityController.cs` | 原生能力执行 API 的入口 | `NativeCapabilityController` | `Services/NativeCapabilityExecutor.cs` | 权限与审批校验完成后才转发执行 |
-| `Controllers/PluginCatalogController.cs` | 插件目录的只读 API | `PluginCatalogController` | `Services/Plugins/PluginManifestCatalog.cs` | — |
+| `Controllers/PluginCatalogController.cs` | 插件目录的只读 API | `PluginCatalogController` | `Services/Plugins/HostToolContributions.cs` · `Services/Plugins/ToolPluginLifecycle.cs` | 产品工具内核、受策略约束的服务绑定、按作用域加载/卸载入口 | `HostToolContributions` | `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` | 无激活不导出业务工具 |
+| `Services/Plugins/PluginManifestCatalog.cs` | — |
 | `Controllers/RuntimeExecuteController.cs` | Runtime 执行 API 的请求入口 | `RuntimeExecuteController` | `Services/TurnExecutorAdapter.cs` | — |
 | `Controllers/RuntimeSessionController.cs` | Runtime 会话 API 的入口 | `RuntimeSessionController` | `Services/AgentSessionManager.cs` | — |
 | `Services/PuddingConfigLoader.cs` | JSON 配置文件的加载器 | `PuddingConfigLoader` | `Services/PuddingJsonConfig.cs` | — |

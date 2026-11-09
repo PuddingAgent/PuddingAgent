@@ -223,6 +223,7 @@ public sealed class AgentRuntimeProfileResolverBrowserMappingTests
             Assert.IsTrue(resolved.Contains(id), $"Missing tool '{id}'. Resolved: [{string.Join(", ", resolved.OrderBy(n => n))}]");
 
         Assert.IsNotNull(profile.CapabilityPolicy, "CapabilityPolicy should not be null");
+        Assert.IsFalse(profile.CapabilityPolicy.AllowShellExecution, "The Task role cannot imply Shell access.");
     }
 
     // ════════════════════════════════════════════════════════════════════════

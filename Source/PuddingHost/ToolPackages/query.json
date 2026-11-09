@@ -1,0 +1,11 @@
+{
+  "id": "pudding.query",
+  "version": "1.0.0",
+  "exports": {
+    "agent_diagnostics": "PuddingRuntime.Services.Tools.AgentDiagnosticsTool",
+    "agent_status": "PuddingRuntime.Services.Tools.AgentStatusTool",
+    "event_subscribe": "PuddingRuntime.Services.Events.EventSubscriptionTool",
+    "project_map": "PuddingRuntime.Services.Tools.ProjectMapTool",
+    "workspace_open": "PuddingRuntime.Services.Tools.WorkspaceOpenTool"
+  }
+}

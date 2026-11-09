@@ -41,8 +41,13 @@ public sealed class PuddingApplicationHostCompositionTests
             Assert.NotNull(app.Services.GetRequiredService<AgentConfigurationApiFactory>());
 
             Assert.NotNull(app.Services.GetRequiredService<PuddingAgent.Services.SlackConnectorFactory>());
-            var slackLookup = Assert.Single(app.Services.GetServices<PuddingCode.Tools.IPuddingTool>().OfType<PuddingAgent.Tools.SlackLookupMemberTool>());
-            Assert.Same(slackLookup, app.Services.GetRequiredService<PuddingCode.Tools.IPuddingToolRegistry>().GetTool("slack_lookup_member"));
+            Assert.NotNull(app.Services.GetRequiredService<PuddingAgent.Tools.SlackLookupMemberTool>());
+            var kernel = app.Services.GetServices<PuddingCode.Tools.IPuddingTool>().Select(t => t.Descriptor.ToolId).Order();
+            Assert.Equal(new[] { "list_tool_approvals", "plugin_catalog", "plugin_diagnostics", "plugin_import",
+                "plugin_load", "plugin_unload", "request_tool_approval", "search_tools" }, kernel);
+            var tools = app.Services.GetRequiredService<PuddingCode.Tools.IPuddingToolRegistry>();
+            Assert.Null(tools.GetTool("slack_lookup_member"));
+            Assert.Null(tools.GetTool("shell"));
 
             Assert.IsType<FeishuRecipientDirectory>(
                 app.Services.GetRequiredService<PuddingCode.Platform.IFeishuRecipientDirectory>());

@@ -216,11 +216,11 @@ public static class PuddingToolServiceCollectionExtensions
                 ? new InMemoryToolApprovalAuditStore()
                 : ActivatorUtilities.CreateInstance<FileToolApprovalAuditStore>(sp));
         services.TryAddSingleton<IToolApprovalService, InMemoryToolApprovalService>();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IPuddingTool, RequestToolApprovalTool>());
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IPuddingTool, ListToolApprovalsTool>());
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IPuddingTool, ClassifierStatusTool>());
+        services.AddPuddingTool<RequestToolApprovalTool>();
+        services.AddPuddingTool<ListToolApprovalsTool>();
+        services.AddPuddingTool<ClassifierStatusTool>();
         services.TryAddSingleton<PuddingComputer.Windows.ComputerDesktopSession>();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IPuddingTool, ComputerInputTool>());
+        services.AddPuddingTool<ComputerInputTool>();
         services.TryAddSingleton<IPuddingToolExecutionService, PuddingToolExecutionService>();
 
         return services;
@@ -230,6 +230,7 @@ public static class PuddingToolServiceCollectionExtensions
     public static IServiceCollection AddPuddingTool<TTool>(this IServiceCollection services)
         where TTool : class, IPuddingTool
     {
+        if (HostToolContributions.RegisterBinding(services, typeof(TTool))) return services;
         services.TryAddSingleton<TTool>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IPuddingTool, TTool>());
         return services;
@@ -256,6 +257,8 @@ public static class PuddingToolServiceCollectionExtensions
         {
             services.TryAddSingleton<TTool>();
         }
+
+        if (HostToolContributions.RegisterBinding(services, typeof(TTool))) return services;
 
         if (typeof(IPuddingTool).IsAssignableFrom(typeof(TTool)))
         {
@@ -292,6 +295,7 @@ public static class PuddingToolServiceCollectionExtensions
                                  && typeof(IPuddingTool).IsAssignableFrom(t)
                                  && t.GetCustomAttribute<ToolAttribute>() is not null))
         {
+            if (HostToolContributions.RegisterBinding(services, toolType)) continue;
             if (services.Any(d => d.ServiceType == toolType))
             {
                 if (!HasPuddingToolRegistration(services, toolType))

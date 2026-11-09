@@ -75,6 +75,7 @@ public static partial class PuddingServiceCollectionExtensions
         // 注意：不要改回 ConfigureHttpClientDefaults 全局 AddHttpMessageHandler —— 实测会让
         // PuddingWebApiTests 引入 48 项回归（失败 6 → 54），疑似波及测试宿主基础设施的 HttpClient。
 
+        PuddingRuntime.Services.Plugins.HostToolContributions.Register(builder.Services);
         AddPlatformServices(builder, dataPaths, aspnetcoreEnvironment);
         builder.Services.AddSingleton<IReviewJobByGoalObjectiveReader>(sp => sp.GetRequiredService<ReviewJobStore>());
         builder.Services.AddSingleton<IReviewCompletionReader>(sp => sp.GetRequiredService<ReviewCompletionProjection>());

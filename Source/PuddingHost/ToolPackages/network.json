@@ -1,0 +1,16 @@
+{
+  "id": "pudding.network",
+  "version": "1.0.0",
+  "exports": {
+    "anysearch_search": "PuddingRuntime.Services.Tools.AnySearchSearchTool",
+    "deepseek_fetch": "PuddingRuntime.Services.Tools.DeepSeekFetchTool",
+    "deepseek_search": "PuddingRuntime.Services.Tools.DeepSeekSearchTool",
+    "doubao_search": "PuddingRuntime.Services.Tools.DoubaoSearchTool",
+    "generate_image": "PuddingAgent.Tools.GenerateImageTool",
+    "github_search": "PuddingRuntime.Services.Tools.GitHubSearchTool",
+    "http_fetch": "PuddingRuntime.Services.Skills.HttpFetchSkill",
+    "import_image": "PuddingAgent.Tools.ImportImageTool",
+    "zhihu_global_search": "PuddingRuntime.Services.Tools.ZhihuGlobalSearchTool",
+    "zhihu_search": "PuddingRuntime.Services.Tools.ZhihuSearchTool"
+  }
+}

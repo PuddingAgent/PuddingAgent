@@ -1,0 +1,14 @@
+{
+  "id": "pudding.shell",
+  "version": "1.0.0",
+  "exports": {
+    "shell": "PuddingRuntime.Services.Tools.HostShellTool",
+    "terminal_cancel": "PuddingRuntime.Services.Tools.TerminalCancelTool",
+    "terminal_execute": "PuddingRuntime.Services.TerminalSkill",
+    "terminal_input": "PuddingRuntime.Services.Tools.TerminalInputTool",
+    "terminal_read": "PuddingRuntime.Services.Tools.TerminalReadTool",
+    "terminal_start": "PuddingRuntime.Services.Tools.TerminalStartTool",
+    "terminal_status": "PuddingRuntime.Services.Tools.TerminalStatusTool",
+    "terminal_wait": "PuddingRuntime.Services.Tools.TerminalWaitTool"
+  }
+}

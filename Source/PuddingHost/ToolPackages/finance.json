@@ -1,0 +1,11 @@
+{
+  "id": "pudding.finance",
+  "version": "1.0.0",
+  "exports": {
+    "biying_financial": "PuddingRuntime.Services.Tools.BiyingFinancialQueryTool",
+    "biying_flow": "PuddingRuntime.Services.Tools.BiyingFlowQueryTool",
+    "biying_market": "PuddingRuntime.Services.Tools.BiyingMarketQueryTool",
+    "biying_raw": "PuddingRuntime.Services.Tools.BiyingRawQueryTool",
+    "biying_sector": "PuddingRuntime.Services.Tools.BiyingSectorQueryTool"
+  }
+}

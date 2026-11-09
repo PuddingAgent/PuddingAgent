@@ -24,6 +24,7 @@ draft: false
 
 | 文件 | 用途 |
 |------|------|
+| [ToolPackages/](ToolPackages/) · [Build/PuddingHostContent.props](Build/PuddingHostContent.props) | 产品随包工具的导出与服务类型映射；构建及发布复制声明、插件 Worker 与 SDK |
 | `PuddingHostAssemblyMarker.cs` | 程序集标记 |
 | `Services/ReviewWorkerHostedService.cs` · `Services/HostRuntimeLlmChatClient.cs` | 驱动持久评审任务，将已绑定的模型调用交给 Runtime |
 | `Services/SlackConnectorFactory.cs` · `Connectors/SlackConnector.cs` · `Tools/SlackLookupMemberTool.cs` | 在已配置的渠道创建 Slack 连接器，按当前绑定查询成员 |

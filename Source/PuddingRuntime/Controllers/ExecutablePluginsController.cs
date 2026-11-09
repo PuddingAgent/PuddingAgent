@@ -9,10 +9,10 @@ namespace PuddingRuntime.Controllers;
 [ApiController]
 [Authorize(Roles = "admin")]
 [Route("api/tool-plugins")]
-public sealed class ExecutablePluginsController(ExecutablePluginService plugins) : ControllerBase
+public sealed class ExecutablePluginsController(ExecutablePluginService plugins, HostToolContributions? host = null) : ControllerBase
 {
     [HttpGet]
-    public IActionResult List() => Ok(new { catalog = plugins.Packages.Scan(), activations = plugins.Manager.List(),
+    public IActionResult List() => Ok(new { catalog = plugins.Packages.Scan(), hostTools = host?.Catalog(), activations = plugins.Manager.List(),
         revision = plugins.Revision, workerInstalled = System.IO.File.Exists(ExecutablePluginService.WorkerPath),
         sdkDirectory = ExecutablePluginService.SdkDirectory, coreProcessId = Environment.ProcessId });
 
@@ -32,7 +32,7 @@ public sealed class ExecutablePluginsController(ExecutablePluginService plugins)
     {
         try
         {
-            var result = await plugins.Manager.LoadAsync(request.OperationId, plugins.Find(request.ContentHash), request.Scope,
+            var result = await ToolPluginLifecycle.LoadAsync(plugins, host, request.ContentHash, request.OperationId, request.Scope,
                 new(request.ExecuteApproved, request.ApprovedCapabilities.ToHashSet(StringComparer.Ordinal), request.EnableHooks), request.ExpectedRevision, ct);
             return Ok(result);
         }
@@ -42,7 +42,7 @@ public sealed class ExecutablePluginsController(ExecutablePluginService plugins)
     [HttpPost("unload")]
     public async Task<IActionResult> Unload(PluginUnloadRequest request, CancellationToken ct)
     {
-        try { return Ok(await plugins.Manager.UnloadAsync(request.ActivationId, request.Scope, request.ExpectedRevision, ct)); }
+        try { return Ok(await ToolPluginLifecycle.UnloadAsync(plugins, host, request.ActivationId, request.Scope, request.ExpectedRevision, ct)); }
         catch (PluginException ex) { return StatusCode(ex.Failure.Code == "plugin.revision_conflict" ? 409 : 400, ex.Failure); }
     }
 }

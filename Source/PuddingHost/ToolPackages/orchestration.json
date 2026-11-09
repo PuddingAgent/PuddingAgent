@@ -1,0 +1,9 @@
+{
+  "id": "pudding.orchestration",
+  "version": "1.0.0",
+  "exports": {
+    "manage_tasks": "PuddingRuntime.Services.TaskTools.ManageTasksTool",
+    "sleep": "PuddingRuntime.Services.Tools.AgentSleepTool",
+    "test_tool": "PuddingRuntime.Services.Tools.AgentTestTool"
+  }
+}

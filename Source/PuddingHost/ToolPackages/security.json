@@ -1,0 +1,7 @@
+{
+  "id": "pudding.security",
+  "version": "1.0.0",
+  "exports": {
+    "classifier_status": "PuddingRuntime.Services.Tools.ClassifierStatusTool"
+  }
+}

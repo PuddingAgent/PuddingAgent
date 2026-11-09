@@ -92,7 +92,7 @@ public sealed class PuddingToolRegistry : IPuddingToolRegistry
             .Where(d => d.PermissionOwnerToolId is not null).ToDictionary(d => d.ToolId, d => d.PermissionOwnerToolId!, StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyList<ToolDescriptor> ListAvailable(CapabilityPolicy? policy, ToolExecutionContext context) =>
-        BuildToolSnapshot(context.WorkspaceId, context).Values.Select(t => t.Descriptor)
+        BuildToolSnapshot(context.WorkspaceId, context with { CapabilityPolicy = policy }).Values.Select(t => t.Descriptor)
             .Where(d => d.RuntimeStatus == "Available" && _permissionPolicy.CanExposeToAgent(d, policy)).ToArray();
 
     public ToolDescriptor? GetDescriptor(string toolId) =>
@@ -507,29 +507,20 @@ public sealed class AgentSkillToolAdapter : IPuddingTool
 }
 
 /// <summary>默认 Tool Catalog 实现，从运行时注册表读取真实可执行 Tool。</summary>
-public sealed class PuddingToolCatalogService : IPuddingToolCatalogService
+public sealed class PuddingToolCatalogService(IPuddingToolRegistry registry,
+    PuddingRuntime.Services.Plugins.HostToolContributions? packages = null) : IPuddingToolCatalogService
 {
-    private readonly IPuddingToolRegistry _registry;
+    public IReadOnlyList<ToolDescriptor> ListTools(bool enabledByDefaultOnly = false) =>
+        Inventory(registry.ListDescriptors(), enabledByDefaultOnly);
 
-    public PuddingToolCatalogService(IPuddingToolRegistry registry)
-    {
-        _registry = registry;
-    }
+    public IReadOnlyList<ToolDescriptor> ListTools(string workspaceId, bool enabledByDefaultOnly = false) =>
+        Inventory(registry.ListDescriptors(workspaceId), enabledByDefaultOnly);
 
-    public IReadOnlyList<ToolDescriptor> ListTools(bool enabledByDefaultOnly = false)
+    private IReadOnlyList<ToolDescriptor> Inventory(IReadOnlyList<ToolDescriptor> registered, bool defaultsOnly)
     {
-        var tools = _registry.ListDescriptors();
-        return enabledByDefaultOnly
-            ? tools.Where(t => t.IsEnabledByDefault).ToList()
-            : tools;
-    }
-
-    public IReadOnlyList<ToolDescriptor> ListTools(string workspaceId, bool enabledByDefaultOnly = false)
-    {
-        var tools = _registry.ListDescriptors(workspaceId);
-        return enabledByDefaultOnly
-            ? tools.Where(t => t.IsEnabledByDefault).ToList()
-            : tools;
+        if (defaultsOnly) return registered.Where(t => t.IsEnabledByDefault).ToArray();
+        return packages is null ? registered : registered.Concat(packages.InstalledDescriptors())
+            .OrderBy(t => t.SortOrder).ThenBy(t => t.ToolId, StringComparer.OrdinalIgnoreCase).ToArray();
     }
 }
 
@@ -632,6 +623,7 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
             await RecordTelemetryAsync(toolId, argumentsJson, context, startedAt, invalid, "arguments", ct);
             return invalid;
         }
+        context = context with { CapabilityPolicy = policy };
         var tool = _registry.GetTool(toolId, context);
         if (tool is null)
         {

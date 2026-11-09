@@ -341,22 +341,13 @@ public sealed class AgentRuntimeProfileResolver(
             AddPolicyTool(tools, toolName);
 
         var isTaskRole = role.Equals("Task", StringComparison.OrdinalIgnoreCase);
-        if (isTaskRole && tools.Count == 0)
-        {
-            tools.UnionWith([
-                "terminal_start", "terminal_wait", "terminal_read",
-                "terminal_status", "terminal_cancel", "terminal_input",
-                "shell", "file_read", "list_dir", "file_write", "file_patch", "apply_patch",
-            ]);
-        }
-
         var policy = toolPermissionPolicy.BuildCapabilityPolicy(
             descriptors, tools.Where(descriptorByTool.ContainsKey), isTaskRole);
 
         return policy with
         {
             AllowFileWrite = allowFileWrite || policy.AllowFileWrite || isTaskRole,
-            AllowShellExecution = allowShellExecution || policy.AllowShellExecution || isTaskRole,
+            AllowShellExecution = allowShellExecution,
             AllowNetworkAccess = allowNetworkAccess || policy.AllowNetworkAccess,
         };
     }
