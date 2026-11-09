@@ -1,0 +1,56 @@
+param([string]$RunId = (Get-Date -Format 'yyyyMMdd-HHmmss'))
+$ErrorActionPreference = 'Stop'
+$repo = Split-Path $PSScriptRoot -Parent
+if ($RunId -notmatch '^[a-zA-Z0-9_-]+$') { throw 'RunId must be a simple directory name.' }
+$run = Join-Path $repo ".work/b-prototype/$RunId"
+$artifacts = Join-Path $run 'artifacts'
+New-Item -ItemType Directory -Force $run | Out-Null
+New-Item -ItemType Directory -Force (Join-Path $run 'temp') | Out-Null
+New-Item -ItemType Directory -Force (Join-Path $run 'plugin-root') | Out-Null
+$receipt = Join-Path $run 'receipt.json'
+function Invoke-Checked([string]$Name, [scriptblock]$Action) {
+    & $Action > (Join-Path $run "$Name.log") 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "$Name failed. See $run/$Name.log" }
+    Write-Host "$Name passed"
+}
+Push-Location $repo
+$oldTemp = $env:TEMP; $oldTmp = $env:TMP
+$oldWorker = $env:PUDDING_PLUGIN_WORKER; $oldFixture = $env:PUDDING_PLUGIN_FIXTURE
+$oldRoot = $env:PUDDING_PLUGIN_TEST_ROOT; $oldReceipt = $env:PUDDING_PROTOTYPE_RECEIPT
+try {
+    $env:TEMP = Join-Path $run 'temp'; $env:TMP = $env:TEMP
+    Invoke-Checked 'build-worker' { dotnet build Source/Pudding.ToolPlugins.Worker/Pudding.ToolPlugins.Worker.csproj --artifacts-path $artifacts --nologo }
+    Invoke-Checked 'build-fixture' { dotnet build Tests/PuddingToolPlugins.Fixture/PuddingToolPlugins.Fixture.csproj --artifacts-path $artifacts --nologo }
+    Invoke-Checked 'build-prototype' { dotnet build Tests/PuddingToolPlugins.IntegrationTests/PuddingToolPlugins.IntegrationTests.csproj --artifacts-path $artifacts "--p:UseVSTest=false" --nologo }
+    $env:PUDDING_PLUGIN_WORKER = (Resolve-Path "$artifacts/bin/Pudding.ToolPlugins.Worker/debug/Pudding.ToolPlugins.Worker.exe").Path
+    $env:PUDDING_PLUGIN_FIXTURE = (Resolve-Path "$artifacts/bin/PuddingToolPlugins.Fixture/debug/Sample.PluginFixture.dll").Path
+    $env:PUDDING_PLUGIN_TEST_ROOT = (Resolve-Path (Join-Path $run 'plugin-root')).Path
+    $env:PUDDING_PROTOTYPE_RECEIPT = $receipt
+    Invoke-Checked 'foundation-prototype' {
+        & "$artifacts/bin/PuddingToolPlugins.IntegrationTests/debug/PuddingToolPlugins.IntegrationTests.exe" `
+            --results-directory (Join-Path $run 'results') --filter 'FoundationPrototype'
+    }
+    if (-not (Test-Path $receipt)) { throw "Prototype receipt missing: $receipt" }
+    $json = Get-Content $receipt -Raw | ConvertFrom-Json
+    $required = 'workId', 'operationId', 'artifactId', 'version', 'eventId', 'archiveId', 'archiveOperationId'
+    foreach ($name in $required) {
+        if ([string]::IsNullOrWhiteSpace([string]$json.$name)) { throw "Receipt field '$name' is empty." }
+    }
+    if ($json.workId -ne $json.artifactId) { throw 'Artifact must be addressed by the same WorkId.' }
+    if ($json.eventId -ne $json.archiveOperationId) { throw 'Archive OperationId must equal the committed EventId.' }
+    if ($json.snapshot -ne 'Completed') { throw "Work snapshot is '$($json.snapshot)', expected Completed." }
+    if ($json.delivery.Acknowledged -ne 1) { throw "Observer delivery was not acknowledged (ack=$($json.delivery.Acknowledged))." }
+    if ($json.replay.archiveCount -ne 1) { throw "Replay must not duplicate the archive (count=$($json.replay.archiveCount))." }
+    if ($json.unload.Delivered -ne 0) { throw "Unloaded observer must not receive new events (delivered=$($json.unload.Delivered))." }
+    if ($json.unload.archived -ne 0) { throw "Unloaded observer must not archive new artifacts (archived=$($json.unload.archived))." }
+    if ($json.reload.archived -ne 1) { throw "Reloaded observer must archive the next artifact (archived=$($json.reload.archived))." }
+    Write-Host 'Receipt:'
+    Write-Host ($json | ConvertTo-Json -Compress)
+    Write-Host "Foundation prototype passed. Evidence: $run"
+}
+finally {
+    $env:TEMP = $oldTemp; $env:TMP = $oldTmp
+    $env:PUDDING_PLUGIN_WORKER = $oldWorker; $env:PUDDING_PLUGIN_FIXTURE = $oldFixture
+    $env:PUDDING_PLUGIN_TEST_ROOT = $oldRoot; $env:PUDDING_PROTOTYPE_RECEIPT = $oldReceipt
+    Pop-Location
+}
