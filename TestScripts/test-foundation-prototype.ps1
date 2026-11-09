@@ -1,10 +1,10 @@
-param([string]$RunId = (Get-Date -Format 'yyyyMMdd-HHmmss'))
+param([string]$RunId = (Get-Date -Format 'yyyyMMdd-HHmmss'), [switch]$VerifyCore)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 if ($RunId -notmatch '^[a-zA-Z0-9_-]+$') { throw 'RunId must be a simple directory name.' }
 $run = Join-Path $repo ".work/b-prototype/$RunId"
 $artifacts = Join-Path $run 'artifacts'
-New-Item -ItemType Directory -Force $run | Out-Null
+New-Item -ItemType Directory $run | Out-Null
 New-Item -ItemType Directory -Force (Join-Path $run 'temp') | Out-Null
 New-Item -ItemType Directory -Force (Join-Path $run 'plugin-root') | Out-Null
 $receipt = Join-Path $run 'receipt.json'
@@ -22,16 +22,29 @@ try {
     Invoke-Checked 'build-worker' { dotnet build Source/Pudding.ToolPlugins.Worker/Pudding.ToolPlugins.Worker.csproj --artifacts-path $artifacts --nologo }
     Invoke-Checked 'build-fixture' { dotnet build Tests/PuddingToolPlugins.Fixture/PuddingToolPlugins.Fixture.csproj --artifacts-path $artifacts --nologo }
     Invoke-Checked 'build-prototype' { dotnet build Tests/PuddingToolPlugins.IntegrationTests/PuddingToolPlugins.IntegrationTests.csproj --artifacts-path $artifacts "--p:UseVSTest=false" --nologo }
+    if ($VerifyCore) {
+        Invoke-Checked 'build-core' { dotnet build Source/PuddingAgent/PuddingAgent.csproj --artifacts-path $artifacts --nologo }
+        Invoke-Checked 'core-smoke' {
+            py -3 -X utf8 TestScripts/foundation_core_smoke.py "$artifacts/bin/PuddingAgent/debug/PuddingAgent.exe" (Join-Path $run 'core')
+        }
+    }
     $env:PUDDING_PLUGIN_WORKER = (Resolve-Path "$artifacts/bin/Pudding.ToolPlugins.Worker/debug/Pudding.ToolPlugins.Worker.exe").Path
     $env:PUDDING_PLUGIN_FIXTURE = (Resolve-Path "$artifacts/bin/PuddingToolPlugins.Fixture/debug/Sample.PluginFixture.dll").Path
     $env:PUDDING_PLUGIN_TEST_ROOT = (Resolve-Path (Join-Path $run 'plugin-root')).Path
     $env:PUDDING_PROTOTYPE_RECEIPT = $receipt
+    Invoke-Checked 'plugin-exposure' {
+        & "$artifacts/bin/PuddingToolPlugins.IntegrationTests/debug/PuddingToolPlugins.IntegrationTests.exe" `
+            --results-directory (Join-Path $run 'exposure-results') --filter 'PluginToolExposure'
+    }
     Invoke-Checked 'foundation-prototype' {
         & "$artifacts/bin/PuddingToolPlugins.IntegrationTests/debug/PuddingToolPlugins.IntegrationTests.exe" `
             --results-directory (Join-Path $run 'results') --filter 'FoundationPrototype'
     }
     if (-not (Test-Path $receipt)) { throw "Prototype receipt missing: $receipt" }
     $json = Get-Content $receipt -Raw | ConvertFrom-Json
+    if ($json.dispatch.IsSuccess -ne $true -or $json.dispatch.ToolFailureCount -ne 0 -or $json.dispatch.echo -cne '插件真实回执') {
+        throw 'Work dispatch, tool failures or the actual plugin echo did not match.'
+    }
     $required = 'workId', 'operationId', 'artifactId', 'version', 'eventId', 'archiveId', 'archiveOperationId'
     foreach ($name in $required) {
         if ([string]::IsNullOrWhiteSpace([string]$json.$name)) { throw "Receipt field '$name' is empty." }

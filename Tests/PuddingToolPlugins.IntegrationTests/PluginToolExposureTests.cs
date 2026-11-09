@@ -30,6 +30,7 @@ public sealed class PluginToolExposureTests
                 contextualToolSources: [plugins]);
             var policy = new CapabilityPolicy
             {
+                AllowedToolNames = ["plugin_load", "plugin_unload"],
                 DefaultToolNames = ["plugin_unload"],
                 RequiresGrantToolNames = ["plugin_load"],
             };
@@ -47,6 +48,9 @@ public sealed class PluginToolExposureTests
             CollectionAssert.Contains(names, "plugin_load",
                 $"tools={string.Join(",", names)} descriptors={descriptors}");
             CollectionAssert.Contains(noAllowNames, "plugin_load");
+            var restricted = policy with { AllowedToolNames = ["plugin_unload"] };
+            CollectionAssert.DoesNotContain(
+                schemas.BuildLlmTools(restricted, "ws", context).Select(t => t.Name).ToArray(), "plugin_load");
         }
         finally
         {

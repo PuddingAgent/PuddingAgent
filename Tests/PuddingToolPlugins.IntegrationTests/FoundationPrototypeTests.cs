@@ -97,7 +97,7 @@ public sealed class FoundationPrototypeTests
             await using var plugins = new ExecutablePluginService(PuddingDataPaths.FromRoot(root),
                 new WindowsPluginWorkerFactory(workerPath!));
             var toolPackage = await ImportAsync(plugins.Packages, fixturePath!, ToolManifest());
-            var toolScope = new PluginScope("ws", "agent", "session");
+            var toolScope = new PluginScope("ws", agent.AgentId, receipt.ConversationId);
             var toolActivation = await plugins.Manager.LoadAsync("load-tool", toolPackage, toolScope,
                 new PluginAuthorization(true, new HashSet<string> { "workspace.read" }, true));
             Assert.AreEqual("Active", toolActivation.State, toolActivation.Failure?.Message);
@@ -115,7 +115,8 @@ public sealed class FoundationPrototypeTests
                 .ReturnsAsync(FirewallDecision.Allow());
             var executor = new PuddingToolExecutionService(registry, new SandboxExecutor(NullLogger<SandboxExecutor>.Instance),
                 NullLogger<PuddingToolExecutionService>.Instance, firewall: firewall.Object);
-            var (loop, _) = BuildLoop(new PrototypeScriptModel(plugins, receipt.WorkId), new ToolInvocationService(executor),
+            var scriptModel = new PrototypeScriptModel(plugins, receipt.WorkId);
+            var (loop, _) = BuildLoop(scriptModel, new ToolInvocationService(executor),
                 new PuddingToolSchemaService(registry), [new ExecutablePluginHook(plugins)], root);
             var dispatch = new RuntimeDispatchRequest
             {
@@ -130,16 +131,21 @@ public sealed class FoundationPrototypeTests
                 CapabilityPolicy = new()
                 {
                     DefaultToolNames = [artifactTool.Descriptor.ToolId],
-                    AllowedToolNames = [artifactTool.Descriptor.ToolId],
+                    AllowedToolNames = [artifactTool.Descriptor.ToolId, "plugin_load"],
                     AllowShellExecution = true,
                 },
                 LlmConfig = new() { ModelId = "scripted-model", MaxContextTokens = 16_384 },
             };
             var workDispatcher = new RuntimeAgentDispatcher(loop, new AgentExecutionStateRegistry());
-            await workDispatcher.DispatchAsync(dispatch);
+            var firstDispatch = await workDispatcher.DispatchAsync(dispatch);
+            Assert.AreEqual(AgentExecutionState.Completed, firstDispatch.ExecutionState, firstDispatch.ErrorMessage);
+            Assert.IsTrue(firstDispatch.IsSuccess, $"Dispatcher failed: {firstDispatch.ErrorMessage} ({firstDispatch.StopReason})");
+            Assert.AreEqual(0, firstDispatch.ToolFailureCount, firstDispatch.ToolFailureSummary);
+            Assert.AreEqual(PrototypeScriptModel.ExpectedEcho, scriptModel.ReceivedEcho,
+                "The model must receive the worker's JSON string result before completing Work.");
 
             // The real execution journal records the terminal, so the public SDK can read Completed.
-            await FinishWorkAsync(provider, receipt, TurnTerminal.Success("产物已提交并归档。", null));
+            await FinishWorkAsync(provider, receipt, TurnTerminal.Success(firstDispatch.ReplyText!, null));
 
             // Link Work -> artifact (same WorkId as artifact id), then dispatch to the observer and archive.
             var stock = new SubscriptionStore(dbFactory);
@@ -209,8 +215,8 @@ public sealed class FoundationPrototypeTests
             var cancelAgent = new AgentRef("ws2", "agent2");
             var cancelSdk = new AgentWorkClient(provider.GetRequiredService<AgentWorkApiFactory>()
                 .ForManagementUser(principal, cancelAgent)).For(cancelAgent);
-            var cancelReceipt = await cancelSdk.SubmitAsync(new("cancel-work", "执行阻塞工具并取消。"));
-            var blocking = new BlockingScriptModel(plugins);
+            var cancelReceipt = await cancelSdk.SubmitAsync(new("cancel-work", "等待模型响应，然后取消。"));
+            var blocking = new BlockingScriptModel();
             var (cancelLoop, cancelControl) = BuildLoop(blocking, new ToolInvocationService(executor),
                 new PuddingToolSchemaService(registry), [new ExecutablePluginHook(plugins)], root);
             var cancelDispatch = new RuntimeDispatchRequest
@@ -220,14 +226,10 @@ public sealed class FoundationPrototypeTests
                 WorkspaceId = cancelAgent.WorkspaceId,
                 AgentTemplateId = "prototype",
                 WorkingDirectory = root,
-                MessageText = "执行阻塞工具并取消。",
+                MessageText = "等待模型响应，然后取消。",
                 MaxRounds = 3,
                 SuppressContextAutoCompaction = true,
-                CapabilityPolicy = new()
-                {
-                    DefaultToolNames = ["hang"],
-                    AllowedToolNames = ["hang"],
-                },
+                CapabilityPolicy = new(),
                 LlmConfig = new() { ModelId = "scripted-model", MaxContextTokens = 16_384 },
             };
             var cancelWorkDispatcher = new RuntimeAgentDispatcher(cancelLoop, new AgentExecutionStateRegistry());
@@ -240,7 +242,11 @@ public sealed class FoundationPrototypeTests
             Assert.AreEqual("requested", cancelResult.Effect, "the canonical Work control authority accepts the cancel");
             Assert.AreEqual(ControlMessageKind.CancelRequested, controlSink.Commands.Single().Kind);
             cancelControl.Cancel(cancelReceipt.ConversationId);
-            try { await cancelRun.WaitAsync(TimeSpan.FromSeconds(20)); }
+            try
+            {
+                var stopped = await cancelRun.WaitAsync(TimeSpan.FromSeconds(20));
+                Assert.AreEqual(AgentExecutionState.Cancelled, stopped.ExecutionState, stopped.ErrorMessage);
+            }
             catch (OperationCanceledException) { }
             await FinishWorkAsync(provider, cancelReceipt, TurnTerminal.Cancelled, "ws2");
             var cancelSnapshot = await cancelSdk.GetAsync("cancel-work");
@@ -258,6 +264,7 @@ public sealed class FoundationPrototypeTests
                 eventId = evt.EventId,
                 archiveId = archived[0].ArchiveId,
                 archiveOperationId = archived[0].OperationId,
+                dispatch = new { firstDispatch.IsSuccess, firstDispatch.ToolFailureCount, echo = scriptModel.ReceivedEcho },
                 delivery = new { dispatchResult.Delivered, dispatchResult.Acknowledged },
                 snapshot = snapshot.Status.ToString(),
                 replay = new { replay.Delivered, archiveCount = (await archive.ListAsync("ws", evt.EventId)).Count },
@@ -372,8 +379,10 @@ public sealed class FoundationPrototypeTests
     {
         private int _calls;
         private string? _echoName;
+        public const string ExpectedEcho = "插件真实回执";
+        public string? ReceivedEcho { get; private set; }
 
-        private LlmResponse Next(IReadOnlyList<LlmToolDefinition>? tools)
+        private LlmResponse Next(IReadOnlyList<LlmToolDefinition>? tools, IReadOnlyList<ChatMessage> messages)
         {
             var names = tools?.Select(t => t.Name).ToArray() ?? [];
             switch (++_calls)
@@ -389,22 +398,26 @@ public sealed class FoundationPrototypeTests
                     _echoName = plugins.Manager.List().Where(a => a.State == "Active")
                         .SelectMany(a => a.ToolNames).Single(n => n.EndsWith("_echo"));
                     CollectionAssert.Contains(names, _echoName);
-                    return new(null, [new("echo", _echoName, "{\"text\":\"插件真实回执\"}")]);
+                    return new(null, [new("echo", _echoName, JsonSerializer.Serialize(new { text = ExpectedEcho }))]);
                 default:
+                    var echo = messages.Single(m => m.Role == ChatRole.Tool && m.ToolCallId == "echo");
+                    var lines = echo.Content!.Split('\n', 3);
+                    Assert.IsTrue(lines.Length >= 2, echo.Content);
+                    ReceivedEcho = JsonSerializer.Deserialize<string>(lines[1]);
                     return new("{\"status\":\"DONE\",\"message\":\"产物已提交并归档。\"}", null);
             }
         }
 
         public Task<LlmResponse> ChatAsync(string workspaceId, string sessionId, string agentTemplateId,
             IReadOnlyList<ChatMessage> messages, IReadOnlyList<LlmToolDefinition>? tools = null,
-            LlmConfig? llmConfig = null, CancellationToken ct = default) => Task.FromResult(Next(tools));
+            LlmConfig? llmConfig = null, CancellationToken ct = default) => Task.FromResult(Next(tools, messages));
 
         public async IAsyncEnumerable<StreamDelta> ChatStreamAsync(string workspaceId, string sessionId,
             string agentTemplateId, IReadOnlyList<ChatMessage> messages,
             IReadOnlyList<LlmToolDefinition>? tools = null, LlmConfig? llmConfig = null,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
-            var response = Next(tools);
+            var response = Next(tools, messages);
             foreach (var call in response.ToolCalls ?? [])
                 yield return new() { ToolCallIndex = 0, ToolCallId = call.Id, ToolCallNameDelta = call.Name,
                     ToolCallArgsDelta = call.ArgumentsJson };
@@ -475,39 +488,26 @@ public sealed class FoundationPrototypeTests
         }
     }
 
-    private sealed class BlockingScriptModel(ExecutablePluginService plugins) : IRuntimeLlmClient
+    private sealed class BlockingScriptModel : IRuntimeLlmClient
     {
-        private int _calls;
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        private LlmResponse Next(IReadOnlyList<LlmToolDefinition>? tools)
-        {
-            if (++_calls == 1)
-            {
-                var hang = plugins.Manager.List().Where(a => a.State == "Active")
-                    .SelectMany(a => a.ToolNames).First(n => n.EndsWith("_hang"));
-                Started.TrySetResult();
-                return new(null, [new("hang", hang, "{\"text\":\"blocked\"}")]);
-            }
-            return new("{\"status\":\"DONE\"}", null);
-        }
-
-        public Task<LlmResponse> ChatAsync(string workspaceId, string sessionId, string agentTemplateId,
+        public async Task<LlmResponse> ChatAsync(string workspaceId, string sessionId, string agentTemplateId,
             IReadOnlyList<ChatMessage> messages, IReadOnlyList<LlmToolDefinition>? tools = null,
-            LlmConfig? llmConfig = null, CancellationToken ct = default) => Task.FromResult(Next(tools));
+            LlmConfig? llmConfig = null, CancellationToken ct = default)
+        {
+            Started.TrySetResult();
+            await Task.Delay(TimeSpan.FromSeconds(30), ct);
+            throw new TimeoutException("Work cancellation did not reach the model.");
+        }
 
         public async IAsyncEnumerable<StreamDelta> ChatStreamAsync(string workspaceId, string sessionId,
             string agentTemplateId, IReadOnlyList<ChatMessage> messages,
             IReadOnlyList<LlmToolDefinition>? tools = null, LlmConfig? llmConfig = null,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
-            var response = Next(tools);
-            foreach (var call in response.ToolCalls ?? [])
-                yield return new() { ToolCallIndex = 0, ToolCallId = call.Id, ToolCallNameDelta = call.Name,
-                    ToolCallArgsDelta = call.ArgumentsJson };
-            yield return new() { ContentDelta = response.Content,
-                FinishReason = response.ToolCalls?.Count > 0 ? "tool_calls" : "stop" };
-            await Task.CompletedTask;
+            await ChatAsync(workspaceId, sessionId, agentTemplateId, messages, tools, llmConfig, ct);
+            yield break;
         }
     }
 
