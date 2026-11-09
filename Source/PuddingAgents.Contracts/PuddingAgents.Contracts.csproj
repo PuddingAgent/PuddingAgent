@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Target Name="EnforceAgentsPortsBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'@(ProjectReference)' != '' Or '@(PackageReference)' != ''" Text="Agent ports use BCL only." />
+    <Error Condition="'%(FrameworkReference.Identity)' != '' And '%(FrameworkReference.Identity)' != 'Microsoft.NETCore.App'" Text="Only the base runtime framework is allowed." />
+  </Target>
+</Project>

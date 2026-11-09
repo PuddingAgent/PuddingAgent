@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using PuddingCode.Core;
 using PuddingCode.Platform;
 
@@ -50,7 +50,8 @@ public sealed class SubmitTurnHandler(
                 Metadata = NormalizeMetadata(
                     command.Metadata,
                     command.IsTrustedGatewayIngress,
-                    command.IsTrustedMessageFabricIngress),
+                    command.IsTrustedMessageFabricIngress,
+                    command.IsTrustedCanonicalWorkIngress),
             },
             command.WorkspaceId,
             command.ConversationId,
@@ -81,7 +82,8 @@ public sealed class SubmitTurnHandler(
     private static IReadOnlyDictionary<string, string>? NormalizeMetadata(
         IReadOnlyDictionary<string, string>? metadata,
         bool isTrustedGatewayIngress,
-        bool isTrustedMessageFabricIngress)
+        bool isTrustedMessageFabricIngress,
+        bool isTrustedCanonicalWorkIngress)
     {
         if (metadata is null)
             return metadata;
@@ -95,6 +97,11 @@ public sealed class SubmitTurnHandler(
                 && (isTrustedMessageFabricIngress
                     || !pair.Key.StartsWith(
                         "message_fabric_",
+                        StringComparison.OrdinalIgnoreCase))
+                // Reserved canonical Work provenance: only the in-process Work backend may write it.
+                && (isTrustedCanonicalWorkIngress
+                    || !pair.Key.StartsWith(
+                        "agent_work_",
                         StringComparison.OrdinalIgnoreCase)))
             .ToDictionary(
                 pair => pair.Key,

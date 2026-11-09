@@ -16,6 +16,7 @@ using PuddingPlatform.Services.Orchestration;
 using PuddingPlatform.Services.ExternalApi;
 using PuddingPlatform.Services.Files;
 using PuddingPlatform.Services.Goals;
+using PuddingPlatform.Services.ExecutionBudgets;
 using PuddingPlatform.Services.Security;
 using PuddingPlatform.Services.Scheduling;
 using PuddingPlatform.Services.Tasks;
@@ -77,6 +78,9 @@ public static class PuddingApplicationInitializer
             await TaskPlanningSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             phases?.Mark(StartupPhases.Schema(nameof(GoalSchemaBootstrapper)));
             await GoalSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(ExecutionBudgetSchemaBootstrapper)));
+            await ExecutionBudgetSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            await scope.ServiceProvider.GetRequiredService<ExecutionBudgetReconciler>().ReconcileAsync(cancellationToken);
             phases?.Mark(StartupPhases.Schema(nameof(TodoSchemaBootstrapper)));
             await TodoSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             phases?.Mark(StartupPhases.Schema(nameof(TaskSchedulingSchemaBootstrapper)));

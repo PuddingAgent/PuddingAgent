@@ -37,6 +37,11 @@ public sealed record ExecutionCommandRecord
     public string? ChannelId { get; init; }
     public required CommandStatus Status { get; init; }
     public string? RunId { get; init; }
+    /// <summary>
+    /// Client-supplied idempotency key stored on the command. For public canonical Work acceptance this is the WorkId;
+    /// it is a correlation candidate only and never a trusted budget identity by itself.
+    /// </summary>
+    public string? ClientRequestId { get; init; }
     public ExecutionWorkUnitContext? WorkUnit { get; init; }
 
     /// <summary>ADR-072 §9.1/§9.2：由命令 metadata 解析的 Active Task 上下文（canonical 命令路径载体）。</summary>

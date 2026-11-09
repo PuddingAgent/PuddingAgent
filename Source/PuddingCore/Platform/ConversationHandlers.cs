@@ -56,6 +56,13 @@ public sealed record SubmitTurnCommand(
     /// controllers do not map it, so clients cannot forge reply-routing facts.
     /// </summary>
     public bool IsTrustedMessageFabricIngress { get; init; }
+
+    /// <summary>
+    /// Only the in-process canonical Work backend may set this flag. It is the sole provenance anchor that allows the
+    /// reserved <c>agent_work_*</c> acceptance markers into persisted facts; every HTTP ingress leaves it false, so a
+    /// client can never turn an ordinary chat turn into a managed Work budget identity.
+    /// </summary>
+    public bool IsTrustedCanonicalWorkIngress { get; init; }
 }
 
 public sealed record RequestTurnCancellationCommand(

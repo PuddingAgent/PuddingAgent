@@ -9,6 +9,32 @@ namespace PuddingRuntimeTests.Services;
 public sealed class ExecutionUsageBudgetTrackerTests
 {
     [TestMethod]
+    public void ModelReservationsReduceParentRemainder_AndSettleTheirOwnPricesOnce()
+    {
+        using var tracker = new ExecutionUsageBudgetTracker(new() { MaxOutputTokens = 200, MaxCost = 1m, PricingKnown = true,
+            InputPricePer1MTokens = 2, OutputPricePer1MTokens = 4 });
+        tracker.RecordInvocationUsage(Usage(100, 20, 0));
+        using var reservation = tracker.Resources.Reserve(new("p/m", "v1", "m", 100, 100, 1, new(10, 20, 10)), 30);
+        Assert.AreEqual(150L, tracker.CreateRemainingBudget()!.MaxOutputTokens);
+        Assert.AreEqual(.99812m, tracker.CreateRemainingBudget()!.MaxCost);
+        reservation.MarkDispatched(); reservation.Settle(new(20, 10));
+        Assert.AreEqual(30L, tracker.OutputTokens); Assert.AreEqual(.00068m, tracker.Cost);
+        Assert.AreEqual(170L, tracker.CreateRemainingBudget()!.MaxOutputTokens);
+        Assert.AreEqual(30, tracker.CreateUsageSnapshot()!.CompletionTokens);
+    }
+    [TestMethod]
+    public void OrdinaryChatStillHasFiniteAuxiliaryAllowance_AndCancellationCascades()
+    {
+        using var stop = new CancellationTokenSource(); using var tracker = new ExecutionUsageBudgetTracker(null, ct: stop.Token);
+        var model = new PuddingExecutionResources.Contracts.ModelResourceDescriptor("p/m", "v1", "m", 100, 100, 1, new(1, 1, 1));
+        for (var i = 0; i < 8; i++) { using var lease = tracker.Resources.Reserve(model, 1); }
+        Assert.AreEqual("budget.exhausted", Assert.ThrowsExactly<PuddingExecutionResources.Contracts.ExecutionResourceException>(() => tracker.Resources.Reserve(model, 1)).Code);
+        stop.Cancel(); Assert.IsTrue(tracker.Resources.Cancellation.IsCancellationRequested);
+        using var cancelled = new ExecutionUsageBudgetTracker(null, ct: stop.Token);
+        Assert.IsNull(cancelled.CreateUsageSnapshot());
+        Assert.AreEqual("execution.revoked", Assert.ThrowsExactly<PuddingExecutionResources.Contracts.ExecutionResourceException>(() => _ = cancelled.Resources).Code);
+    }
+    [TestMethod]
     public void SixHundredRequests_KeepCumulativeLedgerWithoutExhaustingInputCapacity()
     {
         var tracker = new ExecutionUsageBudgetTracker(new ExecutionUsageBudget { MaxInputTokens = 1_000_000 });

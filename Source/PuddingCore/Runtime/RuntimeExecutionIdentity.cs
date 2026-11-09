@@ -29,4 +29,44 @@ public sealed record RuntimeExecutionIdentity
     public string? BatchId { get; init; }
     public string? OriginToolId { get; init; }
     public string? Role { get; init; }
+
+    /// <summary>
+    /// Host-bound budget identity of a managed canonical Work. Only the orchestration layer that has cross-checked
+    /// canonical acceptance, command/lease and account binding may set it; Runtime and tools only forward it and must
+    /// never synthesize, copy from a parent run or infer it from session ids.
+    /// </summary>
+    public RuntimeWorkBudgetBinding? WorkBudget { get; init; }
+}
+
+/// <summary>
+/// Immutable, non-secret budget carrier for one managed Work run. It intentionally has no attempt id: each model send
+/// derives its own attempt identity from this binding.
+/// </summary>
+public sealed record RuntimeWorkBudgetBinding(
+    string AccountId,
+    IReadOnlyList<string> Ancestors,
+    string RootKind,
+    string RootId,
+    string WorkspaceId,
+    string AgentId,
+    string SessionId,
+    string CostUnit,
+    string ModelRevision,
+    string PriceVersion,
+    long MaxInputTokensPerAttempt,
+    long MaxOutputTokensPerAttempt)
+{
+    public bool IsValid =>
+        !string.IsNullOrWhiteSpace(AccountId) && AccountId.Length <= 128
+        && Ancestors is not null
+        && !string.IsNullOrWhiteSpace(RootKind)
+        && RootKind is "Work" or "GoalRun" or "Task"
+        && !string.IsNullOrWhiteSpace(RootId) && RootId.Length <= 128
+        && !string.IsNullOrWhiteSpace(WorkspaceId) && WorkspaceId.Length <= 128
+        && !string.IsNullOrWhiteSpace(AgentId) && AgentId.Length <= 128
+        && !string.IsNullOrWhiteSpace(SessionId) && SessionId.Length <= 128
+        && !string.IsNullOrWhiteSpace(CostUnit) && CostUnit.Length <= 32
+        && !string.IsNullOrWhiteSpace(ModelRevision) && ModelRevision.Length <= 128
+        && !string.IsNullOrWhiteSpace(PriceVersion) && PriceVersion.Length <= 128
+        && MaxInputTokensPerAttempt >= 0 && MaxOutputTokensPerAttempt >= 0;
 }

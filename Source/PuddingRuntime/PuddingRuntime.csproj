@@ -30,6 +30,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PuddingComputer.Windows\PuddingComputer.Windows.csproj" />
+    <ProjectReference Include="../Pudding.ToolPlugins.Runtime/Pudding.ToolPlugins.Runtime.csproj" />
+    <ProjectReference Include="../PuddingOperatorAccess/PuddingOperatorAccess.csproj" />
+    <ProjectReference Include="../PuddingExecutionResources/PuddingExecutionResources.csproj" />
+    <ProjectReference Include="../PuddingModelEvaluation/PuddingModelEvaluation.csproj" />
+    <ProjectReference Include="../Pudding.ToolPlugins.Windows/Pudding.ToolPlugins.Windows.csproj" />
     <ProjectReference Include="..\PuddingCodeIntelligence\PuddingCodeIntelligence.csproj" />
     <ProjectReference Include="..\PuddingCodeIndex\PuddingCodeIndex.csproj" />
     <ProjectReference Include="..\PuddingToolGuidance\PuddingToolGuidance.csproj" />

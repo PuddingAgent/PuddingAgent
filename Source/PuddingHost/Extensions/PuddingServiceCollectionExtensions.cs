@@ -75,6 +75,11 @@ public static partial class PuddingServiceCollectionExtensions
         // PuddingWebApiTests 引入 48 项回归（失败 6 → 54），疑似波及测试宿主基础设施的 HttpClient。
 
         AddPlatformServices(builder, dataPaths, aspnetcoreEnvironment);
+        AddManagedWorkBudgetBinding(builder);
+        AddPluginWorkspaceEvents(builder);
+        PuddingPlatform.Services.AgentWork.AgentWorkServiceCollectionExtensions.AddAgentWorkApi(builder.Services);
+        builder.Services.AddSingleton<Pudding.ToolPlugins.Contracts.IPluginAgentApiLeaseFactory, PuddingPlatform.Services.Plugins.PluginAgentApiLeaseFactory>();
+        PuddingRuntime.Operators.PublicApi.OperatorServiceCollectionExtensions.AddPublicOperators(builder.Services);
         phases?.Mark(StartupPhases.ServicesPlatform);
         AddRuntimeServices(builder, dataPaths, bootstrapConfiguration);
         phases?.Mark(StartupPhases.ServicesRuntime);

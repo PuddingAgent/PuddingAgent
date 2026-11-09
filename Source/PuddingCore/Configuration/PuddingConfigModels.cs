@@ -494,6 +494,11 @@ public sealed record AgentCapabilitiesConfig
 /// </summary>
 public sealed record AgentInstanceManifest
 {
+    /// <summary>Opaque configuration receipts/change journal, owned by the configuration adapter.
+    /// All existing manifest writers preserve it through record copies; it contains no model credentials.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public System.Text.Json.JsonElement? ConfigurationControl { get; init; }
+
     // ── 实例身份字段 ──
     public string AgentInstanceId { get; init; } = "";
     public string TemplateId { get; init; } = "";
@@ -520,6 +525,10 @@ public sealed record AgentInstanceManifest
     [Obsolete("Use ChannelIds and ChannelInstanceManifest instead.")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AgentFeishuBotConfig? Feishu { get; init; }
+
+    /// <summary>PA-06 instance-level purpose model policy; null means the instance has no overrides yet.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AgentModelPolicy? ModelPolicy { get; init; }
 
     // ── 模板配置（创建时嵌入，运行时不再查模板）──
     public string? Role { get; init; }

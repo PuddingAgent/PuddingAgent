@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../PuddingAgentWork.Contracts/PuddingAgentWork.Contracts.csproj" /></ItemGroup>
+  <Target Name="EnforceWorkBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingAgentWork.Contracts' And '%(ProjectReference.Filename)' != 'Pudding.Api.Contracts'" Text="Work service may only reference ports and public contracts." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Work service must use BCL and ports only." />
+    <Error Condition="'%(FrameworkReference.Identity)' != '' And '%(FrameworkReference.Identity)' != 'Microsoft.NETCore.App'" Text="Only the base runtime framework is allowed." />
+  </Target>
+</Project>

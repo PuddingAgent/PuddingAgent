@@ -96,6 +96,38 @@ public sealed class TurnExecutorAdapterTests
             "Turn 结束后（租约释放）不应再有前台需求");
     }
 
+    /// <summary>
+    /// CORE-I1-05 W4 bridge: the host-bound Work budget carrier on the turn context must reach the dispatched runtime
+    /// request unchanged (the adapter is the only bridge between coordinator and Runtime).
+    /// </summary>
+    [TestMethod]
+    public async Task ExecuteAsync_ForwardsTheWorkBudgetCarrierToTheRuntimeRequest()
+    {
+        var binding = new RuntimeWorkBudgetBinding(
+            "work:work-1", [], "Work", "work-1", "default", "agent-1", "conversation-1", "usd", "rev-1", "pr-1",
+            128_000, 8_192);
+        var context = CreateContext() with
+        {
+            ExecutionIdentity = new RuntimeExecutionIdentity
+            {
+                Kind = RuntimeExecutionKind.ConversationTurn,
+                ConversationId = "conversation-1",
+                RunId = "run-1",
+                TraceId = null,
+                WorkBudget = binding,
+            },
+        };
+        var dispatcher = new CapturingDispatcher();
+        var adapter = new TurnExecutorAdapter(
+            dispatcher, Microsoft.Extensions.Logging.Abstractions.NullLogger<TurnExecutorAdapter>.Instance);
+
+        await foreach (var _ in adapter.ExecuteAsync(context, CancellationToken.None)) { }
+
+        Assert.IsNotNull(dispatcher.LastRequest);
+        Assert.AreSame(binding, dispatcher.LastRequest!.ExecutionIdentity!.WorkBudget,
+            "The managed Work budget carrier must be forwarded unchanged to the runtime request.");
+    }
+
     /// <summary>先给一帧正文，再慢一段时间，最后给终态（模拟跨过预留窗口的长 Turn）。</summary>
     private sealed class SlowRuntimeDispatcher(TimeSpan workDuration) : IRuntimeAgentDispatcher
     {
@@ -108,6 +140,22 @@ public sealed class TurnExecutorAdapterTests
             await Task.Yield();
             yield return new ServerSentEventFrame("delta", "{\"text\":\"working\"}");
             await Task.Delay(workDuration, ct);
+            yield return new ServerSentEventFrame("done", "{\"reply\":\"ok\"}");
+        }
+    }
+
+    private sealed class CapturingDispatcher : IRuntimeAgentDispatcher
+    {
+        public RuntimeDispatchRequest? LastRequest { get; private set; }
+
+        public Task<RuntimeDispatchResult> DispatchAsync(RuntimeDispatchRequest request,
+            CancellationToken ct = default) => throw new NotSupportedException();
+
+        public async IAsyncEnumerable<ServerSentEventFrame> DispatchStreamAsync(
+            RuntimeDispatchRequest request, [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            LastRequest = request;
+            await Task.Yield();
             yield return new ServerSentEventFrame("done", "{\"reply\":\"ok\"}");
         }
     }

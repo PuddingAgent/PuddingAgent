@@ -14,7 +14,7 @@ using PlatformLlmOptions = PuddingCode.Platform.Options.LlmOptions;
 namespace PuddingCode.Core;
 
 /// <summary>OpenAI Responses API gateway with buffered and streaming tool-call support.</summary>
-public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions options) : ILlmGateway
+public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions options) : ILlmGateway, IPerSendBudgetGateway
 {
     private const string ProtocolName = "responses";
     // This JSON is sent as application/json, never embedded in HTML. Keep Unicode
@@ -62,7 +62,8 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
     {
         // ADR-077 V3-S2b-2「调用时过期」：provider 返回 file 失效错误时，SendWithFileRebuildAsync
         // 会在内部触发恰好一次重建（MarkExpired → 重新上传落库 → 重发），重建后仍失败抛 ProviderFileExpired。
-        using var response = await SendWithFileRebuildAsync(messages, tools, stream: false, ct);
+        var (bufferedResponse, _) = await SendWithFileRebuildAsync(messages, tools, stream: false, ct);
+        using var response = bufferedResponse;
         var json = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
@@ -175,7 +176,11 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var timing = new ProviderStreamTiming();
-        using var response = await SendWithFileRebuildAsync(messages, tools, stream: true, ct, timing);
+        var (streamResponse, pendingAttempt) = await SendWithFileRebuildAsync(messages, tools, stream: true, ct, timing);
+        using var response = streamResponse;
+        TokenUsageDto? observedUsage = null;
+        try
+        {
         var headersMs = timing.HeadersMs;
         LlmCallDiagnosticsScope.Current?.MarkReadStream();
 
@@ -231,6 +236,8 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
                 var firstForResponse = !emittedAnyDelta;
                 var dispatchElapsedMs = timing.SinceDispatchMs;
                 emittedAnyDelta = true;
+                if (delta.Usage is { } reportedUsage)
+                    observedUsage = reportedUsage;
                 yield return delta with
                 {
                     ProviderChunkIndex = chunkIndex,
@@ -247,6 +254,12 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             // wait for socket EOF after the terminal usage/continuation arrived.
             if (parser.IsTerminal)
                 yield break;
+        }
+        }
+        finally
+        {
+            if (pendingAttempt is not null)
+                await CompleteStreamAttemptAsync(pendingAttempt, observedUsage, null).ConfigureAwait(false);
         }
     }
 
@@ -279,12 +292,99 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
     }
 
     /// <summary>
+    /// CORE-I1-06 T3: one real buffered send = one budget attempt. The streaming path owns its own attempts inside
+    /// <see cref="SendWithFileRebuildAsync"/>; when no observer is bound this is a no-op.
+    /// </summary>
+    private async Task<HttpResponseMessage> SendBufferedWithAttemptAsync(
+        Func<Task<HttpResponseMessage>> send, bool stream, CancellationToken ct)
+    {
+        var observer = LlmSendAttemptScope.Current;
+        if (stream || observer is null)
+            return await send();
+
+        var permit = await observer.BeforeSendAsync(
+            new LlmSendAttemptRequest(options.Model, "", "", "", 0, options.MaxTokens ?? 0, DateTimeOffset.UtcNow), ct);
+        HttpResponseMessage response;
+        try
+        {
+            response = await send();
+        }
+        catch (Exception ex)
+        {
+            await observer.CompleteAsync(permit, null, null, "llm.provider_failed:" + ex.GetType().Name,
+                CancellationToken.None);
+            throw;
+        }
+
+        string json;
+        try
+        {
+            json = await response.Content.ReadAsStringAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            // The send happened but the response body is unreadable: usage is unknown, not zero.
+            await observer.CompleteAsync(permit, null, null,
+                "llm.response_read_failed:" + ex.GetType().Name, CancellationToken.None);
+            response.Dispose();
+            throw;
+        }
+        TokenUsageDto? usage = null;
+        try
+        {
+            usage = ParseResponsesUsage(JsonNode.Parse(json)?["usage"]);
+        }
+        catch (JsonException)
+        {
+        }
+        var sendUsage = usage is null
+            ? null
+            : new LlmSendUsage(usage.PromptTokens, usage.CompletionTokens, usage.PromptCacheHitTokens);
+        var reason = !response.IsSuccessStatusCode
+            ? "llm.provider_failed:http_" + (int)response.StatusCode
+            : sendUsage is null ? "llm.usage_unknown" : null;
+        await observer.CompleteAsync(permit, sendUsage, $"responses:{options.Model}", reason, CancellationToken.None);
+        var mediaType = response.Content.Headers.ContentType?.MediaType ?? "application/json";
+        var copy = new HttpResponseMessage(response.StatusCode)
+        {
+            Content = new StringContent(json, Encoding.UTF8, mediaType),
+        };
+        response.Dispose();
+        return copy;
+    }
+
+    /// <summary>
     /// ADR-077 V3-S2b-2「调用时过期」：发送请求；若 provider 返回 file 失效错误且本次请求含 file 模式图片
     /// 且具备重建上下文，则恰好一次 <see cref="IFileRefStore.MarkExpiredAsync"/> + 重新构建请求体
     /// （Planner 未命中 → 重新上传并落库 ready）后重发一次。重建后仍失败抛 <see cref="VisionErrorCodes.ProviderFileExpired"/>，
     /// 不盲目重试。非 file 失效错误原样返回给调用方处理。
     /// </summary>
-    private async Task<HttpResponseMessage> SendWithFileRebuildAsync(
+    private sealed record SendAttemptHandoff(ILlmSendAttemptObserver Observer, LlmSendPermit Permit);
+
+    private async ValueTask<SendAttemptHandoff?> BeginStreamAttemptAsync(CancellationToken ct)
+    {
+        var observer = LlmSendAttemptScope.Current;
+        if (observer is null)
+            return null;
+        var permit = await observer.BeforeSendAsync(new LlmSendAttemptRequest(options.Model, "", "", "", 0,
+            options.MaxTokens ?? 0, DateTimeOffset.UtcNow), ct).ConfigureAwait(false);
+        return new(observer, permit);
+    }
+
+    private async ValueTask CompleteStreamAttemptAsync(SendAttemptHandoff? handoff, TokenUsageDto? usage,
+        string? failureReason)
+    {
+        if (handoff is null)
+            return;
+        var sendUsage = usage is null
+            ? null
+            : new LlmSendUsage(usage.PromptTokens, usage.CompletionTokens, usage.PromptCacheHitTokens);
+        var reason = failureReason ?? (sendUsage is null ? "llm.usage_unknown" : null);
+        await handoff.Observer.CompleteAsync(handoff.Permit, reason is null ? sendUsage : null,
+            $"responses:{options.Model}", reason, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private async Task<(HttpResponseMessage Response, SendAttemptHandoff? Pending)> SendWithFileRebuildAsync(
         IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<ITool> tools,
         bool stream,
@@ -296,26 +396,44 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         timing?.MarkDispatch();
         if (LlmRequestCapture.Enabled)
             await LlmRequestCapture.WriteAsync(request, options.Model, ct);
-        var response = stream
-            ? await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
-            : await httpClient.SendAsync(request, ct);
+        // Streaming owns one attempt per real send here; the transport must not wrap the whole stream again.
+        var streamAttempt = stream ? await BeginStreamAttemptAsync(ct).ConfigureAwait(false) : null;
+        var response = await SendBufferedWithAttemptAsync(
+            () => stream
+                ? httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
+                : httpClient.SendAsync(request, ct), stream, ct);
         timing?.MarkHeaders();
         LlmCallDiagnosticsScope.Current?.MarkHeaders();
 
         if (response.IsSuccessStatusCode || !CanRebuildFileReferences(fileImages))
-            return response;
+        {
+            if (!response.IsSuccessStatusCode && stream)
+            {
+                await CompleteStreamAttemptAsync(streamAttempt, null,
+                    "llm.provider_failed:http_" + (int)response.StatusCode).ConfigureAwait(false);
+                streamAttempt = null;
+            }
+            return (response, streamAttempt);
+        }
 
         var failedStatusCode = response.StatusCode;
         var errorJson = await response.Content.ReadAsStringAsync(ct);
         response.Dispose();
         if (!IsProviderFileExpiredError(errorJson))
         {
+            if (stream)
+                await CompleteStreamAttemptAsync(streamAttempt, null,
+                    "llm.provider_failed:http_" + (int)failedStatusCode).ConfigureAwait(false);
             // 非 file 失效错误：不重建，按原始失败重新构造响应交给调用方抛错（保持既有语义）。
             throw new HttpRequestException(
                 $"LLM Responses API error ({failedStatusCode}): {errorJson}",
                 inner: null,
                 failedStatusCode);
         }
+
+        if (stream)
+            await CompleteStreamAttemptAsync(streamAttempt, null,
+                "llm.provider_failed:file_expired").ConfigureAwait(false);
 
         // 恰好一次重建：MarkExpired 所有 file 引用 → 重新 Build（Planner 对过期引用 miss → 重新上传落库）。
         var now = DateTimeOffset.UtcNow;
@@ -336,20 +454,25 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         timing?.MarkDispatch();
         if (LlmRequestCapture.Enabled)
             await LlmRequestCapture.WriteAsync(rebuiltRequest, options.Model, ct);
-        var rebuiltResponse = stream
-            ? await httpClient.SendAsync(rebuiltRequest, HttpCompletionOption.ResponseHeadersRead, ct)
-            : await httpClient.SendAsync(rebuiltRequest, ct);
+        var rebuiltAttempt = stream ? await BeginStreamAttemptAsync(ct).ConfigureAwait(false) : null;
+        var rebuiltResponse = await SendBufferedWithAttemptAsync(
+            () => stream
+                ? httpClient.SendAsync(rebuiltRequest, HttpCompletionOption.ResponseHeadersRead, ct)
+                : httpClient.SendAsync(rebuiltRequest, ct), stream, ct);
         timing?.MarkHeaders();
         LlmCallDiagnosticsScope.Current?.MarkHeaders();
         if (!rebuiltResponse.IsSuccessStatusCode)
         {
             var rebuiltError = await rebuiltResponse.Content.ReadAsStringAsync(ct);
             rebuiltResponse.Dispose();
+            if (stream)
+                await CompleteStreamAttemptAsync(rebuiltAttempt, null,
+                    "llm.provider_failed:http_" + (int)rebuiltResponse.StatusCode).ConfigureAwait(false);
             throw new VisionPipelineException(
                 VisionErrorCodes.ProviderFileExpired,
                 "Provider file reference expired even after one rebuild; aborting without blind retries.");
         }
-        return rebuiltResponse;
+        return (rebuiltResponse, rebuiltAttempt);
     }
 
     /// <summary>具备重建上下文（store + providerId + credentialEpoch + uploader 齐全）且本次请求含 file 模式图片。</summary>

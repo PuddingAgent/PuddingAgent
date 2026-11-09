@@ -1,0 +1,8 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+  <PropertyGroup><OutputType>Exe</OutputType><UseVSTest>false</UseVSTest></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Source/PuddingPlatform/PuddingPlatform.csproj" />
+    <ProjectReference Include="../../Source/Pudding.Api.Sdk/Pudding.Api.Sdk.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" />
+  </ItemGroup>
+</Project>

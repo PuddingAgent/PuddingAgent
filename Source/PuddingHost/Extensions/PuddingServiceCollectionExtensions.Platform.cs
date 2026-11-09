@@ -25,6 +25,17 @@ using PuddingPlatform.Services.Diagnostics;
 using PuddingPlatform.Services.StorageManagement;
 using PuddingPlatform.Services.Conversation;
 using PuddingPlatform.Services.Execution;
+using PuddingPlatform.Services.ExecutionBudgets;
+using PuddingExecutionResources.Contracts;
+using PuddingModels;
+using Pudding.Api.Contracts;
+using PuddingPlatform.Services.Configuration;
+using PuddingPlatform.Services.Agents;
+using PuddingPlatform.Services.AgentWork;
+using PuddingAgents.Contracts;
+using PuddingPlatform.Services.Models;
+using PuddingHost.Services;
+using PuddingModels.Contracts;
 using PuddingPlatform.Services.AgentChat;
 using PuddingPlatform.Services.Snapshot;
 using PuddingCodeIntelligence;
@@ -186,6 +197,17 @@ public static partial class PuddingServiceCollectionExtensions
             builder.Services.AddSingleton<GoalOutboxSignal>();
             builder.Services.AddSingleton<GoalOutboxStore>();
             builder.Services.AddSingleton<GoalSettlementStore>();
+            // ── PA-01 跨轮持久预算账本（S5：唯一产品账本；不再注册内存实现为产品根）──
+            builder.Services.AddSingleton<ExecutionBudgetStore>();
+            builder.Services.AddSingleton<IExecutionBudgetLedger>(sp => sp.GetRequiredService<ExecutionBudgetStore>());
+            builder.Services.AddSingleton<IExecutionBudgetRecoveryLedger>(sp => sp.GetRequiredService<ExecutionBudgetStore>());
+            builder.Services.AddSingleton<ExecutionBudgetReconciler>();
+            builder.Services.AddSingleton<ExecutionBudgetApiAdapter>();
+            builder.Services.AddSingleton<IExecutionBudgetApi>(sp => sp.GetRequiredService<ExecutionBudgetApiAdapter>());
+            // ── PA-03 持久验收任务（S5：Job 持久状态；结论仅为评审建议）──
+            // ── PA-07A S5 插件后台任务协议（持久受理 + 幂等提交）──
+            // ── PA-07A S5 订阅 grant/checkpoint（Ack 与游标推进同事务）──
+            // ── PA-07 07B 扩展注册/管道（仅注册；真实 PluginManager 接入另行决策）──
             builder.Services.AddSingleton<IGoalIterationVerifier, ConservativeGoalIterationVerifier>();
             builder.Services.AddSingleton<GoalAcceptanceContractStore>();
             builder.Services.AddSingleton<GoalContractRefinementStore>();
@@ -601,6 +623,39 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddScoped<BenchmarkEvaluationService>();
         // ── Workspace Agent 实例配置与运行目录写入权威 ──
         builder.Services.AddSingleton<WorkspaceAgentFileService>();
+            builder.Services.AddHttpContextAccessor();
+            builder.Services.AddSingleton<AgentModelPolicyApiFactory>();
+            builder.Services.AddSingleton<IAgentModelPolicyAuthorization, ManagementModelPolicyAuthorization>();
+            builder.Services.AddSingleton<IAgentModelPolicyStore>(sp => sp.GetRequiredService<WorkspaceAgentFileService>());
+            // ── PA-02 I0 借用目录：无 Work/预算的只读查询 ──
+            builder.Services.AddSingleton<IAgentDirectoryStore>(sp => new WorkspaceAgentDirectoryStore(
+                sp.GetRequiredService<WorkspaceAgentFileService>(), sp.GetRequiredService<PuddingCode.Configuration.PuddingDataPaths>()));
+            builder.Services.AddSingleton<AgentDirectoryApiFactory>();
+            // ── PA-05B 工具目录查询：真实 catalog 只读适配，无执行入口 ──
+
+            // ── PA-02 I2 Work Observe/Cancel（canonical 控制入口）──
+            builder.Services.AddSingleton<IAgentWorkControlBackend, CanonicalAgentWorkControlBackend>();
+            builder.Services.AddSingleton<AgentWorkControlApiFactory>();
+            builder.Services.AddSingleton<IAgentAuthoringBackend>(sp => new WorkspaceAgentAuthoringBackend(
+                sp.GetRequiredService<WorkspaceAgentFileService>(), sp.GetRequiredService<PuddingCode.Configuration.PuddingDataPaths>()));
+            builder.Services.AddSingleton<AgentFactoryApiFactory>();
+            // ── PA-06/PA-01 P2：模型目录/报价/门禁/评审路由（真实配置权威）──
+            builder.Services.AddSingleton<ILlmModelCatalogView, LlmConfigModelCatalogView>();
+            builder.Services.AddSingleton<IModelCatalogSource, LlmConfigModelCatalogSource>();
+            builder.Services.AddSingleton<ModelCatalogAdapter>();
+            builder.Services.AddSingleton<ModelCatalogApiFactory>();
+            builder.Services.AddSingleton<IModelQuoteSource>(sp => new CatalogModelQuoteSource(
+                sp.GetRequiredService<IModelCatalogSource>()));
+            builder.Services.AddSingleton(sp => new ModelAttemptBudgetGate(
+                sp.GetRequiredService<ExecutionBudgetStore>(), sp.GetRequiredService<IModelQuoteSource>()));
+            // ── PA-01 P2：Runtime 的模型 attempt 预算端口 + PA-06C 动态租约代际 ──
+            builder.Services.AddSingleton<IModelAttemptBudgetPort>(sp =>
+                new PlatformModelAttemptBudgetPort(sp.GetRequiredService<ModelAttemptBudgetGate>()));
+            builder.Services.AddSingleton<ModelLeaseRegistry>();
+            // ── PA-03 评审执行链：host gateway → binder → executor → worker ──
+        builder.Services.AddSingleton<PuddingAgentConfiguration.Contracts.IAgentConfigurationStore>(sp =>
+            sp.GetRequiredService<WorkspaceAgentFileService>());
+        builder.Services.AddSingleton<AgentConfigurationApiFactory>();
         // /effort 命令的窄写入端口：与聊天面板下拉共用同一份 Agent 配置，
         // 避免「命令一套、面板一套」两头并行。
         builder.Services.AddSingleton<PuddingCode.Platform.IAgentReasoningEffortStore, WorkspaceAgentReasoningEffortStore>();

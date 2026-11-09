@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../PuddingExecutionResources.Contracts/PuddingExecutionResources.Contracts.csproj" /></ItemGroup>
+  <Target Name="EnforceExecutionResourcesBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingExecutionResources.Contracts' Or '@(PackageReference)' != ''" Text="Execution resources may only reference their ports." />
+    <Error Condition="'%(FrameworkReference.Identity)' != '' And '%(FrameworkReference.Identity)' != 'Microsoft.NETCore.App'" Text="Only the base runtime framework is allowed." />
+  </Target>
+</Project>

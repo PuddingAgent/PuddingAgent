@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Target Name="EnforceGoalPolicyPortsBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'@(ProjectReference)' != '' Or '@(PackageReference)' != ''" Text="Goal policy ports use BCL only." />
+    <Error Condition="'%(FrameworkReference.Identity)' != '' And '%(FrameworkReference.Identity)' != 'Microsoft.NETCore.App'" Text="Only the base runtime framework is allowed." />
+  </Target>
+</Project>

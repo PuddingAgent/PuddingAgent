@@ -1,6 +1,8 @@
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
+using PuddingExecutionResources;
+using PuddingExecutionResources.Contracts;
 
 namespace PuddingRuntime.Services;
 
@@ -9,14 +11,33 @@ namespace PuddingRuntime.Services;
 /// enforceable boundary: a completed call is accounted once, then no tool or
 /// subsequent LLM round may start after a limit is reached.
 /// </summary>
-internal sealed class ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget)
+internal sealed class ExecutionUsageBudgetTracker : IDisposable
 {
+    private readonly ExecutionUsageBudget? budget;
+    private readonly ExecutionResourceScope _account;
+    private readonly Lazy<IExecutionResourceScope> _resources;
+    public IExecutionResourceScope Resources => _resources.Value;
+    public ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget, ExecutionResourceIdentity? identity = null,
+        DateTimeOffset? deadline = null, CancellationToken ct = default)
+    {
+        var expires = deadline is { } d && d < DateTimeOffset.UtcNow.AddHours(24) ? d : DateTimeOffset.UtcNow.AddHours(24);
+        this.budget = budget;
+        _account = new(identity ?? new("internal", "internal", "internal", Guid.NewGuid().ToString("N")),
+            new(MaxOutputTokens: budget?.HasOutputLimit == true ? budget.MaxOutputTokens : null,
+                MaxCost: budget?.HasCostLimit == true ? budget.MaxCost : null,
+                MaxInputTokensPerRequest: budget?.MaxInputTokens > 0 ? budget.MaxInputTokens : null),
+            expires, ct);
+        // A finite per-dispatch auxiliary allowance also applies to ordinary chat without a WorkUnit budget.
+        // Do not throw before the existing loop's cancellation/terminal cleanup block is entered.
+        _resources = new(() => _account.CreateChild(new(MaxOutputTokens: 8192, MaxCalls: 8), _account.Deadline));
+    }
+    public void Dispose() { if (_resources.IsValueCreated) Resources.Dispose(); _account.Dispose(); }
     private const decimal TokensPerMillion = 1_000_000m;
 
-    public long InputTokens { get; private set; }
-    public long OutputTokens { get; private set; }
-    public long CacheHitTokens { get; private set; }
-    public decimal Cost { get; private set; }
+    public long InputTokens => _account.Snapshot().InputTokens;
+    public long OutputTokens => _account.Snapshot().OutputTokens;
+    public long CacheHitTokens => _account.Snapshot().CacheHitTokens;
+    public decimal Cost => _account.Snapshot().Cost;
 
     /// <summary>本执行实际模型请求的最大输入；委派累计 usage 不构成单轮样本。</summary>
     public long PeakRoundInputTokens { get; private set; }
@@ -44,13 +65,12 @@ internal sealed class ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget)
 
     private ExecutionUsageBudgetDecision RecordUsage(TokenUsageDto? usage, bool isInvocation)
     {
-        if (budget is null)
-            return ExecutionUsageBudgetDecision.Continue;
-
         if (usage is null
-            || (budget.MaxInputTokens > 0 || budget.HasCostLimit) && usage.PromptTokens is null
-            || (budget.HasOutputLimit || budget.HasCostLimit) && usage.CompletionTokens is null)
+            || budget is not null && ((budget.MaxInputTokens > 0 || budget.HasCostLimit) && usage.PromptTokens is null
+            || (budget.HasOutputLimit || budget.HasCostLimit) && usage.CompletionTokens is null))
         {
+            if (budget is null) return ExecutionUsageBudgetDecision.Continue;
+            _account.FailUnknown();
             return Stop(
                 TerminalErrorCodes.WorkUnitUsageUnavailable,
                 "WorkUnit Token/cost budget cannot be enforced because the provider returned no usage payload.");
@@ -61,19 +81,18 @@ internal sealed class ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget)
         var cacheHit = Math.Clamp(usage.PromptCacheHitTokens ?? 0, 0, input);
         var cacheMiss = input - cacheHit;
 
-        InputTokens = SaturatingAdd(InputTokens, input);
-        OutputTokens = SaturatingAdd(OutputTokens, output);
-        CacheHitTokens = SaturatingAdd(CacheHitTokens, cacheHit);
         if (isInvocation)
             PeakRoundInputTokens = Math.Max(PeakRoundInputTokens, input);
 
-        if (budget.PricingKnown)
+        decimal invocationCost = 0;
+        if (budget?.PricingKnown == true)
         {
-            Cost += ((cacheMiss * budget.InputPricePer1MTokens)
+            invocationCost = ((cacheMiss * budget.InputPricePer1MTokens)
                      + (cacheHit * budget.CacheHitPricePer1MTokens)
                      + (output * budget.OutputPricePer1MTokens))
                     / TokensPerMillion;
         }
+        _account.RecordExternal(new(input, output, cacheHit), invocationCost);
 
         return EvaluateLimits();
     }
@@ -83,11 +102,12 @@ internal sealed class ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget)
         if (budget is null)
             return null;
 
+        var snapshot = _account.Snapshot();
         return budget with
         {
             MaxInputTokens = budget.MaxInputTokens,
-            MaxOutputTokens = Remaining(budget.MaxOutputTokens, OutputTokens),
-            MaxCost = Remaining(budget.MaxCost, Cost),
+            MaxOutputTokens = Remaining(budget.MaxOutputTokens, snapshot.OutputTokens + snapshot.ReservedOutputTokens + snapshot.UnknownOutputTokens),
+            MaxCost = Remaining(budget.MaxCost, snapshot.Cost + snapshot.ReservedCost + snapshot.UnknownCost),
             OutputLimitEnabled = budget.HasOutputLimit,
             CostLimitEnabled = budget.HasCostLimit,
             IsDerivedRemainder = true,
@@ -97,12 +117,13 @@ internal sealed class ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget)
 
     public TokenUsageDto? CreateUsageSnapshot()
     {
-        if (budget is null)
+        if (budget is null && (!_resources.IsValueCreated || Resources.Snapshot().Calls == 0))
             return null;
 
-        var prompt = ClampToInt(InputTokens);
-        var completion = ClampToInt(OutputTokens);
-        var cacheHit = Math.Min(prompt, ClampToInt(CacheHitTokens));
+        var snapshot = _account.Snapshot();
+        var prompt = ClampToInt(snapshot.InputTokens);
+        var completion = ClampToInt(snapshot.OutputTokens);
+        var cacheHit = Math.Min(prompt, ClampToInt(snapshot.CacheHitTokens));
         return new TokenUsageDto
         {
             PromptTokens = prompt,
@@ -120,6 +141,10 @@ internal sealed class ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget)
         if (budget is null)
             return ExecutionUsageBudgetDecision.Continue;
 
+        var resourceState = _account.Snapshot();
+        if (resourceState.FailureCode is not null)
+            return Stop(TerminalErrorCodes.WorkUnitUsageUnavailable, "A delegated model call has unknown or out-of-reservation usage; parent budget cannot admit further calls.");
+
         if (budget.MaxInputTokens > 0 && PeakRoundInputTokens > budget.MaxInputTokens)
         {
             return Stop(
@@ -127,14 +152,14 @@ internal sealed class ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget)
                 $"WorkUnit per-request input Token capacity exceeded ({PeakRoundInputTokens}/{budget.MaxInputTokens}); cumulative input={InputTokens}.");
         }
 
-        if (budget.HasOutputLimit && OutputTokens >= budget.MaxOutputTokens)
+        if (budget.HasOutputLimit && resourceState.OutputTokens + resourceState.ReservedOutputTokens + resourceState.UnknownOutputTokens >= budget.MaxOutputTokens)
         {
             return Stop(
                 TerminalErrorCodes.WorkUnitBudgetExhausted,
                 $"WorkUnit output Token budget exhausted ({OutputTokens}/{budget.MaxOutputTokens}).");
         }
 
-        if (budget.HasCostLimit && Cost >= budget.MaxCost)
+        if (budget.HasCostLimit && resourceState.Cost + resourceState.ReservedCost + resourceState.UnknownCost >= budget.MaxCost)
         {
             return Stop(
                 TerminalErrorCodes.WorkUnitBudgetExhausted,
@@ -152,9 +177,6 @@ internal sealed class ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget)
         OutputTokens: OutputTokens,
         CacheHitTokens: CacheHitTokens,
         Cost: Cost);
-
-    private static long SaturatingAdd(long left, int right)
-        => left > long.MaxValue - right ? long.MaxValue : left + right;
 
     // 剩余值必须诚实归零，由各累计轴的启用标志消除「0 = 未设上限」的歧义。
     // 禁止回到 Math.Max(1, …) 伪造非零——那会派发一个首轮即死的子代理。

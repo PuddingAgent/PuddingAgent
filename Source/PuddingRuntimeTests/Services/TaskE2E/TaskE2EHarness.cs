@@ -41,7 +41,7 @@ public sealed class TaskE2EHarness : IDisposable
 
     public AgentExecutionService ExecutionService { get; }
 
-    public TaskE2EHarness(bool useContextBudgetGuard = false, bool useRuntimeControl = false)
+    public TaskE2EHarness(bool useContextBudgetGuard = false, bool useRuntimeControl = false, ILlmInvocationService? llmInvocationService = null)
     {
         _testRoot = Path.Combine(
             Path.GetTempPath(),
@@ -60,7 +60,7 @@ public sealed class TaskE2EHarness : IDisposable
         Journal = new ExecutionJournal();
         Probe = new TaskDbProbe(DbFactory);
         Llm = new ScriptedLlmClient();
-        ExecutionService = CreateExecutionService(Llm, useContextBudgetGuard, useRuntimeControl);
+        ExecutionService = CreateExecutionService(Llm, useContextBudgetGuard, useRuntimeControl, llmInvocationService);
     }
 
     /// <summary>[TestInitialize] 调用：确保 SQLite schema 建表完成。</summary>
@@ -213,7 +213,7 @@ public sealed class TaskE2EHarness : IDisposable
 
     // ── 组装（复用 B2 CreateService 骨架，toolInvocationService 传真实工具路径）──
 
-    private AgentExecutionService CreateExecutionService(ScriptedLlmClient llm, bool useContextBudgetGuard, bool useRuntimeControl)
+    private AgentExecutionService CreateExecutionService(ScriptedLlmClient llm, bool useContextBudgetGuard, bool useRuntimeControl, ILlmInvocationService? llmInvocationService)
     {
         var sessionManager = new AgentSessionManager(NullLogger<AgentSessionManager>.Instance);
         var runtimeSessionStore = new InMemoryRuntimeSessionStore();
@@ -266,6 +266,7 @@ public sealed class TaskE2EHarness : IDisposable
             contextManager,
             NullLogger<AgentExecutionService>.Instance,
             sessionExecutionGate,
+            llmInvocationService: llmInvocationService,
             toolInvocationService: Tools,
             runtimeControl: useRuntimeControl ? RuntimeControl : null,
             contextUsageSnapshotStore: useContextBudgetGuard ? new ContextUsageSnapshotStore() : null);

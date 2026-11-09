@@ -53,9 +53,32 @@ public sealed record LlmInvocationRequest
     /// through the shared LLM invocation facade.
     /// </summary>
     public LlmConfig? ConfigOverride { get; init; }
+    /// <summary>
+    /// PA-01 P2: optional host-bound budget attempt identity. When present, the invocation facade gates the provider
+    /// call through IModelAttemptBudgetPort before dispatch and settles/marks unknown afterwards.
+    /// </summary>
+    public LlmAttemptBudget? BudgetAttempt { get; init; }
 }
 
 /// <summary>LLM 调用结果。</summary>
+
+/// <summary>Host-bound model attempt budget identity (no secrets or provider objects).</summary>
+public sealed record LlmAttemptBudget(string AccountId, IReadOnlyList<string> Ancestors, string RootKind, string RootId,
+    string WorkspaceId, string AgentId, string SessionId, string AttemptId, string ModelRevision, string PriceVersion,
+    long MaxInputTokens, long MaxOutputTokens, string CostUnit)
+{
+    public bool IsValid => !string.IsNullOrWhiteSpace(AccountId) && AccountId.Length <= 128
+        && Ancestors is not null && !string.IsNullOrWhiteSpace(RootKind)
+        && !string.IsNullOrWhiteSpace(RootId) && RootId.Length <= 128
+        && !string.IsNullOrWhiteSpace(WorkspaceId) && WorkspaceId.Length <= 128
+        && !string.IsNullOrWhiteSpace(AgentId) && AgentId.Length <= 128
+        && !string.IsNullOrWhiteSpace(SessionId) && SessionId.Length <= 128
+        && !string.IsNullOrWhiteSpace(AttemptId) && AttemptId.Length <= 128
+        && !string.IsNullOrWhiteSpace(ModelRevision) && ModelRevision.Length <= 128
+        && !string.IsNullOrWhiteSpace(PriceVersion) && PriceVersion.Length <= 128
+        && MaxInputTokens >= 0 && MaxOutputTokens >= 0
+        && !string.IsNullOrWhiteSpace(CostUnit) && CostUnit.Length <= 32;
+}
 public sealed record LlmInvocationResult
 {
     public required bool Success { get; init; }

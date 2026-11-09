@@ -36,6 +36,14 @@ public sealed class PuddingApplicationHostCompositionTests
             var builder = PuddingApplicationHost.CreateBuilder([], options);
             await using var app = PuddingApplicationHost.Build(builder);
 
+            Assert.Same(app.Services.GetRequiredService<WorkspaceAgentFileService>(),
+                app.Services.GetRequiredService<PuddingAgentConfiguration.Contracts.IAgentConfigurationStore>());
+            Assert.NotNull(app.Services.GetRequiredService<AgentConfigurationApiFactory>());
+
+            Assert.NotNull(app.Services.GetRequiredService<PuddingAgent.Services.SlackConnectorFactory>());
+            var slackLookup = Assert.Single(app.Services.GetServices<PuddingCode.Tools.IPuddingTool>().OfType<PuddingAgent.Tools.SlackLookupMemberTool>());
+            Assert.Same(slackLookup, app.Services.GetRequiredService<PuddingCode.Tools.IPuddingToolRegistry>().GetTool("slack_lookup_member"));
+
             Assert.IsType<FeishuRecipientDirectory>(
                 app.Services.GetRequiredService<PuddingCode.Platform.IFeishuRecipientDirectory>());
             Assert.NotNull(app.Services.GetRequiredService<ListFeishuRecipientsTool>());

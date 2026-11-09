@@ -75,12 +75,11 @@ public sealed class WorkspaceAuditAgentConflictException : Exception
 /// </summary>
 /// <remarks>
 /// Workspace Agent 是“实例层”配置：名称、头像、启用状态、模板绑定和主会话绑定。
-/// 它不复制模板的 provider/model 字段。模型路由由 Agent 模板拥有，并通过
-/// <see cref="IAgentRuntimeProfileResolver"/> 在运行入口统一解析。这样做的目的
-/// 是避免列表/详情 DTO 变成第二个模型配置来源，进而让 Controller 或消息队列
-/// 消费者误以为可以绕过模板服务直接构造 LLM 配置。
+/// 模板在创建时种子化实例；模型路由由实例 manifest 拥有，并通过
+/// <see cref="IAgentRuntimeProfileResolver"/> 在运行入口统一解析。
+/// 列表/详情 DTO 是投影，不能代替 manifest 成为第二个配置来源。
 /// </remarks>
-public sealed class WorkspaceAgentFileService :
+public sealed partial class WorkspaceAgentFileService :
     IWorkspaceAgentCatalog,
     IAgentMainSessionBinder,
     IAgentChannelBinder,

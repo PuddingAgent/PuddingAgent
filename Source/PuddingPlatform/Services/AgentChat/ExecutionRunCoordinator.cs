@@ -3,6 +3,8 @@ using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
+using PuddingPlatform.Services.AgentWork;
+using PuddingPlatform.Services.ExecutionBudgets;
 
 namespace PuddingPlatform.Services.AgentChat;
 
@@ -26,7 +28,8 @@ public sealed class ExecutionRunCoordinator(
     IRuntimeExecutionConfigService? executionConfig = null,
     IExecutionProgressRegistry? progressRegistry = null,
     TimeProvider? timeProvider = null,
-    ISubAgentRunStore? subAgentRunStore = null) : IExecutionRunCoordinator
+    ISubAgentRunStore? subAgentRunStore = null,
+    IManagedWorkBudgetBindingResolver? managedWorkBudgetBinding = null) : IExecutionRunCoordinator
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan CancelPollInterval = TimeSpan.FromMilliseconds(500);
@@ -144,6 +147,12 @@ public sealed class ExecutionRunCoordinator(
             };
             var primarySupportsVision = snapshot.SupportsVision;
 
+            // CORE-I1-05: a managed canonical Work gets its frozen budget carrier here, before turn.started and before
+            // any model dispatch. An unmanaged legacy command keeps its previous behavior; a managed-but-inconsistent
+            // command throws a typed failure (never a silent fallback).
+            var managedWorkBudget = await ResolveManagedWorkBudgetAsync(
+                lease, command, llmProfile, managedWorkBudgetBinding, ctsRun.Token);
+
             // StartRun: Run/Command/Turn → running + turn.started
             using var startedDoc = JsonDocument.Parse(
                 $"{{\"commandId\":\"{lease.CommandId}\",\"turnId\":\"{lease.TurnId}\",\"runId\":\"{lease.RunId}\"}}");
@@ -245,6 +254,7 @@ public sealed class ExecutionRunCoordinator(
                     RunId = lease.RunId,
                     MessageId = command.AssistantMessageId,
                     TraceId = command.TraceId,
+                    WorkBudget = managedWorkBudget,
                 },
                 // P0-4f-3: Coordinator 执行路径的领域事件由 Journal（conversation_events）负责持久化与终态权威；
                 // Runtime 只产流，不再写旧流表。SSE 实时传输不受影响。
@@ -387,7 +397,9 @@ public sealed class ExecutionRunCoordinator(
                     ? TurnTerminal.Failure(
                         configurationError.ErrorCode,
                         configurationError.Message)
-                    : TurnTerminal.ProtocolError(ex.Message);
+                    : ex is ManagedWorkBudgetException managedWorkBudgetError
+                        ? TurnTerminal.Failure(managedWorkBudgetError.Code, managedWorkBudgetError.Message)
+                        : TurnTerminal.ProtocolError(ex.Message);
                 var pending = CollectPendingOutput(
                     lease,
                     command?.AssistantMessageId,
@@ -418,6 +430,23 @@ public sealed class ExecutionRunCoordinator(
         {
             progressRegistry?.UnregisterRoot(lease.RunId);
         }
+    }
+
+    /// <summary>
+    /// CORE-I1-05: resolves the managed Work budget carrier for this leased command. Returns null only for an explicit
+    /// unmanaged result; a managed-but-inconsistent command throws a typed <see cref="ManagedWorkBudgetException"/>.
+    /// </summary>
+    private static async Task<RuntimeWorkBudgetBinding?> ResolveManagedWorkBudgetAsync(
+        ExecutionLease lease,
+        ExecutionCommandRecord command,
+        LlmInvocationProfile profile,
+        IManagedWorkBudgetBindingResolver? resolver,
+        CancellationToken ct)
+    {
+        if (resolver is null)
+            return null;
+        var result = await resolver.ResolveAsync(lease, command, profile, ct);
+        return result.Binding?.Runtime;
     }
 
     /// <summary>

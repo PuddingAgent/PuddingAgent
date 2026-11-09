@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "normalization": "utf8-lf",
+  "files": [
+    {
+      "path": "Source/Pudding.Api.Contracts/AgentWork.cs",
+      "sha256": "A4D45C0AFBBBCCC16CAB43CF71DBC453B023494388833E5CB5827399FA05CD89"
+    },
+    {
+      "path": "Source/PuddingAgentWork.Contracts/PuddingAgentWork.Contracts.csproj",
+      "sha256": "6BF8F19D9A77ADE2113D577A7D4589FAAC2032A6700392408CE2547A2A6679E5"
+    },
+    {
+      "path": "Source/PuddingAgentWork.Contracts/WorkPorts.cs",
+      "sha256": "10FFC891B76568618EAF9B1E582798A00A1C4A705B44EC7EF2DF6BC7629BD7B7"
+    },
+    {
+      "path": "Source/PuddingAgentWork/PuddingAgentWork.csproj",
+      "sha256": "651A030722F715EFBFD07ECC32A84FF92B0ECAB98D697C65CCE0A8930AD387F6"
+    },
+    {
+      "path": "Source/PuddingAgentWork/AgentWorkService.cs",
+      "sha256": "897EBCC61D04D073DC56C951043020ED145EEB146331EA80AB227398BB51B332"
+    },
+    {
+      "path": "Source/Pudding.Api.Sdk/AgentWorkClient.cs",
+      "sha256": "E43B392F704EF8EB1AF29E6DA90D7C11B72F2CF60FC9C97B5DF993E022DC8DDE"
+    },
+    {
+      "path": "Source/Pudding.Api.Sdk/HttpAgentWorkApi.cs",
+      "sha256": "28D73E58DDCC02A6B94B39A2A40A20D502E0FDA78E0BEBD87C5DB4C5A918F02B"
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/AgentWork/AgentWorkApiFactory.cs",
+      "sha256": "054CF82D7541883C1E4871F41DFDE6512D2E6CFE8C2FF15FEF868D3E23170CE9"
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/AgentWork/AgentWorkServiceCollectionExtensions.cs",
+      "sha256": "3F8B86FC3A66567B441EF0A2CA04B737573FE26CB52E1974253082232F682D5F"
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/AgentWork/AgentWorkTargetResolver.cs",
+      "sha256": "63F25B6E57D5DE0537BC82B0BC1F8CF21FD3F8359FF96309C2A0EBBA295C13BD"
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/AgentWork/CanonicalAgentWorkBackend.cs",
+      "sha256": "B5B1B514489C045CA8FD29386FA34FAAC5283B87CF5DB0DEEB1A1D1D316CFEFD"
+    },
+    {
+      "path": "Source/PuddingPlatform/Controllers/Api/AgentWorkApiController.cs",
+      "sha256": "ED71CE548B173EE37005913C934CAEBAB46B5DCDD05C59B32A07C0BCD99EAFCF"
+    },
+    {
+      "path": "Source/PuddingAgentWorkTests/WorkServiceTests.cs",
+      "sha256": "F2279AD0545ED421FB3E364E82496312C144D8A5F7C300C05B3C388E2171C26F"
+    },
+    {
+      "path": "Source/Pudding.Api.SdkTests/WorkSdkTests.cs",
+      "sha256": "BF7AB1EDCE2F848AFC82645E451ED2B31F17EE1FE552BA04874EF76AF56274B6"
+    },
+    {
+      "path": "Tests/PuddingAgentWork.IntegrationTests/WorkIntegrationTests.cs",
+      "sha256": "C31DE971EADFDEA51ED0707E2E6FA27C27A62F3E85F0B1C10A8C5388314DB50B"
+    },
+    {
+      "path": "Tests/PuddingHost.Tests/Hosting/AgentWorkCompositionTests.cs",
+      "sha256": "F0E5FB7619630511FBDE9A9732D65382EC342722EEAFE24209812995CB661DD1"
+    }
+  ]
+}

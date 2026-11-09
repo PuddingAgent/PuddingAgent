@@ -136,6 +136,13 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
 
     // Goal 持久控制面（ADR-074；G1 冻结全部 schema，iterations/outbox/verifications/bindings 由后续批次写入）
     public DbSet<GoalRunEntity> GoalRuns => Set<GoalRunEntity>();
+    // PA-01 S5: 持久预算账本（账户 + 预留/尝试/结算回执）
+    public DbSet<ExecutionBudgetAccountEntity> ExecutionBudgetAccounts => Set<ExecutionBudgetAccountEntity>();
+    public DbSet<ExecutionBudgetReservationEntity> ExecutionBudgetReservations => Set<ExecutionBudgetReservationEntity>();
+    // PA-03 S5: 持久验收任务（Job + 提交幂等）
+    // PA-07A S5: 插件后台任务协议（Job + 提交幂等）
+    // PA-07A S5: 订阅 grant/checkpoint 与投递
+    // PA-07A S5: 事务性 outbox 待发布事实（UoW 内提交）
     public DbSet<GoalIterationEntity> GoalIterations => Set<GoalIterationEntity>();
     public DbSet<GoalOutboxEntity> GoalOutbox => Set<GoalOutboxEntity>();
     public DbSet<GoalVerificationEntity> GoalVerifications => Set<GoalVerificationEntity>();

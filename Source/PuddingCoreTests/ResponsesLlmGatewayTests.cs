@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using PuddingCode.Observability;
 using PuddingCode.Platform;
 
 namespace PuddingCoreTests;
@@ -536,6 +537,160 @@ public sealed class ResponsesLlmGatewayTests
     }
 
     [TestMethod]
+    public async Task ChatAsync_FileModeImage_ProviderFileExpired_RebuildIsASecondBudgetAttempt()
+    {
+        var store = new GatewayFileRefStore();
+        var artifact = "data:image/png;base64," + new string('A', 3_000_000);
+        var sha = ComputeHash(artifact);
+        store.Seed(sha, new ProviderFileRefRecord(
+            ProviderId: "deepseek", CredentialEpoch: "default", ArtifactId: "vision-big", ArtifactSha256: sha,
+            RemoteFileId: "file-cached-001", Bytes: 2_250_000, MimeType: "image/png",
+            ExpiresAt: DateTimeOffset.UtcNow.AddHours(1), LastUsedAt: null,
+            Status: ProviderFileRefStatus.Ready, CreatedAt: DateTimeOffset.UtcNow.AddHours(-2),
+            UpdatedAt: DateTimeOffset.UtcNow.AddHours(-2)));
+
+        var sendCount = 0;
+        var gateway = CreateGateway(_ =>
+        {
+            sendCount++;
+            if (sendCount == 1)
+            {
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent(
+                        """{"error":{"message":"File file-cached-001 has expired","type":"invalid_request_error"}}""",
+                        Encoding.UTF8, "application/json"),
+                };
+            }
+            return JsonResponse(
+                """{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":10,"output_tokens":2}}""");
+        });
+        gateway.WorkspaceId = "workspace-1";
+        gateway.VisualArtifactResolver = new OversizeVisualResolver();
+        gateway.VisionPolicy = new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 };
+        gateway.DeepSeekFilesUploader = new RecordingFilesUploader();
+        gateway.FileRefStore = store;
+        gateway.ProviderId = "deepseek";
+        gateway.CredentialEpoch = "default";
+
+        var observer = new RecordingAttemptObserver();
+        using (LlmSendAttemptScope.Push(observer))
+        {
+            var response = await gateway.ChatAsync(
+                [new ChatMessage(ChatRole.User, "describe", VisualArtifactIds: ["vision-big"])], []);
+            Assert.AreEqual("ok", response.Content);
+        }
+
+        Assert.AreEqual(2, sendCount);
+        Assert.AreEqual(2, observer.Begins, "Each real SendAsync must open its own attempt.");
+        Assert.AreNotEqual(observer.AttemptIds[0], observer.AttemptIds[1]);
+        Assert.AreEqual(1, observer.Completions.Count(c => c.Reason is not null && c.Reason.StartsWith("llm.provider_failed")),
+            "The file-expired send is unknown.");
+        Assert.AreEqual(1, observer.Completions.Count(c => c.Usage is not null && c.Reason is null),
+            "The rebuilt send settles its reported usage.");
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_FileModeImage_RebuildRejectedByBudget_SendsOnlyOnce()
+    {
+        var store = new GatewayFileRefStore();
+        var artifact = "data:image/png;base64," + new string('A', 3_000_000);
+        var sha = ComputeHash(artifact);
+        store.Seed(sha, new ProviderFileRefRecord(
+            ProviderId: "deepseek", CredentialEpoch: "default", ArtifactId: "vision-big", ArtifactSha256: sha,
+            RemoteFileId: "file-cached-001", Bytes: 2_250_000, MimeType: "image/png",
+            ExpiresAt: DateTimeOffset.UtcNow.AddHours(1), LastUsedAt: null,
+            Status: ProviderFileRefStatus.Ready, CreatedAt: DateTimeOffset.UtcNow.AddHours(-2),
+            UpdatedAt: DateTimeOffset.UtcNow.AddHours(-2)));
+
+        var sendCount = 0;
+        var gateway = CreateGateway(_ =>
+        {
+            sendCount++;
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"error":{"message":"File file-cached-001 has expired","type":"invalid_request_error"}}""",
+                    Encoding.UTF8, "application/json"),
+            };
+        });
+        gateway.WorkspaceId = "workspace-1";
+        gateway.VisualArtifactResolver = new OversizeVisualResolver();
+        gateway.VisionPolicy = new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 };
+        gateway.DeepSeekFilesUploader = new RecordingFilesUploader();
+        gateway.FileRefStore = store;
+        gateway.ProviderId = "deepseek";
+        gateway.CredentialEpoch = "default";
+
+        var observer = new RecordingAttemptObserver { RejectSecondBegin = true };
+        using (LlmSendAttemptScope.Push(observer))
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(async () => await gateway.ChatAsync(
+                [new ChatMessage(ChatRole.User, "describe", VisualArtifactIds: ["vision-big"])], []));
+        }
+
+        Assert.AreEqual(1, sendCount, "A rejected rebuild attempt must not reach the provider.");
+        Assert.AreEqual(1, observer.Begins);
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_BufferedSendTransportFailure_AttemptIsUnknown()
+    {
+        var gateway = CreateGateway(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ThrowingContent(),
+        });
+        var observer = new RecordingAttemptObserver();
+        using (LlmSendAttemptScope.Push(observer))
+        {
+            await Assert.ThrowsAsync<HttpRequestException>(async () =>
+                await gateway.ChatAsync([new ChatMessage(ChatRole.User, "hi")], []));
+        }
+
+        Assert.AreEqual(1, observer.Begins);
+        Assert.IsTrue(observer.Completions.Any(c => c.Reason is not null),
+            "The failed send must be recorded as unknown: " + string.Join(",", observer.Completions.Select(c => c.Reason)));
+    }
+
+    private sealed class ThrowingContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context)
+            => Task.FromException(new IOException("response body read failed."));
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+    }
+
+    private sealed class RecordingAttemptObserver : ILlmSendAttemptObserver
+    {
+        private int _sequence;
+        public int Begins { get; private set; }
+        public List<string> AttemptIds { get; } = [];
+        public List<(string AttemptId, LlmSendUsage? Usage, string? Reason)> Completions { get; } = [];
+        public bool RejectSecondBegin { get; init; }
+
+        public ValueTask<LlmSendPermit?> BeforeSendAsync(LlmSendAttemptRequest request, CancellationToken ct = default)
+        {
+            var number = Interlocked.Increment(ref _sequence);
+            if (RejectSecondBegin && number == 2)
+                throw new InvalidOperationException("The second attempt was rejected by the budget.");
+            Begins++;
+            var id = "attempt-" + number;
+            AttemptIds.Add(id);
+            return ValueTask.FromResult<LlmSendPermit?>(new LlmSendPermit(id, request.MaxOutputTokens, true));
+        }
+
+        public ValueTask CompleteAsync(LlmSendPermit? permit, LlmSendUsage? usage, string? providerReceipt,
+            string? failureReason, CancellationToken ct = default)
+        {
+            Completions.Add((permit?.AttemptId ?? string.Empty, usage, failureReason));
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    [TestMethod]
     public async Task ChatAsync_FileModeImage_ProviderFileExpired_RebuildFails_ThrowsProviderFileExpired()
     {
         // ADR-077 V3-S2b-2：重建后 provider 仍报错 → 抛 ProviderFileExpired（不盲目重试）。
@@ -701,6 +856,66 @@ data:[DONE]
         Assert.AreEqual(2, sendCount, "首次失败 + 重建后重发 = 恰好两次 provider 调用");
         Assert.AreEqual(1, store.MarkExpiredCount);
         Assert.AreEqual(1, store.SaveCount);
+    }
+
+    [TestMethod]
+    public async Task ChatStreamAsync_FileModeImage_ProviderFileExpired_RebuildIsASecondBudgetAttempt()
+    {
+        var store = new GatewayFileRefStore();
+        var artifact = "data:image/png;base64," + new string('A', 3_000_000);
+        var sha = ComputeHash(artifact);
+        store.Seed(sha, new ProviderFileRefRecord(
+            ProviderId: "deepseek", CredentialEpoch: "default", ArtifactId: "vision-big", ArtifactSha256: sha,
+            RemoteFileId: "file-cached-001", Bytes: 2_250_000, MimeType: "image/png",
+            ExpiresAt: DateTimeOffset.UtcNow.AddHours(1), LastUsedAt: null,
+            Status: ProviderFileRefStatus.Ready, CreatedAt: DateTimeOffset.UtcNow.AddHours(-2),
+            UpdatedAt: DateTimeOffset.UtcNow.AddHours(-2)));
+
+        var sendCount = 0;
+        var gateway = CreateGateway(_ =>
+        {
+            sendCount++;
+            return sendCount == 1
+                ? new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent(
+                        """{"error":{"message":"File file-cached-001 has expired","type":"invalid_request_error"}}""",
+                        Encoding.UTF8, "application/json"),
+                }
+                : SseResponse(
+                    """
+data:{"type":"response.output_text.delta","delta":"ok"}
+
+data:{"type":"response.completed","response":{"status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":3,"output_tokens":1,"total_tokens":4}}}
+
+data:[DONE]
+
+""");
+        });
+        gateway.WorkspaceId = "workspace-1";
+        gateway.VisualArtifactResolver = new OversizeVisualResolver();
+        gateway.VisionPolicy = new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 };
+        gateway.DeepSeekFilesUploader = new RecordingFilesUploader();
+        gateway.FileRefStore = store;
+        gateway.ProviderId = "deepseek";
+        gateway.CredentialEpoch = "default";
+
+        var observer = new RecordingAttemptObserver();
+        using (LlmSendAttemptScope.Push(observer))
+        {
+            await foreach (var _ in gateway.ChatStreamAsync(
+                               [new ChatMessage(ChatRole.User, "describe", VisualArtifactIds: ["vision-big"])], []))
+            {
+            }
+        }
+
+        Assert.AreEqual(2, sendCount, "File expiry + rebuild = two real streaming sends.");
+        Assert.AreEqual(2, observer.Begins, "Each real send must open its own attempt.");
+        Assert.AreNotEqual(observer.AttemptIds[0], observer.AttemptIds[1]);
+        Assert.IsTrue(observer.Completions.Any(c => c.Reason is not null && c.Reason.Contains("file_expired")),
+            "The expired file send is unknown.");
+        Assert.IsTrue(observer.Completions.Any(c => c.Usage is not null && c.Reason is null),
+            "The rebuilt stream settles its reported usage.");
     }
 
     [TestMethod]

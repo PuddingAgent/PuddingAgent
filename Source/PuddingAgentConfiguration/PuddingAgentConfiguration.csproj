@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../PuddingAgentConfiguration.Contracts/PuddingAgentConfiguration.Contracts.csproj" /></ItemGroup>
+  <Target Name="EnforceConfigurationBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingAgentConfiguration.Contracts' And '%(ProjectReference.Filename)' != 'Pudding.Api.Contracts'" Text="Configuration implementation may only reference its ports and their value contracts." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Configuration implementation must use BCL and ports only." />
+    <Error Condition="'%(FrameworkReference.Identity)' != '' And '%(FrameworkReference.Identity)' != 'Microsoft.NETCore.App'" Text="Only the base runtime framework is allowed." />
+  </Target>
+</Project>

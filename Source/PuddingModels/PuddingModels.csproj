@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../PuddingModels.Contracts/PuddingModels.Contracts.csproj" />
+    <ProjectReference Include="../Pudding.Api.Contracts/Pudding.Api.Contracts.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceModelsBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingModels.Contracts' And '%(ProjectReference.Filename)' != 'Pudding.Api.Contracts'" Text="Models may only reference its ports and the public API contracts." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Models must not add package references." />
+  </Target>
+</Project>

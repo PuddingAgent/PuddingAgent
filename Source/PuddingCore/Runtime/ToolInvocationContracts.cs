@@ -24,6 +24,9 @@ public sealed record ToolInvocationRequest
     /// 派生执行只能继承或缩小，不得重新使用原始满额预算。
     /// </summary>
     public ExecutionUsageBudget? UsageBudget { get; init; }
+    /// <summary>Host-only shared parent resource account. Never serialized or supplied by tool arguments.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public PuddingExecutionResources.Contracts.IExecutionResourceScope? ExecutionResources { get; init; }
     /// <summary>父 Runtime Run 的绝对截止时间；工具及其派生执行只能缩短。</summary>
     public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
     public int? DelegationDepth { get; init; }

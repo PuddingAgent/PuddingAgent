@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../PuddingAgents.Contracts/PuddingAgents.Contracts.csproj" />
+    <ProjectReference Include="../Pudding.Api.Contracts/Pudding.Api.Contracts.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceAgentsBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingAgents.Contracts' And '%(ProjectReference.Filename)' != 'Pudding.Api.Contracts'" Text="Agents may only reference its ports and the public API contracts." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Agents must not add package references." />
+  </Target>
+</Project>

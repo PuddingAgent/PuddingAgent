@@ -60,6 +60,19 @@ internal sealed class AgentExecutionLlmInvoker
         // at the actual buffered call boundary, including compaction calls.
         // A missing snapshot remains fail-closed; never infer capabilities here.
         using var visionScope = _frozenVisionContext?.Push(request.CallerLlmSnapshot);
+        // Managed Work executions carry a host-bound budget carrier and must go through the invocation facade.
+        if (WorkBudgetAttempt.HasManagedBinding(request.ExecutionIdentity) && _llmInvocationService is null)
+        {
+            return AgentExecutionLlmInvocationResult.CreateFatal(
+                "budget.dispatch_invalid: a managed work execution requires the LLM invocation facade; " +
+                "refusing a direct provider call.");
+        }
+        var budgetAttempt = WorkBudgetAttempt.Create(request.ExecutionIdentity);
+        if (budgetAttempt is not null)
+        {
+            WorkBudgetAttempt.EnsureIdentityMatches(request.ExecutionIdentity, request.WorkspaceId,
+                agentInstanceId, request.SessionId);
+        }
         LlmResponse llmResp;
 
         try
@@ -83,6 +96,7 @@ internal sealed class AgentExecutionLlmInvoker
                     Tools = llmTools,
                     PrefixSnapshot = prefixSnapshot,
                     ConfigOverride = effectiveLlmConfig,
+                    BudgetAttempt = budgetAttempt,
                 }, ct);
 
                 if (!facadeResult.Success)

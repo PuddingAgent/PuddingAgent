@@ -1,5 +1,43 @@
 <Solution>
+  <Folder Name="/Samples/">
+    <Project Path="Samples/AgentDirectoryClient/AgentDirectoryClient.csproj" />
+    <Project Path="Samples/AgentModelPolicyClient/AgentModelPolicyClient.csproj" />
+    <Project Path="Samples/AgentWorkClient/AgentWorkClient.csproj" />
+    <Project Path="Samples/CapabilityCatalogClient/CapabilityCatalogClient.csproj" />
+    <Project Path="Samples/ExecutionBudgetClient/ExecutionBudgetClient.csproj" />
+    <Project Path="Samples/GoalDecisionPresenter/GoalDecisionPresenter.csproj" />
+    <Project Path="Samples/ModelEvaluationClient/ModelEvaluationClient.csproj" />
+    <Project Path="Samples/Plugins/ReviewAudit/ReviewAudit.csproj" />
+  </Folder>
   <Folder Name="/Source/">
+    <Project Path="Source/Pudding.Api.Contracts/Pudding.Api.Contracts.csproj" />
+    <Project Path="Source/Pudding.Api.Sdk/Pudding.Api.Sdk.csproj" />
+    <Project Path="Source/Pudding.Api.SdkTests/Pudding.Api.SdkTests.csproj" />
+    <Project Path="Source/PuddingAgentConfiguration.Contracts/PuddingAgentConfiguration.Contracts.csproj" />
+    <Project Path="Source/PuddingAgentConfiguration/PuddingAgentConfiguration.csproj" />
+    <Project Path="Source/PuddingAgentConfigurationTests/PuddingAgentConfigurationTests.csproj" />
+    <Project Path="Source/PuddingAgentDelegation/PuddingAgentDelegation.csproj" />
+    <Project Path="Source/PuddingAgentDelegationTests/PuddingAgentDelegationTests.csproj" />
+    <Project Path="Source/PuddingAgentWork.Contracts/PuddingAgentWork.Contracts.csproj" />
+    <Project Path="Source/PuddingAgentWork/PuddingAgentWork.csproj" />
+    <Project Path="Source/PuddingAgentWorkTests/PuddingAgentWorkTests.csproj" />
+    <Project Path="Source/PuddingOperatorAccess.Contracts/PuddingOperatorAccess.Contracts.csproj" />
+    <Project Path="Source/PuddingOperatorAccess/PuddingOperatorAccess.csproj" />
+    <Project Path="Source/PuddingOperatorAccessTests/PuddingOperatorAccessTests.csproj" />
+    <Project Path="Source/PuddingExecutionResources.Contracts/PuddingExecutionResources.Contracts.csproj" />
+    <Project Path="Source/PuddingExecutionResources/PuddingExecutionResources.csproj" />
+    <Project Path="Source/PuddingExecutionResourcesTests/PuddingExecutionResourcesTests.csproj" />
+    <Project Path="Source/PuddingModelEvaluation/PuddingModelEvaluation.csproj" />
+    <Project Path="Source/PuddingModelEvaluationTests/PuddingModelEvaluationTests.csproj" />
+    <Project Path="Source/Pudding.ToolPlugins.Contracts/Pudding.ToolPlugins.Contracts.csproj" />
+    <Project Path="Source/Pudding.ToolPlugins.Sdk/Pudding.ToolPlugins.Sdk.csproj" />
+    <Project Path="Source/Pudding.ToolPlugins.AgentSdk/Pudding.ToolPlugins.AgentSdk.csproj" />
+    <Project Path="Source/Pudding.ToolPlugins.AgentSdkTests/Pudding.ToolPlugins.AgentSdkTests.csproj" />
+    <Project Path="Source/Pudding.ToolPlugins.Protocol/Pudding.ToolPlugins.Protocol.csproj" />
+    <Project Path="Source/Pudding.ToolPlugins.Runtime/Pudding.ToolPlugins.Runtime.csproj" />
+    <Project Path="Source/Pudding.ToolPlugins.Windows/Pudding.ToolPlugins.Windows.csproj" />
+    <Project Path="Source/Pudding.ToolPlugins.Worker/Pudding.ToolPlugins.Worker.csproj" />
+    <Project Path="Source/Pudding.ToolPlugins.RuntimeTests/Pudding.ToolPlugins.RuntimeTests.csproj" />
     <Project Path="Source/HarnessAgent.Core/HarnessAgent.Core.csproj" />
     <Project Path="Source/PuddingAgent/PuddingAgent.csproj" Id="e8e75785-2a1b-4438-bca5-575658188476" />
     <Project Path="Source/PuddingBrowser.Abstractions/PuddingBrowser.Abstractions.csproj" />
@@ -61,11 +99,29 @@
     <Project Path="Source/Pudding.Rpc.IpcProbe/Pudding.Rpc.IpcProbe.csproj" />
     <Project Path="Source/PuddingRetrievalTests/PuddingRetrievalTests.csproj" />
     <Project Path="Source/PuddingRuntime/PuddingRuntime.csproj" Id="bf7b7efd-1c2a-4e06-9efa-f0e4af746f49" />
+    <Project Path="Source/PuddingSlack/PuddingSlack.csproj" />
+    <Project Path="Source/PuddingSlackTests/PuddingSlackTests.csproj" />
     <Project Path="Source/PuddingTaskRecall.Cli/PuddingTaskRecall.Cli.csproj" />
     <Project Path="Source/PuddingVectorIndex/PuddingVectorIndex.csproj" />
     <Project Path="external/github.hyfree.GM/github.hyfree.GM/github.hyfree.GM.csproj" Id="2b2be7d9-5aae-437b-89f0-67b77d7f8e80" />
   </Folder>
   <Folder Name="/Tests/">
+    <Project Path="Tests/AgentDirectoryClient.Tests/AgentDirectoryClient.Tests.csproj" />
+    <Project Path="Tests/AgentModelPolicyClient.Tests/AgentModelPolicyClient.Tests.csproj" />
+    <Project Path="Tests/AgentWorkClient.Tests/AgentWorkClient.Tests.csproj" />
+    <Project Path="Tests/CapabilityCatalogClient.Tests/CapabilityCatalogClient.Tests.csproj" />
+    <Project Path="Tests/ExecutionBudgetClient.Tests/ExecutionBudgetClient.Tests.csproj" />
+    <Project Path="Tests/GoalDecisionPresenter.Tests/GoalDecisionPresenter.Tests.csproj" />
+    <Project Path="Tests/ModelEvaluationClient.Tests/ModelEvaluationClient.Tests.csproj" />
+    <Project Path="Tests/ReviewAuditPlugin.Tests/ReviewAuditPlugin.Tests.csproj" />
+    <Project Path="Tests/PuddingAgentConfiguration.IntegrationTests/PuddingAgentConfiguration.IntegrationTests.csproj" />
+    <Project Path="Tests/PuddingAgentWork.IntegrationTests/PuddingAgentWork.IntegrationTests.csproj" />
+    <Project Path="Tests/PuddingToolPlugins.Fixture/PuddingToolPlugins.Fixture.csproj" />
+    <Project Path="Tests/PuddingToolPlugins.IntegrationTests/PuddingToolPlugins.IntegrationTests.csproj" />
+    <Project Path="Tests/PuddingPluginAgentApi.IntegrationTests/PuddingPluginAgentApi.IntegrationTests.csproj" />
+    <Project Path="Tests/PuddingOperatorApi.IntegrationTests/PuddingOperatorApi.IntegrationTests.csproj" />
+    <Project Path="Tests/PuddingModelEvaluation.IntegrationTests/PuddingModelEvaluation.IntegrationTests.csproj" />
+    <Project Path="Tests/PuddingToolPlugins.HostTests/PuddingToolPlugins.HostTests.csproj" />
     <Project Path="Tests/HarnessAgent.Core.Tests/HarnessAgent.Core.Tests.csproj" />
     <Project Path="Tests/PuddingAgent.IntegrationTests/PuddingAgent.IntegrationTests.csproj" />
     <Project Path="Tests/PuddingBrowser.AgentTools.Tests/PuddingBrowser.AgentTools.Tests.csproj" />

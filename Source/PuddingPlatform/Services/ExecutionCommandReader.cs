@@ -67,6 +67,7 @@ public sealed class ExecutionCommandReader(
             ChannelId = entity.ChannelId,
             Status = ParseStatus(entity.Status),
             RunId = entity.RunId,
+            ClientRequestId = entity.ClientRequestId,
         };
 
         var iteration = await db.GoalIterations.AsNoTracking()

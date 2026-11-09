@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Sockets;
@@ -18,7 +18,7 @@ namespace PuddingRuntime.Services;
 /// Runtime 直接调用 LLM API（OpenAI 兼容），不经过 Controller 中转。
 /// 同步与流式路径根据选中模型的 protocol 委托给对应网关，避免 Runtime 内部维护重复协议实现。
 /// </summary>
-public sealed class DirectLlmClient : IRuntimeLlmClient
+public sealed class DirectLlmClient : IRuntimeLlmClient, IBufferedSendAttemptBudgetClient, IStreamingSendAttemptBudgetClient
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILlmConfigService _llmConfigService;
@@ -37,6 +37,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     private readonly IFileRefStore? _fileRefStore;
     private readonly LlmInvocationPurposeAccessor? _purposeAccessor;
     private readonly FrozenVisionContextAccessor? _frozenVisionContext;
+    private readonly IModelAttemptConcurrencyPort? _concurrencyPort;
 
     public DirectLlmClient(
     IHttpClientFactory httpClientFactory,
@@ -54,7 +55,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     ICompositionVersionRegistry? compositionVersions = null,
     IFileRefStore? fileRefStore = null,
     LlmInvocationPurposeAccessor? purposeAccessor = null,
-    FrozenVisionContextAccessor? frozenVisionContext = null)
+    FrozenVisionContextAccessor? frozenVisionContext = null,
+    IModelAttemptConcurrencyPort? concurrencyPort = null)
     {
         _httpClientFactory = httpClientFactory;
         _llmConfigService = llmConfigService;
@@ -75,6 +77,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         _purposeAccessor = purposeAccessor;
         // V5：冻结视觉上下文（由 Agent 执行入口 push）；null 时能力判定 fail closed。
         _frozenVisionContext = frozenVisionContext;
+        // CORE-I1-06：受管发送的真实并发槽端口；null 时保留既有 rate limiter 语义。
+        _concurrencyPort = concurrencyPort;
     }
 
     public async Task<LlmResponse> ChatAsync(
@@ -196,10 +200,51 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             try
             {
                 // ── 并发限流（按模型粒度，同一 Provider 不同模型独立限流）──
-                var result = _rateLimiter is not null
-                    ? await _rateLimiter.ExecuteAsync(config.ProviderId, config.Model,
-                        () => gateway.ChatAsync(messages, toolSpecs, effectiveCt), effectiveCt)
-                    : await gateway.ChatAsync(messages, toolSpecs, effectiveCt);
+                // CORE-I1-06：每个真实发送前开启一个预算 attempt；重试/重建发送各自成为独立 attempt。
+                async Task<LlmResponse> SendWithBudgetAsync()
+                {
+                    var permit = await LlmSendAttemptScope.BeforeSendAsync(
+                        new LlmSendAttemptRequest(config.Model, "", "", "", 0, config.MaxOutputTokens ?? 0,
+                            DateTimeOffset.UtcNow), effectiveCt).ConfigureAwait(false);
+                    try
+                    {
+                        var response = await gateway.ChatAsync(messages, toolSpecs, effectiveCt).ConfigureAwait(false);
+                        await LlmSendAttemptScope.CompleteAsync(permit,
+                            response.Usage is { } usage
+                                ? new LlmSendUsage(usage.PromptTokens, usage.CompletionTokens,
+                                    usage.PromptCacheHitTokens)
+                                : null,
+                            $"{config.ProviderId}:{config.Model}", failureReason: null, CancellationToken.None)
+                            .ConfigureAwait(false);
+                        return response;
+                    }
+                    catch (Exception ex)
+                    {
+                        await LlmSendAttemptScope.CompleteAsync(permit, null, null,
+                            "llm.provider_failed:" + ex.GetType().Name, CancellationToken.None).ConfigureAwait(false);
+                        throw;
+                    }
+                }
+
+                // CORE-I1-06：受管发送使用真实并发槽（acquire→send→release）；无槽端口时保留 rate limiter 语义。
+                async Task<LlmResponse> DispatchAsync(Func<Task<LlmResponse>> send)
+                {
+                    if (_concurrencyPort is not null)
+                    {
+                        await using var slot = await _concurrencyPort.AcquireAsync(config.Model, effectiveCt)
+                            .ConfigureAwait(false);
+                        return await send().ConfigureAwait(false);
+                    }
+                    return _rateLimiter is not null
+                        ? await _rateLimiter.ExecuteAsync(config.ProviderId, config.Model, send, effectiveCt)
+                        : await send();
+                }
+
+                // A gateway that owns multiple real sends (Responses file rebuild) opens one attempt per send itself;
+                // wrapping its whole call would double count the first send.
+                var result = gateway is IPerSendBudgetGateway
+                    ? await DispatchAsync(() => gateway.ChatAsync(messages, toolSpecs, effectiveCt))
+                    : await DispatchAsync(SendWithBudgetAsync);
                 sw.Stop();
 
                 // 成功 → 重置熔断
@@ -522,8 +567,13 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 diagnosticScope.Attempt = retryAttempt + 1;
                 diagnosticScope.MaxRetries = maxRetries;
 
-                enumerator = gateway.ChatStreamAsync(messages, toolSpecs, watchdogLinkedCts.Token)
-                    .GetAsyncEnumerator(watchdogLinkedCts.Token);
+                var streamSource = gateway.ChatStreamAsync(messages, toolSpecs, watchdogLinkedCts.Token);
+                // A gateway that hides multiple sends inside one stream (Responses file rebuild) owns its attempts.
+                enumerator = gateway is IPerSendBudgetGateway
+                    ? WithConcurrencySlotAsync(streamSource, config, watchdogLinkedCts.Token)
+                        .GetAsyncEnumerator(watchdogLinkedCts.Token)
+                    : WithSendAttemptAsync(streamSource, config, watchdogLinkedCts.Token)
+                        .GetAsyncEnumerator(watchdogLinkedCts.Token);
                 Exception? retryException = null;
 
                 while (true)
@@ -869,6 +919,95 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             return config;
 
         return config with { ApiKey = apiKey };
+    }
+
+    /// <summary>
+    /// CORE-I1-06: binds one budget attempt to exactly one real stream send. The attempt opens before the gateway creates
+    /// the provider stream, settles on normal completion with the last reported usage, and becomes Unknown when the stream
+    /// fails or the consumer abandons it.
+    /// </summary>
+    /// <summary>
+    /// A gateway that owns its own per-send attempts (Responses file rebuild) still needs the transport-held concurrency
+    /// lease: generation revocation and the host's real slot must not be bypassed on the streaming path.
+    /// </summary>
+    private async IAsyncEnumerable<StreamDelta> WithConcurrencySlotAsync(IAsyncEnumerable<StreamDelta> source,
+        ResolvedGatewayConfig config, [EnumeratorCancellation] CancellationToken ct)
+    {
+        if (_concurrencyPort is null)
+        {
+            await foreach (var delta in source.WithCancellation(ct).ConfigureAwait(false))
+                yield return delta;
+            yield break;
+        }
+        await using var slot = await _concurrencyPort.AcquireAsync(config.Model, ct).ConfigureAwait(false);
+        await foreach (var delta in source.WithCancellation(ct).ConfigureAwait(false))
+            yield return delta;
+    }
+
+    private async IAsyncEnumerable<StreamDelta> WithSendAttemptAsync(
+        IAsyncEnumerable<StreamDelta> source, ResolvedGatewayConfig config,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        // One attempt = one held concurrency slot; the slot is released only after the attempt has really finished.
+        var slot = _concurrencyPort is null
+            ? null
+            : await _concurrencyPort.AcquireAsync(config.Model, ct).ConfigureAwait(false);
+        try
+        {
+        var observer = LlmSendAttemptScope.Current;
+        var permit = observer is null
+            ? null
+            : await observer.BeforeSendAsync(
+                new LlmSendAttemptRequest(config.Model, "", "", "", 0, config.MaxOutputTokens ?? 0,
+                    DateTimeOffset.UtcNow), CancellationToken.None).ConfigureAwait(false);
+        TokenUsageDto? usage = null;
+        var completedNormally = false;
+        string? failureReason = null;
+        await using var enumerator = source.GetAsyncEnumerator();
+        try
+        {
+            while (true)
+            {
+                bool moved;
+                try
+                {
+                    moved = await enumerator.MoveNextAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    failureReason = "llm.provider_failed:" + ex.GetType().Name;
+                    throw;
+                }
+                if (!moved)
+                    break;
+                var delta = enumerator.Current;
+                if (delta.Usage is { } reported)
+                    usage = reported;
+                yield return delta;
+            }
+            completedNormally = true;
+        }
+        finally
+        {
+            var sendUsage = usage is null
+                ? null
+                : new LlmSendUsage(usage.PromptTokens, usage.CompletionTokens, usage.PromptCacheHitTokens);
+            // A consumer may stop right after the terminal delta reported usage; that is still one settled send.
+            var reason = failureReason;
+            if (reason is null && sendUsage is null)
+                reason = completedNormally ? "llm.usage_unknown" : "llm.stream_abandoned";
+            if (observer is not null)
+            {
+                await observer.CompleteAsync(permit, reason is null ? sendUsage : null,
+                    $"{config.ProviderId}:{config.Model}", reason, CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+        }
+        finally
+        {
+            if (slot is not null)
+                await slot.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private async Task<ResolvedGatewayConfig> ResolveGatewayConfigAsync(

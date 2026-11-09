@@ -32,6 +32,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+    <ProjectReference Include="..\PuddingAgentConfiguration\PuddingAgentConfiguration.csproj" />
+    <ProjectReference Include="..\PuddingAgentWork\PuddingAgentWork.csproj" />
+    <ProjectReference Include="..\PuddingAgents.Contracts\PuddingAgents.Contracts.csproj" />
+    <ProjectReference Include="..\PuddingAgents\PuddingAgents.csproj" />
+    <ProjectReference Include="..\PuddingModels.Contracts\PuddingModels.Contracts.csproj" />
+    <ProjectReference Include="..\PuddingModels\PuddingModels.csproj" />
+    <ProjectReference Include="..\PuddingGoalPolicy.Contracts\PuddingGoalPolicy.Contracts.csproj" />
+    <ProjectReference Include="..\PuddingExecutionResources.Contracts\PuddingExecutionResources.Contracts.csproj" />
+    <ProjectReference Include="..\PuddingExecutionResources\PuddingExecutionResources.csproj" />
     <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
     <ProjectReference Include="..\PuddingFullTextIndex\PuddingFullTextIndex.csproj" />
     <!-- 会话首屏读模型纯组件（S1–S4 已通过；阶段 C2 接入，读模型归约/预算/游标合同） -->

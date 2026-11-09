@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../Pudding.Api.Contracts/Pudding.Api.Contracts.csproj" /></ItemGroup>
+  <Target Name="EnforceSdkBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'Pudding.Api.Contracts'" Text="SDK may only reference public contracts." />
+    <Error Condition="'@(PackageReference)' != ''" Text="SDK must not depend on a host or a storage implementation." />
+    <Error Condition="'%(FrameworkReference.Identity)' != '' And '%(FrameworkReference.Identity)' != 'Microsoft.NETCore.App'" Text="Only the base runtime framework is allowed." />
+  </Target>
+</Project>

@@ -211,6 +211,8 @@ public sealed partial class AgentExecutionService
         var toolBuildStartedAt = DateTimeOffset.UtcNow;
         var toolBuildSw = System.Diagnostics.Stopwatch.StartNew();
         var loadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
+        var toolCatalogRevision = _toolSchemaService?.CatalogRevision ?? 0;
+        var catalogRequest = request with { AgentInstanceId = instance.AgentInstanceId };
         HashSet<string> availableToolNames;
         IReadOnlyList<LlmToolDefinition> allLlmTools;
         List<LlmToolDefinition> llmTools;
@@ -219,7 +221,7 @@ public sealed partial class AgentExecutionService
         HashSet<string> exposedToolIds;
         try
         {
-            frozenTools = BuildFrozenToolManifest(effectiveCapability, template, request, loadedToolIds);
+            frozenTools = BuildFrozenToolManifest(effectiveCapability, template, catalogRequest, loadedToolIds);
             availableToolNames = frozenTools.RuntimeTools
                 .Select(t => t.Name)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -625,7 +627,9 @@ public sealed partial class AgentExecutionService
             var maxRounds = ResolveMaxRounds(request.MaxRounds, _guardrails);
             var reply = "(no response)";
             TokenUsageDto? usage = null;
-            var usageBudgetTracker = new ExecutionUsageBudgetTracker(request.UsageBudget);
+            using var usageBudgetTracker = new ExecutionUsageBudgetTracker(request.UsageBudget,
+                new(request.WorkspaceId!, instance.AgentInstanceId, request.SessionId, request.ExecutionIdentity?.RunId ?? Guid.NewGuid().ToString("N")),
+                request.ExecutionDeadlineUtc, ct);
             PromptPrefixSnapshot? lastPrefixSnapshot = null;
             var hasExecutedAnyTool = false;
             var lastToolResult = "(未执行任何工具)";
@@ -752,6 +756,11 @@ public sealed partial class AgentExecutionService
                 }
 
                 streamRoundsStarted = round + 1;
+                toolSpecChangedForNextRound |= RefreshDynamicToolCatalog(effectiveCapability, template, catalogRequest,
+                    loadedToolIds, ref toolCatalogRevision, ref frozenTools, llmTools);
+                allLlmTools = frozenTools.AllLlmTools;
+                availableToolNames = frozenTools.RuntimeTools.Select(tool => tool.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                exposedToolIds = llmTools.Select(tool => tool.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
                 // 发送 context 帧（仅第1轮）
                 if (round == 0)
@@ -1031,6 +1040,14 @@ public sealed partial class AgentExecutionService
                 lastPrefixSnapshot = prefixSnapshot;
                 IAsyncEnumerator<StreamDelta> llmEnumerator;
                 ReportLiveness(request, "llm.started");
+                // Managed Work executions carry a host-bound budget carrier and must go through the invocation facade.
+                var budgetAttempt = WorkBudgetAttempt.Create(request.ExecutionIdentity);
+                WorkBudgetAttempt.RequireInvocationFacade(request.ExecutionIdentity, _llmInvocationService);
+                if (budgetAttempt is not null)
+                {
+                    WorkBudgetAttempt.EnsureIdentityMatches(request.ExecutionIdentity, request.WorkspaceId,
+                        instance.AgentInstanceId, request.SessionId);
+                }
                 if (_llmInvocationService is not null)
                 {
                     llmEnumerator = _llmInvocationService.InvokeStreamAsync(new PuddingCode.Runtime.LlmInvocationRequest
@@ -1047,6 +1064,7 @@ public sealed partial class AgentExecutionService
                         Tools = llmTools,
                         PrefixSnapshot = prefixSnapshot,
                         ConfigOverride = effectiveLlmConfig,
+                        BudgetAttempt = budgetAttempt,
                     }, ct).GetAsyncEnumerator(ct);
                 }
                 else
@@ -1645,6 +1663,7 @@ public sealed partial class AgentExecutionService
                             AllowSubDelegation = request.AllowSubDelegation,
                             RoleInPlan = request.RoleInPlan,
                             UsageBudget = usageBudgetTracker.CreateRemainingBudget(),
+                            ExecutionResources = usageBudgetTracker.Resources,
                             ActiveTask = request.ActiveTask,
                             CallerLlmSnapshot = request.CallerLlmSnapshot,
                         }, ct);
@@ -2032,9 +2051,9 @@ public sealed partial class AgentExecutionService
                 });
             }
 
-            var finalUsage = usage is not null
-                ? usage
-                : new TokenUsageDto { ContextWindowTokens = effectiveLlmConfig?.MaxContextTokens ?? 0 };
+            var finalUsage = usageBudgetTracker.CreateUsageSnapshot() ?? usage
+                ?? new TokenUsageDto { ContextWindowTokens = effectiveLlmConfig?.MaxContextTokens ?? 0 };
+            finalUsage = finalUsage with { ContextWindowTokens = usage?.ContextWindowTokens ?? effectiveLlmConfig?.MaxContextTokens };
             // 如果 LLM 未产生有效回复，但工具已执行，用最后工具结果作为回复
             if (reply == "(no response)" && hasExecutedAnyTool)
             {
