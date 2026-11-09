@@ -159,6 +159,15 @@ public sealed class ConnectorHost
     }
 
     /// <summary>获取所有连接器诊断信息。</summary>
+    public async Task<ConnectorDiagnostics?> GetConnectorDiagnosticsAsync(string connectorId, CancellationToken ct = default)
+    {
+        if (!_connectors.TryGetValue(connectorId, out var entry)) return null;
+        if (entry.Status != ConnectorStatus.Running)
+            return new ConnectorDiagnostics { Status = entry.Status.ToString().ToLowerInvariant(), LastError = entry.FaultReason };
+        return await entry.Connector.GetDiagnosticsAsync(ct);
+    }
+
+    /// <summary>获取所有已运行连接器诊断信息。</summary>
     public async Task<IReadOnlyList<ConnectorDiagnostics>> GetDiagnosticsAsync(CancellationToken ct = default)
     {
         var results = new List<ConnectorDiagnostics>();

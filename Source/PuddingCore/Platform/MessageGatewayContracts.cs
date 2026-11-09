@@ -2,7 +2,7 @@
 
 /// <summary>
 /// Connector 入站进入 Pudding canonical Conversation 的唯一网关入口。
-/// V1 仅飞书使用此入口，但契约不依赖飞书 SDK。
+/// 飞书和 Slack 共用此入口；契约不依赖渠道 SDK。
 /// </summary>
 public interface IMessageGatewayIngress
 {

@@ -12,7 +12,7 @@ using PuddingPlatform.Services;
 namespace PuddingAgent.Services;
 
 /// <summary>
-/// V1 Connector ingress: validates the channel-owned Feishu binding and the
+/// Connector ingress: validates the channel-owned binding and the
 /// Agent channel reference, then durably submits one Message Fabric delivery.
 /// The Agent dispatcher then accepts that delivery through ADR-059.
 /// </summary>
@@ -40,7 +40,9 @@ public sealed class MessageGatewayIngress(
                 $"Bound channel '{envelope.ChannelId}' does not exist.");
         ValidateBinding(envelope, manifest, channel);
 
-        var conversationId = await EnsureMainConversationAsync(manifest, ct);
+        var conversationId = envelope.ChannelType == ChannelProviderKinds.Slack
+            ? await EnsureSlackConversationAsync(manifest, envelope, ct)
+            : await EnsureMainConversationAsync(manifest, ct);
         var externalMessageId = envelope.ExternalMessageId ?? envelope.EnvelopeId;
         var messageId = StableId(
             "gateway-message",
@@ -157,7 +159,7 @@ public sealed class MessageGatewayIngress(
         var parsed = SystemCommandParser.TryParse(commandText, out var command);
         var requiresPrivilege = parsed
                                 && SystemCommandParser.RequiresPrivilege(command);
-        var isPrivilegedUser = IsPrivilegedFeishuUser(
+        var isPrivilegedUser = envelope.ChannelType == ChannelProviderKinds.Feishu && IsPrivilegedFeishuUser(
             channel.Feishu,
             envelope.UserExternalId);
         var responseMessageId = StableId(
@@ -386,6 +388,34 @@ public sealed class MessageGatewayIngress(
         }
     }
 
+    private async Task<string> EnsureSlackConversationAsync(AgentInstanceManifest manifest, PuddingIngressEnvelope envelope, CancellationToken ct)
+    {
+        var route = envelope.Metadata[SlackChannelMetadata.ConversationKey];
+        var sessionId = StableId("slack-session", manifest.WorkspaceId, manifest.AgentInstanceId, envelope.ConnectorId!, route);
+        var gate = _sessionLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            var existing = await sessions.GetAsync(sessionId, ct);
+            if (existing is not null)
+            {
+                if (existing.WorkspaceId != manifest.WorkspaceId || existing.AgentInstanceId != manifest.AgentInstanceId || existing.ChannelId != envelope.ChannelId)
+                    throw new InvalidOperationException("Slack conversation identity conflict.");
+                return sessionId;
+            }
+            await sessions.CreateAsync(new SessionRecord
+            {
+                SessionId = sessionId, WorkspaceId = manifest.WorkspaceId, AgentTemplateId = manifest.TemplateId,
+                AgentInstanceId = manifest.AgentInstanceId, ChannelId = envelope.ChannelId, OwnerUserId = envelope.UserExternalId,
+                SessionType = SessionType.ServiceSession, SessionRole = SessionRole.Branch, PrincipalKind = "channel",
+                PrincipalId = route, Status = SessionStatus.Active,
+                Title = $"Slack {(envelope.Metadata[SlackChannelMetadata.IsDirectMessage] == "true" ? "私聊" : "频道线程")} · {envelope.MessageText.Replace('\r', ' ').Replace('\n', ' ')[..Math.Min(50, envelope.MessageText.Length)]}"
+            }, ct);
+            return sessionId;
+        }
+        finally { gate.Release(); }
+    }
+
     private static bool IsPrivilegedFeishuUser(
         FeishuChannelSettings? binding,
         string externalUserId)
@@ -408,9 +438,9 @@ public sealed class MessageGatewayIngress(
         ArgumentException.ThrowIfNullOrWhiteSpace(envelope.MessageText);
         ArgumentException.ThrowIfNullOrWhiteSpace(envelope.ExternalConversationId);
 
-        if (!string.Equals(envelope.ChannelType, "feishu", StringComparison.OrdinalIgnoreCase))
+        if (envelope.ChannelType is not (ChannelProviderKinds.Feishu or ChannelProviderKinds.Slack))
             throw new NotSupportedException(
-                $"V1 Message Gateway only accepts Feishu chat ingress, not '{envelope.ChannelType}'.");
+                $"Message Gateway does not accept '{envelope.ChannelType}'.");
     }
 
     private static void ValidateBinding(
@@ -421,8 +451,27 @@ public sealed class MessageGatewayIngress(
         if (!manifest.IsEnabled || manifest.IsFrozen)
             throw new InvalidOperationException(
                 $"Bound Agent '{manifest.AgentInstanceId}' is disabled or frozen.");
-        if (!channel.IsEnabled
-            || channel.Feishu is not { } settings
+        if (!channel.IsEnabled) throw new InvalidOperationException("Channel is disabled.");
+        if (envelope.ChannelType == ChannelProviderKinds.Slack)
+        {
+            var slack = channel.Slack ?? throw new InvalidOperationException("Slack channel settings missing.");
+            var user = envelope.Metadata.GetValueOrDefault(SlackChannelMetadata.UserId);
+            var team = envelope.Metadata.GetValueOrDefault(SlackChannelMetadata.TeamId);
+            var direct = envelope.Metadata.GetValueOrDefault(SlackChannelMetadata.IsDirectMessage) == "true";
+            var thread = envelope.Metadata.GetValueOrDefault(SlackChannelMetadata.ThreadTs);
+            var bot = envelope.Metadata.GetValueOrDefault(SlackChannelMetadata.IsBot) == "true"
+                || (user is not null && slack.AllowedBotUserIds.Contains(user, StringComparer.Ordinal));
+            var expectedRoute = $"{team}/{envelope.ExternalConversationId}/{(direct ? "dm" : thread)}";
+            if (team != slack.TeamId || user is null
+                || (bot ? direct || !slack.AllowedBotUserIds.Contains(user, StringComparer.Ordinal) : !slack.AllowedUserIds.Contains(user, StringComparer.Ordinal))
+                || envelope.UserExternalId != SlackChannelMetadata.Principal(team, user)
+                || (!direct && !slack.AllowedChannelIds.Contains(envelope.ExternalConversationId!, StringComparer.Ordinal))
+                || (direct && !envelope.ExternalConversationId!.StartsWith("D", StringComparison.Ordinal))
+                || (!direct && string.IsNullOrWhiteSpace(thread))
+                || envelope.Metadata.GetValueOrDefault(SlackChannelMetadata.ConversationKey) != expectedRoute)
+                throw new InvalidOperationException("Slack ingress admission or routing mismatch.");
+        }
+        else if (channel.Feishu is not { } settings
             || string.IsNullOrWhiteSpace(settings.AppId)
             || string.IsNullOrWhiteSpace(settings.AppSecret))
         {
@@ -453,15 +502,16 @@ public sealed class MessageGatewayIngress(
                 "Connector channel does not match the Agent channel reference.");
         }
 
-        var expectedConnectorId = FeishuConnectorIdentity.ForChannel(
-            channel.ChannelId);
+        var expectedConnectorId = envelope.ChannelType == ChannelProviderKinds.Slack
+            ? SlackChannelMetadata.ConnectorId(channel.ChannelId)
+            : FeishuConnectorIdentity.ForChannel(channel.ChannelId);
         if (!string.Equals(
                 expectedConnectorId,
                 envelope.ConnectorId,
                 StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                "Connector identity does not match the channel-owned Feishu binding.");
+                "Connector identity does not match the channel-owned binding.");
         }
     }
 

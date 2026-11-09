@@ -82,6 +82,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<FeishuTtsDeliveryService>();
         builder.Services.AddSingleton<FeishuImageUploadPreparationService>();
         builder.Services.AddSingleton<FeishuConnectorFactory>();
+        builder.Services.AddSingleton<SlackConnectorFactory>();
 
         // ── 网关鉴权（SM2 + 白名单）────────────────────────
         builder.Services.AddSingleton<GatewayAuthService>();
@@ -95,7 +96,8 @@ public static partial class PuddingServiceCollectionExtensions
                     if (string.Equals(
                             envelope.ChannelType,
                             "feishu",
-                            StringComparison.OrdinalIgnoreCase))
+                            StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(envelope.ChannelType, "slack", StringComparison.OrdinalIgnoreCase))
                     {
                         var gateway = sp.GetRequiredService<IMessageGatewayIngress>();
                         await gateway.AcceptAsync(envelope, ct);

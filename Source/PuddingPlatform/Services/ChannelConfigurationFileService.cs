@@ -36,6 +36,12 @@ public sealed class ChannelConfigurationFileService(
     };
 
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private static readonly ChannelProviderManifest BuiltInSlackProvider = new()
+    {
+        ProviderId = ChannelProviderKinds.Slack, Name = "Slack", ChannelType = ChannelProviderKinds.Slack,
+        Description = "Socket Mode 私聊与 @提及；线程隔离，文本终态回复。", IsBuiltIn = true, IsEnabled = true,
+        Capabilities = ["text", "threads", "delivery_receipt"]
+    };
     private string ProvidersPath => paths.SystemConfigFile("channel.providers.json");
 
     public async Task<IReadOnlyList<ChannelProviderDto>> ListProvidersAsync(
@@ -132,7 +138,7 @@ public sealed class ChannelConfigurationFileService(
                 provider,
                 existing: null,
                 now);
-            EnsureUniqueFeishuAppId(allChannels, channel, exceptChannelId: null);
+            EnsureUniqueAppId(allChannels, channel, exceptChannelId: null);
             await AtomicFileWriter.WriteJsonAsync(
                 paths.ChannelManifestFile(channel.ChannelId),
                 channel,
@@ -180,7 +186,7 @@ public sealed class ChannelConfigurationFileService(
                 provider,
                 existing,
                 DateTimeOffset.UtcNow);
-            EnsureUniqueFeishuAppId(allChannels, updated, channelId);
+            EnsureUniqueAppId(allChannels, updated, channelId);
             await AtomicFileWriter.WriteJsonAsync(
                 paths.ChannelManifestFile(channelId),
                 updated,
@@ -336,7 +342,7 @@ public sealed class ChannelConfigurationFileService(
                         PrivilegedUserOpenIds = feishu.PrivilegedUserOpenIds,
                     },
                 };
-                EnsureUniqueFeishuAppId(
+                EnsureUniqueAppId(
                     await ListAllChannelsAsync(ct),
                     channel,
                     exceptChannelId: null);
@@ -392,6 +398,11 @@ public sealed class ChannelConfigurationFileService(
             config.Providers.Add(BuiltInFeishuProvider);
             await AtomicFileWriter.WriteJsonAsync(ProvidersPath, config, JsonOptions, ct);
         }
+        if (config.Providers.All(provider => !string.Equals(provider.ProviderId, ChannelProviderKinds.Slack, StringComparison.OrdinalIgnoreCase)))
+        {
+            config.Providers.Add(BuiltInSlackProvider);
+            await AtomicFileWriter.WriteJsonAsync(ProvidersPath, config, JsonOptions, ct);
+        }
         return config;
     }
 
@@ -404,7 +415,8 @@ public sealed class ChannelConfigurationFileService(
             ?? throw new KeyNotFoundException($"Channel provider '{providerId}' 不存在");
         if (!provider.IsEnabled)
             throw new InvalidOperationException($"Channel provider '{providerId}' 已停用");
-        if (!string.Equals(provider.ChannelType, ChannelProviderKinds.Feishu, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(provider.ChannelType, ChannelProviderKinds.Feishu, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(provider.ChannelType, ChannelProviderKinds.Slack, StringComparison.OrdinalIgnoreCase))
             throw new NotSupportedException($"Channel provider type '{provider.ChannelType}' 尚未实现");
         return provider;
     }
@@ -417,6 +429,16 @@ public sealed class ChannelConfigurationFileService(
         ChannelInstanceManifest? existing,
         DateTimeOffset now)
     {
+        if (string.Equals(provider.ChannelType, ChannelProviderKinds.Slack, StringComparison.OrdinalIgnoreCase))
+        {
+            var settings = SlackChannelValidation.Normalize(request.Slack ?? throw new ArgumentException("Slack 配置不能为空"));
+            return new ChannelInstanceManifest
+            {
+                ChannelId = channelId, WorkspaceId = workspaceId, ProviderId = provider.ProviderId,
+                Name = RequireText(request.Name, nameof(request.Name)), Description = NormalizeOptional(request.Description),
+                IsEnabled = request.IsEnabled, CreatedAt = existing?.CreatedAt ?? now, UpdatedAt = now, Slack = settings
+            };
+        }
         if (!string.Equals(provider.ChannelType, ChannelProviderKinds.Feishu, StringComparison.OrdinalIgnoreCase))
             throw new NotSupportedException($"Channel provider type '{provider.ChannelType}' 尚未实现");
 
@@ -453,11 +475,13 @@ public sealed class ChannelConfigurationFileService(
         };
     }
 
-    private static void EnsureUniqueFeishuAppId(
+    private static void EnsureUniqueAppId(
         IReadOnlyList<ChannelInstanceManifest> channels,
         ChannelInstanceManifest candidate,
         string? exceptChannelId)
     {
+        if (candidate.Slack is { } slack && channels.Any(channel => channel.ChannelId != exceptChannelId && channel.Slack?.AppId == slack.AppId))
+            throw new InvalidOperationException("这个 Slack App ID 已绑定到其它渠道；Socket Mode 连接会分摊事件，不能重复装配");
         var appId = candidate.Feishu?.AppId;
         if (string.IsNullOrWhiteSpace(appId))
             return;
@@ -499,7 +523,8 @@ public sealed class ChannelConfigurationFileService(
         channel.Feishu?.TtsRepliesEnabled ?? false,
         string.IsNullOrWhiteSpace(channel.Feishu?.TtsVoice)
             ? "Cherry"
-            : channel.Feishu.TtsVoice);
+            : channel.Feishu.TtsVoice,
+        channel.Slack);
 
     private static void EnsureWorkspace(ChannelInstanceManifest channel, string workspaceId)
     {

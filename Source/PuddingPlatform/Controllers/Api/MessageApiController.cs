@@ -42,7 +42,8 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
         string? SourceType,
         string? SourceId,
         string? SourceName,
-        List<ChatContentPartDto>? ContentParts = null
+        List<ChatContentPartDto>? ContentParts = null,
+        IReadOnlyDictionary<string, string>? Metadata = null
     );
 
     /// <summary>ADR-077：回放用内容部件安全摘要（type/artifactId/detail，不含字节/路径）。</summary>
@@ -250,8 +251,27 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
             source?.SourceType,
             source?.SourceId,
             source?.SourceName,
-            ProjectContentParts(m.ContentPartsJson)
+            ProjectContentParts(m.ContentPartsJson),
+            ProjectChannelIdentity(m.MetadataJson)
         );
+    }
+
+    /// <summary>Expose only channel sender identity, never the full internal routing metadata.</summary>
+    private static IReadOnlyDictionary<string, string>? ProjectChannelIdentity(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+            var projected = new Dictionary<string, string>();
+            foreach (var key in new[] { MessageGatewayMetadata.ChannelType, MessageGatewayMetadata.ExternalUserId,
+                SlackChannelMetadata.UserId, SlackChannelMetadata.IsBot })
+                if (doc.RootElement.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String)
+                    projected[key] = value.GetString()!;
+            return projected.Count == 0 ? null : projected;
+        }
+        catch (JsonException) { return null; }
     }
 
     /// <summary>ADR-077：从 canonical 信封恢复回放用安全摘要。</summary>

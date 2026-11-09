@@ -25,6 +25,8 @@ draft: false
 | 文件 | 用途 |
 |------|------|
 | `PuddingHostAssemblyMarker.cs` | 程序集标记 |
+| `Services/ReviewWorkerHostedService.cs` · `Services/HostRuntimeLlmChatClient.cs` | 驱动持久评审任务，将已绑定的模型调用交给 Runtime |
+| `Services/SlackConnectorFactory.cs` · `Connectors/SlackConnector.cs` · `Tools/SlackLookupMemberTool.cs` | 在已配置的渠道创建 Slack 连接器，按当前绑定查询成员 |
 | `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册（见下「关键语义」） |
 | `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册；显式装配 `CompactionDiagnosticJournal` 与 `ContextHandoffHook`，扫描 `context_handoff` 工具（见下「关键语义」） |
 | `Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs` | 原生图片阅读与预处理工具（见下「关键语义」） |

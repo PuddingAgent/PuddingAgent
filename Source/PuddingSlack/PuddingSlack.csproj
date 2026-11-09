@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <Target Name="EnforceLeafBoundary" BeforeTargets="ResolveProjectReferences;CoreCompile">
+    <Error Condition="'@(ProjectReference)' != '' Or '@(PackageReference)' != ''" Text="PuddingSlack is a BCL-only leaf: project and package references are forbidden." />
+  </Target>
+</Project>

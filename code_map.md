@@ -34,6 +34,9 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingRuntime/` | Agent Loop · LLM 网关调用 · 工具系统 · 上下文管线 · 子代理 · 后台学习 | [code_map](Source/PuddingRuntime/code_map.md) |
 | `Source/PuddingCore/` | 跨层抽象与契约：接口与基础模型类型（含 Goal 与编排） | [code_map](Source/PuddingCore/code_map.md) |
 | `Source/PuddingPlatform/` | Session · Web 与外部 API · EF Core + SQLite · 消息网关 | [code_map](Source/PuddingPlatform/code_map.md) |
+| `Source/PuddingReviews.Contracts/` · `Source/PuddingReviews/` | 持久评审任务的端口、证据校验和执行协调 | [契约](Source/PuddingReviews.Contracts/code_map.md) · [实现](Source/PuddingReviews/code_map.md) |
+| `Source/PuddingReviewsTests/` | 独立验证评审任务、证据与恢复 | [code_map](Source/PuddingReviewsTests/code_map.md) |
+| `Source/PuddingSlack/` · `Source/PuddingSlackTests/` | Slack Socket Mode 协议、成员查询、投递回执与离线测试 | [实现](Source/PuddingSlack/code_map.md) · [测试](Source/PuddingSlackTests/code_map.md) |
 | `Source/PuddingMemoryEngine/` | Library/Book/Chapter 记忆库 · FTS5 · 潜意识检索 | [code_map](Source/PuddingMemoryEngine/code_map.md) |
 | `Source/PuddingMemoryEngineBenchmarks/` | 记忆库与记忆召回的 BenchmarkDotNet 基准工程（不参与运行时装配） | — |
 | `Source/PuddingGateway/` | LLM 服务商网关适配：openai / responses / anthropic 三协议 | [code_map](Source/PuddingGateway/code_map.md) |

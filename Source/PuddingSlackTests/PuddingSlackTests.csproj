@@ -1,0 +1,5 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><UseVSTest>true</UseVSTest></PropertyGroup>
+  <PropertyGroup Condition="'$(UseVSTest)' == 'false'"><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../PuddingSlack/PuddingSlack.csproj" /></ItemGroup>
+</Project>

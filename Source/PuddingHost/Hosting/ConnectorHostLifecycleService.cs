@@ -127,6 +127,7 @@ public sealed class ConnectorHostLifecycleService : IHostedService
         var feishuFactory = _services.GetRequiredService<FeishuConnectorFactory>();
         var feishuConnectors = await feishuFactory.CreateAsync(cancellationToken);
         connectors.AddRange(feishuConnectors);
+        connectors.AddRange(await _services.GetRequiredService<SlackConnectorFactory>().CreateAsync(cancellationToken));
 
         _logger.LogInformation("[ConnectorHost] Registering {Count} connectors", connectors.Count);
         foreach (var c in connectors)

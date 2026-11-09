@@ -153,7 +153,8 @@ public record WorkspaceChannelDto(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     bool TtsRepliesEnabled = false,
-    string TtsVoice = "Cherry"
+    string TtsVoice = "Cherry",
+    PuddingCode.Configuration.SlackChannelSettings? Slack = null
 );
 
 public record UpsertWorkspaceChannelRequest(
@@ -167,5 +168,6 @@ public record UpsertWorkspaceChannelRequest(
     List<string>? PrivilegedUserOpenIds,
     bool IsEnabled,
     bool TtsRepliesEnabled = false,
-    string? TtsVoice = null
+    string? TtsVoice = null,
+    PuddingCode.Configuration.SlackChannelSettings? Slack = null
 );

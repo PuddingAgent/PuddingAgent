@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../PuddingReviews.Contracts/PuddingReviews.Contracts.csproj" />
+    <ProjectReference Include="../Pudding.Api.Contracts/Pudding.Api.Contracts.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceReviewsBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingReviews.Contracts' And '%(ProjectReference.Filename)' != 'Pudding.Api.Contracts'" Text="Reviews may only reference its ports and the public API contracts." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Reviews must not add package references." />
+  </Target>
+</Project>

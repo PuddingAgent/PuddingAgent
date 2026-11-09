@@ -217,6 +217,7 @@ public static partial class PuddingServiceCollectionExtensions
             builder.Services.AddSingleton<ReviewJobStore>();
             builder.Services.AddSingleton<IReviewJobStore>(sp => sp.GetRequiredService<ReviewJobStore>());
             builder.Services.AddSingleton<IReviewJobByGoalReader>(sp => sp.GetRequiredService<ReviewJobStore>());
+            builder.Services.AddSingleton<IReviewJobByGoalObjectiveReader>(sp => sp.GetRequiredService<ReviewJobStore>());
             builder.Services.AddSingleton<ReviewEventOutbox>();
             builder.Services.AddSingleton<IReviewEventOutbox>(sp => sp.GetRequiredService<ReviewEventOutbox>());
             builder.Services.AddSingleton<GoalReviewObjectiveSource>();
@@ -227,6 +228,7 @@ public static partial class PuddingServiceCollectionExtensions
             builder.Services.AddSingleton<IReviewCompletionSink>(sp => sp.GetRequiredService<ConversationReviewCompletionSink>());
             builder.Services.AddSingleton<ReviewEventDispatcher>();
             builder.Services.AddSingleton<ReviewCompletionProjection>();
+            builder.Services.AddSingleton<IReviewCompletionReader>(sp => sp.GetRequiredService<ReviewCompletionProjection>());
             // ── PA-07A S5 插件后台任务协议（持久受理 + 幂等提交）──
             builder.Services.AddSingleton<PluginJobStore>();
             builder.Services.AddSingleton<IPluginJobStore>(sp => sp.GetRequiredService<PluginJobStore>());

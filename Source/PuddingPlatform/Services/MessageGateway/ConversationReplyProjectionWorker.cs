@@ -129,7 +129,8 @@ public sealed class ConversationReplyProjectionWorker(
             if (!string.Equals(
                     Get(metadata, MessageGatewayMetadata.ChannelType),
                     "feishu",
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(Get(metadata, MessageGatewayMetadata.ChannelType), "slack", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -185,6 +186,27 @@ public sealed class ConversationReplyProjectionWorker(
             var externalMessageId = Get(
                 metadata,
                 MessageGatewayMetadata.ExternalMessageId);
+            if (string.Equals(Get(metadata, MessageGatewayMetadata.ChannelType), "slack", StringComparison.OrdinalIgnoreCase))
+            {
+                // Slack MVP is text-only. Do not run Feishu media/voice projections or consume their directives.
+                var replyId = StableId("gateway-reply", command.CommandId, connectorId, externalMessageId ?? externalConversationId);
+                metadata[MessageGatewayMetadata.ReplyProjectedMessageId] = replyId;
+                metadata[MessageGatewayMetadata.IdempotencyKey] = replyId;
+                await messageSystem.SendAsync(new MessageEnvelope
+                {
+                    MessageId = replyId,
+                    From = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = command.AgentInstanceId, WorkspaceId = command.WorkspaceId },
+                    To = [new MessageAddress { Kind = MessageEndpointKinds.Connector, Id = connectorId, WorkspaceId = command.WorkspaceId }],
+                    RoomId = command.SessionId, ConversationId = command.SessionId, ReplyToMessageId = externalMessageId,
+                    CorrelationId = command.SessionId, CausationId = command.TurnId, Audience = MessageAudiences.Direct,
+                    Visibility = MessageVisibilities.Private, ContentType = MessageContentTypes.Text,
+                    Content = string.IsNullOrWhiteSpace(presentation.Content) ? $"Agent turn {command.Status}; no text reply." : presentation.Content,
+                    Metadata = metadata
+                }, ct);
+                command.ReplyProjectedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                projected++;
+                continue;
+            }
             var imageArtifactPlan =
                 await FeishuImageArtifactProjection.CreatePlanAsync(
                     visionArtifacts,

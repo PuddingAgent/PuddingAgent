@@ -38,9 +38,12 @@ public partial class SessionApiController : ControllerBase
     /// <summary>GET /api/sessions?workspaceId=xxx</summary>
     [HttpGet]
     public async Task<ActionResult<List<SessionRecord>>> List(
-        [FromQuery] string? workspaceId, CancellationToken ct)
+        [FromQuery] string? workspaceId, CancellationToken ct, [FromQuery] bool channelOnly = false)
     {
         var hotList = await _api.GetSessionsAsync(workspaceId, ct);
+        // The visible channel catalog is bounded and does not scan/backfill transcript history on each poll.
+        if (channelOnly) return Ok(hotList.Where(x => x.PrincipalKind == "channel" && x.Status != SessionStatus.Frozen)
+            .OrderByDescending(x => x.LastActiveAt).Take(100).ToList());
         var merged = await MergeTranscriptBackfillAsync(hotList, workspaceId, ct);
         return Ok(merged.Where(x => x.Status != SessionStatus.Frozen).ToList());
     }

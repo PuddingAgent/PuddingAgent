@@ -100,6 +100,7 @@ public sealed record ConnectorDiagnostics
     public string Status { get; init; } = "unknown";
     public long MessagesReceived { get; init; }
     public long MessagesSent { get; init; }
+    public long MessagesSuppressed { get; init; }
     public long Errors { get; init; }
     public DateTimeOffset? LastReceiveTime { get; init; }
     public DateTimeOffset? LastErrorTime { get; init; }

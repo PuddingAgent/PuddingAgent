@@ -20,6 +20,8 @@
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
+| `Services/Reviews/` | 评审任务的 SQLite 存储、执行、完成事件与查询 | `ReviewJobStore`、`ReviewCompletionProjection` | `Data/Entities/ReviewJobEntities.cs`、`ReviewEventEntity.cs` | 注册的读取端口复用同一存储与投影 |
+| `Services/Goals/GoalReviewCompletionGate.cs` | 按 Goal 目标版本读取评审事实 | `IGoalReviewCompletionGate` | `Services/Reviews/ReviewJobByGoalObjectiveReader.cs` | 使用显式的评审需求策略 |
 | `Services/ChatHistoryService.cs` | 聊天历史读写 | `ChatHistoryService` | `Services/ChatMessageRepository.cs` | — |
 | `Controllers/Api/MessageSearchController.cs` | 消息弹窗检索（未走全文/向量索引） | `MessageSearchController`、`RawSessionLogService` | `Services/RawSessionLogService.cs`、`Services/ChatMessageRepository.cs` | POST /api/messages/search；GrepMessagesAsync 从事件表发现会话、取最多 10,000 条后内存筛日期/子串 |
 | `Services/RawSessionLogService.Fts.cs` | Agent Markdown 日志的 Lucene 搜索 | `RawSessionLogService` | `Services/RawSessionLogService.cs` | 要求 agent 与有界日期范围；查询中按日刷新文件索引；区别于消息弹窗检索 |

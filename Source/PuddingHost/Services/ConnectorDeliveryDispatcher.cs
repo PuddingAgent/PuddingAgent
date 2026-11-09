@@ -199,6 +199,17 @@ public sealed class ConnectorDeliveryDispatcher(
         {
             throw;
         }
+        catch (ConnectorDeliveryException ex)
+        {
+            // Ambiguous sends require reconciliation, never blind resend. Rejected sends cannot be fixed by backoff.
+            if (ex.Failure != ConnectorDeliveryFailure.Retryable || claimed.AttemptCount >= MaxAttempts)
+                await inbox.DeadLetterAsync(claimed.DeliveryId, executionId, ex.Message, CancellationToken.None);
+            else
+                await inbox.RetryAsync(claimed.DeliveryId, executionId, ex.Message,
+                    ex.RetryAt ?? DateTimeOffset.UtcNow.AddSeconds(30), CancellationToken.None);
+            logger.LogWarning("[ConnectorDelivery] connector={ConnectorId} delivery={DeliveryId} outcome={Outcome}",
+                connectorId, claimed.DeliveryId, ex.Message);
+        }
         catch (Exception ex)
         {
             if (claimed.AttemptCount >= MaxAttempts)

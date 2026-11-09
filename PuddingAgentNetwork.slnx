@@ -92,6 +92,9 @@
     <Project Path="Source/PuddingRetrieval.Contracts/PuddingRetrieval.Contracts.csproj" />
     <Project Path="Source/PuddingHtmlTests/PuddingHtmlTests.csproj" />
     <Project Path="Source/PuddingPlatform/PuddingPlatform.csproj" />
+    <Project Path="Source/PuddingReviews.Contracts/PuddingReviews.Contracts.csproj" />
+    <Project Path="Source/PuddingReviews/PuddingReviews.csproj" />
+    <Project Path="Source/PuddingReviewsTests/PuddingReviewsTests.csproj" />
     <Project Path="Source/PuddingRetrieval/PuddingRetrieval.csproj" />
     <Project Path="Source/PuddingRetrievalEval/PuddingRetrievalEval.csproj" />
     <Project Path="Source/PuddingRetrievalEvalProbe/PuddingRetrievalEvalProbe.csproj" />

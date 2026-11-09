@@ -5,6 +5,7 @@ namespace PuddingCode.Configuration;
 public static class ChannelProviderKinds
 {
     public const string Feishu = "feishu";
+    public const string Slack = "slack";
 }
 
 public sealed record ChannelProvidersConfig
@@ -37,6 +38,20 @@ public sealed record ChannelInstanceManifest
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public FeishuChannelSettings? Feishu { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SlackChannelSettings? Slack { get; init; }
+}
+
+/// <summary>Only a file reference is stored here; Slack tokens never enter configuration DTOs.</summary>
+public sealed record SlackChannelSettings
+{
+    public string TeamId { get; init; } = "";
+    public string AppId { get; init; } = "";
+    public string CredentialFile { get; init; } = "";
+    public IReadOnlyList<string> AllowedUserIds { get; init; } = [];
+    public IReadOnlyList<string> AllowedBotUserIds { get; init; } = [];
+    public IReadOnlyList<string> AllowedChannelIds { get; init; } = [];
 }
 
 public sealed record FeishuChannelSettings
