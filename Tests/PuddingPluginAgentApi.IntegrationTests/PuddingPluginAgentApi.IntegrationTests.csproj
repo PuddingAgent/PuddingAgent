@@ -1,0 +1,9 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+  <PropertyGroup><OutputType>Exe</OutputType><UseVSTest>false</UseVSTest></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Source/PuddingRuntime/PuddingRuntime.csproj" />
+    <ProjectReference Include="../../Source/PuddingPlatform/PuddingPlatform.csproj" />
+    <ProjectReference Include="../PuddingToolPlugins.Fixture/PuddingToolPlugins.Fixture.csproj" />
+    <Content Include="../../Source/PuddingHost/Config/agent-avatars.json" Link="Config/agent-avatars.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

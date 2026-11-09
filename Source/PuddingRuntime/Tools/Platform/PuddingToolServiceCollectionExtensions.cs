@@ -52,17 +52,15 @@ public static class PuddingToolServiceCollectionExtensions
         services.TryAddSingleton<PluginDiagnosticsReader>();
         services.TryAddSingleton<PluginManifestCatalog>();
         services.TryAddSingleton<PluginPackageInstaller>();
-        if (!services.Any(d => d.ServiceType == typeof(IPuddingToolSource)
-                               && d.ImplementationFactory is not null))
-        {
-            // TryAddEnumerable 只能用具体实现类型去重；factory 注册会被 DI 视为
-            // “接口实现接口”，启动时无法区分多个 IPuddingToolSource。插件工具源需要
-            // 按运行环境选择文件目录或空源，所以这里显式做一次服务级别去重。
-            services.AddSingleton<IPuddingToolSource>(sp =>
-                sp.GetService<PuddingDataPaths>() is null
-                    ? new EmptyPuddingToolSource("plugins")
-                    : sp.GetRequiredService<PluginManifestCatalog>());
-        }
+        // v1 manifests remain inspectable through the legacy API, but are never executable tools.
+        services.TryAddSingleton<ExecutablePluginService>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IContextualPuddingToolSource, ExecutablePluginToolSource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<PuddingRuntime.Services.AgentLoop.IAgentLoopHook, ExecutablePluginHook>());
+        services.AddPuddingTool<PluginCatalogTool>();
+        services.AddPuddingTool<PluginImportTool>();
+        services.AddPuddingTool<PluginLoadTool>();
+        services.AddPuddingTool<PluginUnloadTool>();
+        services.AddPuddingTool<PluginDiagnosticsTool>();
 
         services.TryAddSingleton<IPuddingToolRegistry>(sp =>
         {
@@ -75,7 +73,8 @@ public static class PuddingToolServiceCollectionExtensions
                 nativeTools,
                 sp.GetRequiredService<IToolPermissionPolicyService>(),
                 toolSources: toolSources,
-                workspaceToolSources: workspaceToolSources);
+                workspaceToolSources: workspaceToolSources,
+                contextualToolSources: sp.GetServices<IContextualPuddingToolSource>().ToList());
         });
 
         services.TryAddSingleton<IToolPermissionPolicyService, ToolPermissionPolicyService>();
@@ -337,13 +336,6 @@ public static class PuddingToolServiceCollectionExtensions
     private sealed record PuddingAgentToolRegistrationMarker(Type ToolType);
 
     private sealed record PuddingToolRegistrationMarker(Type ToolType);
-
-    private sealed class EmptyPuddingToolSource(string sourceId) : IPuddingToolSource
-    {
-        public string SourceId { get; } = sourceId;
-
-        public IReadOnlyList<IPuddingTool> ListTools() => [];
-    }
 
     /// <summary>
     /// 组装分类器管线（S3c-1，方案 v2 §14.13）：<see cref="SystemRuleClassifier"/>（规则快路径）

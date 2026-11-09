@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../Pudding.ToolPlugins.Protocol/Pudding.ToolPlugins.Protocol.csproj" /></ItemGroup>
+  <Target Name="EnforcePluginWindowsBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'Pudding.ToolPlugins.Protocol' And '%(ProjectReference.Filename)' != 'Pudding.ToolPlugins.Contracts'" Text="OS supervisor may only reference protocol/contracts." />
+  </Target>
+</Project>

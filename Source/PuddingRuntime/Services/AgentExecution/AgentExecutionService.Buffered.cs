@@ -155,7 +155,9 @@ public sealed partial class AgentExecutionService
         // ── 工具清单与有界可见集：在 dispatch 边界冻结，供上下文装配与整个 loop 复用 ──
         // 预算只在 turn 边界重算；同一 dispatch 内的 round 边界仍保持 append-only（见 PromoteLoadedToolsForNextRound）。
         var loadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
-        var frozenTools = BuildFrozenToolManifest(effectiveCapability, template, request, loadedToolIds);
+        var toolCatalogRevision = _toolSchemaService?.CatalogRevision ?? 0;
+        var catalogRequest = request with { AgentInstanceId = instance.AgentInstanceId };
+        var frozenTools = BuildFrozenToolManifest(effectiveCapability, template, catalogRequest, loadedToolIds);
         var allLlmTools = frozenTools.AllLlmTools;
         var llmTools = frozenTools.VisibleTools.ToList();
         var exposedToolIds = llmTools.Select(tool => tool.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -495,7 +497,9 @@ if (effectiveLlmConfig is not null)
         PromptPrefixSnapshot? lastPrefixSnapshot = null;
         var expectedOutputTracker =
             new ExpectedOutputCandidateTracker(request.ExpectedOutputContract);
-        var usageBudgetTracker = new ExecutionUsageBudgetTracker(request.UsageBudget);
+        using var usageBudgetTracker = new ExecutionUsageBudgetTracker(request.UsageBudget,
+            new(request.WorkspaceId!, instance.AgentInstanceId, request.SessionId, request.ExecutionIdentity?.RunId ?? Guid.NewGuid().ToString("N")),
+            request.ExecutionDeadlineUtc, ct);
 
         // 记录本次 dispatch 前已有的 journal 条数，用于在结束时截取本次新增的 turns
         var journalStartCount = _journal.GetTurns(request.SessionId).Count;
@@ -641,6 +645,10 @@ if (effectiveLlmConfig is not null)
                 }
 
                 roundsStarted = round + 1;
+                toolSpecChangedForNextRound |= RefreshDynamicToolCatalog(effectiveCapability, template, catalogRequest,
+                    loadedToolIds, ref toolCatalogRevision, ref frozenTools, llmTools);
+                allLlmTools = frozenTools.AllLlmTools;
+                exposedToolIds = llmTools.Select(tool => tool.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 await FireHooksAsync(h => h.OnRoundStartAsync(loopCtx, round, ct));
                 var turnStart = DateTimeOffset.UtcNow;
                 await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.round.started", new
@@ -1207,6 +1215,7 @@ if (effectiveLlmConfig is not null)
                                         AllowSubDelegation = request.AllowSubDelegation,
                                         RoleInPlan = request.RoleInPlan,
                                         UsageBudget = usageBudgetTracker.CreateRemainingBudget(),
+                                        ExecutionResources = usageBudgetTracker.Resources,
                                         ActiveTask = request.ActiveTask,
                                         CallerLlmSnapshot = request.CallerLlmSnapshot,
                                     }, ct);
@@ -1943,7 +1952,9 @@ if (effectiveLlmConfig is not null)
                                 AllowSubDelegation = request.AllowSubDelegation,
                                 RoleInPlan = request.RoleInPlan,
                                 UsageBudget = usageBudgetTracker.CreateRemainingBudget(),
+                                ExecutionResources = usageBudgetTracker.Resources,
                                 ActiveTask = request.ActiveTask,
+                                CallerLlmSnapshot = request.CallerLlmSnapshot,
                             }, ct);
                             skillResult = new SkillResult
                             {

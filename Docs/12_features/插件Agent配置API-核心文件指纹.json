@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "normalization": "utf8-lf",
+  "files": [
+    {
+      "path": "Source/PuddingAgentDelegation/DelegatedAgentConfiguration.cs",
+      "sha256": "5BBABD9A388205B927897DA68D4651B0EEB2895C772980860F47EA2635C12A10"
+    },
+    {
+      "path": "Source/PuddingAgentDelegation/PuddingAgentDelegation.csproj",
+      "sha256": "853BC107A9CF00F30B5DAC55AC8CB023D0F10771219364DEF5B2569E66B40957"
+    },
+    {
+      "path": "Source/Pudding.ToolPlugins.AgentSdk/PluginAgentConfiguration.cs",
+      "sha256": "F9E44A15E72E8E228B6854637504244DA836E8C4553FFA961065A2960FEC6B18"
+    },
+    {
+      "path": "Source/Pudding.ToolPlugins.AgentSdk/Pudding.ToolPlugins.AgentSdk.csproj",
+      "sha256": "8F80BD69ED9101466DFA9EE3E5BBF443557FF5745B30CE734C2B9567C782B956"
+    },
+    {
+      "path": "Source/Pudding.ToolPlugins.Contracts/PluginAgentApi.cs",
+      "sha256": "602406BE240D3F9F530013C052D2EA5D9FFDA4180FEDC3DD6C53C175BB45939F"
+    },
+    {
+      "path": "Source/Pudding.ToolPlugins.Contracts/PluginContracts.cs",
+      "sha256": "CB3A776164045C2691AACD26F5F27ECD581568C835B9E4F28E2F0D38B54DC03A"
+    },
+    {
+      "path": "Source/Pudding.ToolPlugins.Runtime/PluginManager.cs",
+      "sha256": "B5492A533880900CCA8315F0B9471BBB9E01FF614D0996EBEC0059C750C606CD"
+    },
+    {
+      "path": "Source/Pudding.ToolPlugins.Runtime/PluginValidation.cs",
+      "sha256": "9570A465A26E598CD85BD8B8E0B0D1B5C36748CA4EB56E503C8BC96118B3E129"
+    },
+    {
+      "path": "Source/Pudding.ToolPlugins.Worker/Program.cs",
+      "sha256": "D46D4535583AA451B16FA380D7D82FD943F87B4C841D79CB9E0F92BF4322E56D"
+    },
+    {
+      "path": "Source/Pudding.ToolPlugins.Worker/Pudding.ToolPlugins.Worker.csproj",
+      "sha256": "3824254E08E01F435B4E7D91342159758ADC680DB4DFD60CC9918D3F6C019241"
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/Plugins/PluginAgentApiLeaseFactory.cs",
+      "sha256": "80CF28B49F308CE7600C38CEE1D21264FC1FC065A838A81F2C8D58A0CC58F40C"
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/Plugins/ExecutablePluginService.cs",
+      "sha256": "1E6DC060E7861503A2DFD8075FEA25DB8C2FDA9B490F0BE49C1A8114CFCA542A"
+    },
+    {
+      "path": "Source/PuddingAgentDelegationTests/DelegationTests.cs",
+      "sha256": "D25F7FC6BE1B04F4D3867AF1A96BEA7D3A1FDAA8A578BACFA75C52125B84DB11"
+    },
+    {
+      "path": "Source/Pudding.ToolPlugins.AgentSdkTests/AgentSdkTests.cs",
+      "sha256": "79DE5787AD83F24D8B3C9D5DF180D1215EA11AC52D359576C113E566A084DA2E"
+    },
+    {
+      "path": "Source/Pudding.ToolPlugins.RuntimeTests/AgentCallbackLifecycleTests.cs",
+      "sha256": "E3BA00DF52E3E0F3AB7E353667D5250A2BF609298ECC14A71C87CC6EFF104037"
+    },
+    {
+      "path": "Tests/PuddingPluginAgentApi.IntegrationTests/PluginAgentApiTests.cs",
+      "sha256": "F4B50373F263F456EFB1632965703EF175EE8D4D590F08B33D8E976D94305DCC"
+    },
+    {
+      "path": "Tests/PuddingToolPlugins.Fixture/AgentConfigurationPlugin.cs",
+      "sha256": "928337D3E886327FF6A3A513F86ED9745576EB7B6C59394FF6F9CD69E1962E3A"
+    },
+    {
+      "path": "Tests/PuddingHost.Tests/Hosting/PluginAgentApiCompositionTests.cs",
+      "sha256": "C107AB37B87AEF287A7E04C10C636B7A9538BBAA44A50674539FFD0052F41D88"
+    }
+  ]
+}

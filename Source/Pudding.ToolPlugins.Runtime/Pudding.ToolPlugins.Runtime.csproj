@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../Pudding.ToolPlugins.Contracts/Pudding.ToolPlugins.Contracts.csproj" /></ItemGroup>
+  <Target Name="EnforcePluginRuntimeBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'Pudding.ToolPlugins.Contracts'" Text="Plugin runtime may only reference contracts; host and OS adapters are ports." />
+  </Target>
+</Project>

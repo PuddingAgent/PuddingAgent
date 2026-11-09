@@ -128,11 +128,12 @@ public sealed class ToolPermissionPolicyService : IToolPermissionPolicyService
 
     public bool CanExposeToAgent(ToolDescriptor descriptor, CapabilityPolicy? policy)
     {
+        var policyName = descriptor.PermissionOwnerToolId ?? descriptor.ToolId;
         // An explicit role/tool allowlist is an exposure boundary, not an approval rule.
         // It remains authoritative in YOLO mode so delegated Smart roles cannot acquire
         // unrelated read-only or control-plane tools.
         if (policy?.AllowedToolNames.Count > 0
-            && !policy.AllowedToolNames.Contains(descriptor.ToolId, StringComparer.OrdinalIgnoreCase))
+            && !policy.AllowedToolNames.Contains(policyName, StringComparer.OrdinalIgnoreCase))
         {
             return false;
         }
@@ -140,6 +141,12 @@ public sealed class ToolPermissionPolicyService : IToolPermissionPolicyService
         // YOLO bypasses runtime approval after the exposure boundary has been enforced.
         if (_runtimeControl?.Mode == RuntimeExecutionMode.Yolo)
             return true;
+
+        // Dynamically generated names cannot be saved in a template before activation. A scoped
+        // contribution inherits discovery from its explicitly selected owner, never from an
+        // arbitrary plugin-supplied name. Invocation approval still uses the actual generation id.
+        if (descriptor.PermissionOwnerToolId is not null && policy is not null && policy.AllowedToolNames.Count == 0
+            && !policy.GetAllEffectiveToolNames().Contains(policyName)) return false;
 
         var decision = Classify(descriptor);
         if (decision.Tier == ToolPermissionTier.AutoAllowed)
@@ -153,8 +160,8 @@ public sealed class ToolPermissionPolicyService : IToolPermissionPolicyService
             return true;
 
         return decision.Tier == ToolPermissionTier.RuntimeGranted
-            ? policy.RequiresGrantToolNames.Contains(descriptor.ToolId, StringComparer.OrdinalIgnoreCase)
-            : policy.GetAllEffectiveToolNames().Contains(descriptor.ToolId);
+            ? policy.RequiresGrantToolNames.Contains(policyName, StringComparer.OrdinalIgnoreCase)
+            : policy.GetAllEffectiveToolNames().Contains(policyName);
     }
 
     public CapabilityPolicy BuildCapabilityPolicy(

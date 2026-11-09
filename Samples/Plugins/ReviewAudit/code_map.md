@@ -1,0 +1,8 @@
+# Samples/Plugins/ReviewAudit
+
+| File | Purpose |
+|---|---|
+| `ReviewAudit.csproj` | net10.0 class library sample (TFM inherited from the root build properties; OutputType=Library; no packages); only `ProjectReference` is `Pudding.ToolPlugins.AgentSdk`. |
+| `ReviewAuditPlugin.cs` | `public sealed class ReviewAuditPlugin : IPluginEventObserver`; `HandleAsync(envelope, context, ct)` only acts when `envelope.Kind == "review.completed"` and `envelope.ReviewCompleted` is present — otherwise it writes nothing, logs nothing and throws nothing. For a valid event it maps exactly six `PluginAuditRecord` fields (`OperationId=envelope.EventId`, `EventId`, `ReviewId`, `Finding`, `EvidenceLevel`, `ReasonCode` verbatim) and calls `context.Audit.RecordAsync(record, ct)` exactly once; a pre-cancelled `ct` prevents the write and `RecordAsync` exceptions (including cancellation) are never swallowed. The internal `FormatForTest` helper renders the frozen one-line text `review.completed event={EventId} review={ReviewId} finding={Finding} evidence={EvidenceLevel} reason={ReasonCode或"无"}`. Never sends messages, invokes tools, executes MCP, starts a Review/Goal, subscribes to its own audit output or keeps state/cache/timers. |
+| `manifest.json` | Frozen sample manifest: schema `pudding-tool-plugin/v2`, id `review-audit`, sdkApi 1.4, coreApi 1.3, entry type `Pudding.Samples.Plugins.ReviewAudit.ReviewAuditPlugin`, the two scoped capabilities `events.observe.review.completed` and `audit.record.write`, the single `review.completed` event observation (schemaVersion 1) and bounded limits; no wildcard capability. |
+| `code_map.md` | This index. |

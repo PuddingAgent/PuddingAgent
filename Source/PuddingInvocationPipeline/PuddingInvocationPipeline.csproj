@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../PuddingInvocationPipeline.Contracts/PuddingInvocationPipeline.Contracts.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceInvocationPipelineBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingInvocationPipeline.Contracts'" Text="Invocation pipeline may only reference its ports." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Invocation pipeline must not add package references." />
+  </Target>
+</Project>

@@ -1,0 +1,29 @@
+{
+  "schema": "pudding-tool-plugin/v2",
+  "id": "sample.text-tools",
+  "name": "文本工具与失败提示",
+  "version": "1.0.0",
+  "description": "独立 SDK 示例：新增工具，通过 Core 读取工作区文本，并为失败结果追加建议。",
+  "sdkApi": "1.0",
+  "coreApi": "1.0",
+  "runtime": { "framework": "net10.0", "rid": "win-x64" },
+  "entry": { "assembly": "bin/Sample.TextTools.dll", "type": "Sample.TextTools.TextToolsPlugin" },
+  "requestedCapabilities": ["workspace.read"],
+  "limits": { "executionTimeoutSeconds": 30, "maxConcurrentCalls": 1 },
+  "tools": [
+    {
+      "id": "text_stats", "name": "文本统计", "description": "统计 Unicode 字符数和行数。",
+      "category": "Query", "effects": ["none"],
+      "inputSchema": { "type": "object", "properties": { "text": { "type": "string", "maxLength": 100000 } }, "required": ["text"], "additionalProperties": false },
+      "outputSchema": { "type": "object", "properties": { "characters": { "type": "integer" }, "lines": { "type": "integer" } }, "required": ["characters", "lines"], "additionalProperties": false }
+    },
+    {
+      "id": "read_text", "name": "读取工作区文本", "description": "通过当前调用的 Core 能力接口读取工作区内 UTF-8 文本。",
+      "category": "FileSystem", "effects": ["filesystem.read"],
+      "inputSchema": { "type": "object", "properties": { "path": { "type": "string", "maxLength": 200 } }, "required": ["path"], "additionalProperties": false },
+      "outputSchema": { "type": "string" }
+    }
+  ],
+  "hooks": [{ "id": "failure_advice", "event": "tool.result.advice", "order": 100 }],
+  "assets": []
+}

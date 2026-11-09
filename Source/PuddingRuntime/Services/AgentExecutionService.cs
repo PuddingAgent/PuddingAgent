@@ -1375,7 +1375,7 @@ public sealed partial class AgentExecutionService
         RuntimeDispatchRequest request)
     {
         var source = _toolSchemaService is not null ? "tool-schema-service" : "legacy-skill-runtime";
-        var tools = (_toolSchemaService?.BuildLlmTools(capability, request.WorkspaceId)
+        var tools = (_toolSchemaService?.BuildLlmTools(capability, request.WorkspaceId, ToolCatalogContext(request))
                     ?? _skillRuntime.BuildLlmTools(capability))
             .ToList();
         var registryToolCount = tools.Count;
@@ -1414,8 +1414,9 @@ public sealed partial class AgentExecutionService
         }
 
         var allowed = new HashSet<string>(template.AllowedSkillIds, StringComparer.OrdinalIgnoreCase);
+        var owners = _toolSchemaService?.ContextualPolicyOwners(ToolCatalogContext(request));
         var filtered = tools
-            .Where(t => allowed.Contains(t.Name))
+            .Where(t => allowed.Contains(t.Name) || owners?.TryGetValue(t.Name, out var owner) == true && allowed.Contains(owner))
             .ToList();
         _logger.LogDebug(
             "[AgentExec:Tools] Runtime tool definitions session={Session} template={Template} source={Source} registryToolCount={RegistryToolCount} afterSubAgentGateCount={AfterSubAgentGateCount} finalToolCount={FinalToolCount} removedSubAgentTool={RemovedSubAgentTool} templateAllowedCount={TemplateAllowedCount} tools={Tools}",
@@ -1449,10 +1450,13 @@ public sealed partial class AgentExecutionService
         // 预算只在 dispatch（turn）冻结边界生效；同一 dispatch 内仍保持 append-only 只增。
         var exposureOptions = _runtimeExecutionConfig?.GetOptions().ToolExposure;
         var exposureBudget = ToolExposurePlanner.ResolveBudget(exposureOptions);
+        var dynamicCommitted = committedToolIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (_toolSchemaService is not null)
+            dynamicCommitted.UnionWith(_toolSchemaService.ContextualToolNames(ToolCatalogContext(request)));
         var manifest = BuildFrozenToolManifestCore(
             BuildRuntimeToolDefinitions(capability, template, request),
             request.ToolDefinitions,
-            committedToolIds,
+            dynamicCommitted,
             _sessionManager.GetVisibleToolOrder(request.SessionId),
             exposureBudget,
             _sessionManager.GetToolUsageRecency(request.SessionId));
@@ -1485,6 +1489,36 @@ public sealed partial class AgentExecutionService
         }
 
         return manifest;
+    }
+
+    private static ToolExecutionContext ToolCatalogContext(RuntimeDispatchRequest request) => new()
+    {
+        WorkspaceId = request.WorkspaceId, SessionId = request.SessionId,
+        AgentInstanceId = request.AgentInstanceId ?? string.Empty, WorkingDirectory = request.WorkingDirectory,
+        CapabilityPolicy = request.CapabilityPolicy,
+    };
+
+    // Only catalog mutation revokes/rebuilds definitions inside a turn. Ordinary search promotion
+    // remains append-only. The in-flight provider request is never mutated.
+    private bool RefreshDynamicToolCatalog(CapabilityPolicy? capability, AgentTemplateDefinition? template,
+        RuntimeDispatchRequest request, HashSet<string> loaded, ref long revision,
+        ref FrozenToolManifest manifest, List<LlmToolDefinition> visible)
+    {
+        if (_toolSchemaService is null) return false;
+        var nextRevision = _toolSchemaService.CatalogRevision;
+        if (revision == nextRevision) return false;
+        var runtime = BuildRuntimeToolDefinitions(capability, template, request);
+        var available = runtime.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        loaded.IntersectWith(available);
+        loaded.UnionWith(_toolSchemaService.ContextualToolNames(ToolCatalogContext(request)).Where(available.Contains));
+        var rebuilt = BuildFrozenToolManifestCore(runtime, request.ToolDefinitions, loaded);
+        rebuilt = rebuilt with { ExposurePlan = manifest.ExposurePlan };
+        var oldNames = visible.Select(t => t.Name).ToArray();
+        var promoted = PromoteLoadedToolsForNextRound(rebuilt, loaded, visible);
+        manifest = rebuilt with { ExposurePlan = promoted.Plan, VisibleTools = visible.ToList() };
+        revision = nextRevision;
+        _sessionManager.RememberVisibleToolOrder(request.SessionId, visible.Select(t => t.Name));
+        return !oldNames.SequenceEqual(visible.Select(t => t.Name), StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>

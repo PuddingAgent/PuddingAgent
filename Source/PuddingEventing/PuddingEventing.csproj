@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../PuddingEventing.Contracts/PuddingEventing.Contracts.csproj" />
+    <ProjectReference Include="../Pudding.Api.Contracts/Pudding.Api.Contracts.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceEventingBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingEventing.Contracts' And '%(ProjectReference.Filename)' != 'Pudding.Api.Contracts'" Text="Eventing may only reference its ports and the public API contracts." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Eventing must not add package references." />
+  </Target>
+</Project>

@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../PuddingOperatorAccess.Contracts/PuddingOperatorAccess.Contracts.csproj" /></ItemGroup>
+  <Target Name="EnforceOperatorAccessBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingOperatorAccess.Contracts' And '%(ProjectReference.Filename)' != 'Pudding.Api.Contracts'" Text="Operator access may only reference its ports and public contracts." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Operator access uses BCL only." />
+    <Error Condition="'%(FrameworkReference.Identity)' != '' And '%(FrameworkReference.Identity)' != 'Microsoft.NETCore.App'" Text="Only the base runtime framework is allowed." />
+  </Target>
+</Project>

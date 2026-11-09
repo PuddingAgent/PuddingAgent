@@ -1,0 +1,11 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+  <PropertyGroup><UseVSTest>false</UseVSTest><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Source/Pudding.ToolPlugins.Runtime/Pudding.ToolPlugins.Runtime.csproj" />
+    <ProjectReference Include="../../Source/Pudding.ToolPlugins.Windows/Pudding.ToolPlugins.Windows.csproj" />
+    <ProjectReference Include="../../Source/PuddingPlatform/PuddingPlatform.csproj" />
+    <ProjectReference Include="../../Source/Pudding.Api.Sdk/Pudding.Api.Sdk.csproj" />
+    <PackageReference Include="Moq" Version="4.20.72" />
+    <ProjectReference Include="../../Source/PuddingRuntime/PuddingRuntime.csproj" />
+  </ItemGroup>
+</Project>

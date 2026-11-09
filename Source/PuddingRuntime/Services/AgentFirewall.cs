@@ -160,7 +160,7 @@ public sealed class AgentFirewall : IAgentFirewall
     private FirewallDecision EvaluateCapabilityGate(FirewallContext ctx)
     {
         if (_toolRegistry is null || _policySvc is null) return FirewallDecision.Allow();
-        var descriptor = _toolRegistry.GetDescriptor(ctx.ToolId, ctx.WorkspaceId);
+        var descriptor = ResolveDescriptor(ctx);
         if (descriptor is not null && !_policySvc.CanExposeToAgent(descriptor, ctx.Policy))
             return FirewallDecision.Deny(
                 $"Tool '{ctx.ToolId}' is not allowed by the agent's capability policy. " +
@@ -170,6 +170,10 @@ public sealed class AgentFirewall : IAgentFirewall
 
         return FirewallDecision.Allow();
     }
+
+    private ToolDescriptor? ResolveDescriptor(FirewallContext ctx) => _toolRegistry?.GetDescriptor(ctx.ToolId,
+        new ToolExecutionContext { WorkspaceId = ctx.WorkspaceId, AgentInstanceId = ctx.AgentInstanceId,
+            SessionId = ctx.SessionId, WorkingDirectory = ctx.WorkingDirectory, CapabilityPolicy = ctx.Policy });
 
     // ────────────────────────────────────────────
     //  Gate 4: AuthorizationGate
@@ -183,7 +187,7 @@ public sealed class AgentFirewall : IAgentFirewall
 
         if (_authzSvc is null || _toolRegistry is null) return FirewallDecision.Allow();
 
-        var descriptor = _toolRegistry.GetDescriptor(ctx.ToolId, ctx.WorkspaceId);
+        var descriptor = ResolveDescriptor(ctx);
         if (descriptor is null) return FirewallDecision.Allow();
 
         if (_policySvc is null || !_policySvc.RequiresRuntimeAuthorization(descriptor))
@@ -342,21 +346,22 @@ public sealed class AgentFirewall : IAgentFirewall
             return FirewallDecision.Allow();
 
         var toolId = ctx.ToolId;
+        var safety = ResolveDescriptor(ctx)?.Safety ?? ToolSafetyFlags.None;
 
         // Shell execution requires policy.AllowShellExecution
-        if (IsShellTool(toolId) && !ctx.Policy.AllowShellExecution)
+        if ((IsShellTool(toolId) || safety.HasFlag(ToolSafetyFlags.RequiresShell)) && !ctx.Policy.AllowShellExecution)
             return FirewallDecision.Deny(
                 $"Tool '{toolId}' requires shell execution which is not allowed by policy.",
                 FirewallGate.Resource);
 
         // File write tools require policy.AllowFileWrite
-        if (IsWriteTool(toolId) && !ctx.Policy.AllowFileWrite)
+        if ((IsWriteTool(toolId) || safety.HasFlag(ToolSafetyFlags.RequiresFileWrite) || safety.HasFlag(ToolSafetyFlags.Destructive)) && !ctx.Policy.AllowFileWrite)
             return FirewallDecision.Deny(
                 $"Tool '{toolId}' requires file write which is not allowed by policy.",
                 FirewallGate.Resource);
 
         // Network tools require policy.AllowNetworkAccess
-        if (IsNetworkTool(toolId) && !ctx.Policy.AllowNetworkAccess)
+        if ((IsNetworkTool(toolId) || safety.HasFlag(ToolSafetyFlags.RequiresNetwork)) && !ctx.Policy.AllowNetworkAccess)
             return FirewallDecision.Deny(
                 $"Tool '{toolId}' requires network access which is not allowed by policy.",
                 FirewallGate.Resource);

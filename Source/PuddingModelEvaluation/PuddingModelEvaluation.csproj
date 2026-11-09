@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Pudding.Api.Contracts/Pudding.Api.Contracts.csproj" />
+    <ProjectReference Include="../PuddingExecutionResources.Contracts/PuddingExecutionResources.Contracts.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceModelEvaluationBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'Pudding.Api.Contracts' And '%(ProjectReference.Filename)' != 'PuddingExecutionResources.Contracts'" Text="Model evaluation depends only on public contracts and resource ports." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Model evaluation uses BCL only." />
+    <Error Condition="'%(FrameworkReference.Identity)' != '' And '%(FrameworkReference.Identity)' != 'Microsoft.NETCore.App'" Text="Model evaluation cannot depend on a host framework." />
+  </Target>
+</Project>

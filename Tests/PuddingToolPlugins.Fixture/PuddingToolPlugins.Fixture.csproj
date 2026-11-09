@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>Sample.PluginFixture</AssemblyName><EnableDynamicLoading>true</EnableDynamicLoading></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Source/Pudding.ToolPlugins.Sdk/Pudding.ToolPlugins.Sdk.csproj" />
+    <ProjectReference Include="../../Source/Pudding.ToolPlugins.AgentSdk/Pudding.ToolPlugins.AgentSdk.csproj" />
+  </ItemGroup>
+</Project>

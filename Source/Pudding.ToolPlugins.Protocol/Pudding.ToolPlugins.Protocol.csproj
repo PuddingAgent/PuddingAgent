@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../Pudding.ToolPlugins.Contracts/Pudding.ToolPlugins.Contracts.csproj" /></ItemGroup>
+  <Target Name="EnforcePluginProtocolBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'@(ProjectReference->WithMetadataValue('Filename', 'Pudding.ToolPlugins.Contracts')->Count())' != '@(ProjectReference->Count())'" Text="Plugin Protocol may reference only Contracts." />
+  </Target>
+</Project>

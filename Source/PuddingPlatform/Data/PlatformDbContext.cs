@@ -140,9 +140,19 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<ExecutionBudgetAccountEntity> ExecutionBudgetAccounts => Set<ExecutionBudgetAccountEntity>();
     public DbSet<ExecutionBudgetReservationEntity> ExecutionBudgetReservations => Set<ExecutionBudgetReservationEntity>();
     // PA-03 S5: 持久验收任务（Job + 提交幂等）
+    public DbSet<ReviewJobEntity> ReviewJobs => Set<ReviewJobEntity>();
+    public DbSet<ReviewJobOperationEntity> ReviewJobOperations => Set<ReviewJobOperationEntity>();
+    public DbSet<ReviewEventEntity> ReviewEvents => Set<ReviewEventEntity>();
     // PA-07A S5: 插件后台任务协议（Job + 提交幂等）
+    public DbSet<PluginJobEntity> PluginJobs => Set<PluginJobEntity>();
+    public DbSet<PluginJobOperationEntity> PluginJobOperations => Set<PluginJobOperationEntity>();
     // PA-07A S5: 订阅 grant/checkpoint 与投递
+    public DbSet<EventSubscriptionEntity> EventSubscriptions => Set<EventSubscriptionEntity>();
+    public DbSet<EventDeliveryEntity> EventDeliveries => Set<EventDeliveryEntity>();
     // PA-07A S5: 事务性 outbox 待发布事实（UoW 内提交）
+    public DbSet<OutboxEventEntity> EventOutbox => Set<OutboxEventEntity>();
+    public DbSet<PluginArchiveRecordEntity> PluginArchiveRecords => Set<PluginArchiveRecordEntity>();
+    public DbSet<WorkspaceArtifactEntity> WorkspaceArtifacts => Set<WorkspaceArtifactEntity>();
     public DbSet<GoalIterationEntity> GoalIterations => Set<GoalIterationEntity>();
     public DbSet<GoalOutboxEntity> GoalOutbox => Set<GoalOutboxEntity>();
     public DbSet<GoalVerificationEntity> GoalVerifications => Set<GoalVerificationEntity>();

@@ -37,7 +37,7 @@ public sealed class SearchToolsTool(IServiceProvider services) : PuddingToolBase
         // Resolve lazily: SearchToolsTool itself is part of the registry, so constructor injection
         // of IPuddingToolRegistry would create a singleton dependency cycle.
         var registry = services.GetRequiredService<IPuddingToolRegistry>();
-        var descriptors = registry.ListAvailable(context.CapabilityPolicy, context.WorkspaceId);
+        var descriptors = registry.ListAvailable(context.CapabilityPolicy, context);
         // 2026-08-22 能耗治理：默认 8/上限 20 会把每次搜索的全部命中永久装载，
         // 长会话棘轮到 50+ 工具、每轮 3.4 万 schema tokens。收紧为默认 3/上限 8；
         // 精确 tool_id 查询仍按 1000 分优先命中，不受影响。

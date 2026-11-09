@@ -60,6 +60,9 @@ internal static class ToolExposurePlanner
     internal static readonly HashSet<string> CoreToolIds = new(StringComparer.OrdinalIgnoreCase)
     {
         SearchToolId,
+        "plugin_catalog",
+        "plugin_unload",
+        "plugin_diagnostics",
         "goal_read",
         "goal_update",
         "send_message",

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <AssemblyName>Sample.TextTools</AssemblyName><EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Pudding.ToolPlugins.Contracts"><HintPath>$(PuddingPluginSdkDirectory)/Pudding.ToolPlugins.Contracts.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Pudding.ToolPlugins.Sdk"><HintPath>$(PuddingPluginSdkDirectory)/Pudding.ToolPlugins.Sdk.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <Target Name="RequirePublishedSdk" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(PuddingPluginSdkDirectory)/Pudding.ToolPlugins.Sdk.dll')" Text="Set PuddingPluginSdkDirectory to the published plugin-worker directory containing SDK/Contracts DLLs." />
+  </Target>
+</Project>

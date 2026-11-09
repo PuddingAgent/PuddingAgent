@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../PuddingAgentConfiguration/PuddingAgentConfiguration.csproj" /></ItemGroup>
+  <Target Name="EnforceDelegationBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingAgentConfiguration' And '%(ProjectReference.Filename)' != 'PuddingAgentConfiguration.Contracts' And '%(ProjectReference.Filename)' != 'Pudding.Api.Contracts'" Text="Delegation may only reference configuration components and public contracts." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Delegation uses BCL and component ports only." />
+    <Error Condition="'%(FrameworkReference.Identity)' != '' And '%(FrameworkReference.Identity)' != 'Microsoft.NETCore.App'" Text="Only the base runtime framework is allowed." />
+  </Target>
+</Project>

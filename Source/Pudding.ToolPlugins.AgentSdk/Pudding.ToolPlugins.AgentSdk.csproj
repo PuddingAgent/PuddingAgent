@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Pudding.ToolPlugins.Contracts/Pudding.ToolPlugins.Contracts.csproj" />
+    <ProjectReference Include="../Pudding.Api.Sdk/Pudding.Api.Sdk.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceAgentSdkBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'Pudding.ToolPlugins.Contracts' And '%(ProjectReference.Filename)' != 'Pudding.Api.Sdk' And '%(ProjectReference.Filename)' != 'Pudding.Api.Contracts'" Text="Plugin Agent SDK may only reference authoring/public contracts and public SDK." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Plugin Agent SDK has no external dependencies." />
+    <Error Condition="'%(FrameworkReference.Identity)' != '' And '%(FrameworkReference.Identity)' != 'Microsoft.NETCore.App'" Text="Plugin Agent SDK only uses the base runtime framework." />
+  </Target>
+</Project>

@@ -23,6 +23,8 @@ public sealed class PuddingToolRegistry : IPuddingToolRegistry
     private readonly IReadOnlyList<IPuddingTool> _nativeTools;
     private readonly IReadOnlyList<IPuddingToolSource> _toolSources;
     private readonly IReadOnlyList<IWorkspacePuddingToolSource> _workspaceToolSources;
+    private readonly IReadOnlyList<IContextualPuddingToolSource> _contextualToolSources;
+    public long CatalogRevision => _contextualToolSources.Sum(s => s.Revision);
     private readonly IToolPermissionPolicyService _permissionPolicy;
     private readonly IAgentFirewall? _firewall;
 
@@ -31,23 +33,27 @@ public sealed class PuddingToolRegistry : IPuddingToolRegistry
         IToolPermissionPolicyService? permissionPolicy = null,
         IAgentFirewall? firewall = null,
         IEnumerable<IPuddingToolSource>? toolSources = null,
-        IEnumerable<IWorkspacePuddingToolSource>? workspaceToolSources = null)
+        IEnumerable<IWorkspacePuddingToolSource>? workspaceToolSources = null,
+        IEnumerable<IContextualPuddingToolSource>? contextualToolSources = null)
     {
         _permissionPolicy = permissionPolicy ?? new ToolPermissionPolicyService();
         _firewall = firewall;
         _nativeTools = tools.ToList();
         _toolSources = (toolSources ?? []).ToList();
         _workspaceToolSources = (workspaceToolSources ?? []).ToList();
+        _contextualToolSources = (contextualToolSources ?? []).ToList();
 
         _ = BuildToolSnapshot();
     }
 
-    private Dictionary<string, IPuddingTool> BuildToolSnapshot(string? workspaceId = null)
+    private Dictionary<string, IPuddingTool> BuildToolSnapshot(string? workspaceId = null, ToolExecutionContext? context = null)
     {
         var snapshot = new Dictionary<string, IPuddingTool>(StringComparer.OrdinalIgnoreCase);
         var tools = _nativeTools.Concat(_toolSources.SelectMany(s => s.ListTools()));
         if (!string.IsNullOrWhiteSpace(workspaceId))
             tools = tools.Concat(_workspaceToolSources.SelectMany(s => s.ListTools(workspaceId)));
+        if (context is not null)
+            tools = tools.Concat(_contextualToolSources.SelectMany(s => s.ListTools(context)));
 
         foreach (var tool in tools)
         {
@@ -75,6 +81,20 @@ public sealed class PuddingToolRegistry : IPuddingToolRegistry
     public IPuddingTool? GetTool(string toolId, string workspaceId) =>
         BuildToolSnapshot(workspaceId).GetValueOrDefault(toolId);
 
+    public IPuddingTool? GetTool(string toolId, ToolExecutionContext context) =>
+        BuildToolSnapshot(context.WorkspaceId, context).GetValueOrDefault(toolId);
+    public ToolDescriptor? GetDescriptor(string toolId, ToolExecutionContext context) => GetTool(toolId, context)?.Descriptor;
+
+    public IReadOnlyList<string> ContextualToolNames(ToolExecutionContext context) =>
+        _contextualToolSources.SelectMany(s => s.ListTools(context)).Select(t => t.Descriptor.ToolId).ToArray();
+    public IReadOnlyDictionary<string, string> ContextualPolicyOwners(ToolExecutionContext context) =>
+        _contextualToolSources.SelectMany(s => s.ListTools(context)).Select(t => t.Descriptor)
+            .Where(d => d.PermissionOwnerToolId is not null).ToDictionary(d => d.ToolId, d => d.PermissionOwnerToolId!, StringComparer.OrdinalIgnoreCase);
+
+    public IReadOnlyList<ToolDescriptor> ListAvailable(CapabilityPolicy? policy, ToolExecutionContext context) =>
+        BuildToolSnapshot(context.WorkspaceId, context).Values.Select(t => t.Descriptor)
+            .Where(d => d.RuntimeStatus == "Available" && _permissionPolicy.CanExposeToAgent(d, policy)).ToArray();
+
     public ToolDescriptor? GetDescriptor(string toolId) =>
         BuildToolSnapshot().GetValueOrDefault(toolId)?.Descriptor;
 
@@ -100,14 +120,14 @@ public sealed class PuddingToolRegistry : IPuddingToolRegistry
         var descriptors = ListDescriptors();
 
         return descriptors
-            .Where(d => _permissionPolicy.CanExposeToAgent(d, policy))
+            .Where(d => d.RuntimeStatus == "Available" && _permissionPolicy.CanExposeToAgent(d, policy))
             .ToList();
     }
 
     public IReadOnlyList<ToolDescriptor> ListAvailable(CapabilityPolicy? policy, string workspaceId)
     {
         return ListDescriptors(workspaceId)
-            .Where(d => _permissionPolicy.CanExposeToAgent(d, policy))
+            .Where(d => d.RuntimeStatus == "Available" && _permissionPolicy.CanExposeToAgent(d, policy))
             .ToList();
     }
 }
@@ -517,15 +537,18 @@ public sealed class PuddingToolCatalogService : IPuddingToolCatalogService
 public sealed class PuddingToolSchemaService
 {
     private readonly IPuddingToolRegistry _registry;
+    public long CatalogRevision => _registry.CatalogRevision;
+    public IReadOnlyList<string> ContextualToolNames(ToolExecutionContext context) => _registry.ContextualToolNames(context);
+    public IReadOnlyDictionary<string, string> ContextualPolicyOwners(ToolExecutionContext context) => _registry.ContextualPolicyOwners(context);
 
     public PuddingToolSchemaService(IPuddingToolRegistry registry)
     {
         _registry = registry;
     }
 
-    public IReadOnlyList<LlmToolDefinition> BuildLlmTools(CapabilityPolicy? policy, string? workspaceId = null)
+    public IReadOnlyList<LlmToolDefinition> BuildLlmTools(CapabilityPolicy? policy, string? workspaceId = null, ToolExecutionContext? context = null)
     {
-        var descriptors = string.IsNullOrWhiteSpace(workspaceId)
+        var descriptors = context is not null ? _registry.ListAvailable(policy, context) : string.IsNullOrWhiteSpace(workspaceId)
             ? _registry.ListAvailable(policy)
             : _registry.ListAvailable(policy, workspaceId);
 
@@ -609,7 +632,7 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
             await RecordTelemetryAsync(toolId, argumentsJson, context, startedAt, invalid, "arguments", ct);
             return invalid;
         }
-        var tool = _registry.GetTool(toolId, context.WorkspaceId);
+        var tool = _registry.GetTool(toolId, context);
         if (tool is null)
         {
             var result = ToolExecutionResult.Fail($"Tool '{toolId}' not found.");

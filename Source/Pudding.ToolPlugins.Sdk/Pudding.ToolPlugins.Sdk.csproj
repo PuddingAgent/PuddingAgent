@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../Pudding.ToolPlugins.Contracts/Pudding.ToolPlugins.Contracts.csproj" /></ItemGroup>
+  <Target Name="EnforcePluginSdkBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'Pudding.ToolPlugins.Contracts'" Text="SDK may only reference plugin contracts." />
+  </Target>
+</Project>

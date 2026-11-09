@@ -29,13 +29,22 @@ using PuddingPlatform.Services.ExecutionBudgets;
 using PuddingExecutionResources.Contracts;
 using PuddingModels;
 using Pudding.Api.Contracts;
+using PuddingReviews.Contracts;
+using PuddingPlatform.Services.Reviews;
+using PuddingPlatform.Services.Plugins;
+using PuddingPlatform.Services.Eventing;
 using PuddingPlatform.Services.Configuration;
 using PuddingPlatform.Services.Agents;
 using PuddingPlatform.Services.AgentWork;
 using PuddingAgents.Contracts;
 using PuddingPlatform.Services.Models;
+using PuddingPlatform.Services.Tools;
+using PuddingTools.Contracts;
 using PuddingHost.Services;
+using PuddingReviews;
 using PuddingModels.Contracts;
+using PuddingInvocationPipeline;
+using PuddingEventing.Contracts;
 using PuddingPlatform.Services.AgentChat;
 using PuddingPlatform.Services.Snapshot;
 using PuddingCodeIntelligence;
@@ -205,9 +214,38 @@ public static partial class PuddingServiceCollectionExtensions
             builder.Services.AddSingleton<ExecutionBudgetApiAdapter>();
             builder.Services.AddSingleton<IExecutionBudgetApi>(sp => sp.GetRequiredService<ExecutionBudgetApiAdapter>());
             // ── PA-03 持久验收任务（S5：Job 持久状态；结论仅为评审建议）──
+            builder.Services.AddSingleton<ReviewJobStore>();
+            builder.Services.AddSingleton<IReviewJobStore>(sp => sp.GetRequiredService<ReviewJobStore>());
+            builder.Services.AddSingleton<IReviewJobByGoalReader>(sp => sp.GetRequiredService<ReviewJobStore>());
+            builder.Services.AddSingleton<ReviewEventOutbox>();
+            builder.Services.AddSingleton<IReviewEventOutbox>(sp => sp.GetRequiredService<ReviewEventOutbox>());
+            builder.Services.AddSingleton<GoalReviewObjectiveSource>();
+            builder.Services.AddSingleton<IReviewObjectiveSource>(sp => sp.GetRequiredService<GoalReviewObjectiveSource>());
+            builder.Services.AddSingleton<ReviewEvidenceReader>();
+            builder.Services.AddSingleton<IReviewEvidenceReader>(sp => sp.GetRequiredService<ReviewEvidenceReader>());
+            builder.Services.AddSingleton<ConversationReviewCompletionSink>();
+            builder.Services.AddSingleton<IReviewCompletionSink>(sp => sp.GetRequiredService<ConversationReviewCompletionSink>());
+            builder.Services.AddSingleton<ReviewEventDispatcher>();
+            builder.Services.AddSingleton<ReviewCompletionProjection>();
             // ── PA-07A S5 插件后台任务协议（持久受理 + 幂等提交）──
+            builder.Services.AddSingleton<PluginJobStore>();
+            builder.Services.AddSingleton<IPluginJobStore>(sp => sp.GetRequiredService<PluginJobStore>());
             // ── PA-07A S5 订阅 grant/checkpoint（Ack 与游标推进同事务）──
+            builder.Services.AddSingleton<SubscriptionStore>();
+            builder.Services.AddSingleton<ISubscriptionStore>(sp => sp.GetRequiredService<SubscriptionStore>());
+            builder.Services.AddSingleton<IEventCheckpointStore>(sp => sp.GetRequiredService<SubscriptionStore>());
+            builder.Services.AddSingleton<EventDeliveryStore>();
+            builder.Services.AddSingleton<IEventDeliveryStore>(sp => sp.GetRequiredService<EventDeliveryStore>());
             // ── PA-07 07B 扩展注册/管道（仅注册；真实 PluginManager 接入另行决策）──
+            builder.Services.AddSingleton<ExtensionRegistry>();
+            builder.Services.AddSingleton<ExtensionPipeline>();
+            builder.Services.AddSingleton<ReviewBudgetSequencer>();
+            builder.Services.AddSingleton<ReviewGoalConversationResolver>();
+            builder.Services.AddSingleton<IReviewGoalConversationResolver>(sp => sp.GetRequiredService<ReviewGoalConversationResolver>());
+            builder.Services.AddSingleton<ExecutionReviewQueryService>();
+            builder.Services.AddHostedService<ReviewOutboxDispatcherWorker>();
+            builder.Services.AddSingleton<IGoalReviewRequirementPolicy, NoGoalReviewRequirementPolicy>();
+            builder.Services.AddSingleton<IGoalReviewCompletionGate, GoalReviewCompletionGate>();
             builder.Services.AddSingleton<IGoalIterationVerifier, ConservativeGoalIterationVerifier>();
             builder.Services.AddSingleton<GoalAcceptanceContractStore>();
             builder.Services.AddSingleton<GoalContractRefinementStore>();
@@ -632,6 +670,8 @@ public static partial class PuddingServiceCollectionExtensions
                 sp.GetRequiredService<WorkspaceAgentFileService>(), sp.GetRequiredService<PuddingCode.Configuration.PuddingDataPaths>()));
             builder.Services.AddSingleton<AgentDirectoryApiFactory>();
             // ── PA-05B 工具目录查询：真实 catalog 只读适配，无执行入口 ──
+            builder.Services.AddSingleton<IToolCatalogSource>(sp =>
+                new PuddingToolCatalogAdapter(sp.GetRequiredService<PuddingCode.Tools.IPuddingToolCatalogService>()));
 
             // ── PA-02 I2 Work Observe/Cancel（canonical 控制入口）──
             builder.Services.AddSingleton<IAgentWorkControlBackend, CanonicalAgentWorkControlBackend>();
@@ -652,7 +692,24 @@ public static partial class PuddingServiceCollectionExtensions
             builder.Services.AddSingleton<IModelAttemptBudgetPort>(sp =>
                 new PlatformModelAttemptBudgetPort(sp.GetRequiredService<ModelAttemptBudgetGate>()));
             builder.Services.AddSingleton<ModelLeaseRegistry>();
+            builder.Services.AddSingleton(sp => new ReviewModelRouter(
+                sp.GetRequiredService<IAgentModelPolicyStore>(), sp.GetRequiredService<ExecutionBudgetStore>(),
+                sp.GetRequiredService<IModelCatalogSource>()));
             // ── PA-03 评审执行链：host gateway → binder → executor → worker ──
+            builder.Services.AddSingleton<IRuntimeLlmChatClient, HostRuntimeLlmChatClient>();
+            builder.Services.AddSingleton<IReviewModelProvider>(sp => new PlatformReviewModelProvider(
+                sp.GetRequiredService<IRuntimeLlmChatClient>(), sp.GetRequiredService<ILlmModelCatalogView>()));
+            builder.Services.AddSingleton<IReviewModelLeaseSource, ReviewModelLeaseSource>();
+            builder.Services.AddSingleton<IReviewEvaluationBinder>(sp => new ReviewEvaluationBinder(
+                sp.GetRequiredService<ReviewModelRouter>(), sp.GetRequiredService<IReviewModelLeaseSource>(),
+                sp.GetRequiredService<ModelAttemptBudgetGate>()));
+            builder.Services.AddSingleton<IReviewExecutor, ReviewExecutor>();
+            builder.Services.AddSingleton<ReviewJobCoordinator>();
+            builder.Services.AddSingleton<ReviewAttemptReconciler>();
+            builder.Services.AddSingleton(sp => new ReviewJobWorker(
+                sp.GetRequiredService<ReviewJobStore>(), sp.GetRequiredService<ReviewJobCoordinator>(),
+                reconciler: sp.GetRequiredService<ReviewAttemptReconciler>()));
+            builder.Services.AddHostedService<ReviewWorkerHostedService>();
         builder.Services.AddSingleton<PuddingAgentConfiguration.Contracts.IAgentConfigurationStore>(sp =>
             sp.GetRequiredService<WorkspaceAgentFileService>());
         builder.Services.AddSingleton<AgentConfigurationApiFactory>();

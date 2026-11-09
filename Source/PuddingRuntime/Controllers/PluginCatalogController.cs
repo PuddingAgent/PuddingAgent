@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -53,7 +53,7 @@ public sealed class PluginCatalogController : ControllerBase
 
         return Ok(new PluginCatalogReloadResultDto(
             PluginCount: plugins.Count,
-            Message: "Plugin catalog reloaded. Manifest-only tools are visible in the runtime catalog; DLL execution is not enabled in Phase 1."));
+            Message: "Plugin catalog reloaded. Legacy v1 metadata is inspectable only. Repackage as pudding-tool-plugin/v2 for execution; legacy entries are not exposed to Agents."));
     }
 
     [HttpGet("{pluginId}")]
@@ -79,7 +79,7 @@ public sealed class PluginCatalogController : ControllerBase
         return Ok(new PluginReloadResultDto(
             PluginId: plugin.PluginId,
             RequiresRestart: false,
-            Message: "Plugin manifest reloaded. Manifest-only tools are visible in the runtime catalog; DLL execution is not enabled in Phase 1."));
+            Message: "Plugin manifest reloaded. Legacy v1 metadata is inspectable only. Repackage as pudding-tool-plugin/v2 for execution; legacy entries are not exposed to Agents."));
     }
 
     [HttpPost("upload")]

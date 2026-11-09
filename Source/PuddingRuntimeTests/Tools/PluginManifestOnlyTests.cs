@@ -11,7 +11,7 @@ namespace PuddingRuntimeTests.Tools;
 public sealed class PluginManifestOnlyTests
 {
     [TestMethod]
-    public void PluginManifestCatalog_Loads_Manifest_Tools_As_Unavailable_PuddingTools()
+    public void PluginManifestCatalog_Reads_Legacy_Metadata_Without_Contributing_Tools()
     {
         using var temp = new TempDirectory();
         WritePluginManifest(
@@ -60,8 +60,8 @@ public sealed class PluginManifestOnlyTests
         var catalog = new PluginManifestCatalog(PuddingDataPaths.FromRoot(temp.Path));
 
         var plugins = catalog.ListPlugins();
-        var tools = catalog.ListTools();
-        var descriptor = tools.Single().Descriptor;
+        var descriptor = plugins.Single().Tools.Single();
+        Assert.IsFalse(typeof(IPuddingToolSource).IsAssignableFrom(typeof(PluginManifestCatalog)));
 
         Assert.AreEqual(1, plugins.Count);
         Assert.AreEqual(PluginLoadStatus.ManifestOnly, plugins[0].Status);
@@ -115,76 +115,7 @@ public sealed class PluginManifestOnlyTests
 
         Assert.AreEqual(PluginLoadStatus.ManifestInvalid, plugin.Status);
         StringAssert.Contains(plugin.StatusReason, "plugin.bad_tool");
-        Assert.AreEqual(0, catalog.ListTools().Count);
-    }
-
-    [TestMethod]
-    public void PuddingToolRegistry_Merges_Plugin_ToolSource_And_Applies_CapabilityPolicy()
-    {
-        var pluginTool = new ManifestOnlyPluginTool(
-            pluginId: "pudding.code-search",
-            descriptor: new ToolDescriptor
-            {
-                ToolId = "plugin_code_search",
-                Name = "Code search",
-                Description = "Search code symbols and files.",
-                Category = ToolCategory.Query,
-                PermissionLevel = ToolPermissionLevel.Medium,
-                Safety = ToolSafetyFlags.ReadOnly,
-                SourceKind = "Plugin",
-                SourceId = "pudding.code-search",
-                RuntimeStatus = "ManifestOnly",
-            });
-
-        var registry = new PuddingToolRegistry(
-            tools: [],
-            permissionPolicy: new ToolPermissionPolicyService(),
-            toolSources: [new TestToolSource(pluginTool)]);
-
-        Assert.IsNotNull(registry.GetTool("plugin_code_search"));
-        Assert.AreEqual(1, registry.ListDescriptors().Count);
-        Assert.AreEqual(
-            1,
-            registry.ListAvailable(new CapabilityPolicy()).Count,
-            "Manifest-only read-only plugin tools should be visible by default.");
-        Assert.AreEqual(
-            1,
-            registry.ListAvailable(new CapabilityPolicy
-            {
-                DefaultToolNames = ["plugin_code_search"],
-            }).Count);
-    }
-
-    [TestMethod]
-    public void PuddingToolRegistry_Reflects_Plugin_ToolSource_Reloads()
-    {
-        var source = new MutableToolSource();
-        var registry = new PuddingToolRegistry(
-            tools: [],
-            permissionPolicy: new ToolPermissionPolicyService(),
-            toolSources: [source]);
-
-        Assert.AreEqual(0, registry.ListDescriptors().Count);
-
-        source.Tools = [
-            new ManifestOnlyPluginTool(
-                pluginId: "pudding.uploaded",
-                descriptor: new ToolDescriptor
-                {
-                    ToolId = "uploaded_tool",
-                    Name = "Uploaded tool",
-                    Description = "Manifest-only tool installed after registry construction.",
-                    Category = ToolCategory.Query,
-                    PermissionLevel = ToolPermissionLevel.Low,
-                    Safety = ToolSafetyFlags.ReadOnly,
-                    SourceKind = "Plugin",
-                    SourceId = "pudding.uploaded",
-                    RuntimeStatus = "ManifestOnly",
-                }),
-        ];
-
-        Assert.IsNotNull(registry.GetTool("uploaded_tool"));
-        Assert.AreEqual("uploaded_tool", registry.ListDescriptors().Single().ToolId);
+        Assert.AreEqual(0, plugin.Tools.Count);
     }
 
     private static void WritePluginManifest(string dataRoot, string pluginId, string manifestJson)
@@ -192,19 +123,6 @@ public sealed class PluginManifestOnlyTests
         var pluginRoot = Path.Combine(dataRoot, "plugins", pluginId);
         Directory.CreateDirectory(pluginRoot);
         File.WriteAllText(Path.Combine(pluginRoot, "plugin.json"), manifestJson);
-    }
-
-    private sealed class TestToolSource(IPuddingTool tool) : IPuddingToolSource
-    {
-        public string SourceId => "test";
-        public IReadOnlyList<IPuddingTool> ListTools() => [tool];
-    }
-
-    private sealed class MutableToolSource : IPuddingToolSource
-    {
-        public string SourceId => "mutable";
-        public IReadOnlyList<IPuddingTool> Tools { get; set; } = [];
-        public IReadOnlyList<IPuddingTool> ListTools() => Tools;
     }
 
     private sealed class TempDirectory : IDisposable

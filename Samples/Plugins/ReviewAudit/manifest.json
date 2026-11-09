@@ -1,0 +1,31 @@
+{
+  "schema": "pudding-tool-plugin/v2",
+  "id": "review-audit",
+  "name": "Review Audit",
+  "version": "1.0.0",
+  "description": "Formats authorized review.completed events into one audit record.",
+  "sdkApi": "1.4",
+  "coreApi": "1.3",
+  "runtime": {
+    "framework": "net10.0",
+    "rid": "win-x64"
+  },
+  "entry": {
+    "assembly": "ReviewAudit.dll",
+    "type": "Pudding.Samples.Plugins.ReviewAudit.ReviewAuditPlugin"
+  },
+  "requestedCapabilities": [
+    "events.observe.review.completed",
+    "audit.record.write"
+  ],
+  "events": [
+    {
+      "kind": "review.completed",
+      "schemaVersion": 1
+    }
+  ],
+  "limits": {
+    "executionTimeoutSeconds": 10,
+    "maxConcurrentCalls": 1
+  }
+}

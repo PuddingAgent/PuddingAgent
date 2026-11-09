@@ -36,11 +36,9 @@ internal sealed record PluginManifestValidationResult(
 }
 
 /// <summary>
-/// Phase 1 plugin catalog: reads plugin.json descriptors from the data root and exposes their
-/// tools as manifest-only catalog entries. It deliberately does not load DLLs; that keeps the
-/// first slice focused on package shape, validation, capability visibility, and diagnostics.
+/// Reads legacy v1 metadata for inspection and repackaging. Never contributes executable tools.
 /// </summary>
-public sealed class PluginManifestCatalog : IPuddingToolSource
+public sealed class PluginManifestCatalog
 {
     private static readonly Regex s_pluginIdRegex = new("^[a-z0-9][a-z0-9.-]*[a-z0-9]$", RegexOptions.Compiled);
     private static readonly Regex s_toolIdRegex = new("^[a-zA-Z0-9_]+$", RegexOptions.Compiled);
@@ -53,7 +51,6 @@ public sealed class PluginManifestCatalog : IPuddingToolSource
     private readonly PluginDiagnosticsSink? _diagnostics;
     private readonly object _gate = new();
     private IReadOnlyList<PluginCatalogEntry>? _plugins;
-    private IReadOnlyList<IPuddingTool>? _tools;
 
     public PluginManifestCatalog(PuddingDataPaths paths, PluginDiagnosticsSink? diagnostics = null)
     {
@@ -61,7 +58,6 @@ public sealed class PluginManifestCatalog : IPuddingToolSource
         _diagnostics = diagnostics;
     }
 
-    public string SourceId => "plugins";
 
     public IReadOnlyList<PluginCatalogEntry> ListPlugins()
     {
@@ -69,18 +65,12 @@ public sealed class PluginManifestCatalog : IPuddingToolSource
         return _plugins!;
     }
 
-    public IReadOnlyList<IPuddingTool> ListTools()
-    {
-        EnsureLoaded();
-        return _tools!;
-    }
 
     public void Reload()
     {
         lock (_gate)
         {
             _plugins = null;
-            _tools = null;
         }
 
         _diagnostics?.Record(new PluginDiagnosticEvent
@@ -113,21 +103,15 @@ public sealed class PluginManifestCatalog : IPuddingToolSource
 
     private void EnsureLoaded()
     {
-        if (_plugins is not null && _tools is not null)
+        if (_plugins is not null)
             return;
 
         lock (_gate)
         {
-            if (_plugins is not null && _tools is not null)
+            if (_plugins is not null)
                 return;
 
-            var plugins = LoadPlugins();
-            _plugins = plugins;
-            _tools = plugins
-                .Where(p => p.Status == PluginLoadStatus.ManifestOnly)
-                .SelectMany(p => p.Tools.Select(d => new ManifestOnlyPluginTool(p.PluginId, d)))
-                .Cast<IPuddingTool>()
-                .ToList();
+            _plugins = LoadPlugins();
         }
     }
 
@@ -360,25 +344,4 @@ public sealed class PluginManifestCatalog : IPuddingToolSource
         public string? Type { get; init; }
         public string? Description { get; init; }
     }
-}
-
-/// <summary>
-/// Placeholder executable for Phase 1 manifest-only tools. Returning a clear failure keeps a
-/// mistakenly-invoked manifest tool diagnosable while preserving the unified Tool execution path.
-/// </summary>
-public sealed class ManifestOnlyPluginTool : IPuddingTool
-{
-    private readonly string _pluginId;
-
-    public ManifestOnlyPluginTool(string pluginId, ToolDescriptor descriptor)
-    {
-        _pluginId = pluginId;
-        Descriptor = descriptor;
-    }
-
-    public ToolDescriptor Descriptor { get; }
-
-    public Task<ToolExecutionResult> ExecuteAsync(ToolExecutionRequest request, CancellationToken ct = default)
-        => Task.FromResult(ToolExecutionResult.Fail(
-            $"Plugin tool '{Descriptor.ToolId}' from plugin '{_pluginId}' is manifest-only. DLL execution is not enabled in Phase 1."));
 }

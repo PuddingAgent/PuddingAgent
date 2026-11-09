@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <Content Include="../../Samples/ToolPlugins/TextTools/*.cs;../../Samples/ToolPlugins/TextTools/*.csproj;../../Samples/ToolPlugins/TextTools/*.json;../../Samples/ToolPlugins/TextTools/*.md"
+             Link="sdk-example/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../Docs/04_tools_and_skills/运行时工具插件.md" Link="AUTHORING.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <ProjectReference Include="../Pudding.ToolPlugins.Protocol/Pudding.ToolPlugins.Protocol.csproj" />
+    <ProjectReference Include="../Pudding.ToolPlugins.Sdk/Pudding.ToolPlugins.Sdk.csproj" />
+    <ProjectReference Include="../Pudding.ToolPlugins.AgentSdk/Pudding.ToolPlugins.AgentSdk.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceWorkerBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'Pudding.ToolPlugins.Protocol' And '%(ProjectReference.Filename)' != 'Pudding.ToolPlugins.Sdk' And '%(ProjectReference.Filename)' != 'Pudding.ToolPlugins.Contracts' And '%(ProjectReference.Filename)' != 'Pudding.ToolPlugins.AgentSdk' And '%(ProjectReference.Filename)' != 'Pudding.Api.Sdk' And '%(ProjectReference.Filename)' != 'Pudding.Api.Contracts'" Text="Worker may only reference SDK, protocol and contracts." />
+  </Target>
+</Project>

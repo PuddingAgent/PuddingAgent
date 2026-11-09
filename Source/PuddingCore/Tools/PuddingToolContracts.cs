@@ -103,6 +103,8 @@ public sealed record ToolDescriptor
 
     /// <summary>Stable source id such as a plugin id. Null for built-in tools.</summary>
     public string? SourceId { get; init; }
+    /// <summary>Host-authored permission anchor for scoped dynamic contributions. Execution still authorizes the actual tool id.</summary>
+    public string? PermissionOwnerToolId { get; init; }
 
     /// <summary>
     /// Runtime availability status. It is intentionally a string so plugin lifecycle states can
@@ -213,6 +215,9 @@ public sealed record ToolExecutionContext
     public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
     /// <summary>调用工具时剩余的 WorkUnit Token/成本预算；派生工具只能继续缩小。</summary>
     public PuddingCode.Runtime.ExecutionUsageBudget? UsageBudget { get; init; }
+    /// <summary>Live host-owned parent budget/cancellation scope for leased model capabilities.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public PuddingExecutionResources.Contracts.IExecutionResourceScope? ExecutionResources { get; init; }
     /// <summary>
     /// Active Task Runtime Context（TB-06）：task_claim/task_update 强制要求非空；
     /// task_list/task_get 用 workspace/agent 身份。由派发链注入，工具不得自行解析。
@@ -331,6 +336,7 @@ public interface IPuddingTool
 /// <summary>Tool 注册表接口。它是运行时、后台和模板授权读取 Tool 清单的统一边界。</summary>
 public interface IPuddingToolRegistry
 {
+    long CatalogRevision => 0;
     IPuddingTool? GetTool(string toolId);
     ToolDescriptor? GetDescriptor(string toolId);
     IReadOnlyList<ToolDescriptor> ListDescriptors();
@@ -342,6 +348,12 @@ public interface IPuddingToolRegistry
     IReadOnlyList<ToolDescriptor> ListAvailable(
         PuddingCode.Platform.CapabilityPolicy? policy,
         string workspaceId) => ListAvailable(policy);
+    IPuddingTool? GetTool(string toolId, ToolExecutionContext context) => GetTool(toolId, context.WorkspaceId);
+    ToolDescriptor? GetDescriptor(string toolId, ToolExecutionContext context) => GetDescriptor(toolId, context.WorkspaceId);
+    IReadOnlyList<ToolDescriptor> ListAvailable(PuddingCode.Platform.CapabilityPolicy? policy, ToolExecutionContext context)
+        => ListAvailable(policy, context.WorkspaceId);
+    IReadOnlyList<string> ContextualToolNames(ToolExecutionContext context) => [];
+    IReadOnlyDictionary<string, string> ContextualPolicyOwners(ToolExecutionContext context) => new Dictionary<string, string>();
 }
 
 /// <summary>
@@ -363,6 +375,13 @@ public interface IWorkspacePuddingToolSource
 {
     string SourceId { get; }
     IReadOnlyList<IPuddingTool> ListTools(string workspaceId);
+}
+
+/// <summary>Dynamic contributions whose visibility and execution bind to the actual agent/session.</summary>
+public interface IContextualPuddingToolSource
+{
+    long Revision { get; }
+    IReadOnlyList<IPuddingTool> ListTools(ToolExecutionContext context);
 }
 
 /// <summary>Tool Catalog 服务。后台 UI 应读取它，而不是维护独立的硬编码能力清单。</summary>

@@ -146,6 +146,7 @@ public sealed class ToolInvocationService : IToolInvocationService
                     ? null
                     : request.ExecutionIdentity with { ToolCallId = request.ToolCallId },
                 UsageBudget = request.UsageBudget,
+                ExecutionResources = request.ExecutionResources,
                 ActiveTask = request.ActiveTask,
             };
 
