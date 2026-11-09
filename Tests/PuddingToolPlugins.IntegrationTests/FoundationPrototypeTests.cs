@@ -32,6 +32,7 @@ using PuddingPlatform.Services.Files;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Plugins;
+using PuddingRuntime.Services.Messaging;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.Tools;
 using ModelUsage = PuddingExecutionResources.Contracts.ModelUsage;
@@ -132,7 +133,8 @@ public sealed class FoundationPrototypeTests
                 },
                 LlmConfig = new() { ModelId = "scripted-model", MaxContextTokens = 16_384 },
             };
-            await loop.ExecuteAsync(dispatch);
+            var workDispatcher = new RuntimeAgentDispatcher(loop, new AgentExecutionStateRegistry());
+            await workDispatcher.DispatchAsync(dispatch);
 
             // The real execution journal records the terminal, so the public SDK can read Completed.
             await FinishWorkAsync(provider, receipt, TurnTerminal.Success("产物已提交并归档。", null));
@@ -226,7 +228,8 @@ public sealed class FoundationPrototypeTests
                 },
                 LlmConfig = new() { ModelId = "scripted-model", MaxContextTokens = 16_384 },
             };
-            var cancelRun = cancelLoop.ExecuteAsync(cancelDispatch);
+            var cancelWorkDispatcher = new RuntimeAgentDispatcher(cancelLoop, new AgentExecutionStateRegistry());
+            var cancelRun = cancelWorkDispatcher.DispatchAsync(cancelDispatch);
             await blocking.Started.Task.WaitAsync(TimeSpan.FromSeconds(20));
             cancelControl.Cancel(cancelReceipt.ConversationId);
             try { await cancelRun.WaitAsync(TimeSpan.FromSeconds(20)); }
