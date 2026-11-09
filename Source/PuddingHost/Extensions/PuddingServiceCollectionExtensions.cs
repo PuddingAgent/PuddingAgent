@@ -37,6 +37,7 @@ using PuddingRuntime.Services.Events;
 using PuddingRuntime.Services.Hooks;
 using PuddingRuntime.Services.Messaging;
 using PuddingRuntime.Services.Observability;
+using PuddingPlatform.Services.Reviews;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.SubAgents;
 using PuddingRuntime.Services.Tools;
@@ -75,6 +76,8 @@ public static partial class PuddingServiceCollectionExtensions
         // PuddingWebApiTests 引入 48 项回归（失败 6 → 54），疑似波及测试宿主基础设施的 HttpClient。
 
         AddPlatformServices(builder, dataPaths, aspnetcoreEnvironment);
+        builder.Services.AddSingleton<IReviewJobByGoalObjectiveReader>(sp => sp.GetRequiredService<ReviewJobStore>());
+        builder.Services.AddSingleton<IReviewCompletionReader>(sp => sp.GetRequiredService<ReviewCompletionProjection>());
         AddManagedWorkBudgetBinding(builder);
         AddPluginWorkspaceEvents(builder);
         PuddingPlatform.Services.AgentWork.AgentWorkServiceCollectionExtensions.AddAgentWorkApi(builder.Services);
