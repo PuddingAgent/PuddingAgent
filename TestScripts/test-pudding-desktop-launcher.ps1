@@ -1,21 +1,27 @@
 param(
     [string]$DesktopExe = 'temp/build/winui3/bin/PuddingDesktop/debug_win-x64/PuddingDesktop.exe',
     [string]$CoreExe,
+    [string]$EvidenceRoot,
     [switch]$CapabilityChannelEnabled
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$desktopPath = (Resolve-Path (Join-Path $repo $DesktopExe)).Path
-$configuredCore = if ([string]::IsNullOrWhiteSpace($CoreExe)) { $null } else { (Resolve-Path (Join-Path $repo $CoreExe)).Path }
+function Resolve-ProductPath([string]$Path) {
+    if ([IO.Path]::IsPathFullyQualified($Path)) { return (Resolve-Path -LiteralPath $Path).Path }
+    return (Resolve-Path -LiteralPath (Join-Path $repo $Path)).Path
+}
+$desktopPath = Resolve-ProductPath $DesktopExe
+$configuredCore = if ($CoreExe) { Resolve-ProductPath $CoreExe } else { $null }
 $corePath = if ($configuredCore) { $configuredCore } else { (Resolve-Path (Join-Path (Split-Path $desktopPath) 'core/PuddingAgent.exe')).Path }
-$testRoot = Join-Path $repo ('temp/test-out/launcher-' + [Guid]::NewGuid().ToString('N'))
+if (!$EvidenceRoot) { $EvidenceRoot = Join-Path $repo '.work/desktop-launcher' }
+$testRoot = Join-Path $EvidenceRoot ([Guid]::NewGuid().ToString('N'))
 $dataRoot = Join-Path $testRoot 'data'
 $desktopHome = Join-Path $testRoot 'desktop'
 New-Item -ItemType Directory -Path (Join-Path $dataRoot 'config'),$desktopHome -Force | Out-Null
 $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0)
 $listener.Start(); $port = $listener.LocalEndpoint.Port; $listener.Stop()
 $desktopSettings = @{ dataRoot=$dataRoot; coreExecutablePath=$configuredCore; closeBehavior='ExitAndStopCore' }
-$coreSettings = @{ desktop=@{ core=@{ port=$port; autoStart=$true; autoRestart=$false; startupTimeoutSeconds=120; shutdownTimeoutSeconds=15 }; bootstrap=@{ httpEnabled=$false; enabled=$false } } }
+$coreSettings = @{ desktop=@{ core=@{ port=$port; autoStart=$true; autoRestart=$false; startupTimeoutSeconds=120; shutdownTimeoutSeconds=15 }; guardian=@{ enabled=$false }; bootstrap=@{ httpEnabled=$false; enabled=$false } } }
 if ($CapabilityChannelEnabled) {
     $channelSettings = @{ enabled=$true; desktopId='default' }
     $desktopSettings.desktop = @{ capabilityChannel=$channelSettings }

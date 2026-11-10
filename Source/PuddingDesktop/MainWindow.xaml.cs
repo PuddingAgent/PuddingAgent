@@ -2847,7 +2847,14 @@ public sealed partial class MainWindow : Window
                     Path.Combine(_coordinator.DataRoot!, "browser", "workbench", "user-data"), null);
                 _web = new Microsoft.UI.Xaml.Controls.WebView2();
                 WorkbenchHost.Children.Add(_web);
-                await _web.EnsureCoreWebView2Async(_webEnvironment);
+                Exception? initializationError = null;
+                void OnInitialized(Microsoft.UI.Xaml.Controls.WebView2 sender,
+                    Microsoft.UI.Xaml.Controls.CoreWebView2InitializedEventArgs args) => initializationError = args.Exception;
+                _web.CoreWebView2Initialized += OnInitialized;
+                try { await _web.EnsureCoreWebView2Async(_webEnvironment); }
+                finally { _web.CoreWebView2Initialized -= OnInitialized; }
+                if (_web.CoreWebView2 is null)
+                    throw new InvalidOperationException("WebView2 did not create the workbench controller.", initializationError);
                 // SCROLL-001：首帧之前就给 WebView2 铺主题底色，消除加载闪白
                 ApplyWorkbenchAppearance();
                 _web.CoreWebView2.NewWindowRequested += (_, e) => { e.Handled = true; OpenExternal(e.Uri); };
@@ -3408,9 +3415,8 @@ public sealed partial class MainWindow : Window
     private static async Task SavePngAsync(Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap capture, string path)
     {
         var pixels = await capture.GetPixelsAsync();
-        await File.WriteAllBytesAsync(path, []);
-        var imageFile = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
-        using var stream = await imageFile.OpenAsync(Windows.Storage.FileAccessMode.ReadWrite);
+        using var file = File.Create(path);
+        using var stream = file.AsRandomAccessStream();
         var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(
             Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, stream);
         encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8,
@@ -3428,7 +3434,12 @@ public sealed partial class MainWindow : Window
             async Task WaitReady()
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
-                while (_coordinator.State != DesktopStartupState.WorkbenchReady) await Task.Delay(100, timeout.Token);
+                while (_coordinator.State != DesktopStartupState.WorkbenchReady)
+                {
+                    if (_coordinator.State == DesktopStartupState.WorkbenchFailed)
+                        throw new InvalidOperationException(_stateError ?? "Workbench initialization failed.");
+                    await Task.Delay(100, timeout.Token);
+                }
             }
 
             // 启动中面板：在 WorkbenchReady 之前抓一张，并断言面板确实在报进度。
