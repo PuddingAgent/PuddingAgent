@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Target Name="EnforceChannelIsolation" BeforeTargets="ResolveProjectReferences;CoreCompile">
+    <Error Condition="'@(ProjectReference)' != '' Or '@(PackageReference)' != ''" Text="The guest channel must not reference the Agent loop, tools, or private stores." />
+  </Target>
+</Project>

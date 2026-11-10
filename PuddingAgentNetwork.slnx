@@ -103,6 +103,8 @@
     <Project Path="Source/PuddingRetrievalTests/PuddingRetrievalTests.csproj" />
     <Project Path="Source/PuddingRuntime/PuddingRuntime.csproj" Id="bf7b7efd-1c2a-4e06-9efa-f0e4af746f49" />
     <Project Path="Source/PuddingSlack/PuddingSlack.csproj" />
+    <Project Path="Source/PuddingDingTalk/PuddingDingTalk.csproj" />
+    <Project Path="Source/PuddingDingTalkTests/PuddingDingTalkTests.csproj" />
     <Project Path="Source/PuddingSlackTests/PuddingSlackTests.csproj" />
     <Project Path="Source/PuddingTaskRecall.Cli/PuddingTaskRecall.Cli.csproj" />
     <Project Path="Source/PuddingVectorIndex/PuddingVectorIndex.csproj" />

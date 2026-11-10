@@ -1,0 +1,4 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../PuddingDingTalk/PuddingDingTalk.csproj" /></ItemGroup>
+</Project>

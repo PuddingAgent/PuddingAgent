@@ -42,6 +42,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PuddingComputer.Windows\PuddingComputer.Windows.csproj" />
     <ProjectReference Include="..\PuddingSlack\PuddingSlack.csproj" />
+    <ProjectReference Include="..\PuddingDingTalk\PuddingDingTalk.csproj" />
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
     <ProjectReference Include="..\PuddingPlatform\PuddingPlatform.csproj" />
     <ProjectReference Include="..\PuddingInvocationPipeline\PuddingInvocationPipeline.csproj" />

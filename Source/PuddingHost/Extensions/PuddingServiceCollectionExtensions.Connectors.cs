@@ -83,6 +83,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<FeishuImageUploadPreparationService>();
         builder.Services.AddSingleton<FeishuConnectorFactory>();
         builder.Services.AddSingleton<SlackConnectorFactory>();
+        builder.Services.AddHostedService<DingTalkGroupChannel>();
 
         // ── 网关鉴权（SM2 + 白名单）────────────────────────
         builder.Services.AddSingleton<GatewayAuthService>();
