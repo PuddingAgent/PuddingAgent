@@ -31,6 +31,33 @@ public sealed class ToolCallPresentationEmissionTests
         """{"job":{"job_id":"j-1","process_id":"j-1","session_id":"s-1","command":"dotnet build Source/PuddingRuntime/PuddingRuntime.csproj","cwd":"E:\\repo","status":"Exited","exit_code":0},"output":null,"next_action":"done"}""";
 
     [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(false, true)]
+    [DataRow(true, false)]
+    [DataRow(true, true)]
+    public async Task ToolInvocation_UsesFrozenExecutionDirectory(bool streaming, bool explicitRoot)
+    {
+        var data = PuddingCode.Configuration.PuddingDataPaths.FromRoot(Path.GetTempPath());
+        var environment = new DefaultExecutionEnvironmentProvider(new StartupEnvironmentInfo(), data);
+        var llm = new ToolCallingLlmClient(
+            new LlmResponse(null, [new ToolCall("cwd", "terminal_start", TerminalStartArgs)]),
+            new LlmResponse("Completed the requested operation successfully; no remaining actions.", null));
+        var tools = new StubToolInvocationService(TerminalResultJson);
+        var service = CreateService(llm, tools, executionEnvironment: environment);
+        var request = CreateDispatchRequest(Guid.NewGuid().ToString("N")) with
+        {
+            WorkingDirectory = explicitRoot ? Path.Combine(Path.GetTempPath(), "delegated-worktree") : null,
+        };
+        if (streaming)
+            await DrainAsync(service.ExecuteStreamAsync(request));
+        else
+            await service.ExecuteAsync(request);
+
+        Assert.AreEqual(request.WorkingDirectory ?? data.WorkspaceRoot(request.WorkspaceId),
+            tools.Requests.Single().WorkingDirectory);
+    }
+
+    [TestMethod]
     public async Task StreamingToolResult_InvokesHandoffHookAndFeedsAdviceToNextModelCall()
     {
         const string session = "session-handoff-stream";
@@ -176,7 +203,8 @@ public sealed class ToolCallPresentationEmissionTests
         IRuntimeLlmClient llm,
         IToolInvocationService tools,
         IToolPresentationProjector? projector = null,
-        IEnumerable<IAgentLoopHook>? hooks = null)
+        IEnumerable<IAgentLoopHook>? hooks = null,
+        IExecutionEnvironmentProvider? executionEnvironment = null)
     {
         var sessionManager = new AgentSessionManager(NullLogger<AgentSessionManager>.Instance);
         var runtimeSessionStore = new InMemoryRuntimeSessionStore();
@@ -201,7 +229,7 @@ public sealed class ToolCallPresentationEmissionTests
             new MemoryCache(new MemoryCacheOptions()),
             new ContextAssemblyStore(),
             NullLogger<ContextPipeline>.Instance,
-            new FakeEnvironmentProvider());
+            executionEnvironment ?? new FakeEnvironmentProvider());
         var contextManager = new ContextWindowManager(
             sessionManager,
             runtimeSessionStore,

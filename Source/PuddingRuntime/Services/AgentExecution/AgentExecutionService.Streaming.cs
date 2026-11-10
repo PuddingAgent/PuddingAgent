@@ -35,6 +35,7 @@ public sealed partial class AgentExecutionService
         RuntimeDispatchRequest request,
         [EnumeratorCancellation] CancellationToken external = default)
     {
+        request = BindWorkingDirectory(request);
         // V5：把 Run 启动冻结的路由快照推入异步流，DirectLlmClient 据此单源判定视觉能力/策略。
         using var frozenVisionScope = _frozenVisionContext?.Push(request.CallerLlmSnapshot);
         await using var executionLease = await _sessionExecutionGate.EnterAsync(

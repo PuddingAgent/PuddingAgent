@@ -256,6 +256,17 @@ public sealed partial class AgentExecutionService
 
 
 
+    private RuntimeDispatchRequest BindWorkingDirectory(RuntimeDispatchRequest request)
+    {
+        var root = string.IsNullOrWhiteSpace(request.WorkingDirectory)
+            ? _contextPipeline.GetWorkspaceRoot(request.WorkspaceId)
+            : request.WorkingDirectory;
+        if (root is null) return request;
+        if (!Path.IsPathFullyQualified(root))
+            throw new InvalidOperationException("The execution working directory must be absolute.");
+        return request with { WorkingDirectory = root };
+    }
+
     private void TryEnqueueStreamJsonl(
         RuntimeDispatchRequest request,
         string agentInstanceId,

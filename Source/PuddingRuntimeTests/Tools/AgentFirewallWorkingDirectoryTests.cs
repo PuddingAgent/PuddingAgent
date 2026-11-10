@@ -19,6 +19,18 @@ namespace PuddingRuntimeTests.Tools;
 [TestClass]
 public sealed class AgentFirewallWorkingDirectoryTests
 {
+    [TestMethod]
+    [DataRow("../other")]
+    [DataRow(@"parent\child")]
+    [DataRow("..")]
+    [DataRow("trailing.")]
+    public void HostWorkspaceLookup_RejectsNonIdentifiers(string workspaceId)
+    {
+        var paths = PuddingCode.Configuration.PuddingDataPaths.FromRoot(Path.GetTempPath());
+        var environment = new DefaultExecutionEnvironmentProvider(new StartupEnvironmentInfo(), paths);
+        Assert.ThrowsExactly<ArgumentException>(() => environment.GetWorkspaceRoot(workspaceId));
+    }
+
     private static string CreateTempRoot()
     {
         var path = Path.Combine(

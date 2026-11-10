@@ -36,6 +36,9 @@ public sealed class DefaultExecutionEnvironmentProvider : IExecutionEnvironmentP
     {
         if (string.IsNullOrWhiteSpace(workspaceId))
             return null;
+        if (workspaceId.Contains('/') || workspaceId.Contains('\\') || workspaceId.EndsWith('.') ||
+            workspaceId.EndsWith(' ') || workspaceId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            throw new ArgumentException("Expected a single workspace identifier.", nameof(workspaceId));
         return _dataPaths.WorkspaceRoot(workspaceId);
     }
 }

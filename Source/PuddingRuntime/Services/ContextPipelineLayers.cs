@@ -252,11 +252,13 @@ public sealed partial class ContextPipeline
             """;
     }
 
+    internal string? GetWorkspaceRoot(string workspaceId) => _envProvider.GetWorkspaceRoot(workspaceId);
+
     private string BuildWorkspaceEnvironmentLayer(ContextRequest request)
     {
         var sb = new StringBuilder();
         sb.AppendLine("--- LAYER: WORKSPACE ENVIRONMENT ---");
-        var workspaceRoot = _envProvider.GetWorkspaceRoot(request.WorkspaceId);
+        var workspaceRoot = GetWorkspaceRoot(request.WorkspaceId);
         if (workspaceRoot is not null)
         {
             sb.AppendLine($"WorkspaceRoot: {workspaceRoot}");

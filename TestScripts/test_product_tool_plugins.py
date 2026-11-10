@@ -69,7 +69,7 @@ def verify_product(exe, sample, dll, run):
 
             def api(path, body=None, media="application/json"):
                 payload = body if isinstance(body, bytes) else json.dumps(body).encode() if body is not None else None
-                headers = {"Content-Type": media}
+                headers = {"Content-Type": media, "X-Workspace-Id": scope["workspaceId"]}
                 if token:
                     headers["Authorization"] = "Bearer " + token
                 req = Request(base + path, data=payload, headers=headers)
@@ -82,7 +82,7 @@ def verify_product(exe, sample, dll, run):
                 check(exc.code in (401, 403), "anonymous management rejected")
             else:
                 raise RuntimeError("Anonymous plugin management was accepted")
-            credentials = {"userId": "plugin-smoke", "email": "smoke@example.invalid", "password": "Sm1!" + secrets.token_hex(16)}
+            credentials = {"userId": "admin", "email": "smoke@example.invalid", "password": "Sm1!" + secrets.token_hex(16)}
             token = api("/api/bootstrap/admin", credentials)["token"]
             catalog = api("/api/tool-plugins")
             check(catalog["coreProcessId"] == pid and catalog["workerInstalled"], "bundled worker installed on the tested Core")
@@ -119,14 +119,15 @@ def verify_product(exe, sample, dll, run):
             marker = "plugin-proof-" + uuid.uuid4().hex
             (workspace / "evidence.txt").write_text(marker, encoding="utf-8")
 
-            def dispatch(allowed, name=None, args=None, session=None, force=False):
+            def dispatch(allowed, name=None, args=None, session=None, force=False, *, allow_write=False, allow_shell=False):
                 probe = {"call_id": uuid.uuid4().hex, "schemas": [], "tool": name, "args": args, "force": force}
                 server.probe = probe
                 response = api("/api/runtime/execute", {"agentInstanceId": scope["agentId"], "agentTemplateId": "probe",
                     "workspaceId": scope["workspaceId"], "sessionId": session or scope["sessionId"],
-                    "workingDirectory": str(workspace), "messageText": "Run the isolated tool check " + uuid.uuid4().hex,
+                    "userId": credentials["userId"], "messageText": "Run the isolated tool check " + uuid.uuid4().hex,
                     "maxRounds": 3, "suppressContextAutoCompaction": True,
-                    "capabilityPolicy": {"defaultToolNames": allowed, "allowedToolNames": allowed, "allowShellExecution": False},
+                    "capabilityPolicy": {"defaultToolNames": allowed, "allowedToolNames": allowed,
+                                         "allowFileWrite": allow_write, "allowShellExecution": allow_shell},
                     "llmProfile": {"providerId": "local-test", "profileId": "local-test", "modelId": "product-test"},
                     "llmConfig": {"endpoint": endpoint, "apiKey": "local-smoke", "modelId": "product-test",
                                   "protocol": "openai", "maxContextTokens": 32768}})
@@ -175,6 +176,76 @@ def verify_product(exe, sample, dll, run):
             check(stats in names and '"characters":3' in result.replace(" ", "") and '"lines":2' in result.replace(" ", ""),
                   "agent received actual SDK worker result")
             unload(external)
+
+            def authorize_once(tool):
+                api(f"/api/v1/conversations/{scope['sessionId']}/system-commands", {
+                    "agentId": scope["agentId"], "clientRequestId": uuid.uuid4().hex,
+                    "clientMessageId": uuid.uuid4().hex, "responseMessageId": uuid.uuid4().hex,
+                    "commandText": f"/authorize {tool} once"})
+
+            def approved_call(tool, args, **policy):
+                authorize_once(tool)
+                names, receipt = dispatch([tool], tool, args, **policy)
+                check(tool in names, f"{tool} exposed in the authorized test scope")
+                return receipt
+
+            # The fixture is authored and compiled through real tools in the same logical
+            # workspace. A per-run method result distinguishes this DLL from the uploaded sample.
+            manifest = json.loads((sample / "plugin.json").read_text(encoding="utf-8"))
+            manifest.update(id="sample.build-proof", requestedCapabilities=[], hooks=[])
+            manifest["tools"] = manifest["tools"][:1]
+            manifest["tools"][0]["outputSchema"] = {"type": "string"}
+            source = """using Pudding.ToolPlugins.Contracts;
+using Pudding.ToolPlugins.Sdk;
+namespace Sample.TextTools;
+public sealed class TextToolsPlugin : ToolPlugin
+{
+    public override IReadOnlyCollection<string> ToolIds => ["text_stats"];
+    public override ValueTask<PluginResult> ExecuteAsync(PluginCall call, CancellationToken ct) =>
+        ValueTask.FromResult(PluginResult.Ok("MARKER/" + call.Arguments.GetProperty("text").GetString()));
+}
+""".replace("MARKER", marker)
+            for path, text in {
+                    "author/pkg/plugin.json": json.dumps(manifest, ensure_ascii=False),
+                    "author/src/TextTools.csproj": (sample / "TextTools.csproj").read_text(encoding="utf-8"),
+                    "author/src/TextToolsPlugin.cs": source}.items():
+                approved_call("file_write", {"path": path, "content": text}, allow_write=True)
+                check((workspace / path).is_file() and (workspace / path).read_text(encoding="utf-8") == text,
+                      "agent wrote " + path + " inside the logical workspace")
+            sdk = str(exe.parent / "tools" / "plugin-worker").replace("'", "''")
+            command = f"""$ErrorActionPreference = 'Stop'
+dotnet build author/src/TextTools.csproj -c Release -o author/out '-p:PuddingPluginSdkDirectory={sdk}' --nologo
+if ($LASTEXITCODE) {{ exit $LASTEXITCODE }}
+New-Item -ItemType Directory -Path author/pkg/bin -Force | Out-Null
+Copy-Item -LiteralPath author/out/Sample.TextTools.dll -Destination author/pkg/bin/Sample.TextTools.dll
+Compress-Archive -Path author/pkg/* -DestinationPath author/plugin.zip
+Write-Output 'package ready'"""
+            receipt = approved_call("shell", {"command": command, "shell": "pwsh", "timeout_seconds": 60}, allow_shell=True)
+            package = workspace / "author/plugin.zip"
+            check("package ready" in receipt and package.is_file(), "agent compiled and packaged the plugin via Shell")
+            with zipfile.ZipFile(package) as archive:
+                check(archive.read("bin/Sample.TextTools.dll") == (workspace / "author/out/Sample.TextTools.dll").read_bytes(),
+                      "ZIP contains the DLL built by the agent")
+            receipt = approved_call("plugin_import", {"path": "author/plugin.zip"}, allow_write=True)
+            installed = [p for p in api("/api/tool-plugins")["catalog"]["packages"] if p["id"] == manifest["id"]]
+            check(len(installed) == 1 and installed[0]["status"] == "Validated" and
+                  installed[0]["contentHash"] in receipt, "agent imported its workspace ZIP and received the installed content hash")
+            digest = installed[0]["contentHash"]
+            receipt = approved_call("plugin_load", {"contentHash": digest, "operationId": uuid.uuid4().hex})
+            check("process execution permission" in receipt and
+                  not any(a["pluginId"] == manifest["id"] for a in api("/api/tool-plugins")["activations"]),
+                  "approval alone cannot start an SDK worker with process execution disabled")
+            receipt = approved_call("plugin_load", {"contentHash": digest, "operationId": uuid.uuid4().hex}, allow_shell=True)
+            active = next((a for a in api("/api/tool-plugins")["activations"] if a["pluginId"] == manifest["id"] and a["state"] == "Active"), None)
+            check(active and active["activationId"] in receipt and active["processId"] > 0 and active["processId"] != pid,
+                  "agent loaded the new DLL into a distinct worker")
+            built_tool, = active["toolNames"]
+            _, receipt = dispatch(["plugin_load", built_tool], built_tool, {"text": "fresh"})
+            check(marker + "/fresh" in receipt, "agent received the unique result from its own compiled code")
+            _, receipt = dispatch(["plugin_unload"], "plugin_unload", {"activationId": active["activationId"]})
+            check("Unloaded" in receipt and active["activationId"] in receipt, "agent unloaded its SDK plugin")
+            names, _ = dispatch(["plugin_load", built_tool, "shell"])
+            check(built_tool not in names and "shell" not in names, "next turn hides unloaded SDK tool and ungranted Shell")
             unload(shell)
             _, receipt = dispatch(["plugin_unload"], "plugin_unload", {"activationId": files["activationId"]})
             check("Unloaded" in receipt and files["activationId"] in receipt, "agent unloaded its own file package")

@@ -27,7 +27,8 @@ public sealed class PluginImportTool(ExecutablePluginService plugins) : PuddingT
 {
     protected override async Task<PluginPackage> ExecuteCoreAsync(PluginImportArgs args, ToolExecutionContext context, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(context.WorkingDirectory)) throw new InvalidOperationException("A frozen workspace root is required.");
+        if (string.IsNullOrWhiteSpace(context.WorkingDirectory) || !Path.IsPathFullyQualified(context.WorkingDirectory))
+            throw new InvalidOperationException("Plugin import requires an absolute workspace root from the execution environment.");
         var path = PluginValidation.Inside(context.WorkingDirectory, args.Path);
         await using var file = File.OpenRead(path);
         return await plugins.Packages.ImportAsync(file, ct);
