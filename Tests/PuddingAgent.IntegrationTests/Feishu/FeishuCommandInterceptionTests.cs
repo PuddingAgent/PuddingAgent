@@ -1,5 +1,8 @@
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+using PuddingPlatform.Data;
+using PuddingPlatform.Data.Entities;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingAgent.Services;
 using PuddingCode.Abstractions;
@@ -23,10 +26,12 @@ public sealed class FeishuCommandInterceptionTests
     private const string SenderOpenId = "ou_command_sender";
 
     [TestMethod]
-    [DataRow(true)]
-    [DataRow(false)]
-    public async Task Yolo_IsInterceptedBeforeAgentDelivery_AndUsesFeishuWhitelist(
-        bool whitelisted)
+    [DataRow(true, true, true)]
+    [DataRow(false, true, true)]
+    [DataRow(true, false, true)]
+    [DataRow(true, true, false)]
+    public async Task Yolo_RequiresPrivateVerifiedSenderBindingAndFeishuCommandGrant(
+        bool whitelisted, bool bound, bool direct)
     {
         var context = await CreateContextAsync(
             whitelisted,
@@ -38,15 +43,16 @@ public sealed class FeishuCommandInterceptionTests
                 request.IsPrivilegedUser
                     ? "YOLO enabled by Pudding."
                     : "Permission denied by Pudding.",
-                request.IsPrivilegedUser ? "Yolo" : "Normal"));
+                request.IsPrivilegedUser ? "Yolo" : "Normal"), bind: bound);
         try
         {
             var result = await context.Gateway.AcceptAsync(
-                CreateEnvelope("om_yolo", "/yolo"));
+                CreateEnvelope("om_yolo", "/yolo") with { Metadata = new() {
+                    ["feishu_verified_private_user"] = direct ? "true" : "false", ["feishu_tenant"] = "company" } });
 
             Assert.HasCount(1, context.Handler.Requests);
             Assert.AreEqual(
-                whitelisted,
+                whitelisted && bound && direct,
                 context.Handler.Requests.Single().IsPrivilegedUser);
             Assert.HasCount(1, context.Messages.Envelopes);
             var reply = context.Messages.Envelopes.Single();
@@ -113,11 +119,12 @@ public sealed class FeishuCommandInterceptionTests
                 request.ResponseMessageId,
                 request.CommandText,
                 "Context compaction completed. Future messages will continue in the successor conversation.",
-                "Normal"));
+                "Normal"), bind: true);
         try
         {
             await context.Gateway.AcceptAsync(
-                CreateEnvelope("om_compact", "/compact"));
+                CreateEnvelope("om_compact", "/compact") with { Metadata = new() {
+                    ["feishu_verified_private_user"] = "true", ["feishu_tenant"] = "company" } });
 
             Assert.HasCount(1, context.Handler.Requests);
             var request = context.Handler.Requests.Single();
@@ -216,7 +223,7 @@ public sealed class FeishuCommandInterceptionTests
 
     private static async Task<TestContext> CreateContextAsync(
         bool whitelisted,
-        Func<SystemCommandRequest, SystemCommandResult> resultFactory)
+        Func<SystemCommandRequest, SystemCommandResult> resultFactory, bool bind = false)
     {
         var dataRoot = Path.Combine(
             Path.GetTempPath(),
@@ -247,7 +254,24 @@ public sealed class FeishuCommandInterceptionTests
         var services = new ServiceCollection();
         services.AddSingleton<IMessageSystem>(messages);
         services.AddSingleton<ISystemCommandHandler>(handler);
+        services.AddLogging();
+        services.AddDataProtection();
+        services.AddSingleton(paths);
+        services.AddSingleton<ISessionRepository>(sessions);
+        services.AddSingleton<ChannelDevelopmentTrust>();
+        services.AddSingleton<BoundChannelSessions>();
+        services.AddDbContextFactory<PlatformDbContext>(o => o.UseSqlite($"Data Source={Path.Combine(dataRoot, "trust.db")};Pooling=false"));
         var provider = services.BuildServiceProvider();
+        if (bind)
+        {
+            await using var db = provider.GetRequiredService<IDbContextFactory<PlatformDbContext>>().CreateDbContext();
+            await db.Database.EnsureCreatedAsync();
+            db.AppUsers.Add(new() { UserId = "developer", Username = "developer", Email = "dev@example.invalid",
+                PasswordHash = "fixture", UserType = UserType.Admin });
+            await db.SaveChangesAsync();
+            await provider.GetRequiredService<ChannelDevelopmentTrust>().SaveAsync(WorkspaceId, AgentId, ChannelId,
+                new("verified", [new("cli_fake_command", "company", SenderOpenId, "developer")]), default);
+        }
         var gateway = new MessageGatewayIngress(
             new AgentManifestCatalog(paths),
             new ChannelConfigurationFileService(

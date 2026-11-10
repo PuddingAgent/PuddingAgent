@@ -1,5 +1,7 @@
 ﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using PuddingPlatform.Services;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Core;
 using PuddingCode.Platform;
@@ -17,6 +19,7 @@ public class ConversationTurnsController : ControllerBase
 {
     /// <summary>提交 Turn — POST /{conversationId}/turns</summary>
     [HttpPost("{conversationId}/turns")]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public async Task<IActionResult> SubmitTurn(
         [FromRoute] string conversationId,
         [FromBody] SubmitTurnHttpRequest request,
@@ -28,6 +31,8 @@ public class ConversationTurnsController : ControllerBase
         if (validationResult is not null)
             return validationResult;
 
+        var suppliedMetadata = request.Metadata?.Where(p => !string.Equals(p.Key, ChannelDevelopmentTrust.Receipt,
+            StringComparison.OrdinalIgnoreCase)).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
         var command = new SubmitTurnCommand(
             ConversationId: conversationId,
             WorkspaceId: workspaceId,
@@ -36,7 +41,26 @@ public class ConversationTurnsController : ControllerBase
             ClientMessageId: request.ClientMessageId,
             Recipients: request.Recipients,
             Content: request.Content,
-            Metadata: request.Metadata);
+            Metadata: suppliedMetadata);
+
+        var trust = HttpContext?.RequestServices?.GetService<ChannelDevelopmentTrust>();
+        if (trust != null && command.Recipients.AgentIds is [var agent])
+        {
+            var sessions = HttpContext!.RequestServices.GetRequiredService<ISessionRepository>();
+            var session = await sessions.GetAsync(conversationId, ct);
+            if (session?.WorkspaceId == workspaceId && session.AgentInstanceId == agent &&
+                session.PrincipalKind is not ("channel" or "bound-channel") &&
+                (session.OwnerUserId == command.UserId || User.IsInRole("admin")))
+            {
+                var source = new ChannelSender(ChannelDevelopmentTrust.Web, "pudding", workspaceId, command.UserId, false);
+                var metadata = new Dictionary<string, string>(command.Metadata ?? new Dictionary<string, string>())
+                {
+                    [ChannelDevelopmentTrust.Receipt] = trust.Issue(new(workspaceId, agent, conversationId,
+                        command.ClientMessageId, command.UserId, command.UserId, source))
+                };
+                command = command with { Metadata = metadata };
+            }
+        }
 
         AcceptanceResult result;
         try

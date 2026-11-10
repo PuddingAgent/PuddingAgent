@@ -11,7 +11,7 @@ namespace PuddingPlatform.Services.Conversation;
 public sealed class SubmitTurnHandler(
     IConversationAcceptanceStore acceptanceStore,
     IVisualArtifactLocalFileResolver visualArtifactLocalFileResolver,
-    ILogger<SubmitTurnHandler> logger) : ISubmitTurnHandler
+    ILogger<SubmitTurnHandler> logger, ChannelDevelopmentTrust? trust = null) : ISubmitTurnHandler
 {
     public async Task<AcceptanceResult> HandleAsync(SubmitTurnCommand command, CancellationToken ct)
     {
@@ -30,6 +30,10 @@ public sealed class SubmitTurnHandler(
                 "At least one explicit agent ID is required.",
                 nameof(command.Recipients));
         var contentError = ConversationContentValidator.Validate(command.Content);
+        if (command.ConversationId.StartsWith(ChannelDevelopmentTrust.PrivatePrefix, StringComparison.Ordinal) &&
+            (command.Recipients.AgentIds is not [var agent] || trust?.Verify(command.Metadata, command.WorkspaceId,
+                agent, command.ConversationId, command.ClientMessageId, command.UserId) is not { Source.Channel: not ChannelDevelopmentTrust.Web }))
+            throw new UnauthorizedAccessException("Verified channel sender required.");
         if (contentError is not null)
             throw new ArgumentException(contentError, nameof(command.Content));
 

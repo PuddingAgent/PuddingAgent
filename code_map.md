@@ -33,6 +33,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingHost/` | Core 组合根：装配 HTTP 宿主、本机控制地址与各连接器 | [code_map](Source/PuddingHost/code_map.md) |
 | `Source/PuddingRuntime/` | Agent Loop · LLM 网关调用 · 工具系统 · 上下文管线 · 子代理 · 后台学习 | [code_map](Source/PuddingRuntime/code_map.md) |
 | `Source/PuddingCore/` | 跨层抽象与契约：接口与基础模型类型（含 Goal 与编排） | [code_map](Source/PuddingCore/code_map.md) |
+| 渠道开发权限 | 管理员按工作区、Agent、渠道设置可信来源；Core 在每个执行轮复核身份及权限 | [策略服务](Source/PuddingPlatform/Services/ChannelDevelopmentTrust.cs) · [渠道设置](Source/PuddingPlatformAdmin/src/pages/workspace/ChannelTrustSettings.tsx) |
 | `Source/PuddingPlatform/` | Session · Web 与外部 API · EF Core + SQLite · 消息网关 | [code_map](Source/PuddingPlatform/code_map.md) |
 | `Source/PuddingReviews.Contracts/` · `Source/PuddingReviews/` | 持久评审任务的端口、证据校验和执行协调 | [契约](Source/PuddingReviews.Contracts/code_map.md) · [实现](Source/PuddingReviews/code_map.md) |
 | `Source/PuddingReviewsTests/` | 独立验证评审任务、证据与恢复 | [code_map](Source/PuddingReviewsTests/code_map.md) |

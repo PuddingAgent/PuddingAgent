@@ -275,6 +275,8 @@ per-key 连续 deferred 计数与退避档属 Agent 侧诊断（`classifier_stat
 | `Controllers/Api/LlmProviderApiController.cs` | Provider CRUD/配额/余额出口 | `LlmProviderApiController` | `Services/LlmProviderFileService.cs` | GET api/llm/providers/{providerId}/balance；KeyNotFound→404 / InvalidOperation→400 / HttpRequestException→502 |
 | `Services/FeishuRecipientDirectory.cs` | 飞书配置收件人查询 | `IFeishuRecipientDirectory` | `Services/ChannelConfigurationFileService.cs` | Agent/工作区隔离；启用且唯一绑定；只读白名单，不读历史消息 |
 | `Services/GatewayCommandRouteReader.cs` | 当前命令的可信飞书回复路由 | `IGatewayCommandRouteReader` | `ChatExecutionCommands` | 不再推断最近收件人 |
+| `Services/ChannelDevelopmentTrust.cs` | 渠道开发权限 | `ChannelDevelopmentTrust` | 工作区成员与访问策略 | 保存渠道设置，核对账号绑定与工作区写权限，为单轮执行签发和校验身份 |
+| `Controllers/Api/ChannelDevelopmentTrustController.cs` | 工作区渠道信任设置 | `Read` / `Save` | `ChannelDevelopmentTrust` | 仅管理员可读写指定 Agent 和渠道的设置 |
 | `Services/ChannelConfigurationFileService.cs` | 渠道配置文件服务 | `ChannelConfigurationFileService` | — | 单文件配置（21KB） |
 | `Services/VoiceProviderFileService.cs` | 语音提供商配置文件服务 | `VoiceProviderFileService` | — | 单文件配置（18KB） |
 

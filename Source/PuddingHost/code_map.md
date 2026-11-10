@@ -126,7 +126,8 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 | `Services/ConnectorHost.cs` | 连接器宿主 |
 | `Hosting/ConnectorHostLifecycleService.cs` | 连接器生命周期 hosted service（见下「关键语义」） |
 | `Services/ConnectorDeliveryDispatcher.cs` | 持久出站投递；显式 open_id 与会话回复分流，复用稳定 uuid 重试 |
-| `Services/MessageGatewayIngress.cs` | 消息网关入口（19KB） |
+| `Services/BoundChannelSessions.cs` | 为已绑定成员按渠道、组织、账号和会话分配独立分支，保留所有者身份 |
+| `Services/MessageGatewayIngress.cs` | 校验飞书和 Slack 来源，区分普通渠道会话与已验证成员分支，并向消息循环提交本轮身份 |
 | `Extensions/` | 扩展注册 |
 
 **关键语义**

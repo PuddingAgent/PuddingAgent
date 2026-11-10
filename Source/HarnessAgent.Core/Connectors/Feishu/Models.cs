@@ -136,6 +136,7 @@ public class FeishuMessageEvent
 
 public class FeishuEventSender
 {
+    public string? SenderType { get; set; }
     public FeishuSenderId? SenderId { get; set; }
 }
 

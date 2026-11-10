@@ -200,7 +200,10 @@ public sealed class ConversationReplyProjectionWorker(
                     RoomId = command.SessionId, ConversationId = command.SessionId, ReplyToMessageId = externalMessageId,
                     CorrelationId = command.SessionId, CausationId = command.TurnId, Audience = MessageAudiences.Direct,
                     Visibility = MessageVisibilities.Private, ContentType = MessageContentTypes.Text,
-                    Content = string.IsNullOrWhiteSpace(presentation.Content) ? $"Agent turn {command.Status}; no text reply." : presentation.Content,
+                    Content = command.SessionId.StartsWith(ChannelDevelopmentTrust.PrivatePrefix, StringComparison.Ordinal) &&
+                        Get(metadata, SlackChannelMetadata.IsDirectMessage) != "true"
+                        ? $"鲸鲸本轮状态为 {command.Status}，详情请登录工作台查看你的渠道开发会话。"
+                        : string.IsNullOrWhiteSpace(presentation.Content) ? $"Agent turn {command.Status}; no text reply." : presentation.Content,
                     Metadata = metadata
                 }, ct);
                 command.ReplyProjectedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();

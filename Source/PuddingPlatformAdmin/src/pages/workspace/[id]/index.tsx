@@ -46,6 +46,7 @@ import {
 } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
 import { history, useLocation, useParams } from '@umijs/max';
+import { ChannelTrustSettings } from '../ChannelTrustSettings';
 import {
   addWorkspaceMember,
   createWorkspaceAgent,
@@ -1188,6 +1189,7 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
         }}
         toolBarRender={() => [
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增渠道</Button>,
+          <ChannelTrustSettings key="trust" workspace={workspaceId} agents={workspaceAgents} />,
         ]}
       />
       <Drawer

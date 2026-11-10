@@ -74,6 +74,8 @@ public sealed record CapabilityPolicy
     /// SkillRuntime 读取时优先使用新字段。
     /// </summary>
     public IReadOnlyList<string> AllowedToolNames { get; init; } = [];
+    /// <summary>When true an empty allowlist denies all tools, including otherwise automatic tools.</summary>
+    public bool EnforceToolAllowlist { get; init; }
 
     /// <summary>
     /// V2: 默认工具 — 始终可用（只读、记忆、子代理等低风险能力）。

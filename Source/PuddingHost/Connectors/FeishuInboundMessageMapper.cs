@@ -43,6 +43,10 @@ public sealed class FeishuInboundMessageMapper(
             ["message_id"] = messageId,
             ["chat_id"] = chatId,
             ["sender_id"] = senderId,
+            ["feishu_verified_private_user"] = evt.Event?.Message?.ChatType == "p2p" &&
+                evt.Event?.Sender?.SenderType == "user" && evt.Event.Sender.SenderId?.OpenId == senderId &&
+                evt.Header?.AppId == binding.AppId ? "true" : "false",
+            ["feishu_tenant"] = evt.Header?.TenantKey ?? "",
             ["feishu_message_type"] = messageType,
             [MessageGatewayMetadata.TtsRepliesEnabled] =
                 binding.TtsRepliesEnabled ? "true" : "false",

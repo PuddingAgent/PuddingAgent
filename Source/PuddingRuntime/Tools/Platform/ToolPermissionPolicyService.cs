@@ -132,7 +132,7 @@ public sealed class ToolPermissionPolicyService : IToolPermissionPolicyService
         // An explicit role/tool allowlist is an exposure boundary, not an approval rule.
         // It remains authoritative in YOLO mode so delegated Smart roles cannot acquire
         // unrelated read-only or control-plane tools.
-        if (policy?.AllowedToolNames.Count > 0
+        if (policy is not null && (policy.EnforceToolAllowlist || policy.AllowedToolNames.Count > 0)
             && !policy.AllowedToolNames.Contains(policyName, StringComparer.OrdinalIgnoreCase))
         {
             return false;

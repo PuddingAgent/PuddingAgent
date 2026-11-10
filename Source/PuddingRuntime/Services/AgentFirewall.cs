@@ -159,6 +159,9 @@ public sealed class AgentFirewall : IAgentFirewall
     // ────────────────────────────────────────────
     private FirewallDecision EvaluateCapabilityGate(FirewallContext ctx)
     {
+        if (ctx.Policy is { EnforceToolAllowlist: true } restricted &&
+            !restricted.AllowedToolNames.Contains(ctx.ToolId, StringComparer.OrdinalIgnoreCase))
+            return FirewallDecision.Deny("Tool is outside the channel sender's allowed capabilities.", FirewallGate.Capability);
         if (_toolRegistry is null || _policySvc is null) return FirewallDecision.Allow();
         var descriptor = ResolveDescriptor(ctx);
         if (descriptor is not null && !_policySvc.CanExposeToAgent(descriptor, ctx.Policy))

@@ -722,6 +722,9 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IAgentChannelBinder>(sp =>
             sp.GetRequiredService<WorkspaceAgentFileService>());
         builder.Services.AddSingleton<ChannelConfigurationFileService>();
+        builder.Services.AddDataProtection();
+        builder.Services.AddSingleton<ChannelDevelopmentTrust>();
+        builder.Services.AddSingleton<BoundChannelSessions>();
         builder.Services.AddSingleton<AgentManifestCatalog>();
         builder.Services.AddSingleton<MessageGatewayIngress>();
         builder.Services.AddSingleton<IMessageGatewayIngress>(

@@ -29,7 +29,8 @@ public sealed class ExecutionRunCoordinator(
     IExecutionProgressRegistry? progressRegistry = null,
     TimeProvider? timeProvider = null,
     ISubAgentRunStore? subAgentRunStore = null,
-    IManagedWorkBudgetBindingResolver? managedWorkBudgetBinding = null) : IExecutionRunCoordinator
+    IManagedWorkBudgetBindingResolver? managedWorkBudgetBinding = null,
+    ChannelDevelopmentTrust? channelTrust = null) : IExecutionRunCoordinator
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan CancelPollInterval = TimeSpan.FromMilliseconds(500);
@@ -83,10 +84,30 @@ public sealed class ExecutionRunCoordinator(
             var profile = await profileResolver.ResolveAsync(
                 lease.WorkspaceId, command.AgentInstanceId, ctsRun.Token);
 
-            var snapshot = await snapshotFactory.CreateAsync(
-                profile, null, ctsRun.Token);
             var userMessage = await messageRepository.GetByMessageIdAsync(
                 command.UserMessageId, ctsRun.Token);
+            var facts = DeserializeMetadata(userMessage?.MetadataJson);
+            var proof = channelTrust?.Verify(facts, lease.WorkspaceId, command.AgentInstanceId,
+                lease.ConversationId, command.UserMessageId, command.UserId);
+            var executionUser = command.UserId;
+            if (proof != null ||
+                lease.ConversationId.StartsWith(ChannelDevelopmentTrust.PrivatePrefix, StringComparison.Ordinal) ||
+                facts?.ContainsKey(MessageGatewayMetadata.ChannelType) == true)
+            {
+                var policy = profile.CapabilityPolicy ?? new CapabilityPolicy();
+                var verified = proof != null && await channelTrust!.ResolveAsync(lease.WorkspaceId, command.AgentInstanceId,
+                    proof.Source, ctsRun.Token) == proof.User;
+                if (!verified && lease.ConversationId.StartsWith(ChannelDevelopmentTrust.PrivatePrefix, StringComparison.Ordinal))
+                    throw new UnauthorizedAccessException("Channel account binding no longer authorizes this turn.");
+                if (verified) executionUser = proof!.User;
+                var restrictedExternal = !verified && facts?.GetValueOrDefault(MessageGatewayMetadata.ChannelType) is "slack" or "feishu";
+                var effective = restrictedExternal ? ChannelDevelopmentTrust.ExternalGuest(policy) : ChannelDevelopmentTrust.Apply(policy, verified);
+                profile = profile with { CapabilityPolicy = effective,
+                    ToolDefinitions = restrictedExternal ? profile.ToolDefinitions?.Where(t => effective.AllowedToolNames.Contains(t.Name)).ToArray()
+                        : profile.ToolDefinitions,
+                    SkillPackages = restrictedExternal ? [] : profile.SkillPackages };
+            }
+            var snapshot = await snapshotFactory.CreateAsync(profile, null, ctsRun.Token);
             // ADR-077 §5.2/§5.5：canonical typed content parts 是图片事实的唯一来源。
             // 主模型含 vision → 原生图片部件直接进入请求，不经过任何预识别；
             // 文本模型 → 只收安全 artifact:// 占位，由模型决定是否显式调用 image_reader。
@@ -208,7 +229,7 @@ public sealed class ExecutionRunCoordinator(
                 AgentInstanceId: command.AgentInstanceId,
                 AgentTemplateId: profile.SourceTemplateId,
                 MessageText: messageText,
-                UserId: command.UserId,
+                UserId: executionUser,
                 CapabilityPolicy: snapshot.CapabilityPolicy,
                 ToolDefinitions: profile.ToolDefinitions,
                 SkillPackages: profile.SkillPackages,

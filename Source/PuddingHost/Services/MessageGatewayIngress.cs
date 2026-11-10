@@ -40,9 +40,6 @@ public sealed class MessageGatewayIngress(
                 $"Bound channel '{envelope.ChannelId}' does not exist.");
         ValidateBinding(envelope, manifest, channel);
 
-        var conversationId = envelope.ChannelType == ChannelProviderKinds.Slack
-            ? await EnsureSlackConversationAsync(manifest, envelope, ct)
-            : await EnsureMainConversationAsync(manifest, ct);
         var externalMessageId = envelope.ExternalMessageId ?? envelope.EnvelopeId;
         var messageId = StableId(
             "gateway-message",
@@ -52,6 +49,25 @@ public sealed class MessageGatewayIngress(
             "gateway-request",
             envelope.ConnectorId!,
             externalMessageId);
+
+        using var scope = scopeFactory.CreateScope();
+        ChannelSender? sender = envelope.ChannelType switch
+        {
+            "feishu" when channel.Feishu != null && envelope.Metadata.GetValueOrDefault("feishu_verified_private_user") == "true" =>
+                new(channel.ChannelId, channel.Feishu.AppId, envelope.Metadata.GetValueOrDefault("feishu_tenant") ?? "", envelope.UserExternalId, false),
+            "slack" when channel.Slack != null && envelope.Metadata.GetValueOrDefault(SlackChannelMetadata.IsBot) == "false" &&
+                !channel.Slack.AllowedBotUserIds.Contains(envelope.Metadata[SlackChannelMetadata.UserId], StringComparer.Ordinal) =>
+                new(channel.ChannelId, channel.Slack.AppId, channel.Slack.TeamId, envelope.Metadata[SlackChannelMetadata.UserId],
+                    envelope.Metadata[SlackChannelMetadata.IsDirectMessage] != "true"),
+            _ => null
+        };
+        var bound = scope.ServiceProvider.GetService<BoundChannelSessions>();
+        var development = bound == null ? null : await bound.ResolveAsync(manifest, sender,
+            envelope.Metadata.GetValueOrDefault(SlackChannelMetadata.ConversationKey) ?? envelope.ExternalConversationId!,
+            messageId, MessagePrincipalIdentity.FromSender(MessageEndpointKinds.User, envelope.UserExternalId), ct);
+        var conversationId = development?.Session ?? (envelope.ChannelType == ChannelProviderKinds.Slack || bound != null
+            ? await EnsureExternalConversationAsync(manifest, envelope, ct)
+            : await EnsureMainConversationAsync(manifest, ct));
 
         var metadata = new Dictionary<string, string>(
             envelope.Metadata,
@@ -69,7 +85,9 @@ public sealed class MessageGatewayIngress(
             [MessageGatewayMetadata.ClientRequestId] = clientRequestId,
         };
 
-        using var scope = scopeFactory.CreateScope();
+        metadata.Remove(ChannelDevelopmentTrust.Receipt);
+        if (development != null)
+            metadata[ChannelDevelopmentTrust.Receipt] = scope.ServiceProvider.GetRequiredService<ChannelDevelopmentTrust>().Issue(development);
         var commandResult = await TryHandleCommandAsync(
             scope.ServiceProvider,
             envelope,
@@ -80,6 +98,7 @@ public sealed class MessageGatewayIngress(
             messageId,
             clientRequestId,
             metadata,
+            development,
             ct);
         if (commandResult is not null)
             return commandResult;
@@ -150,6 +169,7 @@ public sealed class MessageGatewayIngress(
         string ingressMessageId,
         string clientRequestId,
         Dictionary<string, string> metadata,
+        DevelopmentTurn? development,
         CancellationToken ct)
     {
         var commandText = envelope.MessageText.Trim();
@@ -159,7 +179,9 @@ public sealed class MessageGatewayIngress(
         var parsed = SystemCommandParser.TryParse(commandText, out var command);
         var requiresPrivilege = parsed
                                 && SystemCommandParser.RequiresPrivilege(command);
-        var isPrivilegedUser = envelope.ChannelType == ChannelProviderKinds.Feishu && IsPrivilegedFeishuUser(
+        var isPrivilegedUser = envelope.ChannelType == ChannelProviderKinds.Feishu &&
+            envelope.Metadata.GetValueOrDefault("feishu_verified_private_user") == "true" &&
+            development != null && IsPrivilegedFeishuUser(
             channel.Feishu,
             envelope.UserExternalId);
         var responseMessageId = StableId(
@@ -203,6 +225,10 @@ public sealed class MessageGatewayIngress(
                 externalMessageId);
             commandMetadata[MessageGatewayMetadata.ClientRequestId] =
                 forwardedRequestId;
+            if (development != null)
+                commandMetadata[ChannelDevelopmentTrust.Receipt] = serviceProvider.GetRequiredService<ChannelDevelopmentTrust>()
+                    .Issue(development with { Message = forwardedMessageId,
+                        Actor = MessagePrincipalIdentity.FromSender(MessageEndpointKinds.System, "pudding") });
 
             var forwarded = await messageSystem.SendAsync(
                 new MessageEnvelope
@@ -292,7 +318,7 @@ public sealed class MessageGatewayIngress(
                 Audience = MessageAudiences.Direct,
                 Visibility = MessageVisibilities.Private,
                 ContentType = MessageContentTypes.Text,
-                Content = result.Message,
+                Content = development?.Source.Group == true ? "命令已处理，详情请在工作台核对。" : result.Message,
                 CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 Metadata = commandMetadata,
             },
@@ -388,10 +414,11 @@ public sealed class MessageGatewayIngress(
         }
     }
 
-    private async Task<string> EnsureSlackConversationAsync(AgentInstanceManifest manifest, PuddingIngressEnvelope envelope, CancellationToken ct)
+    private async Task<string> EnsureExternalConversationAsync(AgentInstanceManifest manifest, PuddingIngressEnvelope envelope, CancellationToken ct)
     {
-        var route = envelope.Metadata[SlackChannelMetadata.ConversationKey];
-        var sessionId = StableId("slack-session", manifest.WorkspaceId, manifest.AgentInstanceId, envelope.ConnectorId!, route);
+        var slack = envelope.ChannelType == ChannelProviderKinds.Slack;
+        var route = slack ? envelope.Metadata[SlackChannelMetadata.ConversationKey] : envelope.ExternalConversationId!;
+        var sessionId = StableId(envelope.ChannelType + "-session", manifest.WorkspaceId, manifest.AgentInstanceId, envelope.ConnectorId!, route);
         var gate = _sessionLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct);
         try
@@ -400,7 +427,7 @@ public sealed class MessageGatewayIngress(
             if (existing is not null)
             {
                 if (existing.WorkspaceId != manifest.WorkspaceId || existing.AgentInstanceId != manifest.AgentInstanceId || existing.ChannelId != envelope.ChannelId)
-                    throw new InvalidOperationException("Slack conversation identity conflict.");
+                    throw new InvalidOperationException("External conversation identity conflict.");
                 return sessionId;
             }
             await sessions.CreateAsync(new SessionRecord
@@ -409,7 +436,7 @@ public sealed class MessageGatewayIngress(
                 AgentInstanceId = manifest.AgentInstanceId, ChannelId = envelope.ChannelId, OwnerUserId = envelope.UserExternalId,
                 SessionType = SessionType.ServiceSession, SessionRole = SessionRole.Branch, PrincipalKind = "channel",
                 PrincipalId = route, Status = SessionStatus.Active,
-                Title = $"Slack {(envelope.Metadata[SlackChannelMetadata.IsDirectMessage] == "true" ? "私聊" : "频道线程")} · {envelope.MessageText.Replace('\r', ' ').Replace('\n', ' ')[..Math.Min(50, envelope.MessageText.Length)]}"
+                Title = $"{(slack ? envelope.Metadata[SlackChannelMetadata.IsDirectMessage] == "true" ? "Slack 私聊" : "Slack 频道线程" : "飞书会话")} · {envelope.MessageText.Replace('\r', ' ').Replace('\n', ' ')[..Math.Min(50, envelope.MessageText.Length)]}"
             }, ct);
             return sessionId;
         }
