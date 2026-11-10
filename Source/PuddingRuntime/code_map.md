@@ -18,8 +18,7 @@
 | `Models/MemoryCropModels.cs` | 记忆裁剪前后的原始数据包模型 | `RawContentBundle` | `Services/CroppedLayersProvider.cs` | — |
 | `Models/SessionRuntimeRecord.cs` | 会话运行时记录模型 | `SessionRuntimeRecord` | `Services/InMemoryRuntimeSessionStore.cs` | — |
 | `Controllers/NativeCapabilityController.cs` | 原生能力执行 API 的入口 | `NativeCapabilityController` | `Services/NativeCapabilityExecutor.cs` | 权限与审批校验完成后才转发执行 |
-| `Controllers/PluginCatalogController.cs` | 插件目录的只读 API | `PluginCatalogController` | `Services/Plugins/HostToolContributions.cs` · `Services/Plugins/ToolPluginLifecycle.cs` | 产品工具内核、受策略约束的服务绑定、按作用域加载/卸载入口 | `HostToolContributions` | `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` | 无激活不导出业务工具 |
-| `Services/Plugins/PluginManifestCatalog.cs` | — |
+| `Controllers/PluginCatalogController.cs` | 插件目录的只读 API | `PluginCatalogController` | `Services/Plugins/PluginManifestCatalog.cs` | — |
 | `Controllers/RuntimeExecuteController.cs` | Runtime 执行 API 的请求入口 | `RuntimeExecuteController` | `Services/TurnExecutorAdapter.cs` | — |
 | `Controllers/RuntimeSessionController.cs` | Runtime 会话 API 的入口 | `RuntimeSessionController` | `Services/AgentSessionManager.cs` | — |
 | `Services/PuddingConfigLoader.cs` | JSON 配置文件的加载器 | `PuddingConfigLoader` | `Services/PuddingJsonConfig.cs` | — |
@@ -207,6 +206,7 @@
 | `Services/Orchestration/SubAgentOrchestrationNodeExecutor.cs` | 子代理节点的只读执行器 | `SubAgentOrchestrationNodeExecutor` | `Services/SubAgentInvocationService.cs` | 角色与模板冻结后不得改写 |
 | `Services/PersistentCompositionVersionRegistry.cs` | Composition 版本的持久化与恢复结果 | `ICompositionVersionRegistry` | `Services/CompositionRecoveryService.cs` | 恢复失败必须可被调用方观察 |
 | `Services/Plugins/PluginDiagnosticsSink.cs` | 插件基础设施诊断证据的写入 | `PluginDiagnosticsSink` | `Services/Plugins/PluginManifestCatalog.cs` | — |
+| `Services/Plugins/HostToolContributions.cs` · `Services/Plugins/ToolPluginLifecycle.cs` | 产品工具内核、声明包服务绑定与作用域加载/卸载 | `HostToolContributions` | `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` | 无激活不导出业务工具 |
 | `Services/Plugins/PluginManifestCatalog.cs` | 数据根下插件描述符的目录 | `IPluginManifestCatalog` | `Controllers/PluginCatalogController.cs` | 本阶段只读清单，不加载插件代码 |
 | `Services/Plugins/PluginPackageInstaller.cs` | 插件 ZIP 包的安全安装 | `PluginPackageInstaller` | `Services/Plugins/PluginManifestCatalog.cs` | 安装前校验路径与包结构 |
 | `Services/PreCompactionFlushService.cs` | 压缩前的会话冲洗 | `IPreCompactionFlushService` | `Services/ContextCompactionService.cs` | — |
