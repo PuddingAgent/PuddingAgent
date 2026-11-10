@@ -1,0 +1,17 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "chat-http",
+  "version": "0.1.2",
+  "description": "Windows 本机 Codex 会话 HTTP 服务，提供会话列表、管理、消息投递及分页读取。",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Codex 会话 HTTP",
+        "shortDescription": "通过本机 HTTP 管理聊天和收发消息",
+        "category": "Developer Tools",
+        "logo": "./assets/logo.svg",
+        "composerIcon": "./assets/logo.svg"
+      }
+    }
+  }
+}

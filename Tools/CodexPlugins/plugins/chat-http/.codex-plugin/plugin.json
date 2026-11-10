@@ -1,0 +1,13 @@
+{
+  "name": "chat-http",
+  "version": "0.1.2",
+  "description": "Windows 本机 Codex 会话 HTTP 服务",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex 会话 HTTP",
+    "shortDescription": "通过本机 HTTP 管理聊天和收发消息",
+    "category": "Developer Tools",
+    "logo": "./assets/logo.svg",
+    "composerIcon": "./assets/logo.svg"
+  }
+}

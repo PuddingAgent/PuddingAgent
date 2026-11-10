@@ -1,0 +1,20 @@
+{
+  "name": "pudding-local",
+  "interface": {
+    "displayName": "Pudding 本地插件"
+  },
+  "plugins": [
+    {
+      "name": "chat-http",
+      "source": {
+        "source": "local",
+        "path": "./plugins/chat-http"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
