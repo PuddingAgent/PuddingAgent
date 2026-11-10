@@ -94,6 +94,61 @@ Pudding.CuHelper（拟）       ← 独立进程：承载 UIAutomation，JSON-RP
    本机未实测 WGC 的可用性与性能。若后续需要“后台可截”，这是必选项。
 4. **多显示器 / DPI**：已有组件，但跨屏负坐标场景未实测
 
+## 七之二、新增：`actionable` 恒为 0 的两种可能（2026-11-11 02:30，代码核实，未验行为）
+
+### 现象
+
+2026-11-04 实测两个真实目标，`nodes` 能读到但可操作数均为 0：
+
+| 目标 | 类型 | nodes | actionable |
+|---|---|---|---|
+| AMD Bug Report Tool | 原生 WinForms | 13 | 0 |
+| DeepSeek Harness | Electron | 4 | 0 |
+
+### 判据与填充逻辑
+
+`UiaContracts.cs:74`：
+
+```csharp
+public bool IsActionable => IsEnabled && !IsOffscreen && Patterns.Count > 0;
+```
+
+`FlaUiInspector.cs:198-219`：`enabled` 默认 **true**、`offscreen` 默认 **false**（异常时保持默认值，偏向“算可操作”），
+所以 actionable=0 只可能是 **所有节点的 `Patterns` 都为空**。
+
+而 `Patterns` 是五个独立探针，**每一个都用 `catch { }` 吞掉异常**：
+
+```csharp
+try { if (element.Patterns.Invoke.IsSupported) patterns.Add("Invoke"); } catch { }
+try { if (element.Patterns.Value.IsSupported) patterns.Add("Value"); } catch { }
+// SelectionItem / Toggle / Text 同理
+```
+
+### 两种解释，现有代码区分不了
+
+1. 那些元素**真的**不支持这五个模式；
+2. 五个探针**都抛了异常**，被 `catch { }` 吃成“不支持”。
+
+**这一点比现象本身严重**：静默吞异常使「读不到」与「真的没有」输出完全一致的信号。
+它与本仓另一条已确认的缺陷（`search_grep` 省略 directory 时的静默错位）同属一类：
+**失败不可见**。
+
+### 测试侧的证据
+
+`PuddingComputer.UIAutomationTests` 里 `Actionable` 相关用例**全部用合成节点**构造
+（`Node(enabled, offscreen, patterns: "Invoke")`），即只验证了 `IsActionable` 这个布尔表达式。
+**没有任何用例证明 `FlaUiInspector` 能从真实元素上读出至少一个 pattern**。
+因此“全零”可以长期存在而不被任何测试拦下。
+
+### 要定案需要的最小实验
+
+对一个已知可点的原生按钮（如 WinForms 的 `Button`）：
+- 若 `Patterns` 能读到 `Invoke` → 解释 1；说明应用差异，不是 bug
+- 若 `Patterns` 为空 → 解释 2；说明探针或前置（UIA2 预探测）有缺陷
+
+**未做**：本会话无 shell，无法构建探针程序；也无直接暴露 UIA 的工具。
+**不得据本节声称**：actionable=0 是 bug。它现在只是「两种解释之一，尚未区分」。
+
 ## 后台截图：PrintWindow 初步结果（未定论，2026-11-04 09:30）
 
 对 douyin 窗口（2304×1315）试 `PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT=2)`：
