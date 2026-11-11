@@ -15,16 +15,24 @@ public sealed class HostToolContributions : IContextualPuddingToolSource, IAsync
     private sealed record BoundTool(Lazy<IPuddingTool> Implementation, Lazy<ToolDescriptor> Metadata);
     private readonly Dictionary<string, BoundTool> _bindings;
     private readonly HostToolMounts _mounts = new();
+    private readonly object _autoGate = new();
+    private readonly HashSet<string> _autoSuppressed = new(StringComparer.Ordinal);
     private readonly IToolPermissionPolicyService _permissions;
     private static readonly HashSet<Type> Kernel = [typeof(SearchToolsTool), typeof(RequestToolApprovalTool),
         typeof(ListToolApprovalsTool), typeof(PluginCatalogTool), typeof(PluginDiagnosticsTool),
         typeof(PluginImportTool), typeof(PluginLoadTool), typeof(PluginUnloadTool)];
 
     private HostToolContributions(IServiceProvider services)
+        : this(services, HostToolPackage.ReadInstalled(
+            Path.Combine(AppContext.BaseDirectory, "tools", "host-packages")))
+    {
+    }
+
+    /// <summary>Same wiring with an explicit package list, so tests do not depend on the install directory.</summary>
+    internal HostToolContributions(IServiceProvider services, IReadOnlyList<HostToolPackage> packages)
     {
         _permissions = services.GetRequiredService<IToolPermissionPolicyService>();
-        _packages = HostToolPackage.ReadInstalled(Path.Combine(AppContext.BaseDirectory, "tools", "host-packages"))
-            .ToDictionary(p => p.ContentHash, StringComparer.Ordinal);
+        _packages = packages.ToDictionary(p => p.ContentHash, StringComparer.Ordinal);
         _bindings = services.GetServices<Binding>().ToDictionary(b => b.Type.FullName!, b =>
         {
             var implementation = new Lazy<IPuddingTool>(() => b.AdaptSkill
@@ -114,17 +122,25 @@ public sealed class HostToolContributions : IContextualPuddingToolSource, IAsync
     {
         if (!approved) throw new PluginException("plugin.capability_denied", "load", "Explicit load approval is required.");
         var package = _packages[hash];
+        lock (_autoGate) _autoSuppressed.Remove(AutoKey(scope, hash));
         var activation = _mounts.Load(package, scope, operation, revision);
         return activation with { ToolNames = activation.State == "Active"
             ? package.Exports.Where(e => caller is null || Visible(e.Key, e.Value, caller)).Select(e => e.Key).ToArray()
             : [] };
     }
-    public Task<PluginActivation> UnloadAsync(string id, PluginScope scope, long? revision, CancellationToken ct)
-        => _mounts.UnloadAsync(id, scope, revision, ct);
+    public async Task<PluginActivation> UnloadAsync(string id, PluginScope scope, long? revision, CancellationToken ct)
+    {
+        // An explicit unload pins the package off for this agent until it is loaded again.
+        var target = _mounts.List(scope).FirstOrDefault(a => a.ActivationId == id);
+        if (target is not null)
+            lock (_autoGate) _autoSuppressed.Add(AutoKey(scope, target.ContentHash));
+        return await _mounts.UnloadAsync(id, scope, revision, ct);
+    }
 
     public IReadOnlyList<IPuddingTool> ListTools(ToolExecutionContext context)
     {
         if (context.CapabilityPolicy is null) return [];
+        AutoMount(context);
         var tools = new List<IPuddingTool>();
         foreach (var a in _mounts.List(ExecutablePluginService.Scope(context)).Where(a => a.State == "Active"))
         {
@@ -137,6 +153,41 @@ public sealed class HostToolContributions : IContextualPuddingToolSource, IAsync
             }
         }
         return tools;
+    }
+
+    private static string AutoKey(PluginScope scope, string hash) =>
+        $"{scope.WorkspaceId}|{scope.AgentId}|{hash}";
+
+    /// <summary>
+    /// Mounts declarative host packages on first use. A host package exports only operation names the product
+    /// already registered, so mounting executes nothing; every call is still authorized by the agent capability
+    /// policy in <see cref="Permitted"/>. An explicit unload pins the package off until it is loaded again.
+    /// </summary>
+    private void AutoMount(ToolExecutionContext context)
+    {
+        var scope = ExecutablePluginService.Scope(context);
+        var active = _mounts.List(scope)
+            .Where(a => a.State == "Active")
+            .Select(a => a.ContentHash)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var package in _packages.Values)
+        {
+            if (active.Contains(package.ContentHash)) continue;
+            lock (_autoGate)
+                if (_autoSuppressed.Contains(AutoKey(scope, package.ContentHash))) continue;
+            var offered = package.Exports.Any(e => _bindings.TryGetValue(e.Value, out var binding)
+                && Selected(e.Key, context)
+                && Permitted(Export(binding, e.Key, package.Id), context));
+            if (!offered) continue;
+            try
+            {
+                _mounts.Load(package, scope, "auto:" + package.ContentHash, null);
+            }
+            catch (PluginException)
+            {
+                // An unmountable scope simply keeps its tools hidden; the catalog still reports real state.
+            }
+        }
     }
 
     private static bool Selected(string id, ToolExecutionContext context) =>

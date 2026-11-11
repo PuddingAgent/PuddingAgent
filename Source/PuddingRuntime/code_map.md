@@ -18,7 +18,8 @@
 | `Models/MemoryCropModels.cs` | 记忆裁剪前后的原始数据包模型 | `RawContentBundle` | `Services/CroppedLayersProvider.cs` | — |
 | `Models/SessionRuntimeRecord.cs` | 会话运行时记录模型 | `SessionRuntimeRecord` | `Services/InMemoryRuntimeSessionStore.cs` | — |
 | `Controllers/NativeCapabilityController.cs` | 原生能力执行 API 的入口 | `NativeCapabilityController` | `Services/NativeCapabilityExecutor.cs` | 权限与审批校验完成后才转发执行 |
-| `Controllers/PluginCatalogController.cs` | 插件目录的只读 API | `PluginCatalogController` | `Services/Plugins/PluginManifestCatalog.cs` | — |
+| `Controllers/PluginCatalogController.cs` | 旧 v1 清单导入、读取与诊断，不贡献工具 | `PluginCatalogController` | `Services/Plugins/PluginManifestCatalog.cs` | — |
+| `Controllers/ExecutablePluginsController.cs` | 管理员 v2 包导入与 Agent 级加载/卸载 API | `ExecutablePluginsController` | `Services/Plugins/ExecutablePluginService.cs` | 加载明确授权，退出未确认不可算卸载成功 |
 | `Controllers/RuntimeExecuteController.cs` | Runtime 执行 API 的请求入口 | `RuntimeExecuteController` | `Services/TurnExecutorAdapter.cs` | — |
 | `Controllers/RuntimeSessionController.cs` | Runtime 会话 API 的入口 | `RuntimeSessionController` | `Services/AgentSessionManager.cs` | — |
 | `Services/PuddingConfigLoader.cs` | JSON 配置文件的加载器 | `PuddingConfigLoader` | `Services/PuddingJsonConfig.cs` | — |
@@ -44,6 +45,11 @@
 | `Operators/ProjectionBases.cs` | 打分、判定与分类三类投影基类 | `ScorerBase<TCtx>` | `Operators/OperatorBase.cs` | 非虚，不引入新抽象成员 |
 | `Operators/OperatorEnvironment.cs` | 算子运行环境的端口集合与判定缓存 | `OperatorEnvironment` | `Operators/OperatorBase.cs` | — |
 | `Operators/OperatorRegistry.cs` | 场景算子的注册表与注册期守卫 | `IOperatorRegistry` | `Operators/OperatorEnvironment.cs` | 同场景重复注册或一型多端口一律拒绝 |
+| `Operators/PublicApi/SkillValueAccessAdapter.cs` | 公共 DTO 校验与原技能评分器结果映射 | `SkillValueAccessAdapter` | `Services/Improvement/SkillValue/SkillValueScorer.cs` | 数据不足返回空分数；不重写公式、不读取或认证宿主遥测 |
+| `Operators/PublicApi/PluginOperatorApiLeaseFactory.cs` | 可信插件调用身份与独立算子租约接线 | `IPluginOperatorApiLeaseFactory` | `Operators/PublicApi/OperatorServiceCollectionExtensions.cs` | 只开放 Core API 1.2 确定性评分；拒绝调用方作用域字段 |
+| `Operators/PublicApi/OperatorServiceCollectionExtensions.cs` | 公共算子、模型资源与调用工厂的宿主 DI 装配 | `AddPublicOperators` | `../PuddingOperatorAccess/OperatorAccessService.cs` | 不向插件公开注册表或审批权限 |
+| `Operators/PublicApi/ModelEvaluationApiFactory.cs` | 宿主父资源和模型能力绑定，调用结束撤销租约 | `ModelEvaluationApiFactory` | `../PuddingModelEvaluation/ModelEvaluationService.cs` | 父身份不可由 RPC 伪造；分类和评审不控制 Goal 终态 |
+| `Operators/PublicApi/ConfiguredExecutionModelBinder.cs` | 冻结当前显式模型路由、平价与容量，复用限流和计费记录 | `IExecutionModelBinder` | `Services/ProviderRateLimiter.cs` | 单次网关请求，无隐式模型选择或重试，密钥留在 Runtime |
 | `Operators/Adapters/ToolApprovalOperatorAdapter.cs` | 既有审批分类器到算子端口的适配 | `ToolApprovalOperatorAdapter` | `Tools/Approval/ClassifierToolApprovalReviewer.cs` | 被包装者行为逐位不变；无分数就留空，不伪造 |
 | `Operators/Adapters/ToolApprovalOperatorContext.cs` | 审批输入的算子上下文包装 | `ToolApprovalOperatorContext` | `Tools/Approval/ToolApprovalPromptBuilder.cs` | `InputDigest` 只在单一位置计算，否则缓存键失效 |
 | `Operators/Adapters/OperatorHealthObserverAdapter.cs` | 算子健康接缝到既有健康面的生产接线 | `OperatorHealthObserverAdapter` | `Classification/ClassifierHealthReporter.cs` | 吞掉自身异常但记 Warning 并可探查 |
@@ -58,12 +64,14 @@
 | `Services/AgentCompactionNotifier.cs` | 压缩生命周期通知的对外发布 | `AgentCompactionNotifier` | `Services/ContextCompactionService.cs` | — |
 | `Services/AgentContextCompactionSummaryGenerator.cs` | 由当前运行时 Agent 生成压缩摘要 | `IContextCompactionSummaryGenerator` | `Services/FlashContextCompactionSummaryGenerator.cs` | — |
 | `Services/AgentExecution/AgentExecutionLlmInvoker.cs` | LLM 调用的统一封装（facade 与 legacy 两条路径） | `AgentExecutionLlmInvoker` | `Services/LlmInvocationService.cs` | 每次调用绑定冻结视觉路由，包含 SSE yield 后的摘要调用；透传 FinishReason，截断摘要不提交 |
+| `Services/BudgetedSendAttemptObserver.cs` | CORE-I1-06 发送边界 observer：每次发送新 attempt、冻结 Work 身份/价格、输出上限收紧、usage 结算/Unknown | `BudgetedSendAttemptObserver` | `PuddingCore/Observability/LlmSendAttemptScope.cs`、`Services/LlmInvocationService.cs` | 唯一预算写入者；未接线前不改变现有单 attempt 行为 |
+| `Services/AgentExecution/WorkBudgetAttempt.cs` | 受管 Work 预算载体 → 每次发送的 `LlmAttemptBudget` 共享转换；托管执行缺 facade 或身份不一致时 fail-closed | `WorkBudgetAttempt` | `PuddingCore/Runtime/RuntimeExecutionIdentity.cs`、`Services/AgentExecution/AgentExecutionLlmInvoker.cs`、`Services/AgentExecution/AgentExecutionService.Streaming.cs` | 每次发送独立 attempt、同 Work 账户复用；无载体保持旧直连行为 |
 | `Services/AgentExecution/AgentExecutionResponseHandler.cs` | LLM 输出解析为 Loop 响应并评估终态 | `AgentExecutionResponseHandler` | `Services/AgentLoop/CompletionPolicy.cs` | — |
 | `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial） | `AgentExecutionService` | `Services/AgentExecution/AgentExecutionService.Streaming.cs` | 工具目录在 dispatch 时冻结，新发现定义只在下一次 LLM round 生效。**2026-10-25**：思考强度由 `ReasoningEffortPolicy.Resolve(快照手动档位, 模板, 已解析配置)` 合成后写入 ConfigOverride（两条路径同源） |
 | `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial） | `AgentExecutionService` | `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 与 Buffered 共用冻结前缀与止损语义；思考强度合成同样走 `ReasoningEffortPolicy`，不得另写一套继承规则 |
 | `Services/AgentExecution/AgentToolArguments.cs` | tool-call JSON 到参数的纯转换 | `AgentToolArguments` | `Tools/BuiltIns/Skills/AgentSkillTool.cs` | 纯函数，不读写状态 |
 | `Services/AgentExecution/AgentTurnTimingCollector.cs` | 单轮耗时检查点的采集 | `AgentTurnTimingCollector` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | — |
-| `Services/AgentExecution/ExecutionUsageBudgetTracker.cs` | 单次 dispatch 的 Token 与成本账本 | `ExecutionUsageBudgetTracker` | `Services/SubAgentInvocationService.cs` | 剩余值诚实归零并带派生标记，零值轴表示父级已耗尽 |
+| `Services/AgentExecution/ExecutionUsageBudgetTracker.cs` | 单次 dispatch 的共享父资源与 Token/成本账本 | `ExecutionUsageBudgetTracker` | `../PuddingExecutionResources/ExecutionResourceScope.cs` | 主模型/旧委派事后记账；模型算子预留结算；辅助额度不随插件重载重置，输入仍为单请求容量 |
 | `Services/AgentExecution/FailedToolCallTracker.cs` | 同一工具与参数的不变失败检测 | `FailedToolCallTracker` | `Services/AgentLoop/ExecutionJournal.cs` | 指纹按 canonical 工具与参数计算 |
 | `Services/AgentExecution/NoOpKeyVaultService.cs` | 无密钥库宿主的降级实现 | `NoOpKeyVaultService` | `Services/JevDecisionOptionsProvider.cs` | — |
 | `Services/AgentExecution/StreamPipelineDiagnosticsAccumulator.cs` | 流式热路径诊断量的线程安全聚合 | `StreamPipelineDiagnosticsAccumulator` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | — |
@@ -206,8 +214,11 @@
 | `Services/Orchestration/SubAgentOrchestrationNodeExecutor.cs` | 子代理节点的只读执行器 | `SubAgentOrchestrationNodeExecutor` | `Services/SubAgentInvocationService.cs` | 角色与模板冻结后不得改写 |
 | `Services/PersistentCompositionVersionRegistry.cs` | Composition 版本的持久化与恢复结果 | `ICompositionVersionRegistry` | `Services/CompositionRecoveryService.cs` | 恢复失败必须可被调用方观察 |
 | `Services/Plugins/PluginDiagnosticsSink.cs` | 插件基础设施诊断证据的写入 | `PluginDiagnosticsSink` | `Services/Plugins/PluginManifestCatalog.cs` | — |
-| `Services/Plugins/HostToolContributions.cs` · `Services/Plugins/ToolPluginLifecycle.cs` | 产品工具内核、声明包服务绑定与作用域加载/卸载 | `HostToolContributions` | `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` | 无激活不导出业务工具 |
-| `Services/Plugins/PluginManifestCatalog.cs` | 数据根下插件描述符的目录 | `IPluginManifestCatalog` | `Controllers/PluginCatalogController.cs` | 本阶段只读清单，不加载插件代码 |
+| `Services/Plugins/HostToolContributions.cs` · `Services/Plugins/ToolPluginLifecycle.cs` | 产品工具内核、声明包服务绑定与作用域加载/卸载 | `HostToolContributions` | `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` | 声明包首次枚举即自动挂载；显式卸载钉住不再自动挂回 |
+| `Services/Plugins/PluginManifestCatalog.cs` | 数据根下旧 v1 描述符的元数据目录 | `PluginManifestCatalog` | `Controllers/PluginCatalogController.cs` | 不实现 ToolSource；重新打包为 v2 才可执行 |
+| `Services/Plugins/ExecutablePluginService.cs` · `ExecutablePluginToolSource.cs` | 叶子插件组件、当前调用 Agent API 租约与平台工具合同适配 | `IContextualPuddingToolSource` | `Tools/Platform/PuddingToolRegistry.cs` | Core 不加载 DLL；配置能力只绑定持久执行 Agent；通过端口获取租约，不引用平台实现 |
+| `Services/Plugins/ExecutablePluginHook.cs` | 通过既有 Hook 链追加插件建议 | `IAgentLoopHook` | `AgentExecutionService.cs` | 保留原始 Success/Output/Error/ExitCode |
+| `Tools/BuiltIns/Plugins/PluginTools.cs` | Agent 可调用的目录/导入/加载/卸载/诊断工具 | `PluginLoadTool` | `Services/Plugins/ExecutablePluginService.cs` | 复用防火墙，返回 Active/Unloaded 才报告成功 |
 | `Services/Plugins/PluginPackageInstaller.cs` | 插件 ZIP 包的安全安装 | `PluginPackageInstaller` | `Services/Plugins/PluginManifestCatalog.cs` | 安装前校验路径与包结构 |
 | `Services/PreCompactionFlushService.cs` | 压缩前的会话冲洗 | `IPreCompactionFlushService` | `Services/ContextCompactionService.cs` | — |
 | `Services/ProviderRateLimiter.cs` | 按 Provider 与模型名的并发限流 | `ProviderRateLimiter` | `Services/DirectLlmClient.cs` | — |
@@ -255,7 +266,6 @@
 | `Services/TodoTools/TodoReadTool.cs` | `todo_read`：读取某作用域的待办表 | `TodoReadTool` | `Services/TodoTools/TodoToolModels.cs` | — |
 | `Services/TodoTools/TodoToolModels.cs` | 待办三工具的共享参数模型 | `TodoToolJson` | `Services/TodoTools/TodoWriteTool.cs` | — |
 | `Services/TodoTools/TodoWriteTool.cs` | `todo_write`：全量替换待办表 | `TodoWriteTool` | `Services/TodoTools/TodoReadTool.cs` | — |
-| `Controllers/ExecutablePluginsController.cs` | 管理员 v2 包导入与 Agent 级加载/卸载 API | `ExecutablePluginsController` | `Services/Plugins/ExecutablePluginService.cs` | 加载明确授权，退出未确认不可算卸载成功 |
 | `Services/Tools/ToolExposurePlanner.cs` | 与 Provider 无关的工具暴露规划（延迟加载 + 有界可见集预算） | `ToolExposurePlanner` | `Tools/Platform/PuddingToolRegistry.cs` | 每个 turn 冻结可见集（core ∪ 最近使用的非核心，默认 48 个/40 KiB）；能力包原子取舍、无 search_tools 不淘汰；**顺序为 stable_append（不得改回 canonical 重排，否则每轮改写前缀）**；同一 turn 内只追加；被淘汰定义可由 `search_tools` 重新加载；**2026-10-27 新增 `ToolExposureOptions.EvictOnlyAtSessionStart`（默认 false）：开启后会话内跳过淘汰（计划里 `BudgetDeferred=true` 如实上报），把集合收缩推到会话边界，使前缀只增长不挖洞** |
 | `Services/Tools/ToolSummaryTier.cs` | L1 摘要级工具定义：冷门工具只发「首句 + 参数名 + 必填」 | `ToolSummaryTier.Apply`、`SummarizeDescription` | `Services/Tools/ToolExposurePlanner.cs` | 纯函数且**幂等**（重复压缩不得再变形，否则工具块字节每轮变）；必须丢掉 `RawJsonSchema`，否则等于没压缩；英文句点只在「后接空白且前词非单字母缩写」时算句末 |
 | `Services/TurnExecutorAdapter.cs` | Turn 执行的门控与请求适配 | `TurnExecutorAdapter` | `Services/Messaging/AgentExecutionAdmissionCoordinator.cs` | 后台忙碌时采用有界退避与节流日志；失败诊断按公开字段白名单写入 TerminalInfo，交由 canonical Journal 持久化 |
