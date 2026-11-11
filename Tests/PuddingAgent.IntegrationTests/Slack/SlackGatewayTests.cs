@@ -190,7 +190,7 @@ public sealed class SlackGatewayTests
     }
 
     [TestMethod]
-    public async Task IngressIsolatesThreadsPreservesRouteAndDoesNotMutateMainSession()
+    public async Task IngressRoutesEverySlackMessageIntoTheAgentMainSession()
     {
         var root = TemporaryDirectory();
         try
@@ -208,6 +208,21 @@ public sealed class SlackGatewayTests
             using var provider = services.BuildServiceProvider();
             var main = new Mock<IAgentMainSessionBinder>(MockBehavior.Strict);
             var sessions = new InMemorySessionRepository(paths);
+            await sessions.CreateAsync(new SessionRecord
+            {
+                SessionId = "existing-main",
+                WorkspaceId = "default",
+                AgentTemplateId = "general-assistant",
+                AgentInstanceId = "agent",
+                ChannelId = "admin",
+                OwnerUserId = "admin",
+                SessionType = SessionType.ServiceSession,
+                SessionRole = SessionRole.Main,
+                PrincipalKind = "agent",
+                PrincipalId = "agent",
+                Status = SessionStatus.Active,
+                Title = "主线",
+            });
             var factory = new SlackConnectorFactory(new AgentManifestCatalog(paths), Config(paths), paths,
                 NullLoggerFactory.Instance, NullLogger<SlackConnectorFactory>.Instance);
             Assert.HasCount(1, await factory.CreateAsync());
@@ -220,15 +235,15 @@ public sealed class SlackGatewayTests
             var same = await gateway.AcceptAsync(SlackConnector.Map(incoming with { MessageTs = "2.000002", ThreadTs = incoming.MessageTs }, "channel", "default", "agent"));
             var different = await gateway.AcceptAsync(SlackConnector.Map(incoming with { MessageTs = "3.000003" }, "channel", "default", "agent"));
             Assert.AreEqual(accepted.MessageId, replay.MessageId);
-            Assert.AreEqual(accepted.ConversationId, same.ConversationId);
-            Assert.AreNotEqual(accepted.ConversationId, different.ConversationId);
-            Assert.AreNotEqual("existing-main", accepted.ConversationId);
+            // 单一会话：线程、用户、消息时序都不再决定会话归属。
+            Assert.AreEqual("existing-main", accepted.ConversationId);
+            Assert.AreEqual("existing-main", same.ConversationId);
+            Assert.AreEqual("existing-main", different.ConversationId);
             var session = (await sessions.GetAsync(accepted.ConversationId))!;
-            Assert.AreEqual(SessionRole.Branch, session.SessionRole);
+            Assert.AreEqual(SessionRole.Main, session.SessionRole);
             Assert.AreEqual("agent", session.AgentInstanceId);
-            Assert.AreEqual("channel", session.PrincipalKind);
-            Assert.Contains("Slack 频道线程", session.Title!);
-            Assert.AreEqual("slack:T1:U1", session.OwnerUserId);
+            Assert.AreEqual("agent", session.PrincipalKind);
+            Assert.AreEqual("主线", session.Title);
             Assert.AreEqual("slack:T1:U1", sent[0].From.Id);
             Assert.AreEqual(incoming.MessageTs, sent[0].Metadata![SlackChannelMetadata.ThreadTs]);
             main.VerifyNoOtherCalls();
