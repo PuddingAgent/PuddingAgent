@@ -12,6 +12,25 @@ namespace PuddingRuntimeTests.Services.AgentLoop;
 [TestClass]
 public sealed class GoalLoopDecisionHookTests
 {
+    /// <summary>
+    /// 本机可能在用户作用域持久化 <c>PUDDING_GOAL_OBJECTIVE</c>（开发验证用），
+    /// <see cref="GoalLoopDecisionHook"/> 会读它并自动创建目标，使「无目标」用例失真
+    /// （期望 Stop/goal-not-active，实际得到 Continue/no-open-items）。
+    /// 这里显式隔离，测试不依赖外部环境。
+    /// </summary>
+    private static string? _savedObjective;
+
+    [TestInitialize]
+    public void IsolateGoalBootstrapEnvironment()
+    {
+        _savedObjective = Environment.GetEnvironmentVariable("PUDDING_GOAL_OBJECTIVE");
+        Environment.SetEnvironmentVariable("PUDDING_GOAL_OBJECTIVE", null);
+    }
+
+    [TestCleanup]
+    public void RestoreGoalBootstrapEnvironment()
+        => Environment.SetEnvironmentVariable("PUDDING_GOAL_OBJECTIVE", _savedObjective);
+
     private static AgentLoopContext Ctx(string sessionId = "s1") => new()
     {
         SessionId = sessionId,
