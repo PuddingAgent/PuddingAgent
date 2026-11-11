@@ -50,14 +50,15 @@ public sealed class HostToolMounts : IAsyncDisposable
     public IReadOnlyList<PluginActivation> List(PluginScope? scope = null)
     {
         lock (_gate) return _mounts.Values.Select(m => m.Activation)
-            .Where(a => a.State != "Unloaded" && (scope is null || scope == a.Scope)).ToArray();
+            .Where(a => a.State != "Unloaded" && (scope is null || PluginManager.MountOwner(scope) == a.Scope)).ToArray();
     }
 
     public PluginActivation Load(HostToolPackage package, PluginScope scope, string operationId, long? expectedRevision)
     {
         if (string.IsNullOrWhiteSpace(scope.WorkspaceId) || string.IsNullOrWhiteSpace(scope.AgentId)
-            || string.IsNullOrWhiteSpace(scope.SessionId) || string.IsNullOrWhiteSpace(operationId))
-            throw new PluginException("plugin.scope_denied", "load", "Workspace, agent, session and operation are required.");
+            || string.IsNullOrWhiteSpace(operationId))
+            throw new PluginException("plugin.scope_denied", "load", "Workspace, agent and operation are required.");
+        scope = PluginManager.MountOwner(scope);
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -90,7 +91,7 @@ public sealed class HostToolMounts : IAsyncDisposable
         lock (_gate)
         {
             ct.ThrowIfCancellationRequested();
-            if (!_mounts.TryGetValue(id, out var entry) || entry.Activation.Scope != scope || entry.Activation.State != "Active")
+            if (!_mounts.TryGetValue(id, out var entry) || entry.Activation.Scope != PluginManager.MountOwner(scope) || entry.Activation.State != "Active")
                 throw new PluginException("plugin.unloaded", "execute", "This activation is not available in this scope.");
             m = entry;
             m.Calls++;
@@ -112,7 +113,7 @@ public sealed class HostToolMounts : IAsyncDisposable
     {
         lock (_gate)
         {
-            if (!_mounts.TryGetValue(id, out var m) || m.Activation.Scope != scope)
+            if (!_mounts.TryGetValue(id, out var m) || m.Activation.Scope != PluginManager.MountOwner(scope))
                 throw new PluginException("plugin.scope_denied", "unload", "Unknown activation in this scope.");
             if (m.Unloading is null)
             {

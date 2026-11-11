@@ -24,6 +24,7 @@ public sealed class ChannelDevelopmentTrust(PuddingDataPaths paths, IDataProtect
     IDbContextFactory<PlatformDbContext> databases)
 {
     public const string Web = "web-chat";
+    public const string WebIngress = "pudding_web_ingress";
     public const string DingTalk = "dingtalk-group";
     public const string Receipt = "channel_development_receipt";
     public const string PrivatePrefix = "bound-channel-";
@@ -105,19 +106,5 @@ public sealed class ChannelDevelopmentTrust(PuddingDataPaths paths, IDataProtect
         }
         catch (CryptographicException) { return null; }
         catch (JsonException) { return null; }
-    }
-
-    public static CapabilityPolicy Apply(CapabilityPolicy policy, bool verified)
-    {
-        var shell = verified && policy.RequiresGrantToolNames.Any(t => t is "shell" or "terminal_start" or "terminal_execute");
-        return policy with { AllowShellExecution = shell };
-    }
-
-    public static CapabilityPolicy ExternalGuest(CapabilityPolicy policy)
-    {
-        var selected = policy.AllowedToolNames.Count > 0 ? policy.AllowedToolNames : policy.GetAllEffectiveToolNames().ToArray();
-        var allowed = selected.Where(t => t is "slack_lookup_member" or "get_current_time").ToArray();
-        return new CapabilityPolicy { EnforceToolAllowlist = true, AllowedToolNames = allowed, DefaultToolNames = allowed,
-            AllowNetworkAccess = policy.AllowNetworkAccess && allowed.Contains("slack_lookup_member") };
     }
 }

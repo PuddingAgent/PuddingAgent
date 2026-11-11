@@ -112,7 +112,7 @@ sealed class PluginLoadContext(string assembly, string directory) : AssemblyLoad
 }
 sealed class WorkerContext(PluginScope scope, Stream pipe, string activation) : IPluginContext, IPluginCoreApi, IPluginAgentApiTransport, IPluginEventAudit
 {
-    public PluginScope Scope => scope;
+    public PluginScope Scope => _request.Value?.CallScope ?? scope;
     public IPluginCoreApi Core => this;
     private readonly AsyncLocal<RequestLease?> _request = new();
     public PluginFrame? CurrentRequest
@@ -128,6 +128,8 @@ sealed class WorkerContext(PluginScope scope, Stream pipe, string activation) : 
     private sealed class RequestLease(PluginFrame frame)
     {
         public PluginFrame Frame { get; } = frame;
+        public PluginScope? CallScope { get; } = frame.Kind is "execute" or "hook" && frame.Payload.TryGetProperty("scope", out var value)
+            ? value.Deserialize<PluginScope>(PluginJson.Options) : null;
         public volatile bool Active = true;
     }
     private readonly SemaphoreSlim _gate = new(1, 1);

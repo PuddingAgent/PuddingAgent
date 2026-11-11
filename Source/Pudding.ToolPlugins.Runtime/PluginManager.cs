@@ -21,20 +21,26 @@ public sealed class PluginManager(PluginPackageStore packages, IPluginWorkerFact
     private readonly Queue<PluginDiagnostic> _diagnostics = new();
     private long _revision;
     private bool _disposed;
+    // Agent tool mounts span conversations. Explicit host subscription scopes keep their activation key.
+    internal static PluginScope MountOwner(PluginScope scope) =>
+        scope.ActivationKey is null ? scope with { SessionId = string.Empty } : scope;
+
     public long Revision { get { lock (_gate) { ReapExited(); return _revision; } } }
     public IReadOnlyList<PluginActivation> List(PluginScope? scope = null)
-    { lock (_gate) { ReapExited(); return _entries.Values.Where(e => scope is null || e.Scope == scope).Select(Snapshot).ToArray(); } }
+    { lock (_gate) { ReapExited(); return _entries.Values.Where(e => scope is null || e.Scope == MountOwner(scope)).Select(Snapshot).ToArray(); } }
     public IReadOnlyList<PluginDiagnostic> Diagnostics(PluginScope? scope = null)
-    { lock (_gate) return _diagnostics.Where(e => scope is null || e.Scope == scope).ToArray(); }
+    { lock (_gate) return _diagnostics.Where(e => scope is null || e.Scope == MountOwner(scope)).ToArray(); }
     public IReadOnlyList<PluginCallable> Tools(PluginScope scope)
     {
-        lock (_gate) { ReapExited(); return _entries.Values.Where(e => e.Scope == scope && e.State == "Active")
+        lock (_gate) { ReapExited(); return _entries.Values.Where(e => e.Scope == MountOwner(scope) && e.State == "Active")
             .SelectMany(e => e.Package.Manifest.Tools.Select(t => new PluginCallable(Name(e, t.Id), e.Id, e.Scope, t))).ToArray(); }
     }
     public Task<PluginActivation> LoadAsync(string operationId, PluginPackage package, PluginScope scope,
         PluginAuthorization authorization, long? expectedRevision = null, CancellationToken ct = default)
     {
         ValidateScope(scope);
+        var subscribingScope = scope;
+        scope = MountOwner(scope);
         // IReadOnlySet may still wrap a mutable HashSet supplied by a caller. Freeze before publishing a grant.
         authorization = authorization with { Capabilities = authorization.Capabilities.ToFrozenSet(StringComparer.Ordinal) };
         if ((package.Manifest.Tools.Length > 0 && !authorization.ExecuteApproved)
@@ -63,7 +69,7 @@ public sealed class PluginManager(PluginPackageStore packages, IPluginWorkerFact
                 || _entries.Values.Count(e => e.Scope.AgentId == scope.AgentId && e.Scope.WorkspaceId == scope.WorkspaceId && ConsumesCapacity(e)) >= 4)
                 throw new PluginException("plugin.resource_limit", "load", "Active plugin instance budget exhausted.");
             TrimHistory();
-            entry = new(package, scope, authorization, ++_revision);
+            entry = new(package, scope, subscribingScope, authorization, ++_revision);
             _entries.Add(entry.Id, entry);
             _operations.Add(opKey, (fingerprint, entry.Completion.Task));
         }
@@ -139,8 +145,8 @@ public sealed class PluginManager(PluginPackageStore packages, IPluginWorkerFact
         Entry e; PluginToolDefinition tool;
         lock (_gate)
         {
-            e = _entries.Values.SingleOrDefault(e => e.Scope == scope && e.State == "Active" && e.Package.Manifest.Tools.Any(t => Name(e, t.Id) == functionName))
-                ?? throw new PluginException("plugin.unloaded", "execute", "Plugin is not bound to this agent/session or its generation has changed.");
+            e = _entries.Values.SingleOrDefault(e => e.Scope == MountOwner(scope) && e.State == "Active" && e.Package.Manifest.Tools.Any(t => Name(e, t.Id) == functionName))
+                ?? throw new PluginException("plugin.unloaded", "execute", "Plugin is not bound to this agent or its generation has changed.");
             tool = e.Package.Manifest.Tools.Single(t => Name(e, t.Id) == functionName);
         }
         PluginValidation.Value(tool.InputSchema, arguments);
@@ -161,7 +167,7 @@ public sealed class PluginManager(PluginPackageStore packages, IPluginWorkerFact
     public async Task<IReadOnlyList<(string PluginId, string Advice)>> AdviseAsync(PluginHookCall call, CancellationToken ct)
     {
         (Entry Entry, PluginHookDefinition Hook)[] hooks;
-        lock (_gate) hooks = _entries.Values.Where(e => e.Scope == call.Scope && e.State == "Active" && e.Authorization.HooksApproved)
+        lock (_gate) hooks = _entries.Values.Where(e => e.Scope == MountOwner(call.Scope) && e.State == "Active" && e.Authorization.HooksApproved)
             .SelectMany(e => e.Package.Manifest.Hooks.Select(h => (e, h))).OrderBy(x => x.h.Order)
             .ThenBy(x => x.e.Package.Manifest.Id, StringComparer.Ordinal).ThenBy(x => x.h.Id, StringComparer.Ordinal).ToArray();
         var result = new List<(string, string)>();
@@ -208,8 +214,8 @@ public sealed class PluginManager(PluginPackageStore packages, IPluginWorkerFact
                     && string.Equals(e.Scope.WorkspaceId, workspaceEvent.Scope.WorkspaceId, StringComparison.Ordinal)
                     && (string.IsNullOrWhiteSpace(e.Scope.AgentId)
                         || string.Equals(e.Scope.AgentId, workspaceEvent.Scope.AgentId, StringComparison.Ordinal))
-                    && (string.IsNullOrWhiteSpace(e.Scope.SessionId)
-                        || string.Equals(e.Scope.SessionId, workspaceEvent.Scope.SessionId, StringComparison.Ordinal)))
+                    && (string.IsNullOrWhiteSpace(e.SubscriptionScope.SessionId)
+                        || string.Equals(e.SubscriptionScope.SessionId, workspaceEvent.Scope.SessionId, StringComparison.Ordinal)))
                 .SelectMany(e => e.Package.Manifest.Subscriptions
                     .Where(s => string.Equals(s.Event, workspaceEvent.EventName, StringComparison.Ordinal))
                     .Select(s => (Entry: e, Subscription: s)))
@@ -286,7 +292,7 @@ public sealed class PluginManager(PluginPackageStore packages, IPluginWorkerFact
     private static Task<JsonElement> DeniedCallback(string method, JsonElement arguments, CancellationToken ct)
         => Task.FromException<JsonElement>(new PluginException("plugin.core_callback_denied", "core_callback", "No host capabilities are granted during lifecycle or hook callbacks."));
     private Entry Own(string id, PluginScope scope)
-        => _entries.TryGetValue(id, out var e) && e.Scope == scope ? e : throw new PluginException("plugin.scope_denied", "authorize", "Activation is not owned by this scope.");
+        => _entries.TryGetValue(id, out var e) && e.Scope == MountOwner(scope) ? e : throw new PluginException("plugin.scope_denied", "authorize", "Activation is not owned by this scope.");
     private void CheckRevision(long? expected)
     { if (expected is { } revision && revision != _revision) throw new PluginException("plugin.revision_conflict", "manage", $"Catalog revision is {_revision}."); }
     private static void ValidateScope(PluginScope s)
@@ -300,8 +306,8 @@ public sealed class PluginManager(PluginPackageStore packages, IPluginWorkerFact
                 throw new PluginException("plugin.scope_denied", "authorize", "Activation identity is too long.");
             return;
         }
-        if (new[] { s.AgentId, s.SessionId }.Any(v => string.IsNullOrWhiteSpace(v) || v.Length > 256))
-            throw new PluginException("plugin.scope_denied", "authorize", "Workspace, execution agent and session are required.");
+        if (string.IsNullOrWhiteSpace(s.AgentId) || s.AgentId.Length > 256 || s.SessionId?.Length > 256)
+            throw new PluginException("plugin.scope_denied", "authorize", "A valid workspace and execution agent are required.");
     }
     private static string Name(Entry e, string tool) => PluginValidation.FunctionName(e.Package.Manifest.Id, tool, e.Id);
     private PluginActivation Snapshot(Entry e) => new(e.Id, e.Package.Manifest.Id, e.Package.Manifest.Version, e.Package.ContentHash, e.Scope,
@@ -336,11 +342,12 @@ public sealed class PluginManager(PluginPackageStore packages, IPluginWorkerFact
     }
     private static bool ConsumesCapacity(Entry e) => e.InFlight > 0 || e.State is "Active" or "Loading" or "Stopping"
         || e.State == "StopFailed" && e.Worker?.HasExited != true;
-    private sealed class Entry(PluginPackage package, PluginScope scope, PluginAuthorization authorization, long revision)
+    private sealed class Entry(PluginPackage package, PluginScope scope, PluginScope subscribingScope, PluginAuthorization authorization, long revision)
     {
         public string Id { get; } = Guid.NewGuid().ToString("N");
         public PluginPackage Package { get; } = package;
         public PluginScope Scope { get; } = scope;
+        public PluginScope SubscriptionScope { get; } = subscribingScope;
         public PluginAuthorization Authorization { get; } = authorization;
         public long Revision = revision;
         public string State = "Loading";

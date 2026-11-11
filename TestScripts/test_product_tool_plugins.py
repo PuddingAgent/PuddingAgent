@@ -157,7 +157,7 @@ def verify_product(exe, sample, dll, run):
             files = load(packages["pudding.files"]["contentHash"])
             shell = load(packages["pudding.shell"]["contentHash"])
             names, _ = dispatch(["search_tools", "file_read"], session="other-session")
-            check("file_read" not in names, "other session isolated")
+            check("file_read" in names, "a second session of the same Agent sees its mounted file tool")
             names, _ = dispatch(["search_tools", "shell"])
             check("file_read" not in names and "shell" not in names, "mount does not grant discovery or Shell")
             denied_marker = "shell-must-not-run-" + uuid.uuid4().hex

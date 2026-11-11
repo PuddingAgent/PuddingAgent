@@ -20,8 +20,9 @@ public sealed class RealWorkerTests
         Assert.AreEqual(0, manager.List().Count);
         var loaded = await manager.LoadAsync("one", package, Scope, env.Authorization);
         Assert.AreEqual("Active", loaded.State, loaded.Failure?.Message); Assert.AreNotEqual(pid, loaded.ProcessId);
-        var echo = manager.Tools(Scope).Single(t => t.Definition.Id == "echo");
-        var result = await manager.ExecuteAsync(echo.FunctionName, Scope, "one-call", PluginJson.Value(new { text = "中文输入" }), env.Callback);
+        var sibling = Scope with { SessionId = "second-session" };
+        var echo = manager.Tools(sibling).Single(t => t.Definition.Id == "echo");
+        var result = await manager.ExecuteAsync(echo.FunctionName, sibling, "one-call", PluginJson.Value(new { text = "中文输入" }), env.Callback);
         Assert.AreEqual("中文输入", result.Value.GetString());
         await File.WriteAllTextAsync(Path.Combine(env.Root, "proof.txt"), "来自 Core broker");
         var read = manager.Tools(Scope).Single(t => t.Definition.Id == "read_file");

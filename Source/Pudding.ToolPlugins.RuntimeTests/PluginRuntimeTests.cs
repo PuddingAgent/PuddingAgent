@@ -83,9 +83,12 @@ public sealed class PluginRuntimeTests
         await using var manager = new PluginManager(store, new FakeFactory());
         var first = await manager.LoadAsync("first", p, Scope, Authorized);
         Assert.AreEqual(0, manager.Tools(Scope with { AgentId = "other" }).Count);
-        await Assert.ThrowsExactlyAsync<PluginException>(() => manager.UnloadAsync(first.ActivationId, Scope with { SessionId = "other" }));
-        Assert.AreEqual("hello", (await manager.ExecuteAsync(first.ToolNames[0], Scope, "call", PluginJson.Value(new { text = "hello" }), Callback)).Value.GetString());
-        Assert.AreEqual("Unloaded", (await manager.UnloadAsync(first.ActivationId, Scope)).State);
+        var sibling = Scope with { SessionId = "other" };
+        Assert.AreEqual(first.ActivationId, manager.Tools(sibling).Single().ActivationId);
+        Assert.AreEqual(first.ActivationId, (await manager.LoadAsync("repeat", p, sibling, Authorized)).ActivationId);
+        await Assert.ThrowsExactlyAsync<PluginException>(() => manager.UnloadAsync(first.ActivationId, Scope with { WorkspaceId = "other" }));
+        Assert.AreEqual("hello", (await manager.ExecuteAsync(first.ToolNames[0], sibling, "call", PluginJson.Value(new { text = "hello" }), Callback)).Value.GetString());
+        Assert.AreEqual("Unloaded", (await manager.UnloadAsync(first.ActivationId, sibling)).State);
         var second = await manager.LoadAsync("second", p, Scope, Authorized);
         Assert.AreNotEqual(first.ToolNames[0], second.ToolNames[0]);
         await Assert.ThrowsExactlyAsync<PluginException>(() => manager.ExecuteAsync(first.ToolNames[0], Scope, "old", PluginJson.Value(new { text = "hello" }), Callback));

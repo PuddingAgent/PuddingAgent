@@ -532,10 +532,16 @@ public sealed class PuddingToolSchemaService
     public IReadOnlyList<string> ContextualToolNames(ToolExecutionContext context) => _registry.ContextualToolNames(context);
     public IReadOnlyDictionary<string, string> ContextualPolicyOwners(ToolExecutionContext context) => _registry.ContextualPolicyOwners(context);
 
-    public PuddingToolSchemaService(IPuddingToolRegistry registry)
+    private readonly IReadOnlyList<LlmToolDefinition> _additional;
+    public PuddingToolSchemaService(IPuddingToolRegistry registry) : this(registry, []) { }
+
+    private PuddingToolSchemaService(IPuddingToolRegistry registry, IReadOnlyList<LlmToolDefinition> additional)
     {
         _registry = registry;
+        _additional = additional;
     }
+
+    public PuddingToolSchemaService WithAdditionalTools(IReadOnlyList<LlmToolDefinition> tools) => new(_registry, tools);
 
     public IReadOnlyList<LlmToolDefinition> BuildLlmTools(CapabilityPolicy? policy, string? workspaceId = null, ToolExecutionContext? context = null)
     {
@@ -551,6 +557,8 @@ public sealed class PuddingToolSchemaService
                 Parameters = d.Parameters,
                 SubAgentExposure = d.SubAgentExposure,
             })
+            .Concat(_additional)
+            .DistinctBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
             .OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }

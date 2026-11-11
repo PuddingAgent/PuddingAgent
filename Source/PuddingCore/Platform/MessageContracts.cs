@@ -110,6 +110,12 @@ public sealed record MessageIngressResponse
 /// <summary>消息来源元数据，由 Dispatcher 在路由阶段填充，供 Runtime 构造 LLM 可读的消息信封。</summary>
 public sealed record MessageOrigin
 {
+    public bool IsUnboundChannelSender { get; init; }
+
+    public bool AllowsToolInvocation(string name) => !IsUnboundChannelSender || name == "get_current_time"
+        || (ChannelType == "slack" && name == "slack_lookup_member")
+        || (ChannelType == "dingtalk" && name is "mpcal_public_help" or "mpcal_record_feedback");
+
     /// <summary>发送者类型（user / agent / system）。</summary>
     public required string FromKind { get; init; }
     /// <summary>发送者标识。</summary>

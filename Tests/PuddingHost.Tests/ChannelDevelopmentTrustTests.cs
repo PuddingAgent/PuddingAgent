@@ -74,33 +74,4 @@ public sealed class ChannelDevelopmentTrustTests
         }
         finally { dir.Delete(true); }
     }
-
-    [Theory]
-    [InlineData("terminal_start")]
-    [InlineData("plugin_load")]
-    [InlineData("file_write")]
-    public async Task UnboundGuestCannotReachEvenAnApprovedOrPreviouslyMountedTool(string tool)
-    {
-        var original = new CapabilityPolicy { RequiresGrantToolNames = ["terminal_start", "file_write"],
-            AllowFileWrite = true, AllowShellExecution = true };
-        var restricted = ChannelDevelopmentTrust.ExternalGuest(original);
-        Assert.Empty(restricted.AllowedToolNames);
-        var firewall = new AgentFirewall();
-        var decision = await firewall.EvaluateAsync(new FirewallContext { WorkspaceId = "ws", SessionId = "room",
-            AgentInstanceId = "whale", UserId = "guest", RuntimeMode = RuntimeExecutionMode.Yolo, Policy = restricted,
-            ToolId = tool }, CancellationToken.None);
-        Assert.False(decision.Allowed);
-        Assert.Equal(FirewallGate.Capability, decision.DeniedAtGate);
-    }
-
-    [Fact]
-    public void TrustOnlyEnablesSelectedProcessTools()
-    {
-        var selected = new CapabilityPolicy { RequiresGrantToolNames = ["terminal_start"] };
-        Assert.True(ChannelDevelopmentTrust.Apply(selected, true).AllowShellExecution);
-        Assert.False(ChannelDevelopmentTrust.Apply(selected, false).AllowShellExecution);
-        Assert.False(ChannelDevelopmentTrust.Apply(new(), true).AllowShellExecution);
-        Assert.False(ChannelDevelopmentTrust.Apply(selected, true).AllowFileWrite);
-    }
-
 }

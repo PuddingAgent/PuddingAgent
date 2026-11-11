@@ -28,7 +28,7 @@
     },
     {
       "path": "Source/Pudding.ToolPlugins.Runtime/PluginManager.cs",
-      "sha256": "B5492A533880900CCA8315F0B9471BBB9E01FF614D0996EBEC0059C750C606CD"
+      "sha256": "FB936D9C351E40EFDC942F7E59EE021CA23AC7C73C67882410013049CEAB239D"
     },
     {
       "path": "Source/Pudding.ToolPlugins.Runtime/PluginValidation.cs",
@@ -36,7 +36,7 @@
     },
     {
       "path": "Source/Pudding.ToolPlugins.Worker/Program.cs",
-      "sha256": "D46D4535583AA451B16FA380D7D82FD943F87B4C841D79CB9E0F92BF4322E56D"
+      "sha256": "62E68DC99E9D5EAA33D7201C3730E0E4B7010E8130E5488818FB9895419E6244"
     },
     {
       "path": "Source/Pudding.ToolPlugins.Worker/Pudding.ToolPlugins.Worker.csproj",
@@ -60,7 +60,7 @@
     },
     {
       "path": "Source/Pudding.ToolPlugins.RuntimeTests/AgentCallbackLifecycleTests.cs",
-      "sha256": "E3BA00DF52E3E0F3AB7E353667D5250A2BF609298ECC14A71C87CC6EFF104037"
+      "sha256": "612E2E61206909117300F0F3D01298209B47E0850C2C10C5B55C04CC5E4916F5"
     },
     {
       "path": "Tests/PuddingPluginAgentApi.IntegrationTests/PluginAgentApiTests.cs",

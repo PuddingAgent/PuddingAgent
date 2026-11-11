@@ -7,6 +7,7 @@ namespace PuddingRuntime.Services.AgentLoop;
 /// <summary>Agent Loop 执行期间传递给所有 Hook 的只读上下文。</summary>
 public sealed class AgentLoopContext
 {
+    public bool IsUnboundChannelSender { get; init; }
     public required string SessionId       { get; init; }
     public required string AgentInstanceId { get; init; }
     public required string WorkspaceId     { get; init; }

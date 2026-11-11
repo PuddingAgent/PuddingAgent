@@ -12,7 +12,9 @@ public class FixturePlugin : ToolPlugin
     {
         switch (call.ToolId)
         {
-            case "echo": return PluginResult.Ok(call.Arguments.GetProperty("text").GetString());
+            case "echo":
+                if (Context.Scope != call.Scope) throw new InvalidOperationException("Worker callback session differs from this call.");
+                return PluginResult.Ok(call.Arguments.GetProperty("text").GetString());
             case "read_file": return PluginResult.Ok(await Context.Core.ReadWorkspaceTextAsync(call.Arguments.GetProperty("text").GetString()!, ct));
             case "hang": await Task.Delay(Timeout.Infinite); return PluginResult.Ok("");
             case "flood": return PluginResult.Ok(new string('x', 2 * 1024 * 1024));

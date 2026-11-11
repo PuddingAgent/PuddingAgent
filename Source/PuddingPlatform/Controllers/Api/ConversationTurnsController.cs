@@ -32,7 +32,8 @@ public class ConversationTurnsController : ControllerBase
             return validationResult;
 
         var suppliedMetadata = request.Metadata?.Where(p => !string.Equals(p.Key, ChannelDevelopmentTrust.Receipt,
-            StringComparison.OrdinalIgnoreCase)).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
+            StringComparison.OrdinalIgnoreCase)).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal) ?? new();
+        suppliedMetadata[ChannelDevelopmentTrust.WebIngress] = "true";
         var command = new SubmitTurnCommand(
             ConversationId: conversationId,
             WorkspaceId: workspaceId,

@@ -59,7 +59,7 @@ public sealed partial class AgentExecutionService
 
         var template = BuiltInAgentTemplates.FindById(canonicalTemplateId)
                        ?? BuiltInAgentTemplates.WorkspaceServiceAgent;
-        var effectiveCapability = MergeCapability(request.CapabilityPolicy, template.Capability);
+        var effectiveCapability = request.CapabilityPolicy ?? template.Capability ?? new CapabilityPolicy();
         var sessionTimeout = ResolveSessionTimeout(template);
         var maxElapsed = ResolveMaxElapsed(request);
         var maxToolCallsTotal = ResolveMaxToolCallsTotal(request.MaxToolCallsTotal, _guardrails);
@@ -492,6 +492,7 @@ public sealed partial class AgentExecutionService
 
         var loopCtx = new AgentLoopContext
         {
+            IsUnboundChannelSender = request.Origin?.IsUnboundChannelSender == true,
             SessionId = request.SessionId,
             AgentInstanceId = instance.AgentInstanceId,
             WorkspaceId = request.WorkspaceId,
@@ -1631,16 +1632,15 @@ public sealed partial class AgentExecutionService
                         Data = new { name = tc.Name, arguments = tc.ArgumentsJson, toolCallId = tc.Id }
                     }, ct);
 
-                    var injectedArgsJson = await _keyVaultService.InjectAsync(tc.ArgumentsJson, ct);
+                    var injectedArgsJson = request.Origin?.IsUnboundChannelSender == true ? tc.ArgumentsJson : await _keyVaultService.InjectAsync(tc.ArgumentsJson, ct);
                     var safeToolArgs = await _keyVaultService.StripAsync(injectedArgsJson, ct);
                     var repeatKey = $"{tc.Name}|{injectedArgsJson}";
                     var toolStartedAt = DateTimeOffset.UtcNow;
                     var toolSw = System.Diagnostics.Stopwatch.StartNew();
                     SkillResult result;
                     TokenUsageDto? delegatedUsage = null;
-                    var executionBlocked = failedToolCallTracker.TryCreateBlockedResult(
-                        repeatKey,
-                        out result);
+                    var executionBlocked = DenyGuestToolCall(request.Origin, tc.Name, out result)
+                        || failedToolCallTracker.TryCreateBlockedResult(repeatKey, out result);
                     if (!executionBlocked && _toolInvocationService is not null)
                     {
                         var toolResult = await _toolInvocationService.InvokeAsync(new PuddingCode.Runtime.ToolInvocationRequest

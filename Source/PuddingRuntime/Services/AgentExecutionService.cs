@@ -1946,25 +1946,13 @@ public sealed partial class AgentExecutionService
         public string? ReportJson { get; init; }
     }
 
-    private static CapabilityPolicy MergeCapability(CapabilityPolicy? db, CapabilityPolicy? template)
+    internal static bool DenyGuestToolCall(MessageOrigin? origin, string name, out SkillResult result)
     {
-        if (db is null) return template ?? new CapabilityPolicy();
-        if (template is null) return db;
-
-        var defaultTools = new HashSet<string>(db.DefaultToolNames, StringComparer.OrdinalIgnoreCase);
-        foreach (var t in template.DefaultToolNames) defaultTools.Add(t);
-        var grantTools = new HashSet<string>(db.RequiresGrantToolNames, StringComparer.OrdinalIgnoreCase);
-        foreach (var t in template.RequiresGrantToolNames) grantTools.Add(t);
-
-        return new CapabilityPolicy
-        {
-            AllowShellExecution = db.AllowShellExecution || template.AllowShellExecution,
-            AllowFileWrite = db.AllowFileWrite || template.AllowFileWrite,
-            AllowNetworkAccess = db.AllowNetworkAccess || template.AllowNetworkAccess,
-            AllowedToolNames = db.AllowedToolNames.Count > 0 ? db.AllowedToolNames : template.AllowedToolNames,
-            DefaultToolNames = defaultTools.ToList(),
-            RequiresGrantToolNames = grantTools.ToList(),
-        };
+        result = null!;
+        if (origin?.AllowsToolInvocation(name) != false)
+            return false;
+        result = new SkillResult { Success = false, Output = "", Error = "此操作需要已绑定的用户身份。", ExitCode = 1 };
+        return true;
     }
 
     private static string Truncate(string s, int maxLen) =>

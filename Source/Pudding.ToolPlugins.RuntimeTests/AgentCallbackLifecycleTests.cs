@@ -60,7 +60,7 @@ public sealed class AgentCallbackLifecycleTests
         using var fixture = new Fixture(); var package = await fixture.Import(); await using var manager = fixture.Manager;
         var auth = new PluginAuthorization(true, new HashSet<string> { "agent.configuration.read" }, false);
         var loaded = await manager.LoadAsync("load", package, Scope, auth);
-        for (var i = 0; i < 3; i++) await manager.LoadAsync("load", package, Scope with { SessionId = "other" + i }, auth);
+        for (var i = 0; i < 3; i++) await manager.LoadAsync("load", package, Scope with { ActivationKey = "other" + i }, auth);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var call = manager.ExecuteAsync(loaded.ToolNames[0], Scope, "call", PluginJson.Value(new { }), async (_, _, _) =>
@@ -70,12 +70,12 @@ public sealed class AgentCallbackLifecycleTests
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
             var stopped = await manager.UnloadAsync(loaded.ActivationId, Scope);
             Assert.AreEqual("StopFailed", stopped.State); Assert.AreEqual("unknown", stopped.Failure!.EffectOutcome);
-            var blocked = Assert.ThrowsExactly<PluginException>(() => manager.LoadAsync("extra", package, Scope with { SessionId = "extra" }, auth));
+            var blocked = Assert.ThrowsExactly<PluginException>(() => manager.LoadAsync("extra", package, Scope with { ActivationKey = "extra" }, auth));
             Assert.AreEqual("plugin.resource_limit", blocked.Failure.Code);
         }
         finally { release.TrySetResult(); await call; }
         Assert.AreEqual("Unloaded", (await manager.UnloadAsync(loaded.ActivationId, Scope)).State);
-        Assert.AreEqual("Active", (await manager.LoadAsync("extra", package, Scope with { SessionId = "extra" }, auth)).State);
+        Assert.AreEqual("Active", (await manager.LoadAsync("extra", package, Scope with { ActivationKey = "extra" }, auth)).State);
     }
     private static PluginManifest Manifest() => new()
     {

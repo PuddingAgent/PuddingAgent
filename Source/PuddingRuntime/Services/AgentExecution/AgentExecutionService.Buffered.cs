@@ -68,7 +68,7 @@ public sealed partial class AgentExecutionService
         // Runtime 侧通过 ResolveBest 统一处理各种模板 ID 格式。
         var template = BuiltInAgentTemplates.ResolveBest(request.AgentTemplateId)
                        ?? BuiltInAgentTemplates.WorkspaceServiceAgent;
-        var effectiveCapability = MergeCapability(request.CapabilityPolicy, template.Capability);
+        var effectiveCapability = request.CapabilityPolicy ?? template.Capability ?? new CapabilityPolicy();
         var sessionTimeout = ResolveSessionTimeout(template);
         var maxElapsed = ResolveMaxElapsed(request);
         var maxToolCallsTotal = ResolveMaxToolCallsTotal(request.MaxToolCallsTotal, _guardrails);
@@ -477,6 +477,7 @@ if (effectiveLlmConfig is not null)
 
         var loopCtx = new AgentLoopContext
         {
+            IsUnboundChannelSender = request.Origin?.IsUnboundChannelSender == true,
             SessionId = request.SessionId,
             AgentInstanceId = instance.AgentInstanceId,
             WorkspaceId = request.WorkspaceId,
@@ -1126,7 +1127,7 @@ if (effectiveLlmConfig is not null)
                             break;
                         }
 
-                        var injectedArgsJson = await _keyVaultService.InjectAsync(call.ArgumentsJson ?? "{}", ct);
+                        var injectedArgsJson = request.Origin?.IsUnboundChannelSender == true ? call.ArgumentsJson ?? "{}" : await _keyVaultService.InjectAsync(call.ArgumentsJson ?? "{}", ct);
                         var compatibility = HarnessToolCompatibilityAdapter.Normalize(call.Name, injectedArgsJson);
                         var canonicalCall = call with
                         {
@@ -1171,9 +1172,8 @@ if (effectiveLlmConfig is not null)
                         TokenUsageDto? delegatedUsage = null;
                         var delegatedBudgetShouldStop = false;
                         string? delegatedBudgetMessage = null;
-                        var executionBlocked = failedToolCallTracker.TryCreateBlockedResult(
-                            repeatKey,
-                            out skillResult);
+                        var executionBlocked = DenyGuestToolCall(request.Origin, canonicalCall.Name, out skillResult)
+                            || failedToolCallTracker.TryCreateBlockedResult(repeatKey, out skillResult);
                         if (!executionBlocked
                             && _toolInvocationService is null
                             && skill is not null
@@ -1882,7 +1882,7 @@ if (effectiveLlmConfig is not null)
                     }
 
                     var argsJson = loopResp.Tool!.Args?.GetRawText() ?? "{}";
-                    var injectedArgsJson = await _keyVaultService.InjectAsync(argsJson, ct);
+                    var injectedArgsJson = request.Origin?.IsUnboundChannelSender == true ? argsJson : await _keyVaultService.InjectAsync(argsJson, ct);
                     var compatibility = HarnessToolCompatibilityAdapter.Normalize(toolName, injectedArgsJson);
                     toolName = compatibility.ToolName;
                     injectedArgsJson = compatibility.ArgumentsJson;
@@ -1927,9 +1927,8 @@ if (effectiveLlmConfig is not null)
                     TokenUsageDto? delegatedUsage = null;
                     try
                     {
-                        var executionBlocked = failedToolCallTracker.TryCreateBlockedResult(
-                            repeatKey,
-                            out skillResult);
+                        var executionBlocked = DenyGuestToolCall(request.Origin, toolName, out skillResult)
+                            || failedToolCallTracker.TryCreateBlockedResult(repeatKey, out skillResult);
                         if (!executionBlocked && _toolInvocationService is not null)
                         {
                             var toolResult = await _toolInvocationService.InvokeAsync(new PuddingCode.Runtime.ToolInvocationRequest

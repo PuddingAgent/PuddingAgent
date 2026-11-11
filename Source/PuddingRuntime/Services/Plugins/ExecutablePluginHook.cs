@@ -9,7 +9,7 @@ public sealed class ExecutablePluginHook(ExecutablePluginService plugins) : IAge
     public async Task<SkillResult> OnToolResultTransformingAsync(AgentLoopContext context, int round,
         string toolName, string argsJson, SkillResult result, CancellationToken ct = default)
     {
-        if (plugins.Revision == 0) return result;
+        if (context.IsUnboundChannelSender || plugins.Revision == 0) return result;
         var advice = await plugins.Manager.AdviseAsync(new PluginHookCall("", toolName, argsJson,
             result.Success, result.Output, result.Error, result.ExitCode,
             new(context.WorkspaceId, context.AgentInstanceId, context.SessionId)), ct);

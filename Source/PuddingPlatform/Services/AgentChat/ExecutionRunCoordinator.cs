@@ -90,23 +90,11 @@ public sealed class ExecutionRunCoordinator(
             var proof = channelTrust?.Verify(facts, lease.WorkspaceId, command.AgentInstanceId,
                 lease.ConversationId, command.UserMessageId, command.UserId);
             var executionUser = command.UserId;
-            if (proof != null ||
-                lease.ConversationId.StartsWith(ChannelDevelopmentTrust.PrivatePrefix, StringComparison.Ordinal) ||
-                facts?.ContainsKey(MessageGatewayMetadata.ChannelType) == true)
-            {
-                var policy = profile.CapabilityPolicy ?? new CapabilityPolicy();
-                var verified = proof != null && await channelTrust!.ResolveAsync(lease.WorkspaceId, command.AgentInstanceId,
-                    proof.Source, ctsRun.Token) == proof.User;
-                if (!verified && lease.ConversationId.StartsWith(ChannelDevelopmentTrust.PrivatePrefix, StringComparison.Ordinal))
-                    throw new UnauthorizedAccessException("Channel account binding no longer authorizes this turn.");
-                if (verified) executionUser = proof!.User;
-                var restrictedExternal = !verified && facts?.GetValueOrDefault(MessageGatewayMetadata.ChannelType) is "slack" or "feishu";
-                var effective = restrictedExternal ? ChannelDevelopmentTrust.ExternalGuest(policy) : ChannelDevelopmentTrust.Apply(policy, verified);
-                profile = profile with { CapabilityPolicy = effective,
-                    ToolDefinitions = restrictedExternal ? profile.ToolDefinitions?.Where(t => effective.AllowedToolNames.Contains(t.Name)).ToArray()
-                        : profile.ToolDefinitions,
-                    SkillPackages = restrictedExternal ? [] : profile.SkillPackages };
-            }
+            var verified = proof != null && await channelTrust!.ResolveAsync(lease.WorkspaceId, command.AgentInstanceId,
+                proof.Source, ctsRun.Token) == proof.User;
+            if (!verified && lease.ConversationId.StartsWith(ChannelDevelopmentTrust.PrivatePrefix, StringComparison.Ordinal))
+                throw new UnauthorizedAccessException("Channel account binding no longer authorizes this turn.");
+            if (verified) executionUser = proof!.User;
             var snapshot = await snapshotFactory.CreateAsync(profile, null, ctsRun.Token);
             // ADR-077 §5.2/§5.5：canonical typed content parts 是图片事实的唯一来源。
             // 主模型含 vision → 原生图片部件直接进入请求，不经过任何预识别；
@@ -119,7 +107,10 @@ public sealed class ExecutionRunCoordinator(
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
             var audioArtifactIds = ExtractAudioArtifactIds(userMessage?.MetadataJson);
-            var messageOrigin = BuildMessageOrigin(userMessage?.MetadataJson);
+            var messageOrigin = BuildMessageOrigin(facts, verified);
+            if (!verified && facts?.GetValueOrDefault(ChannelDevelopmentTrust.WebIngress) == "true")
+                messageOrigin = new MessageOrigin { FromKind = "user", FromId = command.UserId ?? "web-user",
+                    MessageType = "web.chat", ChannelType = ChannelDevelopmentTrust.Web, IsUnboundChannelSender = true };
             var requestedHardTimeout = snapshot.Timeout is { } configuredTimeout
                                        && configuredTimeout > TimeSpan.Zero
                 ? configuredTimeout
@@ -908,11 +899,10 @@ public sealed class ExecutionRunCoordinator(
         return metadata is null ? null : GetMetadataValue(metadata, "reasoningEffort");
     }
 
-    private static MessageOrigin? BuildMessageOrigin(string? metadataJson)
+    private static MessageOrigin? BuildMessageOrigin(IReadOnlyDictionary<string, string>? metadata, bool verifiedSender)
     {
-        var metadata = DeserializeMetadata(metadataJson);
-        if (metadata is null
-            || !IsTrue(GetMetadataValue(metadata, MessageGatewayMetadata.IsGatewayIngress)))
+        if (metadata is null || (!IsTrue(GetMetadataValue(metadata, MessageGatewayMetadata.IsGatewayIngress))
+            && GetMetadataValue(metadata, MessageGatewayMetadata.ChannelType) is not ("slack" or "feishu" or "dingtalk")))
         {
             return null;
         }
@@ -929,6 +919,7 @@ public sealed class ExecutionRunCoordinator(
 
         return new MessageOrigin
         {
+            IsUnboundChannelSender = !verifiedSender && channelType is "slack" or "feishu" or "dingtalk",
             FromKind = "user",
             FromId = externalUserId,
             FromDisplayName = null,
