@@ -19,6 +19,14 @@ namespace PuddingPluginAgentApi.IntegrationTests;
 [TestClass]
 public sealed class PluginAgentApiTests
 {
+    /// <summary>Skips instead of failing when the acceptance environment is absent (see PluginHostLoopTests).</summary>
+    [TestInitialize]
+    public void RequirePluginWorker()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PUDDING_PLUGIN_WORKER")))
+            Assert.Inconclusive("Set PUDDING_PLUGIN_WORKER to a built plugin worker executable (plugin acceptance environment).");
+    }
+
     private static readonly PluginScope Scope = new("workspace", "agent", "session");
     [TestMethod]
     public async Task RealWorker_UsesSdkAndCanonicalManifestWriter_CasDedupReloadAndScopeArePreserved()

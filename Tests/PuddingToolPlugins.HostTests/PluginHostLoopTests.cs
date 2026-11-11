@@ -107,6 +107,18 @@ public sealed class PluginHostLoopTests
         finally { await plugins.DisposeAsync(); Directory.Delete(root, true); }
     }
 
+    /// <summary>
+    /// These tests drive a real worker process. Without the acceptance environment they must skip like
+    /// the sibling classes in PuddingToolPlugins.IntegrationTests, instead of failing on a missing exe
+    /// (measured 2026-11-12: the commit gate now really runs Microsoft.Testing.Platform projects).
+    /// </summary>
+    [TestInitialize]
+    public void RequirePluginWorker()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PUDDING_PLUGIN_WORKER")))
+            Assert.Inconclusive("Set PUDDING_PLUGIN_WORKER to a built plugin worker executable (plugin acceptance environment).");
+    }
+
     private static ToolExecutionContext Context(string agent) => new() { WorkspaceId = "workspace", SessionId = "session", AgentInstanceId = agent };
     [TestMethod]
     public void DynamicContributions_RequireTheirHostAssignedOwner_AndKeepInvocationRisk()
