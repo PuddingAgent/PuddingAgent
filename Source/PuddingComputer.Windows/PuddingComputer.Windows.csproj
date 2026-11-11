@@ -9,6 +9,12 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RootNamespace>PuddingComputer.Windows</RootNamespace>
+    <!--
+      依赖方向门禁（PUDDING001，定义在根 Directory.Build.targets）。
+      依赖链固定为 Windows → Automation → Contracts（见文件末尾注释）。
+      特别地：不得反向引用 PuddingComputer.UIAutomation——后者是下游观察层。
+    -->
+    <AllowedProjectReferences>Pudding.Contracts;PuddingComputer.Automation</AllowedProjectReferences>
   </PropertyGroup>
 
   <ItemGroup>
