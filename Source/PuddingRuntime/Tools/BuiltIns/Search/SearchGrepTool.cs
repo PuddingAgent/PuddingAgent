@@ -182,8 +182,24 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
     private static string ResolveManagedSearchDirectory(string? directory, ToolExecutionContext context)
     {
+        // 2026-11-11 修：本分支原本直接 return Directory.GetCurrentDirectory()，**完全无视**
+        // context.WorkingDirectory（冻结工作目录）。后果：运行时（聊天轮次）工作目录非空，
+        // 本工具却按 Core 安装目录扫描——实测默认调用扫了 718 个文件 / 67MB 后返回零命中，
+        // 而命中就在工作区根下，调用方把「扫错地方」读成「不存在」。
+        // 同程序集其它文件工具（file_read/file_write/file_search/read_office_document）
+        // 统一走 HostFileToolPaths，唯此处例外；项目已在 IndexPrebuildService /
+        // FullTextIndexSupplyOptions 中命名并修复过同一失效模式。
+        //
+        // 未传冻结目录时保留既有契约（进程 cwd）：SearchGrepToolTests 的 77 个用例
+        // 靠 Directory.SetCurrentDirectory 建立范围，改成回落到 WorkspaceRoot（= 仓库根）
+        // 会让 42 个用例扫到整仓而失败——那是契约变更，不是缺陷修复。
         if (string.IsNullOrWhiteSpace(directory))
-            return Directory.GetCurrentDirectory();
+        {
+            var frozen = context.WorkingDirectory;
+            return string.IsNullOrWhiteSpace(frozen)
+                ? Directory.GetCurrentDirectory()
+                : Path.GetFullPath(frozen);
+        }
         if (Path.IsPathRooted(directory))
             return directory;
         return Path.GetFullPath(Path.Combine(
@@ -831,10 +847,16 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         int maxResults, List<string> candidatePaths,
         CancellationTokenSource cts, CancellationToken ct)
     {
-                var cwd = string.IsNullOrWhiteSpace(directory) ? Environment.CurrentDirectory : directory;
+        // directory 是调用方解析后的扫描根，必非空（ResolveManagedSearchDirectory 保证）。
+        // 不再回落 Environment.CurrentDirectory：那会把「未解析」静默变成「扫进程 cwd」。
+        var cwd = directory;
+        if (string.IsNullOrWhiteSpace(cwd))
+            return ToolExecutionResult.Fail(
+                "Internal: managed search directory was not resolved.");
+
         if (!Directory.Exists(cwd))
             return ToolExecutionResult.Fail(
-                $"Directory '{cwd}' not found. Use 'directory' to specify an existing path, or omit it to search the workspace root ({cwd}).");
+                $"Directory '{cwd}' not found. Provide an existing 'directory', or omit it to search the workspace root.");
 
         var files = new List<string>();
         var errors = 0;

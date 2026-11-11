@@ -72,6 +72,60 @@ public sealed class SearchGrepCandidateScopeTests
         }
     }
 
+    /// <summary>
+    /// 2026-11-11 修（默认扫描根）：传了冻结工作目录时，省略 directory 必须用它，
+    /// 不得无视它回落进程 Environment.CurrentDirectory。
+    ///
+    /// 修之前本机实测：运行时（冻结目录非空）默认调用扫了 718 个文件 / 67MB 后返回零命中，
+    /// 而命中就在工作区根下——调用方把「扫错地方」读成「不存在」。项目已在
+    /// IndexPrebuildService / FullTextIndexSupplyOptions 中命名并修复过同一失效模式。
+    ///
+    /// 边界：本用例只锁「有冻结目录时用它」。未传冻结目录时仍回落进程 cwd——
+    /// 那是被 SearchGrepToolTests 的 77 个用例（靠 SetCurrentDirectory）固化的既有契约，
+    /// 不属本修复范围。
+    ///
+    /// 取红方式：把进程 CWD 指向一个**存在但为空**的诱饵目录。
+    /// 修之前扫描根=诱饵 ⇒ 零命中 ⇒ 红；修之后扫描根=workingDirectory ⇒ 命中 ⇒ 绿。
+    /// 诱饵必须真实存在，否则「扫不到」可能只是目录不存在，红不出意义。
+    /// </summary>
+    [TestMethod]
+    public async Task OmittedDirectory_SearchesWorkspaceRoot_NotProcessWorkingDirectory()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var root = Path.Combine(Path.GetTempPath(), "pudding-defdir-" + Guid.NewGuid().ToString("N"));
+        var decoy = Path.Combine(Path.GetTempPath(), "pudding-decoy-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        Directory.CreateDirectory(decoy);
+        var filePath = Path.Combine(root, "Needle.cs");
+        await File.WriteAllTextAsync(filePath, "var needle = \"NeedleTarget\";\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(decoy);
+
+            var engine = new RecordingEngine(indexedRoot: root, matchPath: filePath);
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, engine);
+
+            var result = await ExecuteAsync(tool, "NeedleTarget", new Dictionary<string, string>
+            {
+                ["pattern"] = "*.cs",
+                ["max_results"] = "5",
+            }, workingDirectory: root);
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(
+                result.Output,
+                "NeedleTarget",
+                "省略 directory 时必须扫工作区根；扫到进程 cwd（诱饵目录）会零命中");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(decoy, recursive: true); } catch { }
+        }
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(
         SearchGrepTool tool,
         string query,
