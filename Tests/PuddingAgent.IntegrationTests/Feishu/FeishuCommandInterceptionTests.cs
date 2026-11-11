@@ -259,7 +259,6 @@ public sealed class FeishuCommandInterceptionTests
         services.AddSingleton(paths);
         services.AddSingleton<ISessionRepository>(sessions);
         services.AddSingleton<ChannelDevelopmentTrust>();
-        services.AddSingleton<BoundChannelSessions>();
         services.AddDbContextFactory<PlatformDbContext>(o => o.UseSqlite($"Data Source={Path.Combine(dataRoot, "trust.db")};Pooling=false"));
         var provider = services.BuildServiceProvider();
         if (bind)

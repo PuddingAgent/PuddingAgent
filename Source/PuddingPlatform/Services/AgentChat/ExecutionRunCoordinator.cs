@@ -92,7 +92,10 @@ public sealed class ExecutionRunCoordinator(
             var executionUser = command.UserId;
             var verified = proof != null && await channelTrust!.ResolveAsync(lease.WorkspaceId, command.AgentInstanceId,
                 proof.Source, ctsRun.Token) == proof.User;
-            if (!verified && lease.ConversationId.StartsWith(ChannelDevelopmentTrust.PrivatePrefix, StringComparison.Ordinal))
+            // 单一会话：判定依据从「会话 ID 前缀」改为「消息是否来自网关」。
+            // 渠道绑定失效时拒绝已经在执行的渠道 turn；web turn 不受影响。
+            var isGatewayTurn = facts?.GetValueOrDefault(MessageGatewayMetadata.IsGatewayIngress) == "true";
+            if (!verified && isGatewayTurn)
                 throw new UnauthorizedAccessException("Channel account binding no longer authorizes this turn.");
             if (verified) executionUser = proof!.User;
             var snapshot = await snapshotFactory.CreateAsync(profile, null, ctsRun.Token);

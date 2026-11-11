@@ -23,10 +23,9 @@ public sealed class CreateSteeringHandler(
             throw new InvalidOperationException(
                 $"Steering rejected: turn is {cmd.Status}.");
 
-        // External development turns accept new input through their verified connector.
-        // An arbitrary logged-in caller cannot steer a different user's active tool execution.
-        if (command.ConversationId.StartsWith(ChannelDevelopmentTrust.PrivatePrefix, StringComparison.Ordinal) ||
-            (cmd.UserId != null && cmd.UserId != command.UserId))
+        // 单一会话：渠道与 web 共用主会话，不再按会话类型禁止 steering。
+        // 仍拒绝非本 turn 所有者的插入请求。
+        if (cmd.UserId != null && cmd.UserId != command.UserId)
             throw new InvalidOperationException("Steering rejected: the current sender does not own this turn.");
 
         if (!string.IsNullOrWhiteSpace(command.WorkspaceId)

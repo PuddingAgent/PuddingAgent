@@ -61,13 +61,18 @@ public sealed class MessageGatewayIngress(
                     envelope.Metadata[SlackChannelMetadata.IsDirectMessage] != "true"),
             _ => null
         };
-        var bound = scope.ServiceProvider.GetService<BoundChannelSessions>();
-        var development = bound == null ? null : await bound.ResolveAsync(manifest, sender,
-            envelope.Metadata.GetValueOrDefault(SlackChannelMetadata.ConversationKey) ?? envelope.ExternalConversationId!,
-            messageId, MessagePrincipalIdentity.FromSender(MessageEndpointKinds.User, envelope.UserExternalId), ct);
-        var conversationId = development?.Session ?? (envelope.ChannelType == ChannelProviderKinds.Slack || bound != null
-            ? await EnsureExternalConversationAsync(manifest, envelope, ct)
-            : await EnsureMainConversationAsync(manifest, ct));
+        // 单一会话：Agent 是唯一主体，所有渠道的消息汇入该 Agent 的主会话。
+        // 渠道信任只回答「发送者是谁」，不再选择会话，也不再由会话 ID 前缀承载权限。
+        var trust = scope.ServiceProvider.GetService<ChannelDevelopmentTrust>();
+        var trustUser = trust == null || sender == null
+            ? null
+            : await trust.ResolveAsync(manifest.WorkspaceId, manifest.AgentInstanceId, sender, ct);
+        var conversationId = await EnsureMainConversationAsync(manifest, ct);
+        var actor = MessagePrincipalIdentity.FromSender(MessageEndpointKinds.User, envelope.UserExternalId);
+        DevelopmentTurn? development = trustUser == null || sender == null
+            ? null
+            : new DevelopmentTurn(manifest.WorkspaceId, manifest.AgentInstanceId, conversationId,
+                messageId, actor, trustUser, sender);
 
         var metadata = new Dictionary<string, string>(
             envelope.Metadata,
@@ -137,6 +142,12 @@ public sealed class MessageGatewayIngress(
                 Metadata = metadata,
             },
             ct);
+
+        // 单一会话：渠道消息也要刷新主会话的活跃时间。
+        // 否则会话列表（和它的排序）永远停在创建时刻，表现就是「发了消息但没动静」。
+        var active = await sessions.GetAsync(conversationId, ct);
+        if (active is not null)
+            await sessions.UpdateAsync(active with { LastActiveAt = envelope.Timestamp }, ct);
 
         logger.LogInformation(
             "[MessageGateway] Ingress accepted connector={ConnectorId} channel={ChannelType} agent={AgentId} conversation={ConversationId} message={MessageId}",
@@ -414,34 +425,8 @@ public sealed class MessageGatewayIngress(
         }
     }
 
-    private async Task<string> EnsureExternalConversationAsync(AgentInstanceManifest manifest, PuddingIngressEnvelope envelope, CancellationToken ct)
-    {
-        var slack = envelope.ChannelType == ChannelProviderKinds.Slack;
-        var route = slack ? envelope.Metadata[SlackChannelMetadata.ConversationKey] : envelope.ExternalConversationId!;
-        var sessionId = StableId(envelope.ChannelType + "-session", manifest.WorkspaceId, manifest.AgentInstanceId, envelope.ConnectorId!, route);
-        var gate = _sessionLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(ct);
-        try
-        {
-            var existing = await sessions.GetAsync(sessionId, ct);
-            if (existing is not null)
-            {
-                if (existing.WorkspaceId != manifest.WorkspaceId || existing.AgentInstanceId != manifest.AgentInstanceId || existing.ChannelId != envelope.ChannelId)
-                    throw new InvalidOperationException("External conversation identity conflict.");
-                return sessionId;
-            }
-            await sessions.CreateAsync(new SessionRecord
-            {
-                SessionId = sessionId, WorkspaceId = manifest.WorkspaceId, AgentTemplateId = manifest.TemplateId,
-                AgentInstanceId = manifest.AgentInstanceId, ChannelId = envelope.ChannelId, OwnerUserId = envelope.UserExternalId,
-                SessionType = SessionType.ServiceSession, SessionRole = SessionRole.Branch, PrincipalKind = "channel",
-                PrincipalId = route, Status = SessionStatus.Active,
-                Title = $"{(slack ? envelope.Metadata[SlackChannelMetadata.IsDirectMessage] == "true" ? "Slack 私聊" : "Slack 频道线程" : "飞书会话")} · {envelope.MessageText.Replace('\r', ' ').Replace('\n', ' ')[..Math.Min(50, envelope.MessageText.Length)]}"
-            }, ct);
-            return sessionId;
-        }
-        finally { gate.Release(); }
-    }
+    // 已移除 EnsureExternalConversationAsync：按 channel+route 派生独立会话正是「按会话分权限」的根源。
+    // 所有渠道现在统一汇入 Agent 主会话（见 MessageGatewayIngress 中的单一会话注释）。
 
     private static bool IsPrivilegedFeishuUser(
         FeishuChannelSettings? binding,

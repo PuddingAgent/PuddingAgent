@@ -27,7 +27,6 @@ public sealed class ChannelDevelopmentTrust(PuddingDataPaths paths, IDataProtect
     public const string WebIngress = "pudding_web_ingress";
     public const string DingTalk = "dingtalk-group";
     public const string Receipt = "channel_development_receipt";
-    public const string PrivatePrefix = "bound-channel-";
     private readonly IDataProtector protector = protection.CreateProtector("Pudding.ChannelDevelopment.Turn.v1");
 
     private static string Digest(params string[] fields) =>
@@ -88,9 +87,6 @@ public sealed class ChannelDevelopmentTrust(PuddingDataPaths paths, IDataProtect
             : settings.Bindings.SingleOrDefault(b => b.App == source.App && b.Organization == source.Organization && b.ExternalUser == source.ExternalUser)?.UserId;
         return user != null && await CanDevelopAsync(workspace, user, ct) ? user : null;
     }
-
-    public static string PrivateSession(string workspace, string agent, ChannelSender source, string user, string room) =>
-        PrivatePrefix + Digest(workspace, agent, source.Channel, source.App, source.Organization, source.ExternalUser, user, room)[..32];
 
     public string Issue(DevelopmentTurn turn) => protector.Protect(JsonSerializer.Serialize(turn));
 

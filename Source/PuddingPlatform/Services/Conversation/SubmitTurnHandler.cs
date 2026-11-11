@@ -30,10 +30,8 @@ public sealed class SubmitTurnHandler(
                 "At least one explicit agent ID is required.",
                 nameof(command.Recipients));
         var contentError = ConversationContentValidator.Validate(command.Content);
-        if (command.ConversationId.StartsWith(ChannelDevelopmentTrust.PrivatePrefix, StringComparison.Ordinal) &&
-            (command.Recipients.AgentIds is not [var agent] || trust?.Verify(command.Metadata, command.WorkspaceId,
-                agent, command.ConversationId, command.ClientMessageId, command.UserId) is not { Source.Channel: not ChannelDevelopmentTrust.Web }))
-            throw new UnauthorizedAccessException("Verified channel sender required.");
+        // 单一会话：渠道消息与 web 消息共用 Agent 主会话，不再存在「按会话 ID 前缀
+        // 强制渠道凭据」的分支。来源可信度由 gateway ingress 的绑定校验与 receipt 负责。
         if (contentError is not null)
             throw new ArgumentException(contentError, nameof(command.Content));
 

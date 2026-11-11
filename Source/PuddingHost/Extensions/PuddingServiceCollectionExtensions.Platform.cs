@@ -192,7 +192,8 @@ public static partial class PuddingServiceCollectionExtensions
                 Path.Combine(dataPaths.DataRoot, "panels")));
 
             // ── Conversation 命令受理（ADR-059）─────────────
-            builder.Services.AddScoped<ISubmitTurnHandler, SubmitTurnHandler>();
+            builder.Services.AddScoped<SubmitTurnHandler>();
+            builder.Services.AddScoped<ISubmitTurnHandler, DingTalkSubmitGuard>();
             builder.Services.AddScoped<IConversationNotificationStore, ConversationNotificationStore>();
             builder.Services.AddScoped<IRequestTurnCancellationHandler, RequestTurnCancellationHandler>();
             builder.Services.AddScoped<ICreateSteeringHandler, CreateSteeringHandler>();
@@ -724,7 +725,6 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ChannelConfigurationFileService>();
         builder.Services.AddDataProtection();
         builder.Services.AddSingleton<ChannelDevelopmentTrust>();
-        builder.Services.AddSingleton<BoundChannelSessions>();
         builder.Services.AddSingleton<AgentManifestCatalog>();
         builder.Services.AddSingleton<MessageGatewayIngress>();
         builder.Services.AddSingleton<IMessageGatewayIngress>(

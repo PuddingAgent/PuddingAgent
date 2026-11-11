@@ -52,13 +52,11 @@ public sealed class ChannelDevelopmentTrustTests
                 Assert.Null(await service.ResolveAsync("ws", "whale", other, ct));
             Assert.Null(await service.ResolveAsync("ws", "other-agent", source, ct));
 
-            var repository = new InMemorySessionRepository(paths);
-            var branches = new BoundChannelSessions(service, repository);
-            var agent = new AgentInstanceManifest { WorkspaceId = "ws", AgentInstanceId = "whale", TemplateId = "test" };
-            var turn = await branches.ResolveAsync(agent, source, "room", "message", "actor", ct);
-            Assert.NotNull(turn);
-            Assert.Equal("developer", (await repository.GetAsync(turn.Session, ct))!.OwnerUserId);
-            Assert.Null(await branches.ResolveAsync(agent, source with { ExternalUser = "guest" }, "room", "message2", "other", ct));
+            // 单一会话：信任解析不再派生会话，只回答「发送者是谁」。
+            var developer = await service.ResolveAsync("ws", "whale", source, ct);
+            Assert.Equal("developer", developer);
+            Assert.Null(await service.ResolveAsync("ws", "whale", source with { ExternalUser = "guest" }, ct));
+            var turn = new DevelopmentTurn("ws", "whale", "main-session", "message", "actor", developer!, source);
             var proof = new Dictionary<string, string> { [ChannelDevelopmentTrust.Receipt] = service.Issue(turn) };
             Assert.Equal(turn, service.Verify(proof, "ws", "whale", turn.Session, "message", "actor"));
             Assert.Null(service.Verify(proof, "ws", "whale", turn.Session, "message2", "actor"));

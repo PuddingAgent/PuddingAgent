@@ -18,8 +18,8 @@ public sealed class DingTalkPublicAgentTests
     [Theory]
     [InlineData("mpcal_public_help")]
     [InlineData("mpcal_record_feedback")]
-    [InlineData("unregistered_demo_operation")]
-    public async Task ActualLoopBindsOnlyPublicToolsAndConsumesTheirResults(string tool)
+    [InlineData("shell")]
+    public async Task ActualLoopLoadsAgentToolsButOnlyExecutesAuthorizedGuestActions(string tool)
     {
         var dir = Directory.CreateTempSubdirectory("pudding-dingtalk-test-");
         try
@@ -54,14 +54,20 @@ public sealed class DingTalkPublicAgentTests
                 });
             using var services = new ServiceCollection().AddHttpClient().BuildServiceProvider();
             var inbox = Path.Combine(dir.FullName, "feedback");
-            using var agent = new DingTalkPublicAgent(new(paths), paths, id, model.Object, cfg.Object, null,
-                new(inbox), services.GetRequiredService<IHttpClientFactory>(), NullLoggerFactory.Instance, new AgentExecutionStateRegistry());
+            var catalog = new Mock<PuddingCode.Tools.IPuddingToolRegistry>();
+            catalog.Setup(r => r.ContextualToolNames(It.IsAny<PuddingCode.Tools.ToolExecutionContext>())).Returns(["shell"]);
+            catalog.Setup(r => r.ContextualPolicyOwners(It.IsAny<PuddingCode.Tools.ToolExecutionContext>()))
+                .Returns(new Dictionary<string, string>());
+            catalog.Setup(r => r.ListAvailable(It.IsAny<CapabilityPolicy?>(), It.IsAny<PuddingCode.Tools.ToolExecutionContext>()))
+                .Returns([new PuddingCode.Tools.ToolDescriptor { ToolId = "shell", Name = "shell", Description = "Agent shell" }]);
+            var agent = new DingTalkPublicAgent(new(paths), paths, id, model.Object, cfg.Object, null,
+                new(inbox), services.GetRequiredService<IHttpClientFactory>(), NullLoggerFactory.Instance, new AgentExecutionStateRegistry(), new PuddingRuntime.Services.Tools.PuddingToolSchemaService(catalog.Object));
             var now = DateTimeOffset.UtcNow;
             var msg = new PublicQuestion(new("corp", "group", "employee", now, now),
                 "登记一个软件BUG，在小屏幕的显示屏上，软件显示错位。reference-736", "message");
-            var reply = await agent.ReplyAsync(msg, default);
+            var reply = (await agent.RunAsync(msg, "ding-group-test", [], [], null, default)).ReplyText;
             Assert.Equal(2, calls);
-            Assert.All(schemas, names => Assert.Equal(new[] { "mpcal_public_help","mpcal_record_feedback" }, names));
+            Assert.All(schemas, names => Assert.Equal(new[] { "mpcal_public_help","mpcal_record_feedback","shell" }, names));
             Assert.DoesNotContain(history, m => (m.Content ?? "").Contains("private-canary-736"));
             Assert.Contains(history, m => m.Role == ChatRole.Tool);
             if (tool == "mpcal_record_feedback")
@@ -76,19 +82,54 @@ public sealed class DingTalkPublicAgentTests
             }
             if (tool == "mpcal_public_help")
             {
-                var followUp = msg with { Text = "还能继续追问吗？", MessageId = "follow-up" };
+                var previous = new DingTalkConversationIngress.Sender("app", id, msg.Source, "first");
+                // 单一会话：会话 ID 不再由发送者派生。
+                const string session = "main";
+                ChatMessageRow Row(DingTalkConversationIngress.Sender sender) => new() { Id = 1, Role = "user",
+                    SessionId = session, WorkspaceId = "test", MessageId = sender.Input, Content = "reference-736",
+                    MetadataJson = JsonSerializer.Serialize(new Dictionary<string,string> {
+                        [DingTalkConversationIngress.Provenance] = JsonSerializer.Serialize(sender) }) };
+                var current = new ChatMessageRow { Id = 2, SessionId = session, WorkspaceId = "test" };
+                var replies = new Dictionary<string,string> { [previous.Input] = """{"reply":"previous-reply"}""" };
+                var persisted = DingTalkTurnExecutor.PublicHistory([Row(previous)], current, replies);
                 history.Clear();
-                await agent.ReplyAsync(followUp, default);
-                Assert.Contains(history, m => m.Role == ChatRole.User && (m.Content ?? "").Contains("reference-736"));
-                foreach (var other in new[] { msg.Source with { UserId = "other" },
-                    msg.Source with { ConversationId = "other-room" } })
-                {
-                    history.Clear();
-                    await agent.ReplyAsync(followUp with { Source = other }, default);
-                    Assert.DoesNotContain(history, m => (m.Content ?? "").Contains("reference-736"));
-                }
+                await agent.RunAsync(msg with { Text = "接着说", MessageId = "next" }, session, persisted, [], null, default);
+                Assert.Contains(history, m => m.Role == ChatRole.User && (m.Content ?? "").Contains("previous-reply"));
+                // 单一会话：不再由发送者派生会话 ID，同一群的所有成员共用同一主会话。
+                var other = previous with { Source = msg.Source with { ConversationId = "another-room" } };
+                Assert.Empty(DingTalkTurnExecutor.PublicHistory([Row(other)], current, replies));
             }
         }
         finally { dir.Delete(recursive: true); }
+    }
+
+    [Fact]
+    public void OnlyTheVerifiedRoomActorAndAgentCanSubmit()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var source = new DingTalkConversationIngress.Sender("robot", "agent", new("org","room","staff",now,now), "message");
+        var command = new SubmitTurnCommand("main", "w", source.Actor, source.Input, source.Input,
+            new() { Type = "agent", AgentIds = ["agent"] }, [], new Dictionary<string,string>
+            { [DingTalkConversationIngress.Provenance] = JsonSerializer.Serialize(source) }) { IsTrustedGatewayIngress = true };
+        DingTalkSubmitGuard.Validate(command);
+        Assert.Throws<UnauthorizedAccessException>(() => DingTalkSubmitGuard.Validate(command with { IsTrustedGatewayIngress = false }));
+        Assert.Throws<UnauthorizedAccessException>(() => DingTalkSubmitGuard.Validate(command with { UserId = "admin" }));
+        Assert.Throws<UnauthorizedAccessException>(() => DingTalkSubmitGuard.Validate(command with { Metadata = null }));
+    }
+
+    [Fact]
+    public void OutgoingImageMustBeAnArtifactBoundToTheCurrentMessage()
+    {
+        var id = "vision-" + new string('a', 32);
+        var reply = "截图\n```image\n" + id + "\n```";
+        var good = DingTalkConversationIngress.ProjectReply(reply, new Dictionary<string, GroupImage> { [id] = new([1], "image/png") });
+        Assert.Equal("截图", good.Text);
+        Assert.Single(good.Images!);
+        Assert.Null(DingTalkConversationIngress.ProjectReply(reply, new Dictionary<string, GroupImage>()).Images);
+        var inline = DingTalkPublicMedia.NormalizeReply($"产品图标\n![MPCAL 产品图标](artifact://{id})");
+        var mapped = DingTalkConversationIngress.ProjectReply(inline, new Dictionary<string, GroupImage> { [id] = new([2], "image/png") });
+        Assert.Single(mapped.Images!);
+        Assert.Equal("产品图标", mapped.Text);
+        Assert.Null(DingTalkConversationIngress.ProjectReply(inline, new Dictionary<string, GroupImage>()).Images);
     }
 }
