@@ -119,18 +119,32 @@ try {
     function Test-ProjectMentionsAny {
         param([string]$ProjectPath, [string[]]$Names)
 
-        if ($Names.Count -eq 0) { return @() }
+        if ($Names.Count -eq 0) { return [pscustomobject]@{ Hits = @(); Types = @() } }
         $directory = Split-Path -Parent $ProjectPath
         $sources = Get-ChildItem -Path $directory -Recurse -Filter "*.cs" -File -ErrorAction SilentlyContinue
         $hits = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+        $types = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
         foreach ($source in $sources) {
             $text = Get-Content $source.FullName -Raw -Encoding UTF8
+            $mentioned = $false
             foreach ($name in $Names) {
                 # Word-boundary match: "Foo" must not match "FooBar".
-                if ([regex]::IsMatch($text, ('\b' + [regex]::Escape($name) + '\b'))) { [void]$hits.Add($name) }
+                if ([regex]::IsMatch($text, ('\b' + [regex]::Escape($name) + '\b'))) { [void]$hits.Add($name); $mentioned = $true }
+            }
+            # A test class that *uses* a changed type need not be named after it:
+            # SlackGatewayTests constructs MessageGatewayIngress, and a filter of only
+            # `FullyQualifiedName~MessageGatewayIngress` matched zero test classes -- the project was
+            # selected but nothing ran (measured 2026-11-11). Collect the classes declared in the
+            # mentioning files as well.
+            if (-not $mentioned) { continue }
+            # Only the class the [TestClass] attribute is attached to. Helper types declared inside
+            # the same file (RecordingMessageSystem, TestContext, ...) are not test classes and would
+            # otherwise pollute the filter with names that may match unrelated tests by substring.
+            foreach ($m in [regex]::Matches($text, '\[TestClass\][\s\S]{0,300}?\b(?:class|record)\s+([A-Za-z_][A-Za-z0-9_]*)')) {
+                if ($m.Groups[1].Value.Length -gt 1) { [void]$types.Add($m.Groups[1].Value) }
             }
         }
-        @($hits)
+        [pscustomobject]@{ Hits = @($hits); Types = @($types) }
     }
 
     function Get-KnownFailures {
@@ -291,6 +305,9 @@ try {
         exit 1
     }
 
+    # Cap on extra "mentioning" test classes per project (see Test-ProjectMentionsAny).
+    $MaxMentioningTypes = 40
+
     $selection = @{}
     $uncovered = @()
 
@@ -300,13 +317,20 @@ try {
 
         $matchedAny = $false
         foreach ($project in $testProjects) {
-            $hits = Test-ProjectMentionsAny -ProjectPath $project.FullName -Names $names
-            if ($hits.Count -eq 0) { continue }
+            $mentions = Test-ProjectMentionsAny -ProjectPath $project.FullName -Names $names
+            if ($mentions.Hits.Count -eq 0) { continue }
             $matchedAny = $true
             if (-not $selection.ContainsKey($project.FullName)) {
                 $selection[$project.FullName] = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
             }
-            foreach ($hit in $hits) { [void]$selection[$project.FullName].Add($hit) }
+            foreach ($hit in $mentions.Hits) { [void]$selection[$project.FullName].Add($hit) }
+            # Bounded: a very common type makes many test classes mention it, and an unbounded OR
+            # filter was already measured to blow up runtime (the FilePatchTool case).
+            $extraTypes = @($mentions.Types | Sort-Object | Select-Object -First $MaxMentioningTypes)
+            foreach ($type in $extraTypes) { [void]$selection[$project.FullName].Add($type) }
+            if ($mentions.Types.Count -gt $extraTypes.Count) {
+                Write-Host ("    (mentioning classes capped at {0} of {1})" -f $extraTypes.Count, $mentions.Types.Count)
+            }
         }
 
         if (-not $matchedAny) { $uncovered += $file }
