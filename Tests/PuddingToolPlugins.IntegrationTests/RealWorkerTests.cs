@@ -11,6 +11,22 @@ namespace PuddingToolPlugins.IntegrationTests;
 public sealed class RealWorkerTests
 {
     private static readonly PluginScope Scope = new("test-workspace", "test-agent", "test-session");
+
+    /// <summary>
+    /// These tests drive a real worker process. Without the acceptance environment they must skip like the
+    /// sibling classes (FoundationPrototypeTests / PluginWorkspaceEventDemoTests) instead of crashing with
+    /// ArgumentNullException from Path.Combine(null, ...). Measured 2026-11-12: the commit gate now really
+    /// runs Microsoft.Testing.Platform projects, and these seven tests failed only because the variable was
+    /// absent, not because the product regressed.
+    /// </summary>
+    [TestInitialize]
+    public void RequirePluginAcceptanceEnvironment()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PUDDING_PLUGIN_WORKER"))
+            || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PUDDING_PLUGIN_TEST_ROOT")))
+            Assert.Inconclusive("Set PUDDING_PLUGIN_WORKER and PUDDING_PLUGIN_TEST_ROOT (plugin acceptance environment).");
+    }
+
     [TestMethod]
     public async Task RealDll_LoadInvokeCoreCallbackHookUnload_WithoutRestartingController()
     {
