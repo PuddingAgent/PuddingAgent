@@ -170,3 +170,57 @@ TOTAL_DESCENDANTS=1615  TOTAL_INVOKE_PATTERN=569  TOTAL_VALUE_PATTERN=208  ERROR
 当时我已排除四个假说，却没想到最该排除的那个：**换一个不依赖 FlaUI 的客户端**。
 “环境不行”是一个强结论，它应当需要比“库不行”更强的证据——因为前者会直接改变路线判断。
 
+## 8. 第二轮定位（同日 12:25）：FlaUI 无罪，差异在**宿主进程**
+
+### 8.1 实验矩阵（同一台机、同一窗口、前后十几分钟内）
+
+| # | 宿主 | 加载的 UIAutomationClient | 原生 UIA 后代数 | FlaUI 后代数 |
+|---|---|---|---|---|
+| 1 | `powershell.exe` 5.1（.NET Framework） | GAC v4 | **1615** | 未测 |
+| 2 | `pwsh` 7（Codex 私有 WindowsDesktop 10.0.14） | 私有副本 | **1622 / 469** | **469** |
+| 3 | C# `net10.0-windows` 控制台（UseWPF） | SDK 10.0.12 | 2 | 2 |
+| 4 | C# `net10.0-windows` WinForms（有消息泵） | SDK 10.0.12 | 2 | 2 |
+| 5 | C# `net10.0-windows` 仅 STA 线程，主线程不碰 UIA | SDK 10.0.12 | 2 | — |
+| 6 | C# `net8.0-windows` WinForms | SDK 8.0.31 | 2 | 2 |
+
+注：第 2 行是定案证据——**FlaUI.UIA2 在 pwsh 里同样读到 469**。
+由此可以硬性排除：
+
+- ❌ **FlaUI 库问题**（§7 的推断错了：FlaUI 只传递宿主的行为）
+- ❌ **STA/MTA 套间**（第 5 行）
+- ❌ **缺消息泵**（第 4 行：WinForms 宿主同样 2）
+- ❌ **运行时补丁版本**（第 3 行 10.0.12 与第 6 行 8.0.31 都是 2）
+- ❌ **缺程序集文件**：标准框架目录与 Codex 副本都有 UIAutomationClient /
+  ClientSideProviders / Provider / Types 四个 dll
+- ❌ **改 app 目录的同名 dll**：框架程序集不从 app 目录加载，拷了也不生效
+
+### 8.2 剩下的事实，不包含因果
+
+- **Codex 自带的那套 WindowsDesktop（10.0.14、私有目录）能读到完整树**；
+  标准安装的 shared framework（10.0.12 / 8.0.31）读不到。
+- **本机只有 10.0.12 与 8.0.31**（`dotnet --list-runtimes` 实测），没有 10.0.14。
+  所以凡是 framework-dependent 的 net8/net10 Windows 应用，在本机都读不到。
+- 生产的 Core 是 framework-dependent 的 net10.0-windows ⇒ **它落在读不到的那一侧**。
+
+**为什么读不到：仍未查明**。下一步的判别实验（未做）：
+把 Codex 那套私有 WindowsDesktop 作为 `DOTNET_ROOT`，或用 self-contained 发布，
+验证「framework-dependent vs 自包含/私有副本」是不是真正的分界。
+
+### 8.3 对生产的直接含义
+
+1. **`actionable` 恒 0 不是判据错**（§5.1 仍成立），而是上游只拿到壳层元素。
+2. **FlaUI 不需要换**——同一套代码在能读到的那侧完全正常。
+3. **最稳妥的修正不是碰运行时，而是把 UIA 观察放 sidecar 进程**：
+   一个能读到完整树的宿主进程负责观察，主进程通过 IPC 取结果。
+   这同时解决我之前倾向的「TFM 边界与 provider 阻塞隔离」——同一个决策。
+   代价：多一层进程协议与超时语义；收益：不依赖宿主运行时版本、
+   不把 COM/UIA 的故障面扩散到主进程。
+
+### 8.4 本轮新增的自我校正
+
+§7 把阻碍归因于 FlaUI 库，同样是**基于不完整对照的归因**——当时只换了客户端实现，
+却没在同一宿主里分别测原生与 FlaUI。两个轮次都犯了同一个错误：
+**看到两组数字不同，就把它归给最近的那个变量**。
+可靠的归因需要：同一宿主内分行测（本轮 §8.1 第 2、3 行才是合格对照）。
+
+
