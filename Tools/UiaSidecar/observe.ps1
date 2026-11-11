@@ -18,6 +18,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$OutPath,
     [string]$TitleLike = "",
+    [string]$Hwnd = "",
     [int]$SampleLimit = 20
 )
 
@@ -35,20 +36,28 @@ try {
     Add-Type -AssemblyName UIAutomationClient
     Add-Type -AssemblyName UIAutomationTypes
 
-    Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-public static class SidecarNative {
-    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-}
-"@
+    # 注意：不要无条件 Add-Type -TypeDefinition（编译内嵌 C# 是冷启动的主要开销）。
+    # 只有真需要拿前台窗口时才加载，见下面的 else 分支。
 
     $root = [System.Windows.Automation.AutomationElement]::RootElement
 
-    # 选目标：优先 -TitleLike 匹配，否则用前台窗口
+    # 选目标顺序：-Hwnd（调用方已知句柄，最便宜）> -TitleLike > 前台窗口（需 P/Invoke）
     $target = $null
     $source = ""
-    if ($TitleLike) {
+
+    if ($Hwnd) {
+        try {
+            $h = [IntPtr]([Convert]::ToInt64($Hwnd, 10))
+            $target = [System.Windows.Automation.AutomationElement]::FromHandle($h)
+            $source = "hwnd"
+        }
+        catch {
+            Write-Result ([ordered]@{ ok = $false; error = ("bad_hwnd: " + $_.Exception.Message); source = "hwnd" })
+            return
+        }
+    }
+
+    if ($null -eq $target -and $TitleLike) {
         foreach ($w in $root.FindAll([System.Windows.Automation.TreeScope]::Children,
                                      [System.Windows.Automation.Condition]::TrueCondition)) {
             $n = ""
@@ -59,6 +68,16 @@ public static class SidecarNative {
         }
     }
     if ($null -eq $target) {
+        # 仅这一步需要 P/Invoke；为省冷启动开销，在这里才编译。
+        if (-not ("SidecarNative" -as [type])) {
+            Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class SidecarNative {
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+}
+"@
+        }
         $h = [SidecarNative]::GetForegroundWindow()
         if ($h -ne [IntPtr]::Zero) {
             $target = [System.Windows.Automation.AutomationElement]::FromHandle($h)
