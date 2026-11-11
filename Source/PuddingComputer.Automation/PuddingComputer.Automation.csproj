@@ -7,6 +7,12 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RootNamespace>PuddingComputer.Automation</RootNamespace>
+    <!--
+      依赖方向门禁（PUDDING001，定义在根 Directory.Build.targets）。
+      本工程是纯规则层，只允许引用 Pudding.Contracts——与下方注释「刻意不知道
+      UIA、窗口、输入、IPC、DI、数据库」一致。清单变更必须同步上方注释。
+    -->
+    <AllowedProjectReferences>Pudding.Contracts</AllowedProjectReferences>
   </PropertyGroup>
 
   <ItemGroup>
