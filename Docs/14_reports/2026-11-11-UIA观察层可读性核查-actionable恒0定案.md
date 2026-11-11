@@ -223,4 +223,57 @@ TOTAL_DESCENDANTS=1615  TOTAL_INVOKE_PATTERN=569  TOTAL_VALUE_PATTERN=208  ERROR
 **看到两组数字不同，就把它归给最近的那个变量**。
 可靠的归因需要：同一宿主内分行测（本轮 §8.1 第 2、3 行才是合格对照）。
 
+## 9. 第三轮（同日 12:57）：不是 dll，也不是发布方式
+
+§8.2 留下的假设是「framework-dependent vs 自包含/私有副本」。本轮验证并**证伪**了它。
+
+做法：把同一探针 `dotnet publish -r win-x64 --self-contained`。
+
+| 步骤 | NATIVE_DESC | 说明 |
+|---|---|---|
+| self-contained 基线 | 2 | 运行时与框架全在 app 目录，仍是 2 |
+| 用 Codex 那 4 个 UIA dll 覆盖 publish 目录 | 2 | 仍然读不到 |
+
+**覆盖是否真的生效？** 为了不重犯前两轮的错误，先加了自证：
+
+```
+UIA_ASM_LOC=D:\...\.work\winforms-uia-probe\publish\UIAutomationClient.dll
+UIA_ASM_VER=10.0.0.0
+```
+
+即程序集确实从 app 目录加载——**所以「覆盖无效所以才没变化」这个退路不成立**，
+dll 本身不是差异源。
+
+### 9.1 至此被硬性排除的完整清单
+
+环境（§7 误判）、FlaUI 库（§7→§8 两次误判）、STA/MTA 套间、缺消息泵、
+运行时补丁版本（8.0.31 / 10.0.12 同结果）、缺程序集文件、app 目录覆盖（框架依赖时不生效）、
+**self-contained 发布与 dll 替换（本节）**。
+
+### 9.2 剩下唯一的硬事实
+
+**同一台机、同一窗口句柄 `0x170B26`、同一分钟内**：
+
+- `pwsh` 进程 → 原生 469 / FlaUI 469
+- 本仓任何 .NET 进程（控制台 / WinForms / self-contained / 任意 TFM）→ 2
+
+**差异在进程本身，机制未查明。** 本轮不再猜：
+连续三个假说（环境、库、dll）全部被证伪，已触发“继续发散无益”的门槛。
+
+### 9.3 可以马上用的东西
+
+既然 `pwsh` 是唯一已知能读到完整 UIA 树的宿主，**它能当现成的 sidecar**：
+
+- 已验证可用的路径：`pwsh -File <script>` 里 `Add-Type -AssemblyName UIAutomationClient`
+  （或加载 FlaUI net8.0 程序集），输出 JSON 给主进程
+- 与 §8.3 的 sidecar 结论一致，只是宿主选择从“自建 helper”变成“先用 pwsh 验价值”
+- 代价：一个进程往返 + 序列化；收益：立刻能做只读观察，不必等根因
+
+### 9.4 下一个真正有判别力的实验（未做）
+
+用 **Process Monitor** 看两边分别加载了哪些 `UIAutomationCore.dll` / `oleacc.dll` / 原生代理，
+或对比 `pwsh` 与自己进程的清单（DPI 感知 / 兼容性 shim / AppCompat 注册表项）。
+这需要文件/注册表实时监控工具，本会话内没有。
+
+
 
