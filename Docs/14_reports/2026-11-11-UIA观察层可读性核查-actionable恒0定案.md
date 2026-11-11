@@ -17,9 +17,15 @@ draft: false
 
 ## 0. 一句话结论
 
+> ⚠️ **本节结论已于同日 11:55 校正**——见 §7。
+> 原文说「本环境下 UIA2 客户端读不到应用内容树」，**这是错的**。
+> 同一台机器上 .NET 原生 `System.Windows.Automation` 读到 **1615 个后代 / 569 个 Invoke**，
+> 而 FlaUI.UIA2 只读到 35 / 0。问题在 **FlaUI 这一层**，不在环境，也不在 UIA 本身。
+> 因此 §5 的「视觉兜底变必需」**不再成立**。
+
 `FlaUiInspector` 的 `actionable` 恒为 0，**不是判据太严，也不是探针异常被吞**；
 直接原因是**读到的每个节点都是窗口框架级元素（Pane / TitleBar），它们不支持那五个 pattern**。
-而更根本的问题在本轮被暴露：**本环境下 UIA2 客户端读不到应用内容树**——
+而更根本的问题在本轮被暴露：**通过 FlaUI 读不到应用内容树**——
 15 个顶层窗口（含当前前台窗口）的后代总数只有 35，且三次连续测量完全不变。
 
 ## 1. 要回答的问题
@@ -93,9 +99,9 @@ Pudding (WinUIDesktopWin32…)       → InputNonClientPointerSource, ReunionCap
 
 1. **`actionable` 判据本身不必改**：它算得对——元素确实不支持那些 pattern。
    改判据会掩盖更严重的问题。
-2. **「视觉兜底」从可选项变成必需项**：UIA 路由在当前环境下拿不到控件，
-   任何依赖 UIA 定位/写值的实现都无法端到端闭环。这与既有设计里
-   「不要把通用视觉分割当成主控制面」的判断**相反**，需要重新裁定。
+2. **「视觉兜底」仍是可选**（校正于 11:55）：原生 UIA 能读到 1615 个元素 / 569 个 Invoke，
+   说明 UIA 路由本身可用，阻碍在 FlaUI 库。换实现或升级即可，
+   不需要推翻既有「不要把通用视觉分割当成主控制面」的设计判断。
 3. **`UiaAvailabilityClassifier` 的 `Sparse` 判定是对的**：35 个节点、0 可操作，
    确实该判稀疏。它一直在如实报告坏消息，只是没人听。
 4. **验收脚本必须记录前置条件**：GUI 探针的结论依赖「会话可交互 + UIA 可读」，
@@ -110,3 +116,57 @@ dotnet run --project Uia2ActionableProbe.csproj -v q
 
 探针源码即上文 v9 版本；v1/v2/v7/v8 的变体保留在同目录日志
 `run1.log` / `run2.log` / `run7-uia2.log` / `run8-warmup.log` / `run9-fg.log`。
+
+## 7. 校正记录（同日 11:55）——上一轮的「环境」结论是错的
+
+### 7.1 新证据
+
+用**完全不同的 UIA 客户端实现**（Windows PowerShell + .NET 原生
+`System.Windows.Automation`，脚本 `.work/uia-ps-probe.ps1`）读同一批窗口：
+
+```
+ROOT_CHILDREN=15
+Shell_TrayWnd          DESC=37   INVOKE=13
+Chrome_WidgetWin_1     DESC=469  INVOKE=191   ← ChatGPT
+Chrome_WidgetWin_1     DESC=250  INVOKE=35
+Window (VS)            DESC=333  INVOKE=60
+Tauri Window (Clash)   DESC=310  INVOKE=217
+Chrome_WidgetWin_1     DESC=121  INVOKE=41
+TOTAL_DESCENDANTS=1615  TOTAL_INVOKE_PATTERN=569  TOTAL_VALUE_PATTERN=208  ERRORS=0
+```
+
+对照 FlaUI.UIA2 的同一批窗口：**35 个后代 / 0 个 pattern**。
+
+### 7.2 因此必须改正的两条
+
+| 原结论 | 校正后 |
+|---|---|
+| 本环境下 UIA 客户端读不到内容树 | **错**。原生客户端读到 1615/569；阻碍在 **FlaUI 这一层** |
+| 视觉兜底从可选变必需 | **不成立**。UIA 路由可用，换实现即可 |
+
+### 7.3 仍然成立的结论（未受影响的）
+
+- `actionable` 判据本身没写错，不需要放宽（§5.1）
+- 探针异常未被吞：FlaUI 与原生两侧都零异常（§2/§3）
+- 预唤醒不足、前台/非前台、屏幕锁定、会话断连四个假说仍为已证伪（§3）
+- 本机 **UIA3（FlaUI.UIA3）恒为 0** 这一观测本身仍成立，但已不能归因于「环境勿支持 UIA」
+
+### 7.4 本轮新增的未查明项
+
+**FlaUI 为什么读不到**：同一个 `AutomationElement` 在原生侧能返回 469 个后代，
+在 FlaUI 5.0.0 侧只返回 2 个，且 `RawViewWalker` 逐层走也停在第一层。
+候选（**均未验证**）：
+
+- FlaUI 5.0.0 在 `net10.0` 下的 COM 互操作缺陷（UIA2 包装 `System.Windows.Automation`，
+  底层与原生客户端相同，差 46 倍不该是语义差异）
+- 某个 `AutomationOptions` / `ConnectionTimeout` / `TransactionTimeout` 默认值导致静默截断
+
+**判别性下一步**（未做）：查 FlaUI 5.0.0 是否有更新版本或已知 issue；
+或在同一 C# 进程里分别调原生 `AutomationElement` 与 FlaUI，确认差异可在进程内复现。
+
+### 7.5 教训
+
+上一轮的「环境级」结论建立在**单一客户端实现**的观测上。
+当时我已排除四个假说，却没想到最该排除的那个：**换一个不依赖 FlaUI 的客户端**。
+“环境不行”是一个强结论，它应当需要比“库不行”更强的证据——因为前者会直接改变路线判断。
+
