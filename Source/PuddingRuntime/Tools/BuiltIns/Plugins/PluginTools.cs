@@ -22,6 +22,50 @@ public sealed class PluginCatalogTool(ExecutablePluginService plugins, HostToolC
             instructions = "Import immutable ZIP with plugin_import; plugin_load requires approval to execute local code. Use the returned generation-specific toolNames on the next model round. Unload explicitly when finished. Hook contributions are advisory. Workers run as the current user; process isolation is not a security sandbox." });
     }
 }
+[Tool("plugin_search", "plugin_search", "Search the plugin repository by id, name, description or declared capability. Read-only: it reports what the repository holds and whether each entry is currently active in this agent context. Use contentHash with plugin_load to install.", ToolCategory.Query, ToolPermissionLevel.Low, ToolSafetyFlags.ReadOnly)]
+public sealed class PluginSearchTool(ExecutablePluginService plugins) : PuddingToolBase<PluginSearchArgs, object>
+{
+    private const int MaxLimit = 200;
+    protected override Task<object> ExecuteCoreAsync(PluginSearchArgs args, ToolExecutionContext context, CancellationToken ct)
+    {
+        var snapshot = plugins.Packages.Scan();
+        var active = plugins.Manager.List(ExecutablePluginService.Scope(context))
+            .Where(a => a.State == "Active")
+            .Select(a => a.ContentHash)
+            .ToHashSet(StringComparer.Ordinal);
+        var query = args.Query?.Trim() ?? "";
+        var limit = Math.Clamp(args.Limit, 1, MaxLimit);
+        var matches = snapshot.Packages
+            .Where(item => query.Length == 0 || Matches(item, query))
+            .OrderBy(item => item.Id, StringComparer.Ordinal)
+            .ThenBy(item => item.Version, StringComparer.Ordinal)
+            .Select(item => new
+            {
+                id = item.Id, version = item.Version, contentHash = item.ContentHash, status = item.Status,
+                name = item.Manifest?.Name, description = item.Manifest?.Description,
+                capabilities = item.Manifest?.RequestedCapabilities,
+                active = active.Contains(item.ContentHash),
+            })
+            .ToArray();
+        return Task.FromResult<object>(new
+        {
+            query, limit, complete = snapshot.Complete, repositoryTotal = snapshot.Packages.Count,
+            matched = matches.Length, returned = Math.Min(matches.Length, limit),
+            items = matches.Take(limit).ToArray(),
+            instructions = "active=true means the plugin is mounted in this agent context. Use plugin_load with contentHash to mount an entry; plugin_unload revokes it.",
+        });
+    }
+
+    private static bool Matches(PluginCatalogItem item, string query)
+    {
+        if (item.Id.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
+        if (item.Version.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
+        if (item.Manifest is not { } manifest) return false;
+        if (manifest.Name.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
+        if (manifest.Description.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
+        return manifest.RequestedCapabilities.Any(c => c.Contains(query, StringComparison.OrdinalIgnoreCase));
+    }
+}
 [Tool("plugin_import", "plugin_import", "Validate and install a v2 plugin ZIP from the current workspace. Does not execute code or replace an active version. Returns immutable contentHash for plugin_load.", ToolCategory.FileSystem, ToolPermissionLevel.High, ToolSafetyFlags.RequiresFileWrite)]
 public sealed class PluginImportTool(ExecutablePluginService plugins) : PuddingToolBase<PluginImportArgs, PluginPackage>
 {
@@ -69,6 +113,13 @@ public sealed class PluginDiagnosticsTool(ExecutablePluginService plugins, HostT
             hostTools = host?.Catalog(context), failures = plugins.Manager.Diagnostics(ExecutablePluginService.Scope(context)) });
 }
 public sealed record PluginEmptyArgs;
+public sealed record PluginSearchArgs
+{
+    [ToolParam("Case-insensitive substring over id, version, name, description and declared capabilities. Omit to list everything.")]
+    public string? Query { get; init; }
+    [ToolParam("Maximum entries to return (1-200, default 20).")]
+    public int Limit { get; init; } = 20;
+}
 public sealed record PluginImportArgs { [ToolParam("ZIP path relative to this execution's working directory; use forward slashes.")] public required string Path { get; init; } }
 public sealed record PluginLoadArgs
 {

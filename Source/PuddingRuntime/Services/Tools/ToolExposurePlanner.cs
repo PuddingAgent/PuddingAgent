@@ -61,6 +61,7 @@ internal static class ToolExposurePlanner
     {
         SearchToolId,
         "plugin_catalog",
+        "plugin_search",
         "plugin_unload",
         "plugin_diagnostics",
         "goal_read",
