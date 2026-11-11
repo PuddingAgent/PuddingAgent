@@ -117,6 +117,25 @@ public sealed class HostToolContributions : IContextualPuddingToolSource, IAsync
     private bool Visible(string id, string type, ToolExecutionContext caller) =>
         Selected(id, caller) && _bindings.TryGetValue(type, out var binding) && Permitted(binding.Metadata.Value, caller);
 
+    /// <summary>Typed view for callers that need the package inventory without parsing the catalog payload.</summary>
+    public sealed record HostPackageView(string Id, string Version, string ContentHash, IReadOnlyList<string> Tools, bool Active);
+
+    public IReadOnlyList<HostPackageView> Packages(ToolExecutionContext? caller = null)
+    {
+        var active = _mounts.List(caller is null ? null : ExecutablePluginService.Scope(caller))
+            .Where(a => a.State == "Active")
+            .Select(a => a.ContentHash)
+            .ToHashSet(StringComparer.Ordinal);
+        return _packages.Values
+            .OrderBy(p => p.Id, StringComparer.Ordinal)
+            .Select(p => new HostPackageView(p.Id, p.Version, p.ContentHash,
+                p.Exports.Where(e => caller is null || Visible(e.Key, e.Value, caller))
+                    .Select(e => e.Key).Order(StringComparer.Ordinal).ToArray(),
+                active.Contains(p.ContentHash)))
+            .Where(p => p.Tools.Count > 0)
+            .ToArray();
+    }
+
     public bool IsInstalled(string hash) => _packages.ContainsKey(hash);
     public PluginActivation Load(string hash, PluginScope scope, string operation, long? revision, bool approved, ToolExecutionContext? caller)
     {

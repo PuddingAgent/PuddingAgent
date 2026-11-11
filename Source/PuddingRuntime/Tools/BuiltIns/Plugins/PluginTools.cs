@@ -22,8 +22,8 @@ public sealed class PluginCatalogTool(ExecutablePluginService plugins, HostToolC
             instructions = "Import immutable ZIP with plugin_import; plugin_load requires approval to execute local code. Use the returned generation-specific toolNames on the next model round. Unload explicitly when finished. Hook contributions are advisory. Workers run as the current user; process isolation is not a security sandbox." });
     }
 }
-[Tool("plugin_search", "plugin_search", "Search the plugin repository by id, name, description or declared capability. Read-only: it reports what the repository holds and whether each entry is currently active in this agent context. Use contentHash with plugin_load to install.", ToolCategory.Query, ToolPermissionLevel.Low, ToolSafetyFlags.ReadOnly)]
-public sealed class PluginSearchTool(ExecutablePluginService plugins) : PuddingToolBase<PluginSearchArgs, object>
+[Tool("plugin_search", "plugin_search", "Search every installed entry: declarative host packages (kind=host-service, e.g. pudding.shell) and executable SDK plugins (kind=sdk). Matches id, version, name, description, declared capability and exported tool name. Read-only; reports active separately.", ToolCategory.Query, ToolPermissionLevel.Low, ToolSafetyFlags.ReadOnly)]
+public sealed class PluginSearchTool(ExecutablePluginService plugins, HostToolContributions? host = null) : PuddingToolBase<PluginSearchArgs, object>
 {
     private const int MaxLimit = 200;
     protected override Task<object> ExecuteCoreAsync(PluginSearchArgs args, ToolExecutionContext context, CancellationToken ct)
@@ -35,35 +35,49 @@ public sealed class PluginSearchTool(ExecutablePluginService plugins) : PuddingT
             .ToHashSet(StringComparer.Ordinal);
         var query = args.Query?.Trim() ?? "";
         var limit = Math.Clamp(args.Limit, 1, MaxLimit);
-        var matches = snapshot.Packages
-            .Where(item => query.Length == 0 || Matches(item, query))
-            .OrderBy(item => item.Id, StringComparer.Ordinal)
-            .ThenBy(item => item.Version, StringComparer.Ordinal)
-            .Select(item => new
-            {
-                id = item.Id, version = item.Version, contentHash = item.ContentHash, status = item.Status,
-                name = item.Manifest?.Name, description = item.Manifest?.Description,
-                capabilities = item.Manifest?.RequestedCapabilities,
-                active = active.Contains(item.ContentHash),
-            })
+        // Both inventories are reported: a caller searching "shell" must find pudding.shell, not only
+        // what was uploaded through plugin_import.
+        var entries = new List<Entry>();
+        foreach (var item in snapshot.Packages)
+        {
+            entries.Add(new Entry(item.Id, item.Version, item.ContentHash, "sdk", item.Status,
+                item.Manifest?.Name, item.Manifest?.Description, item.Manifest?.RequestedCapabilities ?? [],
+                active.Contains(item.ContentHash)));
+        }
+        foreach (var item in host?.Packages(context) ?? [])
+        {
+            entries.Add(new Entry(item.Id, item.Version, item.ContentHash, "host-service", "Installed",
+                null, null, item.Tools, item.Active));
+        }
+        var matches = entries
+            .Where(entry => query.Length == 0 || entry.Matches(query))
+            .OrderBy(entry => entry.Id, StringComparer.Ordinal)
+            .ThenBy(entry => entry.Kind, StringComparer.Ordinal)
+            .ThenBy(entry => entry.Version, StringComparer.Ordinal)
             .ToArray();
         return Task.FromResult<object>(new
         {
-            query, limit, complete = snapshot.Complete, repositoryTotal = snapshot.Packages.Count,
+            query, limit, complete = snapshot.Complete, repositoryTotal = entries.Count,
             matched = matches.Length, returned = Math.Min(matches.Length, limit),
-            items = matches.Take(limit).ToArray(),
-            instructions = "active=true means the plugin is mounted in this agent context. Use plugin_load with contentHash to mount an entry; plugin_unload revokes it.",
+            items = matches.Take(limit).Select(entry => new
+            {
+                id = entry.Id, version = entry.Version, contentHash = entry.ContentHash, kind = entry.Kind,
+                status = entry.Status, name = entry.Name, description = entry.Description,
+                capabilities = entry.Capabilities, active = entry.Active,
+            }).ToArray(),
+            instructions = "active=true means mounted in this agent context. kind=host-service entries are declarative (no code) and mount on first use; kind=sdk entries need plugin_load with the contentHash.",
         });
     }
 
-    private static bool Matches(PluginCatalogItem item, string query)
+    private sealed record Entry(string Id, string Version, string ContentHash, string Kind, string Status,
+        string? Name, string? Description, IReadOnlyList<string> Capabilities, bool Active)
     {
-        if (item.Id.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
-        if (item.Version.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
-        if (item.Manifest is not { } manifest) return false;
-        if (manifest.Name.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
-        if (manifest.Description.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
-        return manifest.RequestedCapabilities.Any(c => c.Contains(query, StringComparison.OrdinalIgnoreCase));
+        public bool Matches(string query) =>
+            Id.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || Version.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || (Name?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (Description?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+            || Capabilities.Any(value => value.Contains(query, StringComparison.OrdinalIgnoreCase));
     }
 }
 [Tool("plugin_import", "plugin_import", "Validate and install a v2 plugin ZIP from the current workspace. Does not execute code or replace an active version. Returns immutable contentHash for plugin_load.", ToolCategory.FileSystem, ToolPermissionLevel.High, ToolSafetyFlags.RequiresFileWrite)]
