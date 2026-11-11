@@ -39,4 +39,44 @@
   <Import Project="$(MSBuildThisFileDirectory)Source\build\PuddingMemoryEngine.JiebaResources.targets"
           Condition="Exists('$(MSBuildThisFileDirectory)Source\build\PuddingMemoryEngine.JiebaResources.targets')" />
 
+  <!--
+    ── 依赖方向门禁（opt-in）────────────────────────────────
+    目的：「加一条越界 ProjectReference」在编译期失败，而不是等运行期反射断言
+    （BoundaryTests 的注释自己写了「本项目没有 analyzer 插件，所以次级手段是运行时反射断言」）。
+
+    **不声明 AllowedProjectReferences 的项目完全不受影响**，可逐组件落地。
+
+    用法（在组件 csproj 的 PropertyGroup 内）：
+      <AllowedProjectReferences>PuddingCore;Pudding.Contracts</AllowedProjectReferences>
+
+    设计要点：
+    - BeforeTargets="Build;Rebuild"：构建入口就拦，不依赖测试是否被跑。
+    - Code="PUDDING001"：错误码可被 grep，便于 CI 分类统计。
+    - 用 %(Filename) 而非完整路径：白名单写项目名，跨机器/目录重组不失效。
+
+    与运行期反射断言的关系：互补不替代。编译期守「声明」，运行期守反射/DI/动态加载的漏网。
+    方案与取红记录：Docs/12_features/2026-11-11-依赖方向编译期强制-现状核实与门禁方案.md
+  -->
+  <Target Name="EnforceReferenceDirection"
+          BeforeTargets="Build"
+          Condition="'$(AllowedProjectReferences)' != ''">
+    <ItemGroup>
+      <!--
+        只取**本项目声明**的引用。
+        实测（2026-11-11）：Build 阶段 @(ProjectReference) 包含传递项——
+        UIAutomation.csproj 只声明了 Pudding.Contracts，注入一条 PuddingComputer.Windows 后，
+        @(ProjectReference) 里出现了 UIAutomation 未声明的 PuddingComputer.Automation
+        （Windows 自己引用了它）。机制未查明（-getItem 设计时评估只给 2 项），
+        故用 DefiningProjectFullPath 精确限定，避免把间接依赖算成本项目的违规。
+      -->
+      <_PuddingDirectRef Include="@(ProjectReference->WithMetadataValue('DefiningProjectFullPath', '$(MSBuildProjectFullPath)'))" />
+      <_PuddingDeclaredRef Include="@(_PuddingDirectRef->'%(Filename)')" />
+      <_PuddingAllowedRef Include="$(AllowedProjectReferences.Split(';'))" />
+      <_PuddingViolation Include="@(_PuddingDeclaredRef)" Exclude="@(_PuddingAllowedRef)" />
+    </ItemGroup>
+    <Error Condition="'@(_PuddingViolation)' != ''"
+           Code="PUDDING001"
+           Text="依赖方向违规：$(MSBuildProjectName) 引用了未在 AllowedProjectReferences 声明的项目 [@(_PuddingViolation->'%(Identity)', ', ')]。" />
+  </Target>
+
 </Project>
