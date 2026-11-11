@@ -379,6 +379,45 @@ sidecar 立刻给出 **142** 个可操作元素。
 **结论修正**：延迟从「近 1 秒」降到 **160~250 ms**，单次观察已可接受；
 高频轮询仍需常驻 sidecar（stdin/stdout），因为剩下的成本主要是进程启动本身。
 
+### 11.5 冒烟测试当场抓到一个真缺陷（同日 15:48）
+
+为 sidecar 写冒烟测试（`TestScripts/test-uia-sidecar.ps1`）时，**首次运行就抓到
+被测物的一个真缺陷**：
+
+```
+observe.ps1 -TitleLike NONEXISTENT_WINDOW_XYZ_123
+  → ok=true, source=foreground      ❌
+```
+
+即：**指定了标题但没匹配到时，会静默回退到前台窗口**。调用方看到 `ok=true`，
+会以为拿到了目标窗口，实际读的是一个无关窗口——正是我一直批评的「静默错位」写法，
+而且是我自己写下的。
+
+修法：未匹配时显式返回 `ok=false, error=title_not_found` 并立即返回。
+
+**取红验证**：
+
+| 状态 | 结果 |
+|---|---|
+| 修复版 | `RESULT: OK (3/3)` |
+| 变异（把该分支改成 `if ($false)`） | **C 失败**：`got ok=true source=foreground (silent fallback to foreground!)` |
+| 复原 | `RESULT: OK (3/3)`，且 `findstr MUTANT` 无残留 |
+
+### 11.6 测试自身的第一个 bug 也当场暴露
+
+首跑时 C 用例报的是 `bad_hwnd: ToInt64 ... Could not find any recognizable digits`——
+原因不在被测物，而在**测试传参方式**：用**数组** `@('-TitleLike','xxx')` 做 splat 时，
+PowerShell 按**位置**绑定，`'-TitleLike'` 变成了 `$TitleLike`、`'xxx'` 变成了 `$Hwnd`。
+于是这个用例测的根本不是它声称的东西。
+
+改用 **hashtable splatting** 后才真测到该测的路径。这条写进测试注释：
+“数组 splat 会按位置绑定，使用例测错目标”。
+
+**两条一起看**：写测试的过程本身发现了两个缺陷——一个在被测物，一个在测试；
+如果只靠“跑一遍看起来全绿”是发现不了第二个的，因为它会红在一个**看起来合理**的
+错误信息上。
+
+
 
 
 

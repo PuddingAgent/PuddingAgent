@@ -66,6 +66,19 @@ try {
                 $target = $w; $source = "title"; break
             }
         }
+
+        # 指定了标题却没匹配到 → 必须显式失败。
+        # 2026-11-11 修：之前会静默回退到前台窗口，调用方会以为拿到了目标窗口，
+        # 实际读的是无关窗口——典型的「静默错位」，必须当场报错。
+        if ($null -eq $target) {
+            Write-Result ([ordered]@{
+                ok = $false
+                error = "title_not_found"
+                titleLike = $TitleLike
+                source = "title"
+            })
+            return
+        }
     }
     if ($null -eq $target) {
         # 仅这一步需要 P/Invoke；为省冷启动开销，在这里才编译。
