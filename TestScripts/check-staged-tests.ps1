@@ -141,6 +141,62 @@ try {
         @($data.knownFailures)
     }
 
+    function Get-BuiltTestAssembly {
+        param([string]$ProjectPath)
+
+        $directory = Split-Path -Parent $ProjectPath
+        $bin = Join-Path $directory "bin"
+        if (-not (Test-Path $bin)) { return $null }
+        $expected = [IO.Path]::GetFileNameWithoutExtension($ProjectPath)
+        $candidates = @(Get-ChildItem $bin -Recurse -Filter "*.dll" -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '\\ref\\' })
+        # Prefer the project's own assembly name; fall back to the newest runnable output that owns a deps.json.
+        $named = @($candidates | Where-Object { $_.BaseName -eq $expected })
+        if ($named.Count -gt 0) { return ($named | Sort-Object LastWriteTime -Descending | Select-Object -First 1) }
+        $runnable = @($candidates | Where-Object {
+                $deps = [IO.Path]::ChangeExtension($_.FullName, '.deps.json')
+                (Test-Path $deps)
+            })
+        if ($runnable.Count -eq 0) { return $null }
+        $runnable | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    }
+
+    # Microsoft.Testing.Platform projects reject the VSTest target on .NET 10 SDK+. Running the built
+    # assembly directly keeps them gated instead of silently skipped, and --report-trx yields the same
+    # TestRun/Results shape the caller already parses.
+    function Invoke-MtpTestProject {
+        param([string]$ProjectPath, [string]$Filter, [string]$ResultsDirectory)
+
+        $assembly = Get-BuiltTestAssembly -ProjectPath $ProjectPath
+        if ($null -eq $assembly) {
+            return [pscustomobject]@{ Skipped = $true; Failed = @(); Reason = 'no built test assembly found'; Runner = 'mtp' }
+        }
+
+        $before = @(Get-ChildItem $ResultsDirectory -Filter *.trx -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+        $output = & dotnet $assembly.FullName --filter $Filter --report-trx --results-directory $ResultsDirectory 2>&1
+        $exitCode = $LASTEXITCODE
+        $fresh = @(Get-ChildItem $ResultsDirectory -Filter *.trx -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.FullName } | Where-Object { $before -notcontains $_ })
+
+        if ($fresh.Count -eq 0) {
+            Write-Host ($output | Select-Object -Last 20 | Out-String)
+            return [pscustomobject]@{ Skipped = $true; Failed = @(); Reason = "mtp runner exited $exitCode without a trx"; Runner = 'mtp' }
+        }
+
+        [xml]$trx = Get-Content $fresh[0] -Raw -Encoding UTF8
+        $failed = @($trx.TestRun.Results.UnitTestResult |
+            Where-Object { $_.outcome -eq "Failed" } |
+            ForEach-Object { [string]$_.testName })
+
+        [pscustomobject]@{
+            Skipped  = $false
+            ExitCode = $exitCode
+            Failed   = $failed
+            Trx      = $fresh[0]
+            Runner   = 'mtp'
+        }
+    }
+
     function Invoke-TestProject {
         param([string]$ProjectPath, [string]$Filter, [string]$ResultsDirectory)
 
@@ -151,13 +207,15 @@ try {
 
         $trxPath = Join-Path $ResultsDirectory "$trxName.trx"
         if (-not (Test-Path $trxPath)) {
+            $joined = ($output | Out-String)
+            if ($joined -match 'VSTest target is no longer supported') {
+                return Invoke-MtpTestProject -ProjectPath $ProjectPath -Filter $Filter -ResultsDirectory $ResultsDirectory
+            }
             # A filter that matches zero tests makes dotnet test exit 1 WITHOUT a TRX, which is not a
             # build failure. Distinguish the two: a real build failure always prints 'error CSxxxx' /
             # 'error MSBxxxx'. Language-independent on purpose (ASCII-only script, zh/en host locales).
-            $joined = ($output | Out-String)
             if ($joined -notmatch 'error\s+(CS|MSB|NU)\d+') {
-                Write-Host "    (no test matched the filter - skipped)"
-                return $null
+                return [pscustomobject]@{ Skipped = $true; Failed = @(); Reason = 'no test matched the filter'; Runner = 'vstest' }
             }
 
             Write-Host ($output | Select-Object -Last 30 | Out-String)
@@ -170,9 +228,11 @@ try {
             ForEach-Object { [string]$_.testName })
 
         [pscustomobject]@{
+            Skipped  = $false
             ExitCode = $exitCode
             Failed   = $failed
             Trx      = $trxPath
+            Runner   = 'vstest'
         }
     }
 
@@ -276,6 +336,7 @@ try {
 
     $newFailures = @()
     $ranProjects = 0
+    $skippedProjects = @()
 
     foreach ($project in ($selection.Keys | Sort-Object)) {
         $types = @($selection[$project] | Sort-Object)
@@ -284,6 +345,11 @@ try {
 
         $result = Invoke-TestProject -ProjectPath $project -Filter $filter -ResultsDirectory $resultsDirectory
         if ($null -eq $result) { continue }
+        if ($result.Skipped) {
+            Write-Host ("    SKIPPED ({0}): {1}" -f $result.Runner, $result.Reason)
+            $skippedProjects += [pscustomobject]@{ Project = $project; Reason = $result.Reason; Runner = $result.Runner }
+            continue
+        }
         $ranProjects++
 
         foreach ($name in $result.Failed) {
@@ -299,12 +365,25 @@ try {
 
     # --- verdict --------------------------------------------------------------------------------
     Write-Host ("=== ran {0} test project(s)" -f $ranProjects)
+    if ($skippedProjects.Count -gt 0) {
+        # A skipped project is not evidence of anything: surface it separately so a green verdict
+        # is never read as "these tests passed".
+        Write-Host ("=== NOT VERIFIED: {0} test project(s) skipped" -f $skippedProjects.Count)
+        foreach ($skipped in $skippedProjects) {
+            Write-Host ("    {0} [{1}]: {2}" -f (Resolve-Path -Relative $skipped.Project), $skipped.Runner, $skipped.Reason)
+        }
+    }
 
     if ($newFailures.Count -gt 0) {
         Write-Warning ("BLOCKED: {0} new test failure(s)" -f $newFailures.Count)
         foreach ($name in $newFailures) { Write-Warning ("    {0}" -f $name) }
         Write-Warning "If a failure is genuinely pre-existing and unrelated, add it to $BaselinePath with a dated reason."
         exit 1
+    }
+
+    if ($skippedProjects.Count -gt 0) {
+        Write-Host "=== OK among projects that ran (skipped projects were not verified)"
+        exit 0
     }
 
     Write-Host "=== OK: no new test failures"
