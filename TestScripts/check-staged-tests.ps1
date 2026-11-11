@@ -176,6 +176,46 @@ try {
         }
     }
 
+    # --- reference-direction config gate --------------------------------------------------------
+    # Runs BEFORE the "no changed C# files" early-exit below: a csproj-only commit would otherwise
+    # return green without ever reaching this check.
+    #
+    # Rationale: the PUDDING001 gate in Directory.Build.targets is opt-in -- deleting an
+    # AllowedProjectReferences declaration silently disables it and no C# test would notice.
+    # test-reference-direction-gate.ps1 pins the declared set against a registry, so a build-config
+    # change must not be committable without it passing.
+    $configDiffArgs = if ($IncludeAllChanged) {
+        @('diff', '--name-only', '--diff-filter=ACMR', 'HEAD')
+    }
+    else {
+        @('diff', '--cached', '--name-only', '--diff-filter=ACMR')
+    }
+    $configLines = & git @configDiffArgs
+    if ($LASTEXITCODE -ne 0) { throw "git diff failed with exit code $LASTEXITCODE" }
+
+    $configFiles = @($configLines | Where-Object {
+            if (-not $_) { return $false }
+            $normalized = $_.Replace('\', '/')
+            $normalized.EndsWith('.csproj', [StringComparison]::OrdinalIgnoreCase) -or
+            $normalized.EndsWith('.props', [StringComparison]::OrdinalIgnoreCase) -or
+            $normalized.EndsWith('.targets', [StringComparison]::OrdinalIgnoreCase) -or
+            $normalized -eq 'TestScripts/test-reference-direction-gate.ps1'
+        })
+
+    if ($configFiles.Count -gt 0) {
+        Write-Host ("=== reference-direction gate: {0} build config file(s) staged" -f $configFiles.Count)
+        $gateScript = Join-Path $PSScriptRoot 'test-reference-direction-gate.ps1'
+        if (-not (Test-Path $gateScript)) {
+            Write-Warning "BLOCKED: build config staged but test-reference-direction-gate.ps1 is missing"
+            exit 1
+        }
+        & $gateScript
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "BLOCKED: reference-direction gate failed (AllowedProjectReferences registry or contract guards)"
+            exit 1
+        }
+    }
+
     # --- select ---------------------------------------------------------------------------------
     $changed = Get-ChangedCsharpFiles -All:$IncludeAllChanged
     if ($changed.Count -eq 0) {
