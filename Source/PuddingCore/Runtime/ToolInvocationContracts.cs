@@ -19,6 +19,8 @@ public sealed record ToolInvocationRequest
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public RuntimeTraceContext? Trace { get; init; }
     public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
+    /// <summary>本轮入站用户消息 id；由 Agent 执行层从 RuntimeDispatchRequest.MessageId 透传，未提供时为 null。</summary>
+    public string? InboundMessageId { get; init; }
     /// <summary>
     /// 当前执行在进入工具前冻结的剩余 WorkUnit Token/成本预算。
     /// 派生执行只能继承或缩小，不得重新使用原始满额预算。

@@ -132,6 +132,7 @@ public sealed class ToolInvocationService : IToolInvocationService
                 ConfigurationAgentInstanceId = request.ConfigurationAgentInstanceId,
                 WorkingDirectory = request.WorkingDirectory,
                 AgentTemplateId = request.AgentTemplateId,
+                InboundMessageId = request.InboundMessageId,
                 Trace = request.Trace,
                 ToolCallId = request.ToolCallId,
                 PermissionEvidence = permissionEvidence,

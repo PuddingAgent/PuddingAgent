@@ -142,6 +142,13 @@ public class ChapterEntity
     [MaxLength(64)]
     public string? SourceTurnId { get; set; }
 
+    /// <summary>
+    /// 来源入站用户消息 id（与 ChatMessages.message_id 对齐）。message_id 在 ChatMessages 上是 NOT NULL，
+    /// 而 turn_id 主要落在 agent 行，只有它能把章节稳定回溯到催生它的那条用户消息。
+    /// </summary>
+    [MaxLength(128)]
+    public string? SourceMessageId { get; set; }
+
     public int WordCount { get; set; }
 
     /// <summary>嵌入向量（float32 字节数组，dim=1536，Base64 存储）。</summary>

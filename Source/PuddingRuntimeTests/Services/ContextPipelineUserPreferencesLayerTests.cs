@@ -237,7 +237,8 @@ public sealed class ContextPipelineUserPreferencesLayerTests
             string workspaceId, string key, string value,
             string? sourceSessionId = null, string? agentInstanceId = null,
             string? sourceTurnId = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            string? sourceMessageId = null)
             => Task.FromResult(new PreferenceWriteResult(key, value, "book-1", "chapter-1", false));
 
         public Task<bool> DeletePreferenceAsync(
@@ -255,7 +256,8 @@ public sealed class ContextPipelineUserPreferencesLayerTests
             string workspaceId, string key, string value,
             string? sourceSessionId = null, string? agentInstanceId = null,
             string? sourceTurnId = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            string? sourceMessageId = null)
             => throw new InvalidOperationException("simulated prefetch failure");
 
         public Task<bool> DeletePreferenceAsync(

@@ -1204,6 +1204,7 @@ if (effectiveLlmConfig is not null)
                                             request.ConfigurationAgentInstanceId ?? instance.AgentInstanceId,
                                         WorkingDirectory = request.WorkingDirectory,
                                         AgentTemplateId = request.AgentTemplateId,
+                                        InboundMessageId = request.MessageId,
                                         ToolCallId = call.Id,
                                         ToolName = canonicalCall.Name,
                                         ArgumentsJson = injectedArgsJson,
@@ -1940,6 +1941,7 @@ if (effectiveLlmConfig is not null)
                                     request.ConfigurationAgentInstanceId ?? instance.AgentInstanceId,
                                 WorkingDirectory = request.WorkingDirectory,
                                 AgentTemplateId = request.AgentTemplateId,
+                                InboundMessageId = request.MessageId,
                                 ToolCallId = toolName, // CONTINUE 路径没有独立 toolCallId
                                 ToolName = toolName,
                                 ArgumentsJson = injectedArgsJson,

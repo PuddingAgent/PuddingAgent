@@ -87,7 +87,8 @@ public sealed class SavePreferenceTool : PuddingToolBase<SavePreferenceArgs>
                 sourceSessionId: context.SessionId,
                 agentInstanceId: context.AgentInstanceId,
                 sourceTurnId: context.ExecutionIdentity?.TurnId,
-                ct);
+                sourceMessageId: context.InboundMessageId,
+                ct: ct);
 
             _logger.LogInformation(
                 "[SavePreference] {Op} key={Key} book={Book} chapter={Chapter}",

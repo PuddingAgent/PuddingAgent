@@ -44,13 +44,17 @@ public interface IMemoryLibrary
     // ── Chapter 生命周期 ──
 
     /// <summary>为书籍添加章节。ADR-042: agentInstanceId 标记 Agent 私有章节（null=共享）。</summary>
-    /// <remarks>sourceTurnId 置于 ct 之后：它是后加的可选尾参，放在此处才能让既有按位置传 ct 的调用点零改动。</remarks>
+    /// <remarks>
+    /// sourceTurnId / sourceMessageId 置于 ct 之后：它们是后加的可选尾参，放在此处才能让既有按位置传 ct 的调用点零改动。
+    /// 两者语义不同：sourceTurnId 是 Turn 级分组（主要落在 agent 行），sourceMessageId 是入站用户消息 id（可与 ChatMessages.message_id 直接 join）。
+    /// </remarks>
     Task<ChapterRecord> AddChapterAsync(
         string bookId, string title, string content,
         int chapterOrder = 0, string? sourceSessionId = null,
         string? agentInstanceId = null,
         CancellationToken ct = default,
-        string? sourceTurnId = null);
+        string? sourceTurnId = null,
+        string? sourceMessageId = null);
 
     /// <summary>为书籍添加章节（含来源引用）。ADR-028 Phase 1。</summary>
     Task<ChapterRecord> AddChapterWithSourceAsync(
@@ -58,7 +62,8 @@ public interface IMemoryLibrary
         int chapterOrder = 0, string? sourceSessionId = null,
         string? sourceReference = null, string? referenceType = null,
         CancellationToken ct = default,
-        string? sourceTurnId = null);
+        string? sourceTurnId = null,
+        string? sourceMessageId = null);
 
     /// <summary>获取单个章节。</summary>
     Task<ChapterRecord?> GetChapterAsync(string chapterId, CancellationToken ct = default);

@@ -213,6 +213,12 @@ public sealed record ToolExecutionContext
     /// 当前 Tool 所属执行身份。ToolCallId 在 ToolInvocationService 进入工具前冻结。
     /// </summary>
     public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
+    /// <summary>
+    /// 本轮**入站用户消息** id（与 ChatMessages.message_id 对齐）。记忆章节的 provenance 靠它与用户 cue
+    /// 精确配对：TurnId 在真实数据里主要落在 agent 行，无法稳定回到那条用户消息。
+    /// 上游未提供时保持 null，工具不得自行编造。
+    /// </summary>
+    public string? InboundMessageId { get; init; }
     /// <summary>调用工具时剩余的 WorkUnit Token/成本预算；派生工具只能继续缩小。</summary>
     public PuddingCode.Runtime.ExecutionUsageBudget? UsageBudget { get; init; }
     /// <summary>Live host-owned parent budget/cancellation scope for leased model capabilities.</summary>

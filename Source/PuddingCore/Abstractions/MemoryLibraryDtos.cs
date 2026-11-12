@@ -45,7 +45,8 @@ public sealed record ChapterRecord(
     string Status = "active",
     string? SupersededByChapterId = null,
     long? SupersededAt = null,
-    string? SourceTurnId = null);
+    string? SourceTurnId = null,
+    string? SourceMessageId = null);
 
 /// <summary>指针记录。ADR-029: 泛化为通用指针。</summary>
 public sealed record PointerRecord(
@@ -89,6 +90,9 @@ public sealed record ExperiencePackage
 
     /// <summary>来源 Turn ID（与 ChatMessages.turn_id 对齐，供记忆召回评测建立 cue→章节 配对）。</summary>
     public string? SourceTurnId { get; init; }
+
+    /// <summary>来源入站用户消息 id（与 ChatMessages.message_id 对齐）。</summary>
+    public string? SourceMessageId { get; init; }
 
     /// <summary>来源引用指针字符串（如 session:abc123、url:https://...）。</summary>
     public string? SourceReference { get; init; }

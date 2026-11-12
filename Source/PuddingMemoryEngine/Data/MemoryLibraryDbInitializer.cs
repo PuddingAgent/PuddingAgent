@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS Chapters (
     SupersededAt    INTEGER,
     SourceSessionId TEXT,
     SourceTurnId    TEXT,
+    SourceMessageId TEXT,
     WordCount       INTEGER NOT NULL DEFAULT 0,
     AgentInstanceId TEXT,
     TitleTokens     TEXT NOT NULL DEFAULT '',
@@ -96,6 +97,10 @@ CREATE TABLE IF NOT EXISTS Chapters (
         // 记忆召回评测要把（用户 cue → 章节）配成确定因果对，就必须知道章节来自哪个 Turn；
         // 存量库升级时幂等补列，旧行 SourceTurnId 为 NULL。
         await EnsureColumnAsync(conn, "Chapters", "SourceTurnId", "TEXT", logger);
+
+        // 但 TurnId 在真实数据里主要落在 agent 行（user 行覆盖率极低），无法 join 回用户消息；
+        // 入站用户消息 id 才是可直接与 ChatMessages.message_id 配对的键，同样幂等补列。
+        await EnsureColumnAsync(conn, "Chapters", "SourceMessageId", "TEXT", logger);
 
         // ── WP-L2a: 会话块向量表（供会话级语义检索，幂等）
         await ExecuteAsync(conn, """

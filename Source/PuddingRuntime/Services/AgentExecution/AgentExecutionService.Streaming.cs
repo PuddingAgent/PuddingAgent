@@ -1652,6 +1652,7 @@ public sealed partial class AgentExecutionService
                                 request.ConfigurationAgentInstanceId ?? instance.AgentInstanceId,
                             WorkingDirectory = request.WorkingDirectory,
                             AgentTemplateId = request.AgentTemplateId,
+                            InboundMessageId = request.MessageId,
                             ToolCallId = tc.Id,
                             ToolName = tc.Name,
                             ArgumentsJson = injectedArgsJson,

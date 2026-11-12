@@ -40,6 +40,10 @@ public interface IUserPreferenceService
     /// <summary>
     /// 存储一条用户偏好（upsert 语义：同一 key 覆盖旧值，不同 key 追加）。
     /// </summary>
+    /// <remarks>
+    /// sourceMessageId 放在 ct 之后：它是后加的可选尾参，放在这里才能让既有按位置传 ct 的调用点零改动
+    /// （与 IMemoryLibrary.AddChapterAsync 同一取舍）。
+    /// </remarks>
     Task<PreferenceWriteResult> SavePreferenceAsync(
         string workspaceId,
         string key,
@@ -47,7 +51,8 @@ public interface IUserPreferenceService
         string? sourceSessionId = null,
         string? agentInstanceId = null,
         string? sourceTurnId = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        string? sourceMessageId = null);
 
     /// <summary>删除一条用户偏好（按 key 精确匹配）。返回是否删除成功。</summary>
     Task<bool> DeletePreferenceAsync(
@@ -131,7 +136,8 @@ public sealed class UserPreferenceService : IUserPreferenceService
         string? sourceSessionId = null,
         string? agentInstanceId = null,
         string? sourceTurnId = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? sourceMessageId = null)
     {
         if (string.IsNullOrWhiteSpace(workspaceId))
             throw new ArgumentException("workspaceId is required.", nameof(workspaceId));
@@ -167,7 +173,8 @@ public sealed class UserPreferenceService : IUserPreferenceService
             sourceSessionId,
             agentInstanceId,
             ct,
-            sourceTurnId);
+            sourceTurnId,
+            sourceMessageId);
         await _memoryLibrary.UpdateChapterImportanceAsync(chapter.ChapterId, 0.9, ct);
 
         _logger.LogInformation(

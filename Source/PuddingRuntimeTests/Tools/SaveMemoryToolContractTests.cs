@@ -242,11 +242,50 @@ public sealed class SaveMemoryToolContractTests
         Assert.IsNull(library.LastPackage?.SourceTurnId, "没有执行身份时不得编造 TurnId");
     }
 
+    /// <summary>
+    /// 入站用户消息级溯源：章节必须能 join 回 ChatMessages.message_id（该列 NOT NULL），
+    /// 而 TurnId 在真实数据里主要落在 agent 行，回不到催生章节的那条用户消息。
+    /// 这里只验证“工具把 context.InboundMessageId 递进了写入包”，落库契约在 MemoryEngine 侧测。
+    /// </summary>
+    [TestMethod]
+    public async Task Upsert_CarriesInboundMessageId()
+    {
+        var library = new RecordingMemoryLibraryConvenience();
+        var tool = CreateTool(library);
+
+        _ = await ExecuteAsync(tool, new Dictionary<string, object?>
+        {
+            ["action"] = "upsert",
+            ["type"] = "fact",
+            ["content"] = "hello",
+        }, inboundMessageId: "m-9");
+
+        Assert.AreEqual("m-9", library.LastPackage?.SourceMessageId,
+            "写入包必须带上入站用户消息 id，否则章节无法回溯到用户 cue");
+    }
+
+    [TestMethod]
+    public async Task Upsert_WithoutInboundMessageId_LeavesItEmpty()
+    {
+        var library = new RecordingMemoryLibraryConvenience();
+        var tool = CreateTool(library);
+
+        _ = await ExecuteAsync(tool, new Dictionary<string, object?>
+        {
+            ["action"] = "upsert",
+            ["type"] = "fact",
+            ["content"] = "hello",
+        });
+
+        Assert.IsNull(library.LastPackage?.SourceMessageId, "上下文没有消息 id 时不得编造");
+    }
+
     private static async Task<ToolExecutionResult> ExecuteAsync<TArgs>(
         PuddingToolBase<TArgs> tool,
         IReadOnlyDictionary<string, object?> parameters,
         CancellationToken ct = default,
-        string? turnId = null)
+        string? turnId = null,
+        string? inboundMessageId = null)
         where TArgs : class
     {
         return await tool.ExecuteAsync(new ToolExecutionRequest
@@ -258,6 +297,7 @@ public sealed class SaveMemoryToolContractTests
                 AgentInstanceId = "agent",
                 WorkspaceId = "workspace",
                 SessionId = "session",
+                InboundMessageId = inboundMessageId,
                 ExecutionIdentity = turnId is null ? null : new RuntimeExecutionIdentity
                 {
                     Kind = RuntimeExecutionKind.ConversationTurn,

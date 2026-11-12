@@ -195,10 +195,11 @@ public sealed class MemoryLibrary : IMemoryLibrary
         int chapterOrder = 0, string? sourceSessionId = null,
         string? agentInstanceId = null,
         CancellationToken ct = default,
-        string? sourceTurnId = null)
+        string? sourceTurnId = null,
+        string? sourceMessageId = null)
     {
         return await AddChapterInternalAsync(bookId, title, content, chapterOrder,
-            sourceSessionId, null, null, agentInstanceId, sourceTurnId, ct);
+            sourceSessionId, null, null, agentInstanceId, sourceTurnId, sourceMessageId, ct);
     }
 
     public async Task<ChapterRecord> AddChapterWithSourceAsync(
@@ -206,17 +207,18 @@ public sealed class MemoryLibrary : IMemoryLibrary
         int chapterOrder = 0, string? sourceSessionId = null,
         string? sourceReference = null, string? referenceType = null,
         CancellationToken ct = default,
-        string? sourceTurnId = null)
+        string? sourceTurnId = null,
+        string? sourceMessageId = null)
     {
         return await AddChapterInternalAsync(bookId, title, content, chapterOrder,
-            sourceSessionId, sourceReference, referenceType, null, sourceTurnId, ct);
+            sourceSessionId, sourceReference, referenceType, null, sourceTurnId, sourceMessageId, ct);
     }
 
     private async Task<ChapterRecord> AddChapterInternalAsync(
         string bookId, string title, string content,
         int chapterOrder, string? sourceSessionId,
         string? sourceReference, string? referenceType,
-        string? agentInstanceId, string? sourceTurnId,
+        string? agentInstanceId, string? sourceTurnId, string? sourceMessageId,
         CancellationToken ct)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
@@ -234,6 +236,7 @@ public sealed class MemoryLibrary : IMemoryLibrary
             Importance = 0.5,
             SourceSessionId = sourceSessionId,
             SourceTurnId = sourceTurnId,
+            SourceMessageId = sourceMessageId,
             SourceReference = sourceReference,
             ReferenceType = referenceType ?? "none",
             AgentInstanceId = agentInstanceId,
@@ -1529,7 +1532,7 @@ public sealed class MemoryLibrary : IMemoryLibrary
         e.Importance, e.SourceSessionId, e.WordCount, e.CreatedAt, e.UpdatedAt,
         e.SourceReference, e.ReferenceType, e.AgentInstanceId,
         e.Scene, e.Constraints, e.Tags, e.Status, e.SupersededByChapterId, e.SupersededAt,
-        e.SourceTurnId);
+        e.SourceTurnId, e.SourceMessageId);
 
     private static ChapterRelationRecord ToRecord(ChapterRelationEntity e) => new(
         e.RelationId, e.SourceChapterId, e.TargetChapterId,

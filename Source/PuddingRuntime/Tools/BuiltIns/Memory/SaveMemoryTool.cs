@@ -207,8 +207,10 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
                 SourceReference = sourceRef,
                 ReferenceType = refType,
                 AgentInstanceId = agentInstanceId,
-                // 召回评测要把这条记忆绑回催生它的那条用户消息；TurnId 是唯一无歧义的抓手。
-                SourceTurnId = context.ExecutionIdentity?.TurnId
+                // TurnId 只做 Turn 级分组：真实数据里它主要落在 agent 行，回不到用户消息。
+                SourceTurnId = context.ExecutionIdentity?.TurnId,
+                // 入站用户消息 id 才能与 ChatMessages.message_id 直接 join，是召回评测的配对键。
+                SourceMessageId = context.InboundMessageId
             };
 
             var upsertResult = await _library.UpsertExperienceAsync(workspaceId, package, ct);
