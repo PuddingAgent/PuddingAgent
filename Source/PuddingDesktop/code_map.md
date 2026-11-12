@@ -1,5 +1,5 @@
 # WinUI Shell / independent Core launcher
-> 源指纹: Assets/**=1-03d89cb968fa, Hosting/**=2-875ce62093f7, *.cs=7-4ae9cc102ef8, *.csproj=1-b7bc4cc878eb, *.manifest=1-c50e9539699b, *.xaml=2-ab5498f2451a · 条目数: 0 · 最近整理: 2026-10-22
+> 源指纹: Assets/**=1-03d89cb968fa, Hosting/**=3-15c96cb63544, *.cs=8-917bc295bdfe, *.csproj=1-4306ca07887d, *.manifest=1-c50e9539699b, *.xaml=2-48f32cc6998f · 条目数: 0 · 最近整理: 2026-10-22
 
 - `App.xaml` retains native theme brushes, rounded controls and Mica styling from desktop development B.
 - `App.xaml.cs`: single-instance activation and launcher composition; wires UI/AppDomain/task exceptions, process-exit callback, five-second durable scene capture and the independent exit observer.

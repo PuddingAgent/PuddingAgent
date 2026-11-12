@@ -5,7 +5,7 @@
 > 依赖倒置：`ICodeIndexer` 定义在本工程，Roslyn/TS 等**实现留在** `PuddingCodeIntelligence`。
 > 命名空间：`PuddingCodeIndex.Contracts` / `PuddingCodeIndex.Services` / `PuddingCodeIndex.Services.CodeIndex` / `PuddingCodeIndex.Storage`
 > 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingCodeIndex-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingCodeIndex-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
-> 源指纹: Source/PuddingCodeIndex/**=96-27cb6e69b8a5 · 条目数: 56 · 最近整理: 2026-10-31
+> 源指纹: Source/PuddingCodeIndex/**=64-34e7cce10286 · 条目数: 56 · 最近整理: 2026-10-31
 > ⚠ 2026-10-31 R2-01：28 个检索契约已迁至 **`Source/PuddingRetrieval.Contracts/`**（独立工程，命名空间 `PuddingRetrieval.Contracts`）。
 > 下表凡写 `PuddingRetrieval.Contracts/…` 的条目，文件**不在本工程内**；`Services/Retrieval/…` 仍是本工程实现。
 > 同时 `CodeSymbolKind` / `CodeRelationKind` 已下沉到 `PuddingDomain.Contracts`（命名空间保持 `PuddingCodeIndex.Contracts`，调用方零改动）。

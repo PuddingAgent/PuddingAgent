@@ -1,6 +1,6 @@
 # PuddingAgent 代码地图（根索引）
 
-> 源指纹: Source/**=4128db41da49, Tests/**=19a07b471379, Tools/**=83d7eb33e1cf, TestScripts/**=9d8c5fa016f7 · 条目数: 128 · 最近整理: 2026-10-31
+> 源指纹: Source/**=6cae47d8c329, Tests/**=d1bcb35c8c0f, Tools/**=8607fc618824, TestScripts/**=f4d78e7b18b1 · 条目数: 128 · 最近整理: 2026-10-31
 >
 > ⚠️ 2026-10-28：`TestScripts/**` 与 `Source/**` 指纹均已**陈旧**——本轮新增 9 个验收/采样/运维脚本（verify-retrieval-delivery / verify-fulltext-incremental-latency / sample-host-io-shape / correlate-host-read-io / measure-retrieval-resources / watch-read-io-anomaly / verify-storage-vacuum-readiness / swap-compacted-platform-db / probe-read-io-shape），并在 `Source/PuddingPlatform/Services/StorageManagement/` 新增 `PlatformStorageReclaimPolicy.cs`（纯决策核心 + 其测试），故 `Source/**` 同样需重算。而仓库内无 code_map 指纹自检器可重算。**不编造新指纹**，只登记为待刷新；拿到算法后一次算清。
 > 本文件是**索引**不是日志：只放 概念 · 组件 · 关键文件（相对路径）· 用途；维护规则见 [`Agents.md`](Agents.md)，过程记录写 [`Docs/00_changelog/`](Docs/00_changelog/README.md)；子项目内部的文件级索引在其自己的 `code_map.md` 中，本文件只做跨项目路由。

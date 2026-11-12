@@ -1,5 +1,5 @@
 # PuddingBrowser.WebView2 CodeMAP
-> 源指纹: *.cs=12-6b126cc7cc1e, *.csproj=1-d784f732327e · 条目数: 9 · 最近整理: 2026-10-26
+> 源指纹: *.cs=12-9fc6de2dcc4f, *.csproj=1-d784f732327e · 条目数: 9 · 最近整理: 2026-10-26
 
 > WebView2 Driver | 真实浏览器页面操作
 
