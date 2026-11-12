@@ -26,7 +26,6 @@ public sealed class DingTalkGroupHandler(string appId, IPublicGroupAgent agent,
         // The first failing rule is surfaced so a rejected callback is diagnosable from the log alone.
         if (ev is null) return "source_denied:" + reason;
         var source = ev.Question.Source;
-        if (source.PuddingGroup != "guest") return "source_denied";
         if (!Admit(source)) return "rate_limited";
         if (!journal.TryClaim(source, ev.MessageId)) return "duplicate";
         var answer = new GroupReply(PublicGroupAnswers.TooLong);

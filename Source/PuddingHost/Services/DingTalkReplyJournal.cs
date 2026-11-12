@@ -28,7 +28,7 @@ public sealed class DingTalkReplyJournal : IGroupReplyJournal
         cmd.CommandText = "INSERT INTO receipts VALUES($corp,$room,$id,$user,$grp,$sent,$received,'unknown') ON CONFLICT(corp,room,id) DO NOTHING";
         AddIdentity(cmd, s, id);
         cmd.Parameters.AddWithValue("$user", s.UserId);
-        cmd.Parameters.AddWithValue("$grp", s.PuddingGroup);
+        cmd.Parameters.AddWithValue("$grp", s.Group ? "group" : "private");
         cmd.Parameters.AddWithValue("$sent", s.SentAt.ToString("O"));
         cmd.Parameters.AddWithValue("$received", s.ReceivedAt.ToString("O"));
         return cmd.ExecuteNonQuery() == 1;

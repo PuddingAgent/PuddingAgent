@@ -15,6 +15,9 @@ public sealed record ChannelTrustSettings(string Mode, IReadOnlyList<ChannelAcco
     public static readonly ChannelTrustSettings Restricted = new("restricted", []);
 }
 
+/// <summary>已绑定发送者的内部身份。权限属于 Agent，这里只描述「谁在说话」。</summary>
+public sealed record ChannelPrincipal(string UserId, string Role);
+
 // Channel is an instance ID. Organization pins the provider tenant, independently of a display name.
 public sealed record ChannelSender(string Channel, string App, string Organization, string ExternalUser, bool Group);
 public sealed record DevelopmentTurn(string Workspace, string Agent, string Session, string Message,
@@ -63,20 +66,36 @@ public sealed class ChannelDevelopmentTrust(PuddingDataPaths paths, IDataProtect
     private static bool Valid(string? value) => value is { Length: > 0 and <= 256 } &&
         value == value.Trim() && !value.Any(char.IsControl);
 
-    private async Task<bool> CanDevelopAsync(string workspace, string userId, CancellationToken ct)
+    public const string AdminRole = "admin";
+    public const string MemberRole = "member";
+
+    /// <summary>有权访问该工作区时返回其用户类型；未启用、无权限或不存在返回 null。</summary>
+    private async Task<UserType?> AccessAsync(string workspace, string userId, CancellationToken ct)
     {
         await using var db = await databases.CreateDbContextAsync(ct);
-        return await (from u in db.AppUsers from w in db.Workspaces
+        var row = await (from u in db.AppUsers from w in db.Workspaces
             where u.UserId == userId && u.IsEnabled && w.WorkspaceId == workspace && w.IsEnabled
-            select u.UserType == UserType.Admin || (db.WorkspaceMembers
-                .Where(m => m.UserEntityId == u.Id && m.WorkspaceEntityId == w.Id)
-                .Select(m => (WorkspaceAccessPolicy?)m.AccessLevel).FirstOrDefault() ??
-                (db.TeamMembers.Any(m => m.UserEntityId == u.Id && m.TeamEntityId == w.TeamEntityId) &&
-                 w.TeamAccessPolicy > w.CompanyAccessPolicy ? w.TeamAccessPolicy : w.CompanyAccessPolicy)) >= WorkspaceAccessPolicy.Write)
+            select new
+            {
+                u.UserType,
+                Allowed = u.UserType == UserType.Admin || (db.WorkspaceMembers
+                    .Where(m => m.UserEntityId == u.Id && m.WorkspaceEntityId == w.Id)
+                    .Select(m => (WorkspaceAccessPolicy?)m.AccessLevel).FirstOrDefault() ??
+                    (db.TeamMembers.Any(m => m.UserEntityId == u.Id && m.TeamEntityId == w.TeamEntityId) &&
+                     w.TeamAccessPolicy > w.CompanyAccessPolicy ? w.TeamAccessPolicy : w.CompanyAccessPolicy)) >= WorkspaceAccessPolicy.Write
+            })
             .SingleOrDefaultAsync(ct);
+        return row is { Allowed: true } ? row.UserType : null;
     }
 
-    public async Task<string?> ResolveAsync(string workspace, string agent, ChannelSender source, CancellationToken ct)
+    private async Task<bool> CanDevelopAsync(string workspace, string userId, CancellationToken ct) =>
+        await AccessAsync(workspace, userId, ct) is not null;
+
+    /// <summary>
+    /// 只回答「这条消息的发送者是谁」。渠道不决定能力：绑定了哪个 Agent，
+    /// 就由该 Agent 自己的工具策略决定能做什么。
+    /// </summary>
+    public async Task<ChannelPrincipal?> ResolvePrincipalAsync(string workspace, string agent, ChannelSender source, CancellationToken ct)
     {
         if (!Valid(source.ExternalUser) || !Valid(source.Channel) || !Valid(source.App) || !Valid(source.Organization)) return null;
         if (source.Channel == Web && (source.App != "pudding" || source.Organization != workspace || source.Group)) return null;
@@ -85,8 +104,12 @@ public sealed class ChannelDevelopmentTrust(PuddingDataPaths paths, IDataProtect
         var user = source.Channel == Web
             ? source.ExternalUser
             : settings.Bindings.SingleOrDefault(b => b.App == source.App && b.Organization == source.Organization && b.ExternalUser == source.ExternalUser)?.UserId;
-        return user != null && await CanDevelopAsync(workspace, user, ct) ? user : null;
+        if (user is null || await AccessAsync(workspace, user, ct) is not { } type) return null;
+        return new(user, type == UserType.Admin ? AdminRole : MemberRole);
     }
+
+    public async Task<string?> ResolveAsync(string workspace, string agent, ChannelSender source, CancellationToken ct) =>
+        (await ResolvePrincipalAsync(workspace, agent, source, ct))?.UserId;
 
     public string Issue(DevelopmentTurn turn) => protector.Protect(JsonSerializer.Serialize(turn));
 

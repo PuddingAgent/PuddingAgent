@@ -13,8 +13,6 @@ public sealed record GroupSource(string CorporationId, string ConversationId, st
     /// </summary>
     public bool Group { get; init; } = true;
 
-    // No DingTalk-to-Pudding account bindings exist. Only a host-owned binding may change this.
-    public string PuddingGroup => "guest";
 }
 
 public sealed record PublicQuestion(GroupSource Source, string Text, string MessageId)

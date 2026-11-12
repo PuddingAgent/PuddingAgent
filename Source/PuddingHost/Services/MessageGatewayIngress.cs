@@ -64,9 +64,14 @@ public sealed class MessageGatewayIngress(
         // 单一会话：Agent 是唯一主体，所有渠道的消息汇入该 Agent 的主会话。
         // 渠道信任只回答「发送者是谁」，不再选择会话，也不再由会话 ID 前缀承载权限。
         var trust = scope.ServiceProvider.GetService<ChannelDevelopmentTrust>();
-        var trustUser = trust == null || sender == null
+        var principal = trust == null || sender == null
             ? null
-            : await trust.ResolveAsync(manifest.WorkspaceId, manifest.AgentInstanceId, sender, ct);
+            : await trust.ResolvePrincipalAsync(manifest.WorkspaceId, manifest.AgentInstanceId, sender, ct);
+        var trustUser = principal?.UserId;
+        // 权限主体是 Agent：网关只把发送者身份交出去，能力由该 Agent 自己的工具策略决定。
+        var identity = sender == null
+            ? null
+            : new ChannelIdentity(envelope.ChannelType, sender.ExternalUser, principal?.UserId, principal?.Role);
         var conversationId = await EnsureMainConversationAsync(manifest, ct);
         var actor = MessagePrincipalIdentity.FromSender(MessageEndpointKinds.User, envelope.UserExternalId);
         DevelopmentTurn? development = trustUser == null || sender == null
@@ -89,6 +94,16 @@ public sealed class MessageGatewayIngress(
             [MessageGatewayMetadata.MessageType] = envelope.MessageType ?? "chat",
             [MessageGatewayMetadata.ClientRequestId] = clientRequestId,
         };
+        if (identity is not null)
+        {
+            metadata[ChannelIdentityMetadata.Channel] = identity.Channel;
+            metadata[ChannelIdentityMetadata.ExternalUserId] = identity.ExternalUserId;
+            if (identity.UserId is not null)
+            {
+                metadata[ChannelIdentityMetadata.UserId] = identity.UserId;
+                metadata[ChannelIdentityMetadata.Role] = identity.Role ?? "";
+            }
+        }
 
         metadata.Remove(ChannelDevelopmentTrust.Receipt);
         if (development != null)
@@ -137,7 +152,8 @@ public sealed class MessageGatewayIngress(
                 Audience = MessageAudiences.Direct,
                 Visibility = MessageVisibilities.Private,
                 ContentType = MessageContentTypes.Text,
-                Content = envelope.MessageText,
+                Content = identity is null ? envelope.MessageText
+                    : identity.Prefix + (envelope.MessageText.Length == 0 ? "" : " " + envelope.MessageText),
                 CreatedAt = envelope.Timestamp.ToUnixTimeMilliseconds(),
                 Metadata = metadata,
             },

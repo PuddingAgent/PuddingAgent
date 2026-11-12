@@ -44,7 +44,8 @@ public sealed class PuddingApplicationHostCompositionTests
             Assert.NotNull(app.Services.GetRequiredService<PuddingAgent.Tools.SlackLookupMemberTool>());
             var kernel = app.Services.GetServices<PuddingCode.Tools.IPuddingTool>().Select(t => t.Descriptor.ToolId).Order();
             Assert.Equal(new[] { "list_tool_approvals", "plugin_catalog", "plugin_diagnostics", "plugin_import",
-                "plugin_load", "plugin_unload", "request_tool_approval", "search_tools" }, kernel);
+                "plugin_load", "plugin_search", "plugin_uninstall", "plugin_unload", "request_tool_approval",
+                "search_tools" }, kernel);
             var tools = app.Services.GetRequiredService<PuddingCode.Tools.IPuddingToolRegistry>();
             Assert.Null(tools.GetTool("slack_lookup_member"));
             Assert.Null(tools.GetTool("shell"));

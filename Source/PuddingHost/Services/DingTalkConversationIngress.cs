@@ -57,14 +57,17 @@ internal sealed class DingTalkConversationIngress(AgentManifestCatalog agents, s
     public async Task<GroupReply> ReplyAsync(PublicQuestion q, CancellationToken ct)
     {
         var owner = await agents.GetAsync(agentId, ct);
-        if (owner is not { IsEnabled: true, IsFrozen: false } || q.Source.PuddingGroup != "guest")
+        if (owner is not { IsEnabled: true, IsFrozen: false })
             throw new UnauthorizedAccessException();
         var sender = new Sender(appId, agentId, q.Source, q.MessageId);
         var workspace = owner.WorkspaceId;
         using var scope = scopes.CreateScope();
         var trust = scope.ServiceProvider.GetService<ChannelDevelopmentTrust>();
-        var source = new ChannelSender(ChannelDevelopmentTrust.DingTalk, appId, q.Source.CorporationId, q.Source.UserId, true);
-        var trustUser = trust == null ? null : await trust.ResolveAsync(workspace, agentId, source, ct);
+        // 权限主体是 Agent：渠道只说明「谁在说话」，不决定这个渠道能做什么。
+        var source = new ChannelSender(ChannelDevelopmentTrust.DingTalk, appId, q.Source.CorporationId, q.Source.UserId, q.Source.Group);
+        var principal = trust == null ? null : await trust.ResolvePrincipalAsync(workspace, agentId, source, ct);
+        var trustUser = principal?.UserId;
+        var identity = new ChannelIdentity("dingtalk", q.Source.UserId, principal?.UserId, principal?.Role);
         // An unbound caller in a private chat is told exactly which identifiers the administrator
         // needs. A group chat never gets this: it would disclose one member's ids to everyone.
         if (trustUser == null && !q.Source.Group)
@@ -80,7 +83,7 @@ internal sealed class DingTalkConversationIngress(AgentManifestCatalog agents, s
 
         var images = new Dictionary<string, GroupImage>(StringComparer.Ordinal);
         var parts = new List<ContentPart>();
-        if (q.Text.Length > 0) parts.Add(new() { Type = "text", Text = q.Text });
+        parts.Add(new() { Type = "text", Text = q.Text.Length == 0 ? identity.Prefix : identity.Prefix + " " + q.Text });
         foreach (var code in q.ImageDownloadCodes)
         {
             var bytes = await media.DownloadAsync(code, ct);
@@ -97,11 +100,20 @@ internal sealed class DingTalkConversationIngress(AgentManifestCatalog agents, s
         }
 
         var submit = scope.ServiceProvider.GetRequiredService<ISubmitTurnHandler>();
-        var metadata = development == null
-            ? new Dictionary<string, string> { [Provenance] = JsonSerializer.Serialize(sender),
-                [MessageGatewayMetadata.ChannelType] = "dingtalk", [MessageGatewayMetadata.ExternalUserId] = q.Source.UserId }
-            : new Dictionary<string, string> { [ChannelDevelopmentTrust.Receipt] =
-                scope.ServiceProvider.GetRequiredService<ChannelDevelopmentTrust>().Issue(development) };
+        var metadata = new Dictionary<string, string>
+        {
+            [ChannelIdentityMetadata.Channel] = identity.Channel,
+            [ChannelIdentityMetadata.ExternalUserId] = identity.ExternalUserId,
+            [MessageGatewayMetadata.ChannelType] = "dingtalk",
+            [MessageGatewayMetadata.ExternalUserId] = q.Source.UserId
+        };
+        if (identity.UserId is not null)
+        {
+            metadata[ChannelIdentityMetadata.UserId] = identity.UserId;
+            metadata[ChannelIdentityMetadata.Role] = identity.Role ?? "";
+        }
+        if (development == null) metadata[Provenance] = JsonSerializer.Serialize(sender);
+        else metadata[ChannelDevelopmentTrust.Receipt] = scope.ServiceProvider.GetRequiredService<ChannelDevelopmentTrust>().Issue(development);
         var result = await submit.HandleAsync(new SubmitTurnCommand(session, workspace, sender.Actor, sender.Input,
             sender.Input, new() { Type = "agent", AgentIds = [agentId] }, parts, metadata)
             { IsTrustedGatewayIngress = true }, ct);
