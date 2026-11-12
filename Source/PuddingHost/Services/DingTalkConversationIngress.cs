@@ -160,15 +160,25 @@ internal sealed class DingTalkSubmitGuard(SubmitTurnHandler next) : ISubmitTurnH
         // 单一会话后，钉钉消息不再进入渠道自有会话（旧 ding-group-* 前缀），
         // 因此不再用 ConversationId 反推房间归属；只校验消息来源的完整性。
         var source = command.Metadata?.GetValueOrDefault(DingTalkConversationIngress.Provenance);
-        // 非可信网关提交且无钉钉来源：与钉钉无关，放行。
-        if (!command.IsTrustedGatewayIngress && source is null) return;
-        // 可信网关提交必须携带可验证的钉钉来源（缺失即拒绝，不能靠会话前缀兜底）。
-        if (command.IsTrustedGatewayIngress && source is not null &&
-            JsonSerializer.Deserialize<DingTalkConversationIngress.Sender>(source) is { Source: not null } sender &&
+
+        // 没有钉钉来源：这一回合不是钉钉回合（飞书 / Slack / Web 等渠道），与本守卫无关，放行。
+        // 回归教训：此处曾要求「可信网关必须携带钉钉来源」，结果把所有非钉钉渠道的入站一并拒绝，
+        // 表现为渠道消息已入站、回合却被拒（UnauthorizedAccessException），用户看不到任何回复。
+        if (source is null) return;
+
+        // 有钉钉来源但不是可信网关提交：来源无从验证，按伪造处理。
+        if (!command.IsTrustedGatewayIngress) throw Rejected();
+
+        // 可信网关 + 有钉钉来源：逐字段核对，任一不符即拒绝。
+        if (JsonSerializer.Deserialize<DingTalkConversationIngress.Sender>(source) is { Source: not null } sender &&
             sender.Input == command.ClientRequestId &&
             sender.Input == command.ClientMessageId &&
             sender.Actor == command.UserId &&
             command.Recipients.AgentIds is [var recipient] && recipient == sender.Agent) return;
-        throw new UnauthorizedAccessException("DingTalk group turns require verified channel ingress.");
+
+        throw Rejected();
+
+        static UnauthorizedAccessException Rejected() =>
+            new("DingTalk group turns require verified channel ingress.");
     }
 }
