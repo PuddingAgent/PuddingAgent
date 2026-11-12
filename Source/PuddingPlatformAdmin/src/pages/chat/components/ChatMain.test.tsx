@@ -143,6 +143,7 @@ const createChatMainElement = ({
   onInputChange = jest.fn(),
   onSendWithMetadata,
   conversationView,
+  channelConversationTitle,
 }: {
   onAgentChange?: jest.Mock;
   selectedSessionId?: string | null;
@@ -153,6 +154,7 @@ const createChatMainElement = ({
   onInputChange?: jest.Mock;
   onSendWithMetadata?: jest.Mock;
   conversationView?: any;
+  channelConversationTitle?: string;
 } = {}) => (
   <ChatMain
     sidebarOpen
@@ -176,6 +178,7 @@ const createChatMainElement = ({
     selectedSessionId={selectedSessionId}
     turns={turns}
     conversationView={conversationView}
+    channelConversationTitle={channelConversationTitle}
     chatInteractionRuntimeEvents={chatInteractionRuntimeEvents}
     subAgentCards={subAgentCards}
     historyLoading={false}
@@ -644,5 +647,13 @@ describe('ChatMain workbench header', () => {
     _mockLatestMessageListProps.onPinnedQuote('> 摘要：已钉住\n');
 
     expect(onInputChange).toHaveBeenCalledWith('> 摘要：已钉住\n');
+  });
+
+  it('shows channel context and process details without an unusable message composer', () => {
+    renderChatMain({ channelConversationTitle: 'Slack 频道线程 · 测试' });
+    expect(screen.getByRole('region', { name: '渠道会话信息' })).toBeTruthy();
+    expect(screen.getByRole('note').textContent).toContain('请在原渠道回复');
+    expect(screen.queryByTestId('input-area')).toBeNull();
+    expect(_mockLatestMessageListProps.channelProcessDetails).toBe(true);
   });
 });

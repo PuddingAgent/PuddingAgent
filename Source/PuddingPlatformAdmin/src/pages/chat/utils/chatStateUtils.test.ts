@@ -6,6 +6,8 @@ import {
   isStaleCompactionStarted,
   resolveRunningCompactionId,
   resolveTerminalAssistantMarkdown,
+  resolveSessionAgentId,
+  toSessionListItem,
 } from './chatStateUtils';
 
 const createTurn = (): ChatTurn => ({
@@ -27,6 +29,12 @@ const createTurn = (): ChatTurn => ({
 });
 
 describe('chatStateUtils module boundary', () => {
+  it('keeps the channel route separate from its executing agent', () => {
+    const channel = toSessionListItem({ sessionId: 's', principalKind: 'channel', principalId: 'T/C/1.0', agentInstanceId: 'whale' } as any);
+    expect(resolveSessionAgentId(channel, 'other')).toBe('whale');
+    expect(resolveSessionAgentId({ ...channel, agentInstanceId: undefined }, 'other')).toBe('other');
+    expect(resolveSessionAgentId({ ...channel, agentInstanceId: undefined, principalKind: 'agent', principalId: 'legacy' }, 'other')).toBe('legacy');
+  });
   it('confirms an optimistic turn without mutating the original turn', () => {
     const original = createTurn();
 

@@ -138,6 +138,8 @@ interface ChatLayoutProps {
 const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
   const { styles } = useChatStyles();
   const workingAgentIds = Array.from(new Set(props.workingAgentIds));
+  const channelConversation = props.groups.flatMap((group) => group.items)
+    .find((session) => session.sessionId === props.selectedSessionId && session.principalKind === 'channel');
   // 右侧面板宽度由用户拖拽决定，首次取上次记住的值。
   // 拖动过程中只改内存，松手（onCommit）才写 localStorage。
   // （内嵌侧栏已移除：文档预览改由 Shell 的原生 tab + WebView2 承载）
@@ -213,7 +215,8 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         onStop={props.onStop}
         onSteerCurrent={props.onSteerCurrent}
         onExport={props.onExport}
-        disabled={props.disabled}
+        disabled={props.disabled || !!channelConversation}
+        channelConversationTitle={channelConversation?.title}
         tLimit={props.tLimit}
         tUsed={props.tUsed}
         tPct={props.tPct}

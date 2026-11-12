@@ -14,6 +14,12 @@
 
 ## 目录
 
+| 插件入口 | 用途 |
+|---|---|
+| `src/pages/capability-management/ExecutablePluginsPanel.tsx` | v2 包导入、选择真实会话并授权加载、卸载状态与失败诊断；旧 v1 清单另列 |
+| `src/services/platform/toolPlugins.ts` | 管理员插件 API 与作用域/状态 DTO |
+| `src/pages/capability-management/ExecutablePluginsPanel.test.tsx` | 加载授权/会话身份及未确认退出不可显示成功 |
+
 | 目录 | 用途 |
 |------|------|
 | `src/` | 前端源码 |
@@ -76,6 +82,9 @@
 | `src/pages/chat/hooks/useProviderBalance.ts` | 余额拉取：providerId 变化即取 + 5min 低频轮询（`usePollingLoader` 页面隐藏自动暂停）+ 手动 `refresh`；任何失败静默降级为 `balance=undefined` + `errorText`，不抛错 |
 | `src/pages/chat/components/ProviderBalanceIndicator.tsx` | 品牌图标（DeepSeek/Mimo 内联 SVG）+ `¥xx.xx` 徽标；`detail` prop 进 Tooltip 第二行（错误原因/刷新提示） |
 | `src/pages/chat/components/GoalBanner.tsx` + `hooks/useGoal.ts` | ADR-074 Goal 状态控件与 GoalStepsPanel 惰性化（见下「关键语义」） |
+| `src/pages/chat/components/ExecutionReviewPanel.tsx` + `.types.ts` + `.fixtures.ts` | PA-08A 执行评审纯展示面板：冻结 `ExecutionReviewView`（run/review 双状态、未满足条件与证据、预算 Unknown、取消排空、数据新鲜度、模型建议与受控检查分离）；props 提供全部数据、点击证据仅回调 `onOpenEvidence`；不 fetch/SSE/轮询、不改 stores/hooks |
+| `src/pages/chat/hooks/useExecutionReview.ts` + `useGoalExecutionReview.ts` + `src/pages/chat/utils/executionReviewView.ts` | PA-08A 只读数据钩子与快照→视图纯映射：单次读取 `GET /api/v1/execution-reviews/{reviewId}` 或 `GET /api/v1/goals/{goalId}/execution-review`（不轮询/不重试），未知金额与 stale 原样保留；`src/services/platform/api.ts` 增加对应 DTO 客户端 |
+| `src/pages/chat/components/ExecutionReviewSection.tsx` | PA-08A 执行评审小节：Goal 详情 Popover 内只读挂载 panel（懒加载首开才请求）；无投影/错误时不渲染伪造视图；证据点击只展示已获引用 |
 | `src/pages/chat/utils/goalContinuationMessage.ts` + `types.ts` + `projections/messageProjection.ts` | 仅对服务端 `goal_managed + goal_continuation` 消息解析 `<goal_payload>`；历史 `\\uXXXX` 由 JSON parser 还原为可读 Goal/Task/工作单元文本，普通用户消息与损坏 payload 均原样保留 |
 | `src/pages/workspace-tasks/SchedulerDrawer.tsx` | Task 看板“调度中心”：权威状态、候选决策码、Pause/Resume/Scan/Repair、revision CAS 策略表单与 Authoritative 前置门禁 |
 | `src/pages/workspace-tasks/TaskEditorDrawer.tsx` + `TaskCard.tsx` + `TaskDetailsDrawer.tsx` | 暴露 Task 自动调度 opt-in、taskType/capability/provider/model/fallback/window；卡片显示“自动”标记并提供纳入/退出、Blocked Resume/Requeue 等用户干预 |
@@ -252,6 +261,7 @@ bubble，`answerMarkdown` 仅作复制/TTS/无 canonical 正文节点时的旧�
 | `src/pages/chat/components/MessageList.tsx` | 消息行投影与单卡去重；心跳输入与运行中助手回复分离；独立压缩卡保留空正文终态并按发生时间插入，排队输入的活动回复留在消息流末端（见下「关键语义」） |
 | `src/pages/chat/styles/messageStyleContext.tsx` | 消息树样式边界；`MessageList` 注册一次聚合 Chat 样式并通过 Context 共享，消息叶子不得重复调用 `useChatStyles` |
 | `src/pages/chat/components/MessageRow.tsx` | 单消息渲染与语义 memo 边界；Agent 行通过根滚动容器 IntersectionObserver 在 600px 预取区注册可见 turn；直接接收本 Turn 的 Projection 对象，任一其他 Turn/全局 selector revision 不得击穿历史行 memo |
+| `src/pages/chat/components/ConversationProcessDetails.tsx` | 渠道回合过程卡片，复用主聊天过程样式，按 toolCallId 配对且保留原始记录视图；按 conversationId/turnId 懒读分页，运行中展开才刷新，切换取消迟到响应，partial 与失败可见 |
 | `src/pages/chat/components/execution-flow/TurnContentStream.tsx` / `ActivityGroup.tsx` | 超长单 Turn 的二级 DOM 预算：默认最新 40 个内容块、每组最新 24 个行为节点；旧内容每次 40/24 项渐进揭示，折叠组成员完全卸载 |
 | `src/pages/chat/components/MessageProcessSummary.tsx` | 思考/工具过程摘要；折叠时不得构建完整 rounds、trace chips 和展示项 |
 | `../../Docs/19_references/deepseek_harness/deepseek-harness-message-card-alignment-2026-08-14.md` | Chat 执行流目标设计：同一 assistant turn 内用 TurnStatus、ReasoningDisclosureRow、ToolCallRow、DelegationRow 分层呈现，按 toolCallId 配对并复用实时/历史 projector |
@@ -322,7 +332,9 @@ messageId 原地更新与三源去重。**同一条回复只允许一张卡片**
 | `src/components/UserAvatarUpload.tsx` | 受控头像上传组件（Upload + 正方形裁剪 Canvas 512px）；props 为 `userId`/`avatarUrl`/`onUploaded`，不读写 `@@initialState`；上传走 `updateUserAvatar`（`POST /api/users/{userId}/avatar`，字段 `file`，仅 PNG/JPG/WebP ≤5MiB），成功只回调，是否同步顶栏由页面决定 |
 | `src/pages/user-management/index.tsx` | 编辑抽屉顶部头像区域（仅编辑态显示）；头像为“独立即时保存项”（确认即上传，不随保存/取消回滚）；`onUploaded` 更新 `editingUser.avatar` 并刷新列表，仅当被编辑用户是当前登录用户时同步全局 `currentUser.avatar` |
 | `src/pages/workspace/ChannelTrustSettings.tsx` | 管理员配置各 Agent 的 Chat 与外部渠道信任模式，以及外部账号与 Pudding 用户的对应关系 |
-| `src/pages/workspace/[id]/index.tsx` | 工作空间概览已移除“我的头像”区块；头像入口只在用户管理编辑抽屉；飞书特权用户名单兼作主动收件人，单人默认/多人选择 |
+| `src/pages/workspace/[id]/index.tsx` | 工作区渠道管理：飞书凭据/主动收件人，Slack API 身份、仓库外凭据路径、真人/机器人/频道白名单与 Agent 绑定 |
+| `src/pages/chat/components/SessionSidebar.tsx` · `src/pages/chat/hooks/useSessionCatalog.ts` | 常驻渠道会话列表；有界刷新并复用原会话选择、SSE、历史过程 |
+| `src/pages/chat/hooks/useSessionSelection.ts` · `src/pages/chat/components/ChatLayout.tsx` | 渠道路由与执行 Agent 分离；渠道观察视图禁用 Web 输入框 |
 
 后端契约见 `PuddingPlatform/Controllers/Api/UserAvatarApiController.cs`：`POST /api/users/{userId}/avatar`（为自己上传需登录，为他人上传需 Admin）；`AppUserDto.Avatar` 携带现有头像；`/api/currentUser` 从 `AppUsers.Avatar` 投影，空值回退 `/admin/assets/images/me.png`。
 

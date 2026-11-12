@@ -21,6 +21,7 @@ import {
 } from 'antd';
 import type { UploadFile } from 'antd';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ExecutablePluginsPanel from './ExecutablePluginsPanel';
 import {
   listCapabilities,
   listPluginDiagnostics,
@@ -43,7 +44,7 @@ import {
 const { Text } = Typography;
 
 type ViewMode = 'card' | 'table';
-type ActiveTab = 'tools' | 'plugins';
+type ActiveTab = 'tools' | 'plugins' | 'legacy';
 
 const getCategoryColor = (toolName: string): string => {
   const lower = toolName.toLowerCase();
@@ -539,8 +540,8 @@ const ToolManagementPage: React.FC = () => {
       <Alert
         type="info"
         showIcon
-        message="Phase 1 只读取插件描述文件"
-        description="上传 ZIP 后，后端会先校验 plugin.json、包结构和解压路径，再安装到插件目录；manifest-only 工具会立即进入运行时目录。当前阶段不会动态加载 DLL，真正执行需要后续 Phase 2 的隔离加载器和权限校验。"
+        message="旧版 v1 清单归档：不执行、不暴露给 Agent；请重新打包为 v2 插件"
+        description="此处保留旧版包的元数据，供查看和重新打包。可执行 DLL 请使用“可运行插件”页导入 pudding-tool-plugin/v2 包。"
         style={{ marginBottom: 16 }}
       />
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
@@ -579,7 +580,7 @@ const ToolManagementPage: React.FC = () => {
       </div>
       <Spin spinning={pluginLoading}>
         {plugins.length === 0 && !pluginLoading ? (
-          <Empty description="暂无插件包。可上传包含 plugin.json 的 ZIP 包，或将插件目录放入 D:\\data\\plugins 后重启后端。" />
+          <Empty description="没有旧版清单。新插件请使用“可运行插件”页，无需重启。" />
         ) : (
           <Row gutter={[16, 16]}>
             {plugins.map((plugin) => (
@@ -674,7 +675,7 @@ const ToolManagementPage: React.FC = () => {
   return (
     <PageContainer
       title="工具管理"
-      subTitle="运行时工具注册表与插件包 manifest 状态"
+      subTitle="管理工具与可即时加载的插件"
     >
       <Tabs
         activeKey={activeTab}
@@ -687,7 +688,12 @@ const ToolManagementPage: React.FC = () => {
           },
           {
             key: 'plugins',
-            label: '插件包',
+            label: '可运行插件',
+            children: <ExecutablePluginsPanel />,
+          },
+          {
+            key: 'legacy',
+            label: '旧版清单',
             children: pluginCatalogContent,
           },
         ]}

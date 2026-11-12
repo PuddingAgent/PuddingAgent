@@ -1,0 +1,184 @@
+/* ── ExecutionReviewPanel：执行评审纯展示面板（PA-08A）─────────────────────
+   仅样式，复用既有聊天主题 token；不含任何行为/网络/存储逻辑。 */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--pudding-chat-border);
+  border-radius: 8px;
+  background: var(--pudding-chat-surface-muted);
+  color: var(--pudding-chat-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.runState,
+.reviewState {
+  padding: 0 8px;
+  border: 1px solid var(--pudding-chat-border);
+  border-radius: 999px;
+  background: var(--pudding-chat-surface);
+  color: var(--pudding-chat-text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.hint {
+  margin: 0;
+  color: var(--pudding-chat-text);
+  font-weight: 600;
+}
+
+.stopReason {
+  margin: 0;
+  color: #d46b08;
+}
+
+.continueReason {
+  margin: 0;
+  color: #1677ff;
+}
+
+.modelSuggestion {
+  margin: 0;
+  color: var(--pudding-chat-text);
+}
+
+.failedChecks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.failedCheck {
+  color: #cf1322;
+}
+
+.unmetCriteria {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sectionTitle {
+  color: var(--pudding-chat-text);
+  font-weight: 650;
+}
+
+.unmetList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.unmetItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--pudding-chat-border);
+  border-radius: 6px;
+  background: var(--pudding-chat-surface);
+}
+
+.criterionText {
+  color: var(--pudding-chat-text);
+  overflow-wrap: anywhere;
+}
+
+.outcome {
+  padding: 0 6px;
+  border: 1px solid rgba(250, 140, 22, 0.4);
+  border-radius: 4px;
+  background: rgba(250, 140, 22, 0.12);
+  color: #d46b08;
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.evidenceRefs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.evidenceButton {
+  padding: 0 8px;
+  border: 1px solid var(--pudding-chat-border);
+  border-radius: 4px;
+  background: transparent;
+  color: #1677ff;
+  font-size: 11px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.evidenceButton:hover {
+  border-color: rgba(22, 119, 255, 0.45);
+  background: rgba(22, 119, 255, 0.06);
+}
+
+.noEvidence {
+  color: var(--pudding-chat-text-subtle);
+}
+
+.overflow {
+  margin: 0;
+  color: var(--pudding-chat-text-subtle);
+}
+
+.budget {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin: 0;
+}
+
+.budgetRow {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.budgetRow dt {
+  color: var(--pudding-chat-text-subtle);
+}
+
+.budgetRow dd {
+  margin: 0;
+  color: var(--pudding-chat-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.cancelState {
+  margin: 0;
+  color: #d46b08;
+}
+
+.freshness {
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px solid rgba(250, 173, 20, 0.4);
+  border-radius: 6px;
+  background: rgba(250, 173, 20, 0.12);
+  color: #ad6800;
+}

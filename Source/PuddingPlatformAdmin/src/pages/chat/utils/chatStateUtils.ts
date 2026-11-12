@@ -663,11 +663,16 @@ export function toSessionListItem(
       new Date(session.lastActiveAt || session.createdAt).getTime() ||
       Date.now(),
     agentTemplateId: session.agentTemplateId,
+    agentInstanceId: session.agentInstanceId,
     channelId: session.channelId,
     sessionRole: session.sessionRole,
     principalKind: session.principalKind,
     principalId: session.principalId,
   };
+}
+
+export function resolveSessionAgentId(session: SessionListItem | undefined, fallback?: string): string | undefined {
+  return session?.agentInstanceId || (session?.principalKind === 'agent' ? session.principalId : undefined) || fallback;
 }
 
 export const groupSessions = (raw: SessionListItem[]): SessionGroup[] => {

@@ -149,7 +149,8 @@ const ChatPageContent: React.FC = () => {
   const projectedConversation =
     useAgentClientArchitecture &&
     agentClient.snapshot.workspaceId === chat.workspaceId &&
-    agentClient.snapshot.agentId === chat.agentId
+    agentClient.snapshot.agentId === chat.agentId &&
+    (!chat.selectedSessionId || agentClient.snapshot.conversation?.mainSessionId === chat.selectedSessionId)
       ? agentClient.snapshot.conversation
       : null;
   // 行为链重构（2026-08-24）：完成 turn 的过程明细懒水合进 TurnSurfaceStore，
@@ -519,15 +520,18 @@ const ChatPageContent: React.FC = () => {
 
   const handleSelectSession = useCallback(
     (sessionId: string) => {
+      const session = chat.sessions.find((item) => item.sessionId === sessionId);
+      const ownerAgentId = session?.agentInstanceId || (session?.principalKind === 'agent' ? session.principalId : undefined) || chat.agentId;
+      if (ownerAgentId && ownerAgentId !== chat.agentId) chat.setAgentId(ownerAgentId);
       history.replace(
         buildChatPathWithQuery(
-          { workspaceId: chat.workspaceId, agentId: chat.agentId, sessionId },
+          { workspaceId: chat.workspaceId, agentId: ownerAgentId, sessionId },
           location.search,
         ),
       );
-      void chat.handleSelectSession(sessionId);
+      void chat.handleSelectSession(sessionId, { agentId: ownerAgentId });
     },
-    [chat.workspaceId, chat.agentId, chat.handleSelectSession, location.search],
+    [chat.workspaceId, chat.agentId, chat.sessions, chat.setAgentId, chat.handleSelectSession, location.search],
   );
 
   const handleWorkspaceChange = useCallback(

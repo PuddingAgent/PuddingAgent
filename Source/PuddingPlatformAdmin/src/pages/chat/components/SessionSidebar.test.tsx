@@ -58,9 +58,8 @@ describe('SessionSidebar agent contacts', () => {
       screen.getByRole('button', { name: /规划 Agent/ }).getAttribute('title'),
     ).toBeNull();
     expect(screen.getByText('工作中')).toBeTruthy();
-    // IMG10：文案统一为中文（Agents→智能体、Groups→群组、接入→开放）
-    expect(screen.getByText('群组')).toBeTruthy();
-    expect(screen.getByText('群组即将开放')).toBeTruthy();
+    expect(screen.getByText('渠道会话')).toBeTruthy();
+    expect(screen.getByText('收到渠道消息后显示在这里')).toBeTruthy();
     expect(screen.queryByRole('region', { name: '会话细节' })).toBeNull();
     expect(screen.queryByText('最近会话')).toBeNull();
 
@@ -83,6 +82,16 @@ describe('SessionSidebar agent contacts', () => {
     ).toBe('true');
     expect(screen.getByText('最近会话')).toBeTruthy();
     expect(within(details).getByText('实现主会话')).toBeTruthy();
+  });
+
+  it('exposes channel threads without opening history and selects their isolated session', () => {
+    const onSelectSession = jest.fn();
+    render(<SessionSidebar {...baseProps} onSelectSession={onSelectSession} groups={[{ label: '今天', items: [
+      { sessionId: 'slack-thread', title: 'Slack 频道线程 · 检查构建', timestamp: 2, principalKind: 'channel', principalId: 'T/C/1.0', agentInstanceId: 'reviewer' },
+    ] }]} />);
+    expect(screen.queryByRole('region', { name: '会话细节' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Slack 频道线程/ }));
+    expect(onSelectSession).toHaveBeenCalledWith('slack-thread');
   });
 
   it('derives concise agent contact statuses', () => {

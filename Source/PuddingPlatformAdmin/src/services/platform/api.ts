@@ -54,7 +54,7 @@ export interface SessionRecord {
   agentInstanceId?: string;
   parentSessionId?: string;
   rootSessionId?: string;
-  principalKind?: 'agent' | 'group';
+  principalKind?: 'agent' | 'group' | 'channel';
   principalId?: string;
   title?: string;
   createdAt: string;
@@ -99,11 +99,12 @@ export async function unfreezeWorkspace(id: string): Promise<void> {
 
 // ─── Session API ─────────────────────────────────────────────────
 
-export async function listSessions(workspaceId?: string): Promise<SessionRecord[]> {
+export async function listSessions(workspaceId?: string, options?: { channelOnly?: boolean; signal?: AbortSignal }): Promise<SessionRecord[]> {
   const url = workspaceId
     ? `/api/sessions?workspaceId=${encodeURIComponent(workspaceId)}`
     : '/api/sessions';
-  return request(url, { method: 'GET' });
+  const endpoint = options?.channelOnly ? `${url}${url.includes('?') ? '&' : '?'}channelOnly=true` : url;
+  return request(endpoint, { method: 'GET', signal: options?.signal });
 }
 
 export async function getSession(sessionId: string): Promise<SessionRecord> {
@@ -1905,6 +1906,15 @@ export async function deleteWorkspaceSkill(workspaceId: string, skillId: string)
 
 // ─── WorkspaceChannel types ───────────────────────────────────
 
+export interface SlackChannelSettings {
+  teamId: string;
+  appId: string;
+  credentialFile: string;
+  allowedUserIds: string[];
+  allowedBotUserIds?: string[];
+  allowedChannelIds: string[];
+}
+
 export interface WorkspaceChannelDto {
   channelId: string;
   name: string;
@@ -1915,6 +1925,7 @@ export interface WorkspaceChannelDto {
   boundAgentId?: string;
   appId?: string;
   hasAppSecret: boolean;
+  slack?: SlackChannelSettings;
   streamingRepliesEnabled: boolean;
   ttsRepliesEnabled: boolean;
   ttsVoice: string;
@@ -1931,6 +1942,7 @@ export interface UpsertWorkspaceChannelRequest {
   boundAgentId?: string;
   appId?: string;
   appSecret?: string;
+  slack?: SlackChannelSettings;
   streamingRepliesEnabled: boolean;
   ttsRepliesEnabled: boolean;
   ttsVoice?: string;
@@ -4963,4 +4975,100 @@ export async function listHubUpdates(agentInstanceId: string): Promise<HubSkillU
   return hubRequest<HubSkillUpdateDto[]>('/api/skill-hub/updates', '加载待更新清单', 'array', {
     params: { agentInstanceId },
   });
+}
+
+// ─── PA-08 A：执行评审只读投影（后端 GET /api/v1/execution-reviews/{reviewId}）───
+export interface ExecutionReviewBudgetAmountDto {
+  amount: number | null;
+  unit: string;
+  known: boolean;
+}
+export interface ExecutionReviewBudgetDto {
+  maxOutputTokens: number | null;
+  maxCost: number | null;
+  actual: ExecutionReviewBudgetAmountDto;
+  reserved: ExecutionReviewBudgetAmountDto;
+  unknown: ExecutionReviewBudgetAmountDto;
+}
+export interface ExecutionReviewEvidenceRefDto {
+  evidenceId: string;
+  kind: string;
+  label: string;
+  reference: string;
+  contentHash: string;
+  availability: string;
+}
+export interface ExecutionReviewCriterionDto {
+  criterionId: string;
+  text: string;
+  outcome: string;
+  evidenceRefs: ExecutionReviewEvidenceRefDto[];
+}
+export interface ExecutionReviewFailedCheckDto {
+  checkId: string;
+  exitCode: number;
+  summary: string;
+}
+export interface ExecutionReviewSnapshotDto {
+  workId: string;
+  goalId: string;
+  turnId: string;
+  reviewId: string | null;
+  runState: string;
+  reviewState: string;
+  stopReasonCode: string | null;
+  stopReasonSummary: string | null;
+  continueReasonCode: string | null;
+  continueReasonSummary: string | null;
+  unmetCriteria: ExecutionReviewCriterionDto[];
+  budget: ExecutionReviewBudgetDto;
+  modelPolicy: {
+    modelId: string;
+    modelRevision: string;
+    policyVersion: string;
+    promptVersion: string;
+    inheritedFromPrimary: boolean;
+  };
+  cancel: {
+    requested: boolean;
+    requestedAt: string | null;
+    draining: boolean;
+    pendingCalls: number;
+    reasonCode: string | null;
+  };
+  freshness: {
+    stale: boolean;
+    dataAsOf: string;
+    lastSequence: number;
+    snapshotRevision: number;
+    gapDetected: boolean;
+  };
+  modelSuggestionFinding: string | null;
+  modelSuggestionLevel: string | null;
+  failedChecks: ExecutionReviewFailedCheckDto[];
+  snapshotRevision: number;
+  lastSequence: number;
+}
+
+/** 只读：不轮询、不重试；缺失/不可用会由调用方显示明确错误。 */
+export async function getExecutionReview(
+  reviewId: string,
+  options?: { stale?: boolean; signal?: AbortSignal },
+): Promise<{ review: ExecutionReviewSnapshotDto | null }> {
+  const query = options?.stale ? '?stale=true' : '';
+  return request(
+    `/api/v1/execution-reviews/${encodeURIComponent(reviewId)}${query}`,
+    { method: 'GET', signal: options?.signal },
+  );
+}
+/** 只读：按 Goal 取最新评审投影；不轮询、不重试。 */
+export async function getExecutionReviewByGoal(
+  goalId: string,
+  options?: { stale?: boolean; signal?: AbortSignal },
+): Promise<{ review: ExecutionReviewSnapshotDto | null }> {
+  const query = options?.stale ? '?stale=true' : '';
+  return request(
+    `/api/v1/goals/${encodeURIComponent(goalId)}/execution-review${query}`,
+    { method: 'GET', signal: options?.signal },
+  );
 }

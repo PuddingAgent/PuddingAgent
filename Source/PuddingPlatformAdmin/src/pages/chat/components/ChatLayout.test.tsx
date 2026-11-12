@@ -12,6 +12,8 @@ jest.mock('./ChatMain', () => (props: any) => (
   <main
     data-testid="chat-main"
     data-conversation-agent={props.conversationView?.agentId ?? ''}
+    data-disabled={String(props.disabled)}
+    data-channel-title={props.channelConversationTitle ?? ''}
   />
 ));
 jest.mock('./SessionSidebar', () => (props: any) => (
@@ -89,6 +91,13 @@ const baseProps = {
 };
 
 describe('ChatLayout agent status projection', () => {
+  it('marks channel sessions as observable and disables the web composer', () => {
+    render(<ChatLayout {...(baseProps as any)} groups={[{ label: '今天', items: [
+      { sessionId: 'session-1', title: 'Slack 频道线程', principalKind: 'channel', timestamp: 1 },
+    ] }]} />);
+    expect(screen.getByTestId('chat-main').getAttribute('data-disabled')).toBe('true');
+    expect(screen.getByTestId('chat-main').getAttribute('data-channel-title')).toBe('Slack 频道线程');
+  });
   it('passes through real working agent ids instead of deriving them from the selected active turn', () => {
     render(
       <ChatLayout

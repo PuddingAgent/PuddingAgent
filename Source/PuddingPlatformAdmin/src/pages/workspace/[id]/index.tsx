@@ -1050,6 +1050,8 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
   const [workspaceAgents, setWorkspaceAgents] = useState<WorkspaceAgentDto[]>([]);
   const [providers, setProviders] = useState<ChannelProviderDto[]>([]);
   const [form] = Form.useForm<UpsertWorkspaceChannelRequest>();
+  const selectedProvider = Form.useWatch('providerId', form);
+  const isSlack = providers.find((provider) => provider.providerId === selectedProvider)?.channelType === 'slack';
 
   useEffect(() => {
     listWorkspaceAgents(workspaceId).then(setWorkspaceAgents).catch(() => {});
@@ -1067,6 +1069,7 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
       ttsRepliesEnabled: false,
       ttsVoice: 'Cherry',
       privilegedUserOpenIds: [],
+      slack: { teamId: '', appId: '', credentialFile: '', allowedUserIds: [], allowedBotUserIds: [], allowedChannelIds: [] },
       isEnabled: true,
     });
     setDrawerOpen(true);
@@ -1082,6 +1085,7 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
       boundAgentId: item.boundAgentId,
       appId: item.appId,
       appSecret: undefined,
+      slack: item.slack,
       streamingRepliesEnabled: item.streamingRepliesEnabled,
       ttsRepliesEnabled: item.ttsRepliesEnabled,
       ttsVoice: item.ttsVoice || 'Cherry',
@@ -1138,12 +1142,14 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
       title: '连接配置',
       render: (_, r) => (
         <Space direction="vertical" size={0}>
-          <Text>{r.appId || '未配置 App ID'}</Text>
-          <Text type={r.hasAppSecret ? 'success' : 'danger'} style={{ fontSize: 12 }}>
-            {r.hasAppSecret ? 'Secret 已配置' : 'Secret 未配置'}
-            {r.streamingRepliesEnabled ? ' · 流式回复' : ' · 普通回复'}
-            {r.ttsRepliesEnabled ? ` · 语音回复（${r.ttsVoice}）` : ''}
-          </Text>
+          <Text>{r.slack ? `${r.slack.teamId} · ${r.slack.appId}` : r.appId || '未配置 App ID'}</Text>
+          {r.slack ? <Text type="secondary" style={{ fontSize: 12 }}>凭据文件路径已配置 · 保存配置后重启生效</Text> : (
+            <Text type={r.hasAppSecret ? 'success' : 'danger'} style={{ fontSize: 12 }}>
+              {r.hasAppSecret ? 'Secret 已配置' : 'Secret 未配置'}
+              {r.streamingRepliesEnabled ? ' · 流式回复' : ' · 普通回复'}
+              {r.ttsRepliesEnabled ? ` · 语音回复（${r.ttsVoice}）` : ''}
+            </Text>
+          )}
         </Space>
       ),
     },
@@ -1221,6 +1227,23 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
             placeholder="选择这个渠道接收消息时运行的 Agent"
             fieldProps={{ allowClear: true }}
           />
+          {isSlack ? <>
+            <Alert showIcon type="info" message="Slack Socket Mode"
+              description="接收私聊及频道 @提及，频道回复保留在线程内。线程后续消息也需 @机器人。用户白名单为空时不接收任何消息；频道白名单为空时仅允许私聊。"
+              style={{ marginBottom: 16 }} />
+            <ProFormText name={['slack', 'teamId']} label="Slack Team ID" placeholder="T…（不是工作区名称）" rules={[{ required: true }, { pattern: /^T[A-Z0-9]+$/, message: '请输入 T 开头的 Slack Team ID' }]} />
+            <ProFormText name={['slack', 'appId']} label="Slack App ID" placeholder="A…" rules={[{ required: true }, { pattern: /^A[A-Z0-9]+$/, message: '请输入 A 开头的 Slack App ID' }]} />
+            <ProFormText name={['slack', 'credentialFile']} label="凭据文件绝对路径" placeholder="D:\Keys\puddingagent-slack.json" rules={[{ required: true }]}
+              extra="文件放在 Git 仓库外，仅包含 appToken（xapp-）和 botToken（xoxb-）。本表单不接收或回显 token。" />
+            <ProFormSelect name={['slack', 'allowedUserIds']} label="允许交互的 Slack 用户 ID" placeholder="输入 U… 后回车"
+              fieldProps={{ mode: 'tags', tokenSeparators: [',', ' ', '\n'], options: [] }}
+              extra="仅添加信任的用户；他们可以使用所绑定 Agent 的能力。Slack 用户没有 /yolo 等特权指令权限。" />
+            <ProFormSelect name={['slack', 'allowedBotUserIds']} label="允许 @触发的机器人用户 ID" placeholder="输入机器人的 U… ID 后回车"
+              fieldProps={{ mode: 'tags', tokenSeparators: [',', ' ', '\n'] }}
+              extra="只在允许的频道接收明确 @；每线程在人类再次发言前最多触发一次，每频道每分钟最多三次。" />
+            <ProFormSelect name={['slack', 'allowedChannelIds']} label="允许 @提及的 Slack 频道 ID" placeholder="输入 C… 后回车"
+              fieldProps={{ mode: 'tags', tokenSeparators: [',', ' ', '\n'], options: [] }} />
+          </> : <>
           <Alert
             showIcon
             type="info"
@@ -1264,6 +1287,7 @@ const ChannelsTab: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
             placeholder="Cherry"
             extra="音色必须由当前默认 TTS 模型支持。"
           />
+          </>}
           <ProFormSwitch name="isEnabled" label="启用" />
         </ProForm>
       </Drawer>

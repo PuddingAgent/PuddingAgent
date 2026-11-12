@@ -26,6 +26,7 @@ import {
 import React, { useState } from 'react';
 import type { GoalAction, GoalSnapshot } from '@/services/platform/api';
 import { isTerminalGoalPhase } from '../hooks/useGoal';
+import ExecutionReviewSection from './ExecutionReviewSection';
 // GoalStepsPanel 只在详情 Popover 内出现（不在首屏必经链），故惰性化：把它的体积
 // 移出 Chat 路由首屏 chunk（实测回收 11,710 B，见 Docs/14_reports/Chat-Bundle-Budget-Plan-2026-09-19.md）。
 // 测试环境必须同步 require：否则 Jest 会因 Suspense 异步挂载而出现断言抖动
@@ -355,6 +356,7 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
       >
         <GoalStepsPanel goal={goal} />
       </React.Suspense>
+      <ExecutionReviewSection goalId={goal.goalRunId} />
 
       {((goal.statusReason && !blocker) ||
         (terminal && goal.terminalAtUtc)) && (

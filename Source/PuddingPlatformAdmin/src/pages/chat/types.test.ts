@@ -1,6 +1,14 @@
 ﻿import { buildMessageBlocks, type ChatTurn } from './types';
 
 describe('buildMessageBlocks', () => {
+  it('identifies Slack senders from canonical metadata instead of the web viewer', () => {
+    const turn = { turnId: 'slack', userMessage: { id: 'user', text: 'hello', timestamp: 1, status: 'success',
+      metadata: { gateway_channel_type: 'slack', slack_user_id: 'UDOT', slack_sender_is_bot: 'true' } },
+      assistant: { id: 'answer', status: 'success', timelineItems: [], answerMarkdown: '', isStreaming: false, renderMode: 'structured' } } as ChatTurn;
+    const row = buildMessageBlocks([turn], 'whale', { name: 'Administrator', avatar: '/admin.png' })[0];
+    expect(row.userName).toBe('Slack bot · UDOT');
+    expect(row.userAvatarUrl).toBeUndefined();
+  });
   it('projects a managed Goal envelope as readable user-facing text', () => {
     const turn: ChatTurn = {
       turnId: 'turn-goal',

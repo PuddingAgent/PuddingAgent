@@ -133,6 +133,9 @@ const SessionSidebar: React.FC<SessionSidebarProps> = ({
         .filter((g) => g.items.length > 0)
     : groups;
 
+  const channelSessions = filteredGroups.flatMap((group) => group.items)
+    .filter((session) => session.principalKind === 'channel');
+
   const confirmArchive = (sid: string, title: string) => {
     Modal.confirm({
       title: '确认归档',
@@ -282,13 +285,23 @@ const SessionSidebar: React.FC<SessionSidebarProps> = ({
               </button>
             );
           })}
-        {/* IMG10：与中文工作台统一文案。占位保持不可点击（不伪造可点入口），
-            也不新增折叠控件 —— 对一个尚未接入的能力，折叠交互本身就是假交互。 */}
-        <div className={styles.sidebarSecondaryLabel}>群组</div>
-        <div className={styles.sidebarEmptyInline}>
-          <TeamOutlined />
-          <span>群组即将开放</span>
-        </div>
+        <div className={styles.sidebarSecondaryLabel}>渠道会话</div>
+        {channelSessions.length === 0 && (
+          <div className={styles.sidebarEmptyInline}><TeamOutlined /><span>收到渠道消息后显示在这里</span></div>
+        )}
+        {channelSessions.map((session) => (
+          <button key={session.sessionId} type="button"
+            className={cx(styles.agentContactItem, session.sessionId === selectedSessionId && styles.agentContactItemActive)}
+            onClick={() => onSelectSession(session.sessionId)} aria-pressed={session.sessionId === selectedSessionId}
+            title={`${session.title}\n${session.principalId || ''}`}>
+            <TeamOutlined />
+            <span className={styles.agentContactBody}>
+              <span className={styles.agentContactName}>{session.title}</span>
+              <span className={styles.agentContactMeta}>{agents.find((agent) => agent.agentId === session.agentInstanceId)?.displayName || agents.find((agent) => agent.agentId === session.agentInstanceId)?.name || 'Agent'} · 查看消息与执行过程</span>
+            </span>
+            {!!unreadCounts?.[session.sessionId] && <Badge count={unreadCounts[session.sessionId]} />}
+          </button>
+        ))}
       </nav>
       {historyOpen && (
         <section className={styles.sessionDetailArea} aria-label="会话细节">

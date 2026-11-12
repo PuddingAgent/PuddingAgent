@@ -111,6 +111,7 @@ interface ChatMainProps {
   onCreateWorkspace: () => void;
   // session
   selectedSessionId: string | null;
+  channelConversationTitle?: string;
   // chat
   turns: ChatTurn[];
   conversationView?: AgentConversationView | null;
@@ -215,6 +216,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   selectedAgent,
   onCreateWorkspace,
   selectedSessionId,
+  channelConversationTitle,
   turns,
   conversationView,
   historyLoading,
@@ -731,6 +733,10 @@ const ChatMain: React.FC<ChatMainProps> = ({
             <div className={styles.chatBodyMain}>
               <div className={styles.chatInteractionShell}>
                 <div className={styles.chatConversationColumn}>
+                  {channelConversationTitle && <section aria-label="渠道会话信息" style={{ padding: '12px 24px', borderBottom: '1px solid var(--border-color, #e8e8e8)' }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={channelConversationTitle}>{channelConversationTitle}</div>
+                    <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text-secondary)' }}>同步消息与工具执行结果{loading ? ' · 正在回复' : ''}</div>
+                  </section>}
                   <section
                     className={styles.timelineRegion}
                     aria-label="会话时间线"
@@ -739,6 +745,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                       turns={turns}
                       conversationView={conversationView}
                       sessionId={selectedSessionId}
+                      channelProcessDetails={Boolean(channelConversationTitle)}
                       workspaceId={workspaceId}
                       agentId={agentId}
                       selectedAgent={selectedAgent}
@@ -759,7 +766,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                       onPinnedQuote={handlePinnedQuote}
                       messageListRef={messageListRef}
                       listEndRef={listEndRef}
-                      currentUser={currentUser}
+                      currentUser={channelConversationTitle ? { name: '渠道成员' } : currentUser}
                       viewportScrollIntent={viewportScrollIntent}
                       onViewportScrollIntentHandled={
                         onViewportScrollIntentHandled
@@ -774,7 +781,9 @@ const ChatMain: React.FC<ChatMainProps> = ({
                       }
                     />
                   </section>
-                  <IntentConsole
+                  {channelConversationTitle ? <div role="note" style={{ padding: '12px 24px', textAlign: 'center', fontSize: 12, color: 'var(--text-secondary)' }}>
+                    渠道会话 · 请在原渠道回复，消息与执行过程会同步到这里。
+                  </div> : <IntentConsole
                     inputValue={inputValue}
                     onInputChange={onInputChange}
                     onKeyDown={onKeyDown}
@@ -817,7 +826,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     latestAssistantText={latestAssistantText}
                     permissionMode={permissionMode}
                     onPermissionModeChange={onPermissionModeChange}
-                  />
+                  />}
                 </div>
                 {(hasSubAgentActivity || subAgentInspectorOpen) && (
                   <React.Suspense fallback={null}>

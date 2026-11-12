@@ -91,6 +91,34 @@ export function useSessionCatalog({
     void refreshSessions();
   }, [refreshSessions]);
 
+  useEffect(() => {
+    if (!workspaceId) return;
+    const controller = new AbortController();
+    let active = true;
+    let busy = false;
+    const refreshChannels = async () => {
+      if (busy || document.visibilityState === 'hidden') return;
+      busy = true;
+      try {
+        const rows = await listSessions(workspaceId, { channelOnly: true, signal: controller.signal });
+        if (!active) return;
+        const channels = rows.filter((row) => row.principalKind === 'channel' && row.status !== 'Frozen').map((row) => toSessionListItem(row));
+        setSessions((previous) => [...previous.filter((row) => row.principalKind !== 'channel'), ...channels]
+          .sort((left, right) => right.timestamp - left.timestamp));
+      } catch { /* retain the last verified catalog on transient failure */ }
+      finally { busy = false; }
+    };
+    const timer = window.setInterval(() => void refreshChannels(), 10000);
+    const onVisible = () => { void refreshChannels(); };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      active = false; controller.abort(); window.clearInterval(timer);
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [workspaceId]);
+
   const handleDeleteSession = useCallback(
     async (sessionId: string) => {
       try {

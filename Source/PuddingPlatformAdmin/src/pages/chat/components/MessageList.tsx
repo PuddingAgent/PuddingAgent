@@ -56,6 +56,7 @@ import type { TranscriptMode } from './TranscriptModeSwitch';
 interface MessageListProps {
   turns: ChatTurn[];
   sessionId?: string | null;
+  channelProcessDetails?: boolean;
   /** 当前工作空间 ID，用于用户视觉消息的图片加载 */
   workspaceId?: string;
   agentId: string | undefined;
@@ -1020,6 +1021,7 @@ export const mergeActiveRunIntoTurns = (
 const MessageList: React.FC<MessageListProps> = ({
   turns,
   sessionId,
+  channelProcessDetails,
   workspaceId,
   agentId,
   selectedAgent,
@@ -1307,6 +1309,7 @@ const MessageList: React.FC<MessageListProps> = ({
           item.id === delegationTargetId ? parentDelegationActivity : undefined
         }
         sessionId={sessionId}
+        channelProcessDetails={channelProcessDetails}
         workspaceId={workspaceId}
         defaultAvatarUrl={selectedAgent?.avatarUrl}
         formatTime={formatTime}

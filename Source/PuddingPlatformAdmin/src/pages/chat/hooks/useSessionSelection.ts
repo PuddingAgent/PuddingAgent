@@ -13,6 +13,7 @@ import { MESSAGE_PAGE_SIZE } from '../types/chatStateTypes';
 import { logChatDiag } from '../utils/chatDiagnostics';
 import {
   isActiveAssistantTurn,
+  resolveSessionAgentId,
   shouldReplayEventsAfterHistory,
 } from '../utils/chatStateUtils';
 import type { ScrollIntent } from '../viewport/types';
@@ -168,9 +169,7 @@ export function useSessionSelection({
       const selectStartedAt = performance.now();
       const sessionAgentId =
         options?.agentId ??
-        sessions.find((session) => session.sessionId === sessionId)
-          ?.principalId ??
-        agentId;
+        resolveSessionAgentId(sessions.find((session) => session.sessionId === sessionId), agentId);
       const shouldRestartSameSessionStream = sessionId === selectedSessionId;
       logChatDiag('session.select.start', {
         traceId,

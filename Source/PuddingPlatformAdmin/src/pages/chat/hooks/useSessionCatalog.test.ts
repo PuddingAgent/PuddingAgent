@@ -75,4 +75,26 @@ describe('useSessionCatalog', () => {
     expect(result.current.sessions[0].title).toBe('新标题');
     expect(closeRenameModal).toHaveBeenCalled();
   });
+
+  it('discovers channel sessions on focus while retaining agent sessions and rejects late workspace results', async () => {
+    let finishOld: (value: any[]) => void = () => {};
+    let oldSignal: AbortSignal | undefined;
+    const channel = { ...session, sessionId: 'channel-new', principalKind: 'channel', agentInstanceId: 'whale' };
+    (listSessions as jest.Mock).mockImplementation((workspace, options) => {
+      if (!options?.channelOnly) return Promise.resolve([{ ...session, sessionId: workspace }]);
+      if (workspace === 'second') return Promise.resolve([channel]);
+      oldSignal = options.signal;
+      return new Promise((resolve) => { finishOld = resolve; });
+    });
+    const { result, rerender } = renderHook(({ workspaceId }) => useSessionCatalog({ workspaceId, renameSessionId: null,
+      renameTitle: '', closeRenameModal: jest.fn(), messageApi: messageApi as never }), { initialProps: { workspaceId: 'first' } });
+    await waitFor(() => expect(result.current.sessions[0]?.sessionId).toBe('first'));
+    act(() => window.dispatchEvent(new Event('focus')));
+    rerender({ workspaceId: 'second' });
+    await waitFor(() => expect(result.current.sessions[0]?.sessionId).toBe('second'));
+    expect(oldSignal?.aborted).toBe(true);
+    await act(async () => { finishOld([{ ...channel, sessionId: 'wrong-workspace' }]); });
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(result.current.sessions.map((row) => row.sessionId).sort()).toEqual(['channel-new', 'second']);
+  });
 });

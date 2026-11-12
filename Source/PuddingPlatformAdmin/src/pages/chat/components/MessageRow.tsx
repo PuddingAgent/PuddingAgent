@@ -10,10 +10,12 @@ import MessageItem from './MessageItem';
 import { getCurrentRunActivity, sanitizeProcessText } from './processPreview';
 import type { TranscriptMode } from './TranscriptModeSwitch';
 import UserMessageBubble from './UserMessageBubble';
+import ConversationProcessDetails from './ConversationProcessDetails';
 
 interface MessageRowProps {
   block: ChatMessageBlock;
   sessionId?: string | null;
+  channelProcessDetails?: boolean;
   /** 当前工作空间 ID，用于用户视觉消息的图片加载 */
   workspaceId?: string;
   defaultAvatarUrl?: string;
@@ -154,6 +156,7 @@ export const areMessageRowPropsEqual = (
   previous.executionFlowProjection === next.executionFlowProjection &&
   previous.onTurnVisible === next.onTurnVisible &&
   previous.onTurnInvisible === next.onTurnInvisible &&
+  previous.channelProcessDetails === next.channelProcessDetails &&
   optionalRecordEquals(
     previous.parentDelegationActivity,
     next.parentDelegationActivity,
@@ -230,6 +233,7 @@ const getFocusViewSummary = (block: ChatMessageBlock): string => {
 const MessageRow: React.FC<MessageRowProps> = ({
   block,
   sessionId,
+  channelProcessDetails,
   workspaceId,
   defaultAvatarUrl,
   formatTime,
@@ -322,8 +326,8 @@ const MessageRow: React.FC<MessageRowProps> = ({
     />
   );
 
-  const renderAgentBubble = () => (
-    <AgentMessageBubble
+  const renderAgentBubble = () => {
+    const bubble = <AgentMessageBubble
       id={block.id}
       content={block.content}
       status={block.status}
@@ -354,8 +358,15 @@ const MessageRow: React.FC<MessageRowProps> = ({
       transcriptMode={transcriptMode}
       onTranscriptModeChange={onTranscriptModeChange}
       executionFlowProjection={executionFlowProjection}
-    />
-  );
+    />;
+    return channelProcessDetails && sessionId && !block.turnId.startsWith('hist-')
+      ? <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0 }}>
+          {bubble}
+          <ConversationProcessDetails key={`${sessionId}:${block.turnId}`} conversationId={sessionId}
+            turnId={block.turnId} running={block.isStreaming} />
+        </div>
+      : bubble;
+  };
 
   if (block.role === 'user') {
     if (focusView) {

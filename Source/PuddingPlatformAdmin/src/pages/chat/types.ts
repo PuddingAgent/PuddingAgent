@@ -285,8 +285,10 @@ export function buildMessageBlocks(
                 : 'text',
         visionArtifactId: extractVisionArtifactIds(turn)[0],
         visionArtifactIds: extractVisionArtifactIds(turn),
-        userName: currentUser?.name || '我',
-        userAvatarUrl: currentUser?.avatar,
+        userName: turn.userMessage.metadata?.gateway_channel_type === 'slack'
+          ? `Slack${turn.userMessage.metadata.slack_sender_is_bot === 'true' ? ' bot' : ''} · ${turn.userMessage.metadata.slack_user_id || turn.userMessage.metadata.gateway_external_user_id || '成员'}`
+          : currentUser?.name || '我',
+        userAvatarUrl: turn.userMessage.metadata?.gateway_channel_type === 'slack' ? undefined : currentUser?.avatar,
       });
     }
 
@@ -393,6 +395,7 @@ export interface SessionListItem {
   timestamp: number;
   unreadCount?: number;
   agentTemplateId?: string;
+  agentInstanceId?: string;
   channelId?: string;
   sessionRole?: string;
   principalKind?: string;
