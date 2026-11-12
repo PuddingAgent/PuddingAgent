@@ -29,16 +29,39 @@ public sealed class GroupGuardTests
             public override DateTimeOffset GetUtcNow() => now;
         }
         internal GroupCallbackFixture() => Handler = new("app", this, this, new GroupCallbackClock(DateTimeOffset.UtcNow));
-        public Task<string> ReplyAsync(PublicQuestion q, CancellationToken ct)
+        public Task<GroupReply> ReplyAsync(PublicQuestion q, CancellationToken ct)
         {
             Seen.Add(q);
-            return Task.FromResult("可以导入 Word 报告。");
+            return Task.FromResult(new GroupReply("可以导入 Word 报告。"));
         }
         public bool TryClaim(GroupSource s, string id) => ids.Add(id);
         public void Finish(GroupSource s, string id, string status) { }
         internal Task<string> Run(string topic = Topic) =>
-            Handler.HandleCallbackAsync(topic, JsonSerializer.SerializeToElement(Body), (_, text, _) =>
-            { Replies.Add(text); return Task.FromResult(true); }, default);
+            Handler.HandleCallbackAsync(topic, JsonSerializer.SerializeToElement(Body), (_, _, reply, _) =>
+            { Replies.Add(reply.Text); return Task.FromResult(true); }, default);
+    }
+
+    [TestMethod]
+    public async Task RichTextAndStandalonePicturesPreserveCapabilitiesOutsideThePrompt()
+    {
+        var f = new GroupCallbackFixture();
+        f.Body["msgtype"] = "richText";
+        f.Body["content"] = new { richText = new object[] { new { text = "BUG反馈：按钮错位" },
+            new { type = "picture", downloadCode = "private-download-capability" } } };
+        Assert.AreEqual("sent", await f.Run());
+        var q = f.Seen.Single();
+        Assert.AreEqual("BUG反馈：按钮错位", q.Text);
+        Assert.AreEqual("private-download-capability", q.ImageDownloadCodes.Single());
+        Assert.IsFalse(JsonSerializer.Serialize(q).Contains("private-download-capability"));
+        f.Body["msgId"] = "picture";
+        f.Body["msgtype"] = "picture";
+        f.Body["content"] = new { downloadCode = "other-code" };
+        Assert.AreEqual("sent", await f.Run());
+        Assert.AreEqual("other-code", f.Seen.Last().ImageDownloadCodes.Single());
+        Assert.AreEqual("", f.Seen.Last().Text);
+        f.Body["senderCorpId"] = "other";
+        StringAssert.StartsWith(await f.Run(), "source_denied");
+        Assert.HasCount(2, f.Seen);
     }
 
     [TestMethod]
@@ -60,7 +83,7 @@ public sealed class GroupGuardTests
     [DataRow("senderCorpId", null)]
     [DataRow("senderStaffId", "")]
     [DataRow("robotCode", "other")]
-    [DataRow("conversationType", "1")]
+    [DataRow("conversationType", "3")]
     [DataRow("isInAtList", false)]
     [DataRow("msgtype", "richText")]
     [DataRow("createAt", 0)]
@@ -69,9 +92,25 @@ public sealed class GroupGuardTests
     {
         var f = new GroupCallbackFixture();
         f.Body[field] = value;
-        Assert.AreEqual("source_denied", await f.Run());
+        StringAssert.StartsWith(await f.Run(), "source_denied");
         Assert.HasCount(0, f.Seen);
         Assert.HasCount(0, f.Replies);
+    }
+
+    [TestMethod]
+    public async Task PrivateConversationIsServedWithoutAMention()
+    {
+        var f = new GroupCallbackFixture();
+        f.Body["conversationType"] = "1";
+        f.Body.Remove("isInAtList");
+        Assert.AreEqual("sent", await f.Run());
+        var q = f.Seen.Single();
+        // A private chat is still an unbound guest: allowing the callback grants no authority.
+        Assert.AreEqual("guest", q.Source.PuddingGroup);
+        Assert.Contains("Word", f.Replies.Single());
+        f.Body["msgId"] = "second";
+        f.Body["conversationType"] = "3";
+        StringAssert.StartsWith(await f.Run(), "source_denied:conversation_type");
     }
 
     [TestMethod]
@@ -136,10 +175,18 @@ public sealed class GroupGuardTests
         var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         var inbox = new GroupFeedbackInbox(root);
         Assert.IsNull(inbox.TryRecord(new(source, "如何反馈BUG？", "q"), "q"));
-        var receipt = inbox.TryRecord(new(source, "登记一个软件BUG，在小屏幕的显示屏上，软件显示错位。", "m"), "m");
+        Assert.IsNull(inbox.TryRecord(new(source, "bug反馈时怎么附上图片", "q"), "q"));
+        var image = "vision-" + new string('a', 32);
+        var report = new PublicQuestion(source, "登记一个软件BUG，在小屏幕的显示屏上，软件显示错位。", "m");
+        Assert.ThrowsExactly<InvalidDataException>(() => inbox.TryRecord(report, "m", ["file://other"]));
+        var receipt = inbox.TryRecord(report, "m", [image, image]);
         Assert.Contains("已登记BUG反馈", receipt);
+        Assert.Contains("已关联 1 张图片", receipt);
+        Assert.AreEqual(receipt, inbox.TryRecord(report, "m", [image]));
+        Assert.Contains("差异", inbox.TryRecord(report, "m", []));
         var record = Directory.GetFiles(root).Single();
         Assert.Contains("软件显示错位", File.ReadAllText(record));
+        Assert.Contains(image, File.ReadAllText(record));
         File.Delete(record);
         Directory.Delete(root);
     }
