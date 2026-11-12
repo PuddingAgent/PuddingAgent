@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "contract": "agent-configuration-p0p1",
+  "frozenDate": "2026-11-05",
+  "normalization": "utf8-lf",
+  "files": [
+    {
+      "path": "Source/Pudding.Api.Contracts/Pudding.Api.Contracts.csproj",
+      "sha256": "080a2c4304ec0e9f75d0acc067f33be042eedb1c96e03bca63d5643010a64bee"
+    },
+    {
+      "path": "Source/Pudding.Api.Contracts/AgentConfiguration.cs",
+      "sha256": "5cca36b09024d3c0d99735686e69a78be960a06941cd00ac572754f1e956c36d"
+    },
+    {
+      "path": "Source/PuddingAgentConfiguration.Contracts/PuddingAgentConfiguration.Contracts.csproj",
+      "sha256": "13dce6e9235fbd1a066028895ea324c931f8ceddb07a42337f15dcb7fbbd9989"
+    },
+    {
+      "path": "Source/PuddingAgentConfiguration.Contracts/ConfigurationPorts.cs",
+      "sha256": "f26bebfbf9c6ebdef94dd81ce769768d97ec72d6991b7ed173ed2d0d020cfe73"
+    },
+    {
+      "path": "Source/PuddingAgentConfiguration/PuddingAgentConfiguration.csproj",
+      "sha256": "166d930a6b06640f299fa167119e4702f5d1568f39e013aeaae5c07057d1fde7"
+    },
+    {
+      "path": "Source/PuddingAgentConfiguration/AgentConfigurationService.cs",
+      "sha256": "d8500aa4d249591d07df78cdac982bcca15624fbde26bfcfbff53bbee4352622"
+    },
+    {
+      "path": "Source/Pudding.Api.Sdk/Pudding.Api.Sdk.csproj",
+      "sha256": "d9c66f9b2c479e5117bf806ecdd48047eb4a96daa300af2cf1edbff8883c6c09"
+    },
+    {
+      "path": "Source/Pudding.Api.Sdk/PuddingClient.cs",
+      "sha256": "b48fd7f8c8042368dee52347c5b5d7962f6ae538cca868ce4d3e2cd5ed0d2dc5"
+    },
+    {
+      "path": "Source/Pudding.Api.Sdk/HttpAgentConfigurationApi.cs",
+      "sha256": "249b7c2253e10ef59029bf51a71570c09983a5c727f7616193fedcc9cfe6a913"
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/WorkspaceAgentFileService.Configuration.cs",
+      "sha256": "4a303b0c217e1757fc51542dfbf784bec7bedb458f72acce3ae92422c9f15e67"
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/WorkspaceAgentFileService.cs",
+      "sha256": "1437929d8afa922aa85fb7aed8680f905ddee0278250d5bbcb5e55a3fbc96394"
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/AgentConfigurationApiFactory.cs",
+      "sha256": "79a25e00ec5ea98a755ea46ba7811380446f8b461090318fdac5dbb273a4c472"
+    },
+    {
+      "path": "Source/PuddingPlatform/Controllers/Api/AgentConfigurationApiController.cs",
+      "sha256": "7cbc57798fd6ebec26c10f8ab455f86e4bc1db36467b9e85351fb86c0769ab9a"
+    },
+    {
+      "path": "Source/PuddingCore/Configuration/PuddingConfigModels.cs",
+      "sha256": "C51381A41B756363D7CD4C63A61B0E699F28EAFCA75DBE1074F399F54165603A"
+    },
+    {
+      "path": "Source/PuddingHost/Extensions/PuddingServiceCollectionExtensions.Platform.cs",
+      "sha256": "BD00F9B627D8A5ED0FC8233E99229A87E498D0555CADB0EACDAB2EB712E519FA"
+    },
+    {
+      "path": "Source/PuddingAgentConfigurationTests/ConfigurationTests.cs",
+      "sha256": "25da2a1b7e7bd657f1f4427365af7f656d8d30862fa69954bbf9e6629d68c2d0"
+    },
+    {
+      "path": "Source/Pudding.Api.SdkTests/SdkTests.cs",
+      "sha256": "3ea7673edab7c4442c7d7ff32e1737b665baf6120e21473c01681b49f97e358d"
+    },
+    {
+      "path": "Tests/PuddingAgentConfiguration.IntegrationTests/ConfigurationIntegrationTests.cs",
+      "sha256": "87c6393ea472e4748c7a5b204a568b99cf941a3a66b24e90b976d4a49b3ba890"
+    }
+  ]
+}

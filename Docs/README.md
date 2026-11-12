@@ -2,12 +2,12 @@
 title: Pudding Agent Network 文档索引
 author: hyfree
 date: 2026-02-12
-last_reviewed: 2026-10-02
+last_reviewed: 2026-11-05
 status: active
 description: "这里是 Pudding Agent 的设计入口。当前产品主线是 Windows First 的 PuddingDesktop.exe：WinUI 3 Shell 承载窗口/托盘/WebView2 与独立 ASP.NET Core 子进程监督，Core 继续承载 API、Controller、Runtime、Connector 与 SQLite。"
 categories: [docs]
 tags: [readme]
-related_docs: [Docs/00_changelog/README.md, code_map.md, Agents.md, Docs/07_architecture/架构.md, Docs/07_architecture/README.md]
+related_docs: [Docs/00_changelog/README.md, code_map.md, Agents.md, Docs/07_architecture/架构.md, Docs/07_architecture/README.md, Docs/12_features/Agent组件化任务书-总则与依赖-2026-11-05.md]
 related_files: [code_map.md, Agents.md, Tools/Docs/front_matter.py, Docs/00_changelog/README.md]
 slug: docs-readme
 draft: false
@@ -25,10 +25,10 @@ draft: false
 | 目录 | 放什么 | 入口 |
 |------|--------|------|
 | `00_changelog/` | 修改日志（唯一去处，按 `<YYYY>Year/<MM>/` 分层） | [README](00_changelog/README.md) |
-| `01_message_channels/` | 消息渠道（飞书等） | — |
+| `01_message_channels/` | 消息渠道（飞书、Slack） | [Slack 接入](01_message_channels/Slack接入.md) |
 | `02_agent_runtime/` | 智能体与智能体运行时 | — |
 | `03_multi_agent/` | 多智能体协作 | — |
-| `04_tools_and_skills/` | 工具系统与技能 | — |
+| `04_tools_and_skills/` | 工具系统与技能 | [运行时工具插件](04_tools_and_skills/运行时工具插件.md) |
 | `05_providers_and_models/` | 服务商与模型 | — |
 | `06_config/` | 配置说明（hooks、pudding-yaml） | [hooks](06_config/hooks.md) · [pudding-yaml](06_config/pudding-yaml.md) |
 | `07_architecture/` | 架构分册与 ADR（含 `design/`） | [架构总览](07_architecture/架构.md) · [分册入口](07_architecture/README.md) |
@@ -36,7 +36,7 @@ draft: false
 | `09_audit/` | 审计清单 | — |
 | `10_conventions/` | 规程与约定（组件化交付、仓库卫生、SUBAGENTS、协作协议） | [组件化交付规程](10_conventions/组件化交付规程.md) · [Agents-Hygiene](10_conventions/Agents-Hygiene.md) |
 | `11_design/` | 设计规格与视觉/UI 设计 | — |
-| `12_features/` | 设计方案、施工计划、任务书（面向未来施工） | — |
+| `12_features/` | 设计方案、施工计划、任务书（面向未来施工） | [组件与公共 API 规划](12_features/核心组件与插件公共API规划-2026-11-04.md) · [组件化任务书 1～8](12_features/Agent组件化任务书-总则与依赖-2026-11-05.md) · [单轮执行契约](12_features/Agent单轮执行API-P2-契约与接入说明-2026-11-05.md) |
 | `13_runbooks/` | 运行手册、部署/回滚/一次性操作 | — |
 | `14_reports/` | 诊断 / 验收 / 评测报告（一次性证据） | — |
 | `15_tasks/` | 任务、待办、路线图、历史任务卡 | [Tasks](15_tasks/Tasks.md) · [待办](15_tasks/待办.md) · [路线图](15_tasks/路线图.md) |
