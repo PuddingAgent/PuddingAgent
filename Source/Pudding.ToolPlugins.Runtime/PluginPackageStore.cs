@@ -77,6 +77,56 @@ public sealed class PluginPackageStore(string root)
         }
     }
 
+    /// <summary>
+    /// Registers a plugin from a directory the caller already owns (build output or hand-assembled package).
+    /// Content is <b>copied</b>, never moved, and the same limits as ZIP import apply. Registration executes nothing.
+    /// </summary>
+    public async Task<PluginPackage> RegisterDirectoryAsync(string sourceDirectory, CancellationToken ct)
+    {
+        await _install.WaitAsync(ct);
+        string? staging = null;
+        try
+        {
+            PluginValidation.NoLinks(Root); Directory.CreateDirectory(Root);
+            var source = Path.GetFullPath(sourceDirectory);
+            if (!Directory.Exists(source))
+                throw new PluginException("plugin.package_invalid", "install", "Source directory does not exist.");
+            PluginValidation.NoLinks(source);
+            staging = Path.Combine(Root, ".staging-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(staging);
+            long total = 0;
+            foreach (var file in Files(source))
+            {
+                ct.ThrowIfCancellationRequested();
+                var relative = Path.GetRelativePath(source, file).Replace('\\', '/');
+                PluginValidation.Require(!relative.StartsWith('.') || relative == "plugin.json",
+                    "plugin.path_rejected", "Hidden package paths are reserved.");
+                total = checked(total + new FileInfo(file).Length);
+                PluginValidation.Require(total <= MaxPackageBytes, "plugin.package_limit", "Expanded package exceeds 128 MiB.");
+                var destination = PluginValidation.Inside(staging, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                File.Copy(file, destination, overwrite: false);
+            }
+            var manifest = ReadManifest(staging);
+            ValidateFiles(staging, manifest);
+            var hash = HashDirectory(staging);
+            var target = PluginValidation.Inside(Root, $"{manifest.Id}/{manifest.Version}/{hash}");
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            if (Directory.Exists(target)) Verify(new(manifest, hash, target));
+            else { Directory.Move(staging, target); staging = null; }
+            return new(manifest, hash, target);
+        }
+        catch (InvalidDataException) { throw new PluginException("plugin.package_invalid", "install", "Invalid plugin directory."); }
+        catch (JsonException) { throw new PluginException("plugin.manifest_invalid", "install", "Manifest is not valid v2 JSON."); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { throw new PluginException("plugin.package_io_failed", "install", "Directory could not be read or published. Check file access and retry."); }
+        finally
+        {
+            try { if (staging is not null && Directory.Exists(staging)) Directory.Delete(staging, true); }
+            finally { _install.Release(); }
+        }
+    }
+
     public PluginPackage Get(string id, string version, string hash)
     {
         PluginValidation.Require(hash.Length == 64 && hash.All(Uri.IsHexDigit), "plugin.package_invalid", "Exact content hash is required.");

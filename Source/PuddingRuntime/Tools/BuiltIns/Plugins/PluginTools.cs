@@ -80,7 +80,7 @@ public sealed class PluginSearchTool(ExecutablePluginService plugins, HostToolCo
             || Capabilities.Any(value => value.Contains(query, StringComparison.OrdinalIgnoreCase));
     }
 }
-[Tool("plugin_import", "plugin_import", "Validate and install a v2 plugin ZIP from the current workspace. Does not execute code or replace an active version. Returns immutable contentHash for plugin_load.", ToolCategory.FileSystem, ToolPermissionLevel.High, ToolSafetyFlags.RequiresFileWrite)]
+[Tool("plugin_import", "plugin_import", "Validate and register a v2 plugin from a ZIP file or a directory (copied, never moved). Does not execute code or replace an active version. Returns immutable contentHash for plugin_load.", ToolCategory.FileSystem, ToolPermissionLevel.High, ToolSafetyFlags.RequiresFileWrite)]
 public sealed class PluginImportTool(ExecutablePluginService plugins) : PuddingToolBase<PluginImportArgs, PluginPackage>
 {
     protected override async Task<PluginPackage> ExecuteCoreAsync(PluginImportArgs args, ToolExecutionContext context, CancellationToken ct)
@@ -88,6 +88,9 @@ public sealed class PluginImportTool(ExecutablePluginService plugins) : PuddingT
         if (string.IsNullOrWhiteSpace(context.WorkingDirectory) || !Path.IsPathFullyQualified(context.WorkingDirectory))
             throw new InvalidOperationException("Plugin import requires an absolute workspace root from the execution environment.");
         var path = PluginValidation.Inside(context.WorkingDirectory, args.Path);
+        // A directory is registered by copy (build output / hand-assembled package); a file is a ZIP.
+        if (Directory.Exists(path))
+            return await plugins.Packages.RegisterDirectoryAsync(path, ct);
         await using var file = File.OpenRead(path);
         return await plugins.Packages.ImportAsync(file, ct);
     }
