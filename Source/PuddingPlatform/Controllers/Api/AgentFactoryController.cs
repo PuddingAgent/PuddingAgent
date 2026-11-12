@@ -12,7 +12,7 @@ namespace PuddingPlatform.Controllers.Api;
 /// </summary>
 [ApiController]
 [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
-[Route("api/workspaces/{workspaceId}/agents")]
+[Route("api/workspaces/{workspaceId}/agent-instances")]
 public sealed class AgentFactoryController(AgentFactoryApiFactory factory) : ControllerBase
 {
     [HttpPost]
@@ -28,6 +28,7 @@ public sealed class AgentFactoryController(AgentFactoryApiFactory factory) : Con
     }
 
     [HttpPost("{agentId}/archive")]
+    [HttpPost("~/api/workspaces/{workspaceId}/agents/{agentId}/archive")]
     public async Task<IActionResult> Archive(string workspaceId, string agentId, [FromBody] ArchiveAgentRequest request,
         CancellationToken ct = default)
     {

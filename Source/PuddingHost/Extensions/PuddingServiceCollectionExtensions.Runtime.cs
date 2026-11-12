@@ -608,7 +608,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.TryAddSingleton<IToolPresentationProjector>(_ => ToolPresentationProjector.Default);
         builder.Services.TryAddSingleton<PuddingRuntime.Services.Diagnostics.CompactionDiagnosticJournal>();
         builder.Services.AddSingleton<AgentExecutionService>();
-        builder.Services.AddSingleton<ITurnExecutor, TurnExecutorAdapter>();
+        builder.Services.AddSingleton<TurnExecutorAdapter>();
+        builder.Services.AddSingleton<ITurnExecutor, DingTalkTurnExecutor>();
         builder.Services.AddSingleton<IRuntimeAgentDispatcher, RuntimeAgentDispatcher>();
 
         // 复核 P1（停机接线）：可选维护调度必须在停机时协作取消并等待退出。

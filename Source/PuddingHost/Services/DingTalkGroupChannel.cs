@@ -1,16 +1,16 @@
 using System.Text.Json;
-using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
+using PuddingCode.Platform;
 using PuddingDingTalk;
-using PuddingRuntime.Services;
+using PuddingPlatform.Services;
 
 namespace PuddingAgent.Services;
 
-public sealed class DingTalkGroupChannel(PuddingDataPaths paths, AgentManifestCatalog agents, IRuntimeLlmClient llm,
-    ILlmConfigService configs, IHttpClientFactory http, ILoggerFactory logs, IAgentExecutionStateRegistry state,
+public sealed class DingTalkGroupChannel(PuddingDataPaths paths, AgentManifestCatalog agents,
+    ISessionRepository sessions, IServiceScopeFactory scopes, VisionArtifactStorageService artifacts,
     ILogger<DingTalkGroupChannel> log) : BackgroundService
 {
-    private sealed record Settings(bool Enabled, string AgentId, string ClientId, string CredentialFile, string? ReviewedSourceRoot);
+    internal sealed record Settings(bool Enabled, string AgentId, string ClientId, string CredentialFile, string? ReviewedSourceRoot);
     private sealed record Credential(string ClientId, string ClientSecret);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -43,9 +43,8 @@ public sealed class DingTalkGroupChannel(PuddingDataPaths paths, AgentManifestCa
         Directory.CreateDirectory(root);
         using var owner = new FileStream(Path.Combine(root, "owner.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var journal = new DingTalkReplyJournal(root);
-        using var agent = new DingTalkPublicAgent(agents, paths, binding.AgentId, llm, configs, binding.ReviewedSourceRoot,
-            new GroupFeedbackInbox(Path.Combine(root, "feedback")), http, logs, state);
-        var handler = new DingTalkGroupHandler(binding.ClientId, agent, journal, TimeProvider.System);
+        using var mediaHttp = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+            { Timeout = TimeSpan.FromSeconds(12) };
         using var stream = new DingTalkStream();
         async Task<bool> IsCurrent(CancellationToken token) =>
             File.Exists(file) && await ReadAsync<Settings>(file, token) == binding && await ActiveAsync(binding, token);
@@ -54,6 +53,9 @@ public sealed class DingTalkGroupChannel(PuddingDataPaths paths, AgentManifestCa
             var key = await ReadAsync<Credential>(binding.CredentialFile, ct);
             if (key.ClientId != binding.ClientId || string.IsNullOrWhiteSpace(key.ClientSecret))
                 throw new InvalidDataException("Credential binding invalid.");
+            var ingress = new DingTalkConversationIngress(agents, binding.AgentId, binding.ClientId, sessions,
+                scopes, artifacts, new(mediaHttp, key.ClientId, key.ClientSecret), binding.ReviewedSourceRoot);
+            var handler = new DingTalkGroupHandler(binding.ClientId, ingress, journal, TimeProvider.System);
             await stream.ListenAsync(key.ClientId, key.ClientSecret, handler,
                 result => log.LogInformation("DingTalk group {Status}", result), ct, IsCurrent);
             await Task.Delay(TimeSpan.FromSeconds(3), ct);

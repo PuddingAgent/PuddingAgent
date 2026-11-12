@@ -59,7 +59,21 @@ public sealed class DingTalkStream : IDisposable
                 try
                 {
                     using var body = JsonDocument.Parse(data);
-                    status(await handler.HandleCallbackAsync(topic, body.RootElement, ReplyAsync, ct));
+                    status(await handler.HandleCallbackAsync(topic, body.RootElement, async (url, source, result, token) =>
+                    {
+                        var media = new DingTalkMediaClient(http, clientId, clientSecret);
+                        foreach (var image in result.Images ?? [])
+                        {
+                            try
+                            {
+                                if (await media.SendImageAsync(source.ConversationId, image, token)) continue;
+                            }
+                            catch (Exception) when (!token.IsCancellationRequested) { }
+                            await ReplyAsync(url, "本次图片发送未取得钉钉成功回执。", token);
+                            return false;
+                        }
+                        return string.IsNullOrWhiteSpace(result.Text) || await ReplyAsync(url, result.Text, token);
+                    }, ct));
                 }
                 catch (JsonException) { code = 400; }
                 catch (Exception) when (!ct.IsCancellationRequested) { code = 500; status("processing_failed"); }

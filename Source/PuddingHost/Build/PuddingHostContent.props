@@ -1,4 +1,4 @@
-<Project>
+﻿<Project>
   <!--
     Shared content items for Console (PuddingAgent) and Desktop (PuddingDesktop) hosts.
     Imported by consuming projects. Paths are relative to MSBuildThisFileDirectory (Build/).

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../PuddingMcp.Contracts/PuddingMcp.Contracts.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceMcpBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingMcp.Contracts'" Text="MCP may only reference its ports." />
+    <Error Condition="'@(PackageReference)' != ''" Text="MCP must not add package references." />
+  </Target>
+</Project>

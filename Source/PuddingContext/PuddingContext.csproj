@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../PuddingContext.Contracts/PuddingContext.Contracts.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceContextBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingContext.Contracts'" Text="Context may only reference its ports." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Context must not add package references." />
+  </Target>
+</Project>

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../PuddingGoalPolicy.Contracts/PuddingGoalPolicy.Contracts.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceGoalPolicyBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingGoalPolicy.Contracts'" Text="Goal policy may only reference its ports." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Goal policy must not add package references." />
+  </Target>
+</Project>

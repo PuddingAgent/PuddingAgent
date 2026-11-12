@@ -13,7 +13,7 @@ namespace PuddingPlatform.Controllers.Api;
 /// </summary>
 [ApiController]
 [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
-[Route("api/workspaces/{workspaceId}/agents")]
+[Route("api/workspaces/{workspaceId}/agent-instances")]
 public sealed class AgentDirectoryController(AgentDirectoryApiFactory factory) : ControllerBase
 {
     [HttpGet]

@@ -22,13 +22,23 @@ draft: false
 
 ## 组合根
 
+Agent 配置公共 API：`Extensions/PuddingServiceCollectionExtensions.Platform.cs` 将独立配置 Store 端口绑定到既有 `WorkspaceAgentFileService` 单例，并装配 `AgentConfigurationApiFactory`；不创建第二个 manifest writer。
+
+Agent 单轮执行 API：`Extensions/PuddingServiceCollectionExtensions.cs` 调用平台 `AddAgentWorkApi` 装配单例 canonical adapter、身份工厂及 scoped 主会话解析器；组合边界由 `Tests/PuddingHost.Tests/Hosting/AgentWorkCompositionTests.cs` 验证。
+
+| 插件交付 | 用途 |
+|---|---|
+| `Build/PuddingHostContent.props` | 将独立 Worker、SDK、编写指南与示例递归装入 Core 的 `tools/plugin-worker/`，构建顺序引用不形成程序集引用 |
+| `Extensions/PuddingServiceCollectionExtensions.cs` | 装配平台 `PluginAgentApiLeaseFactory` 到插件合同端口；复用既有配置 Store；由 `Tests/PuddingHost.Tests/Hosting/PluginAgentApiCompositionTests.cs` 验证 |
+| `Extensions/PuddingServiceCollectionExtensions.cs` → `../PuddingRuntime/Operators/PublicApi/OperatorServiceCollectionExtensions.cs` | 装配确定性算子、模型资源与分类/验收工厂；由 `Tests/PuddingHost.Tests/Hosting/OperatorApiCompositionTests.cs` 验证组合根及实际插件消费者注入 |
+
 | 文件 | 用途 |
 |------|------|
 | [ToolPackages/](ToolPackages/) · [Build/PuddingHostContent.props](Build/PuddingHostContent.props) | 产品随包工具的导出与服务类型映射；构建及发布复制声明、插件 Worker 与 SDK |
 | `PuddingHostAssemblyMarker.cs` | 程序集标记 |
 | `Services/ReviewWorkerHostedService.cs` · `Services/HostRuntimeLlmChatClient.cs` | 驱动持久评审任务，将已绑定的模型调用交给 Runtime |
 | `Services/SlackConnectorFactory.cs` · `Connectors/SlackConnector.cs` · `Tools/SlackLookupMemberTool.cs` | 在已配置的渠道创建 Slack 连接器，按当前绑定查询成员 |
-| [Services/DingTalkGroupChannel.cs](Services/DingTalkGroupChannel.cs) · [公开 Agent 循环](Services/DingTalkPublicAgent.cs) · [工具](Services/DingTalkTurnTools.cs) · [回执](Services/DingTalkReplyJournal.cs) | 企业群回调、鲸鲸的 guest 上下文与工具授权、本机登记和 SQLite 去重 |
+| [钉钉 Stream](Services/DingTalkGroupChannel.cs) · [群会话受理](Services/DingTalkConversationIngress.cs) · [执行器](Services/DingTalkTurnExecutor.cs) · [公开 Agent 循环](Services/DingTalkPublicAgent.cs) · [工具](Services/DingTalkTurnTools.cs) · [公开图片](Services/DingTalkPublicMedia.cs) · [回执](Services/DingTalkReplyJournal.cs) | 鲸鲸的持久群会话、来源授权、工具与图片投递；已绑定成员走普通执行器，未绑定成员走访客执行器 |
 | `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册（见下「关键语义」） |
 | `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册；显式装配 `CompactionDiagnosticJournal` 与 `ContextHandoffHook`，扫描 `context_handoff` 工具（见下「关键语义」） |
 | `Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs` | 原生图片阅读与预处理工具（见下「关键语义」） |
@@ -39,6 +49,8 @@ draft: false
 | `Controllers/StorageManagementController.cs` | `/api/admin/storage/databases` 分析、清理预览与执行 API |
 | `Hosting/StorageManagementAuthorization.cs` | 平台 admin JWT，或 DesktopChild Loopback + ControlToken 的管理策略 |
 | `Controllers/IndexAdminController.cs` | 索引状态只读 API（fullText + codeIndex）（见下「关键语义」） |
+| `Services/HostActivePluginSubscriptionSource.cs` | 从真实 PluginManager 激活+包清单生成插件订阅候选（generation=activation.Revision） |
+| `Services/HostWorkspacePluginEventTarget.cs` | 插件 workspace 事件 Host 适配：把平台 sink 接到真实 `ExecutablePluginService.Manager.PublishWorkspaceEventAsync` |
 | `Services/CodeIndexStatusProbe.cs` | codeIndex 状态只读探针（见下「关键语义」） |
 | `Services/FullTextIndexStatusProbe.cs` | S-A：`fullText` 块探针（只产块，不再产响应根对象）；响应根对象 `IndexAdminStatusSnapshot` 由控制器组装 |
 | `Controllers/TransportStatusController.cs` | 传输用量只读 API（退役判据证据面）（见下「关键语义」） |
@@ -124,11 +136,15 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 |------|------|
 | `Connectors/` | 连接器实现 |
 | `Services/ConnectorHost.cs` | 连接器宿主 |
-| `Hosting/ConnectorHostLifecycleService.cs` | 连接器生命周期 hosted service（见下「关键语义」） |
-| `Services/ConnectorDeliveryDispatcher.cs` | 持久出站投递；显式 open_id 与会话回复分流，复用稳定 uuid 重试 |
+| `Connectors/SlackConnector.cs` · `Services/SlackConnectorFactory.cs` | Slack 叶子组件适配、独占 App 绑定、凭据文件读取、持久收件箱交接与发送回执 |
+| `Connectors/SlackCredentialFile.cs` | 仓库外凭据文件独占、变更检查与原子替换；临时文件创建时继承原文件 ACL，供 App Token 续期写回 |
+| `Controllers/SlackChannelDiagnosticsController.cs` | 经认证读取动态 Slack Connector 状态和持久发送回执 |
+| `Tools/SlackLookupMemberTool.cs` | `slack_lookup_member`：由可信当前命令绑定 Slack 工作区/Connector；只读查询真人和 bot 的名称/ID，不接受模型指定路由 |
 | `Services/BoundChannelSessions.cs` | 为已绑定成员按渠道、组织、账号和会话分配独立分支，保留所有者身份 |
-| `Services/DingTalkTurnExecutor.cs` | 按已验证发送者身份选择普通 Agent 或访客执行路径 |
 | `Services/MessageGatewayIngress.cs` | 校验飞书和 Slack 来源，区分普通渠道会话与已验证成员分支，并向消息循环提交本轮身份 |
+| `Hosting/ConnectorHostLifecycleService.cs` | 连接器生命周期 hosted service（见下「关键语义」） |
+| `Services/ConnectorDeliveryDispatcher.cs` | 持久出站投递；飞书复用稳定 uuid；Slack 按 Retry-After 重试，Rejected/Unknown 死信保留证据 |
+| `Services/MessageGatewayIngress.cs` | 消息网关入口（19KB） |
 | `Extensions/` | 扩展注册 |
 
 **关键语义**

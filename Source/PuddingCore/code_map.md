@@ -30,9 +30,12 @@
 | `Core/` | 核心实现目录 | — | — | — |
 | `Observability/` | 出站请求诊断目录 | — | — | — |
 | `Observability/LlmRequestBodyFingerprint.cs` | 出站报文指纹：UTF-8 字节数 + 小写 SHA-256 | `LlmRequestBodyFingerprint.Compute` | 无 | 纯函数；**不做换行归一化**（归一化会让不同报文同指纹） |
+| `Observability/LlmSendAttemptScope.cs` | CORE-I1-06 per-send 发送边界合同：一次真实 provider 发送＝一个 attempt；AsyncLocal scope 由 facade 绑定、网关/客户端只调用 Begin/Complete |
 | `Observability/LlmRequestCapture.cs` | 发送前捕获实际报文指纹，并按开关记录 invocationId/modelId/本地估算值/净化后 bodyTokens/内联图片张数与 base64 字节/**报文里的 reasoning.effort** | `LlmRequestCapture`、`LlmRequestCapture.Enabled` | `Core/` 三个网关、`Runtime/Services/` | `PUDDING_CAPTURE_REQUEST` 未设时只有一次 bool 判断；只读字节重发，不改报文/头部/顺序；无 reasoning 段时记哨字符 `-` |
-| `Observability/LlmBodyReasoningProbe.cs` | 从出站报文读 `reasoning.effort`，使「思考强度真的发出去了」可直接从日志验证 | `LlmBodyReasoningProbe.TryReadReasoningEffort` | `Observability/LlmRequestCapture.cs` | 纯函数；只在捕获开关打开时调用；解析失败一律返 null，不得抛异常 |
-| `Observability/LlmBodyTextSanitizer.cs` | 把 `data:image/...;base64,...` 载荷替换为占位符并如实计数，使 bodyTokens 只覆盖 provider 按文本计费的部分 | `LlmBodyTextSanitizer.RedactInlineImages` | `Observability/LlmRequestCapture.cs` | 纯函数；只认 `data:image` 前缀，audio 等其它载荷故意不动 |
+| `Observability/LlmBodyReasoningProbe.cs` | 从出站报文读 `reasoning.effort`，使「思考强度真的发出去了」可直接从日志验证 | `LlmBodyReasoningProbe.TryReadReasoningEffort` | `Observability/LlmSendAttemptScope.cs` | CORE-I1-06 per-send 发送边界合同：一次真实 provider 发送＝一个 attempt；AsyncLocal scope 由 facade 绑定、网关/客户端只调用 Begin/Complete |
+| `Observability/LlmRequestCapture.cs` | 纯函数；只在捕获开关打开时调用；解析失败一律返 null，不得抛异常 |
+| `Observability/LlmBodyTextSanitizer.cs` | 把 `data:image/...;base64,...` 载荷替换为占位符并如实计数，使 bodyTokens 只覆盖 provider 按文本计费的部分 | `LlmBodyTextSanitizer.RedactInlineImages` | `Observability/LlmSendAttemptScope.cs` | CORE-I1-06 per-send 发送边界合同：一次真实 provider 发送＝一个 attempt；AsyncLocal scope 由 facade 绑定、网关/客户端只调用 Begin/Complete |
+| `Observability/LlmRequestCapture.cs` | 纯函数；只认 `data:image` 前缀，audio 等其它载荷故意不动 |
 | `Platform/` | 平台抽象目录 | — | — | — |
 | `Platform/ReasoningEffortPolicy.cs` | 思考强度唯一决策点：手动档位（**界面只暴露 深入=high / 极致=max**）> Agent/模型配置 > 模型默认 > **产品默认 high**；合法集合 `none/low/high/max` | `ReasoningEffortPolicy.Resolve`、`IsValid`、`Label`、`TryNormalizeSelection`、`IsUserSelectable`、`Default`、`AutoSelection` | `Platform/ExecutionRunContracts.cs` | 纯函数；产品默认仅在模型声明 `reasoning` 能力时生效（`useProductDefault`），否则返 null——openai 网关拿到非 null 就写 reasoning_effort，会给不支持该参数的模型造成 400。**2026-10-25**：界面删掉 low/medium（medium 服务商根本没有，旧界面选它会静默回落 high） |
 | `Platform/IAgentReasoningEffortStore.cs` | Agent 级思考强度读写端口：`/effort` 命令与聊天面板下拉共写同一份存储 | `IAgentReasoningEffortStore` | `WorkspaceAgentReasoningEffortStore`（Platform）、`SystemCommandHandler` | 只有读一个值/写一个值两个方法：注入整个 Agent 文件服务会把创建/删除/冻结等写能力带进纯文本命令入口，也无法在无数据目录时断言 |
@@ -40,7 +43,7 @@
 | `Abstractions/ISubAgentPool.cs` | 子代理池最小契约 | `ISubAgentPool` | `Platform/` | 含池状态与池快照模型；实现留在 Platform |
 | `Abstractions/ITokenUsageRecorder.cs` | Token 归因写入边界 | `ITokenUsageRecorder`、`TokenUsageAttribution` | `Services/` | 承载 canonical parent/sub-agent、零基 round 与本轮工具事实；默认接口实现保持旧 recorder 源码兼容 |
 | `Platform/IPlatformRepositories.cs` | Platform 持久化仓储契约 | `IPlatformRepositories`、`ChatMessageRow` | `Abstractions/` | ChatMessageRow 含 WorkspaceId、稳定 platform/business MessageId、TurnId 与消息内容；供 Runtime 压缩/冷水合前增量镜像 canonical 转录并排除当前 Turn；含 Agent Token/熵诊断 Core DTO 查询边界 |
-| `Platform/IExecutionCommandReader.cs` | ExecutionCommand 只读边界 | `IExecutionCommandReader`、`ExecutionWorkUnitContext` | `Platform/IPlatformRepositories.cs` | 返回由 canonical Goal/Task/Plan 解析的上下文及 rounds/tools/duration/token/cost 冻结预算 |
+| `Platform/IExecutionCommandReader.cs` | ExecutionCommand 只读边界 | `IExecutionCommandReader`、`ExecutionWorkUnitContext` | `Platform/IPlatformRepositories.cs` | 返回由 canonical Goal/Task/Plan 解析的上下文及 rounds/tools/duration/token/cost 冻结预算；`ExecutionCommandRecord.ClientRequestId` 仅作受管 Work 关联候选，不是可信预算身份 |
 | `Platform/AgentProjectionDtos.cs` | Agent 会话读模型 | `AgentProjectionDtos`、`ProcessSummaryItem.Sequence`、`TurnEventWindow` | `Platform/IPlatformRepositories.cs` | Sequence 为 canonical 必填；active/detail 输出携带 TurnEventWindow（through/min/max/hasMoreBefore）供前端识别截断 |
 | `Platform/ExecutionRunContracts.cs` | ExecutionRun 冻结快照合同 | `LlmRouteSnapshot`、`CallerLlmSnapshot` | `Platform/AgentProjectionDtos.cs` | V5：LlmRouteSnapshot 与 CallerLlmSnapshot 新增可选 VisionRequestPolicy? VisionPolicy；CallerLlmSnapshot.SupportsVision 为唯一 vision 能力投影（OrdinalIgnoreCase）。**2026-10-25**：新增可选 `string? ReasoningEffort`——本轮手动思考强度的唯一载体，放在快照而非 agent 请求，避免两套来源 |
 | `Platform/CompactionRequestException.cs` | 手动压缩跨 HTTP/事件的安全失败合同 | `CompactionFailure`、`CompactionRequestException` | `Platform/ConversationHandlers.cs` | 区分失败阶段和摘要提交事实，携带关联 ID 与白名单存储诊断；原异常仅在服务端保留 |
@@ -132,12 +135,14 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | `Platform/BuiltInAgentTemplates.cs` | 内置 Agent 模板的唯一权威源；V2 Default/Grant 直接决定 Low/High 子代理工具投影，Host 不得复制同全名类 |
 | `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约；工具曝光预算；`ContextMaintenanceOptions` 的注册窗口比例与摘要无进展期限 |
 | `Runtime/ContextAssemblyContracts.cs` | 上下文装配契约 |
+| `Runtime/ModelAttemptConcurrencyPort.cs` | CORE-I1-06 per-attempt 并发槽端口：真实发送前 acquire、结束后 release | `IModelAttemptConcurrencyPort`、`IModelAttemptConcurrencyLease` | `Runtime/Services/DirectLlmClient.cs`、`Platform/Services/Models/ModelLeaseConcurrencyPort.cs` | 一个 attempt 一个槽；有槽端口时不叠加 rate limiter |
 | `Runtime/ContextSegmentContracts.cs` | ContextSegmentLedger 数据契约（§6.1）+ ContextSegmentTier（T0–T4 分级枚举）|
 | `Runtime/ContextTierPlannerContracts.cs` | T0–T4 分级规划器契约：段输入/分配结果/阈值选项 + IContextTierPlanner |
 | `Runtime/ContextTierPlanner.cs` | 纯函数式分级规划器：轮次距离基础分级 → 原子组校正 → query 有界晋升 |
 | `Runtime/CompositionContracts.cs` | SessionCompositionRecord 与 `ICompositionStore`（append-only） |
 | `Runtime/PrefixCacheContracts.cs` | `prefix-v2` 请求前缀快照 |
 | `Runtime/LlmInvocationContracts.cs` | 统一 LLM invocation 合同；`Purpose` 以非模型可见方式区分 agent/approval/compaction 计费与诊断 |
+| `Runtime/RuntimeExecutionIdentity.cs` | 一次 Runtime 执行的稳定身份（Conversation/Turn/Command/Run）；可选 `WorkBudget` 载体由编排层在受理/租约核对后绑定，Runtime 与工具只透传、不推断 |
 | `Runtime/ContextSummaryMarkers.cs` | 压缩摘要的请求侧标记唯一合同 |
 | `Runtime/ContextCompactionContracts.cs` | 压缩终态、`ContextHealthSnapshot` 与容量预测契约；WarmPrefixSourceMessage 携带完整运行期原文与精确持久 ID |
 | `Abstractions/ICompactionEvidenceReader.cs` | 已提交覆盖清单的只读来源页、原始 Turn ID、旧 checkpoint 引用和归档文本窗口契约 |
@@ -186,7 +191,7 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `Tools/` | 工具接口与基类目录 | — | — | — |
-| `Tools/PuddingToolContracts.cs` | 原生 Tool 描述、反序列化与执行基类 | `PuddingToolContracts` | `Tools/` | 当前结果仍为 Output/Error string；deepseek-harness 对齐将演进 input/output schema、canonical value、结构化错误与不可变调用身份 |
+| `Tools/PuddingToolContracts.cs` | Tool 描述、执行上下文、动态工具源与宿主资源端口 | `IContextualPuddingToolSource` | `Runtime/ToolInvocationContracts.cs` | 同一 Agent/session 解析；`ExecutionResources` 仅宿主传递，不从 JSON 反序列化父预算 |
 
 ## 交互面板域（Panels/）
 
@@ -249,7 +254,7 @@ RetrievalGlobMatcher 合同：`public static`，API 为 `Matches/MatchesFileName
 | 目录/文件 | 用途 |
 |------|------|
 | `Configuration/` | 配置抽象与 `llm.providers.json` 解析 |
-| `Configuration/PuddingConfigModels.cs` | 系统配置记录；`desktop.guardian` 定义独立主管端口、构建源路径及健康策略，与 `desktop.bootstrap` 内部控制端口分离 |
+| `Configuration/PuddingConfigModels.cs` | 系统配置记录；`desktop.guardian` 定义独立主管端口、构建源路径及健康策略，与 `desktop.bootstrap` 内部控制端口分离；AgentInstanceManifest.ConfigurationControl 为配置适配器拥有的不透明原子回执日志，既有 writer 保留它 |
 | `Configuration/AtomicFileWriter.cs` | 原子配置写入：严格无 BOM UTF-8；Windows 可安全重试的文件占用错误有界退避，读取允许替换；失败保留原文件并携带尝试次数/系统错误码 |
 | `Serialization/` | 序列化契约 |
 | `Skills/` | 技能系统抽象 |
@@ -356,6 +361,8 @@ L3-a 已落地（纯类型 + 守卫测试，**零行为**：不写技能、不�
 | 文件 | 用途 |
 |------|------|
 | `Platform/FeishuRecipientContracts.cs` | 收件人目录端口、无凭据 DTO 与稳定连接器身份 |
+| `Platform/SlackChannelContracts.cs` | Slack 路由与外部用户身份键；渠道投递 Retryable/Rejected/Unknown 合同 |
+| `Configuration/SlackChannelValidation.cs` | Slack API ID、白名单规范化及仓库外凭据路径校验 |
 | `Platform/GatewayCommandRouteContracts.cs` | 仅按当前 CommandId 解析可信回复路由 |
 | `Platform/MessageGatewayContracts.cs` | 区分入站会话与主动 ReceiveId/ReceiveIdType 的消息元数据 |
 

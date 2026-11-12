@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../PuddingWorkspace.Contracts/PuddingWorkspace.Contracts.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceWorkspaceBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingWorkspace.Contracts'" Text="Workspace may only reference its ports." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Workspace must not add package references." />
+  </Target>
+</Project>

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../PuddingTools.Contracts/PuddingTools.Contracts.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceToolFacadeBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingTools.Contracts'" Text="Tool facade may only reference its ports." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Tool facade must not add package references." />
+  </Target>
+</Project>

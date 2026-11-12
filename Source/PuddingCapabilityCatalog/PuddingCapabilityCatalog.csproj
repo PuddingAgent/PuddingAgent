@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../PuddingCapabilityCatalog.Contracts/PuddingCapabilityCatalog.Contracts.csproj" />
+    <ProjectReference Include="../Pudding.Api.Contracts/Pudding.Api.Contracts.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceCapabilityCatalogBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingCapabilityCatalog.Contracts' And '%(ProjectReference.Filename)' != 'Pudding.Api.Contracts'" Text="Capability catalog may only reference its ports and the public API contracts." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Capability catalog must not add package references." />
+  </Target>
+</Project>

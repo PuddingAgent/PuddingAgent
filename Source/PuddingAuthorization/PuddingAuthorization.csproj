@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../PuddingAuthorization.Contracts/PuddingAuthorization.Contracts.csproj" />
+  </ItemGroup>
+  <Target Name="EnforceAuthorizationBoundary" BeforeTargets="ResolveProjectReferences">
+    <Error Condition="'%(ProjectReference.Filename)' != 'PuddingAuthorization.Contracts'" Text="Authorization may only reference its ports." />
+    <Error Condition="'@(PackageReference)' != ''" Text="Authorization must not add package references." />
+  </Target>
+</Project>

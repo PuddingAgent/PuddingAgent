@@ -1,4 +1,5 @@
 using PuddingCode.Goals;
+using PuddingGoalPolicy.Contracts;
 
 namespace PuddingPlatform.Services.Goals;
 
@@ -11,9 +12,10 @@ namespace PuddingPlatform.Services.Goals;
 /// 空验收合同不得 vacuous pass，必须先经一个有界规划步骤产生合同；
 /// 本 verifier 只读且不执行任何工具（实际检查由 IGoalCheckRunner 负责）。
 /// </summary>
-public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
+public sealed class ConservativeGoalIterationVerifier(IGoalReviewCompletionGate? reviewGate = null)
+    : IGoalIterationVerifier
 {
-    public Task<GoalVerificationDecision> VerifyAsync(
+    public async Task<GoalVerificationDecision> VerifyAsync(
         GoalEvidenceCapsule capsule,
         CancellationToken ct = default)
     {
@@ -141,15 +143,40 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
         }
         else if (allRequiredPassed)
         {
-            // S1-b：唯一完成判据——全部必需条件同版本 passed。验证作用域与剩余 WorkUnit
-            // 轴已删除；绑定计划未收敛时，ApplyBoundPlanGates 仍会把本裁决降级为 Continue
-            // 并产出 Advance（计划闸与 Advance 记账不在本刀范围）。
-            decision = new GoalVerificationDecision
+            // PA-04：证据齐全之后仍须让已尝试的评审给出同版本 Satisfied；否则不得完成。
+            var review = reviewGate is null
+                ? ReviewFact.NotRequired
+                : await reviewGate.EvaluateAsync(capsule, ct).ConfigureAwait(false);
+            if (review is ReviewFact.NotRequired or ReviewFact.Satisfied)
             {
-                Verdict = GoalVerificationVerdict.Complete,
-                Reason = "All required criteria passed for this Goal.",
-                EvidenceRefs = capsule.EvidenceRefs,
-            };
+                // S1-b：唯一完成判据——全部必需条件同版本 passed。验证作用域与剩余 WorkUnit
+                // 轴已删除；绑定计划未收敛时，ApplyBoundPlanGates 仍会把本裁决降级为 Continue
+                // 并产出 Advance（计划闸与 Advance 记账不在本刀范围）。
+                decision = new GoalVerificationDecision
+                {
+                    Verdict = GoalVerificationVerdict.Complete,
+                    Reason = "All required criteria passed for this Goal.",
+                    EvidenceRefs = capsule.EvidenceRefs,
+                };
+            }
+            else
+            {
+                decision = Blocked(
+                    review switch
+                    {
+                        ReviewFact.NeedsWork => "review_needs_work",
+                        ReviewFact.Stale => "review_stale",
+                        ReviewFact.Pending => "review_pending",
+                        ReviewFact.Missing => "review_required",
+                        _ => "review_not_satisfied",
+                    },
+                    "Acceptance evidence passed, but the Goal review is not yet satisfied for this objective version.",
+                    capsule) with
+                {
+                    NextAction = "Repair the reviewed delivery or wait for the pending review, then re-run verification.",
+                    UnmetCriteria = unmetCriteria,
+                };
+            }
         }
         else
         {
@@ -165,11 +192,11 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
             };
         }
 
-        return Task.FromResult(decision with
+        return decision with
         {
             Criteria = criteria,
             CriterionResults = results,
-        });
+        };
     }
 
     /// <summary>
