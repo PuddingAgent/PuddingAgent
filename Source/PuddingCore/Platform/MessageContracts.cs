@@ -138,6 +138,13 @@ public sealed record MessageOrigin
     public string? ExternalConversationId { get; init; }
     /// <summary>第三方消息标识。</summary>
     public string? ExternalMessageId { get; init; }
+    /// <summary>
+    /// 渠道发送者在 Pudding 内部的用户标识。仅当渠道账号已绑定到 Pudding 用户时才有值。
+    /// 这是「谁在说话」的事实，不参与授权——权限主体始终是 Agent。
+    /// </summary>
+    public string? SenderPuddingUserId { get; init; }
+    /// <summary>渠道发送者对应的 Pudding 权限组（仅观测与提示用途，不做授权判断）。</summary>
+    public string? SenderRole { get; init; }
 }
 
 /// <summary>Runtime 执行请求——Controller 投递到 Runtime。</summary>

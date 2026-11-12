@@ -942,6 +942,10 @@ public sealed class ExecutionRunCoordinator(
             ExternalMessageId = GetMetadataValue(
                 metadata,
                 MessageGatewayMetadata.ExternalMessageId),
+            // 渠道身份：只在已绑定时才有值。它让 Runtime 能把「现在是谁在说话」
+            // 作为运行时上下文交给模型，而不必写进用户可见的消息正文。
+            SenderPuddingUserId = GetMetadataValue(metadata, ChannelIdentityMetadata.UserId),
+            SenderRole = GetMetadataValue(metadata, ChannelIdentityMetadata.Role),
         };
     }
 

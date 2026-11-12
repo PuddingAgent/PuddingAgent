@@ -152,8 +152,9 @@ public sealed class MessageGatewayIngress(
                 Audience = MessageAudiences.Direct,
                 Visibility = MessageVisibilities.Private,
                 ContentType = MessageContentTypes.Text,
-                Content = identity is null ? envelope.MessageText
-                    : identity.Prefix + (envelope.MessageText.Length == 0 ? "" : " " + envelope.MessageText),
+                // 用户可见正文保持干净：渠道身份不再写进消息内容，
+                // 改由元数据 → MessageOrigin → 运行时尾上下文交给模型。
+                Content = envelope.MessageText,
                 CreatedAt = envelope.Timestamp.ToUnixTimeMilliseconds(),
                 Metadata = metadata,
             },

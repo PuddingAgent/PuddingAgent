@@ -666,7 +666,7 @@ public sealed partial class AgentExecutionService
         RuntimeDispatchRequest request,
         string? userContextPrefix)
     {
-        var sb = new StringBuilder(BuildRuntimeTailContext(userContextPrefix));
+        var sb = new StringBuilder(BuildRuntimeTailContext(request, userContextPrefix));
         sb.Append(BuildCurrentTurnOpening(request));
         sb.Append(request.MessageText);
         if (!request.MessageText.EndsWith('\n'))
@@ -684,22 +684,42 @@ public sealed partial class AgentExecutionService
 
         var wrapped = new List<LlmContentPart>(contentParts.Count + 2)
         {
-            new LlmTextPart(BuildRuntimeTailContext(userContextPrefix) + BuildCurrentTurnOpening(request)),
+            new LlmTextPart(BuildRuntimeTailContext(request, userContextPrefix) + BuildCurrentTurnOpening(request)),
         };
         wrapped.AddRange(contentParts);
         wrapped.Add(new LlmTextPart("\n" + BuildCurrentTurnClosing(request)));
         return wrapped;
     }
 
-    private static string BuildRuntimeTailContext(string? userContextPrefix)
+    private static string BuildRuntimeTailContext(RuntimeDispatchRequest request, string? userContextPrefix)
     {
         var sb = new StringBuilder();
         sb.AppendLine("[RUNTIME TAIL CONTEXT]");
         if (!string.IsNullOrWhiteSpace(userContextPrefix))
             sb.Append(userContextPrefix.Trim()).AppendLine();
+        AppendChannelIdentityLine(sb, request.Origin);
         sb.AppendLine("[/RUNTIME TAIL CONTEXT]");
         sb.AppendLine();
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// 渠道身份属于运行时上下文，不属于用户正文：放在尾上下文里，
+    /// 模型仍然知道「现在是谁在说话」，而用户可见的消息保持干净。
+    /// 只陈述事实（谁发的、绑到哪个 Pudding 用户、哪个权限组），不做任何授权。
+    /// internal 以便单测直接验证「模型看得到、用户正文里看不到」。
+    /// </summary>
+    internal static void AppendChannelIdentityLine(StringBuilder sb, MessageOrigin? origin)
+    {
+        if (origin?.ChannelType is not { Length: > 0 } channel)
+            return;
+
+        sb.Append("[channel-identity channel=").Append(channel)
+            .Append(" external=").Append(origin.FromId);
+        if (!string.IsNullOrWhiteSpace(origin.SenderPuddingUserId))
+            sb.Append(" pudding=").Append(origin.SenderPuddingUserId)
+                .Append(" role=").Append(origin.SenderRole ?? "");
+        sb.AppendLine("]");
     }
 
     private static string BuildCurrentTurnOpening(RuntimeDispatchRequest request)

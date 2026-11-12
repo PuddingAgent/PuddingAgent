@@ -245,6 +245,8 @@ public sealed class SlackGatewayTests
             Assert.AreEqual("agent", session.PrincipalKind);
             Assert.AreEqual("主线", session.Title);
             Assert.AreEqual("slack:T1:U1", sent[0].From.Id);
+            // 用户可见正文不得混入渠道身份前缀：身份走元数据 → 运行时上下文。
+            Assert.AreEqual("中文问题", sent[0].Content);
             Assert.AreEqual(incoming.MessageTs, sent[0].Metadata![SlackChannelMetadata.ThreadTs]);
             main.VerifyNoOtherCalls();
             await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.AcceptAsync(
