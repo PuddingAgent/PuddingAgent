@@ -6,6 +6,13 @@ namespace PuddingDingTalk;
 public sealed record GroupSource(string CorporationId, string ConversationId, string UserId,
     DateTimeOffset SentAt, DateTimeOffset ReceivedAt)
 {
+    /// <summary>
+    /// True for a group conversation, false for a private one-to-one chat.
+    /// Only a private chat has a single audience, so it is the only place where echoing the
+    /// caller's own identifiers back is safe; a group reply would expose them to every member.
+    /// </summary>
+    public bool Group { get; init; } = true;
+
     // No DingTalk-to-Pudding account bindings exist. Only a host-owned binding may change this.
     public string PuddingGroup => "guest";
 }
@@ -89,7 +96,10 @@ internal static class GroupIngress
             || uri.UserInfo.Length != 0 || uri.Fragment.Length != 0 || uri.AbsolutePath != "/robot/sendBySession"
             || !uri.Query.StartsWith("?session=", StringComparison.Ordinal) || uri.Query.Length <= 9)
             return (null, "webhook_scope");
-        var principal = new GroupSource(corp!, room!, user!, DateTimeOffset.FromUnixTimeMilliseconds(ms), now);
+        var principal = new GroupSource(corp!, room!, user!, DateTimeOffset.FromUnixTimeMilliseconds(ms), now)
+        {
+            Group = group
+        };
         var codes = new List<string>();
         string? text;
         var type = String(data, "msgtype");

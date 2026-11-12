@@ -114,7 +114,10 @@ public sealed class DingTalkPublicAgentTests
         DingTalkSubmitGuard.Validate(command);
         Assert.Throws<UnauthorizedAccessException>(() => DingTalkSubmitGuard.Validate(command with { IsTrustedGatewayIngress = false }));
         Assert.Throws<UnauthorizedAccessException>(() => DingTalkSubmitGuard.Validate(command with { UserId = "admin" }));
-        Assert.Throws<UnauthorizedAccessException>(() => DingTalkSubmitGuard.Validate(command with { Metadata = null }));
+        // 没有 Provenance 时不构成本守卫管辖的钉钉回合，交由普通回合鉴权；
+        // 若在此抛错，所有非钉钉渠道（飞书 / Slack / Web）的入站都会被连带拒绝（b120290 的回归教训）。
+        DingTalkSubmitGuard.Validate(command with { Metadata = null });
+        DingTalkSubmitGuard.Validate(command with { Metadata = new Dictionary<string, string>() });
     }
 
     [Fact]

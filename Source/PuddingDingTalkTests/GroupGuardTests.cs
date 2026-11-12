@@ -72,6 +72,7 @@ public sealed class GroupGuardTests
         var s = f.Seen.Single().Source;
         Assert.AreEqual("member-1", s.UserId);
         Assert.AreEqual("guest", s.PuddingGroup);
+        Assert.IsTrue(s.Group, "a group callback must be marked as group");
         Assert.AreEqual(f.Body["createAt"], s.SentAt.ToUnixTimeMilliseconds());
         Assert.Contains("Word", f.Replies.Single());
         Assert.AreEqual("duplicate", await f.Run());
@@ -107,6 +108,7 @@ public sealed class GroupGuardTests
         var q = f.Seen.Single();
         // A private chat is still an unbound guest: allowing the callback grants no authority.
         Assert.AreEqual("guest", q.Source.PuddingGroup);
+        Assert.IsFalse(q.Source.Group, "a private chat must be marked as non-group");
         Assert.Contains("Word", f.Replies.Single());
         f.Body["msgId"] = "second";
         f.Body["conversationType"] = "3";

@@ -65,6 +65,10 @@ internal sealed class DingTalkConversationIngress(AgentManifestCatalog agents, s
         var trust = scope.ServiceProvider.GetService<ChannelDevelopmentTrust>();
         var source = new ChannelSender(ChannelDevelopmentTrust.DingTalk, appId, q.Source.CorporationId, q.Source.UserId, true);
         var trustUser = trust == null ? null : await trust.ResolveAsync(workspace, agentId, source, ct);
+        // An unbound caller in a private chat is told exactly which identifiers the administrator
+        // needs. A group chat never gets this: it would disclose one member's ids to everyone.
+        if (trustUser == null && !q.Source.Group)
+            return new(UnboundPrivateNotice(q.Source));
         // 单一会话：钉钉群消息同样汇入该 Agent 的唯一主会话，渠道不决定会话。
         var mainSession = await sessions.FindMainAsync(workspace, "agent", agentId, ct)
             ?? await CreateMainSessionAsync(owner, workspace, ct);
@@ -130,6 +134,19 @@ internal sealed class DingTalkConversationIngress(AgentManifestCatalog agents, s
             await Task.Delay(350, deadline.Token);
         }
     }
+
+    /// <summary>
+    /// Reply for an unbound caller in a private chat. It echoes only the caller's own identifiers,
+    /// which the administrator needs in order to create the channel binding.
+    /// </summary>
+    internal static string UnboundPrivateNotice(GroupSource source) => $"""
+        这条钉钉账号还没有绑定到 Pudding 用户。
+
+        钉钉用户 ID：{source.UserId}
+        企业 ID：{source.CorporationId}
+
+        请把这两个 ID 提供给管理员，在 Chat 的渠道绑定里关联到你的账号。
+        """;
 
     internal static GroupReply ProjectReply(string text, IReadOnlyDictionary<string, GroupImage> images)
     {
