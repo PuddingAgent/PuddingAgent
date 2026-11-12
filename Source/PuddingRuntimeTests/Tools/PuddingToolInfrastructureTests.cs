@@ -1022,7 +1022,8 @@ public sealed partial class PuddingToolInfrastructureTests
         var descriptors = catalog.ListTools();
 
         CollectionAssert.AreEquivalent(
-            new[] { "classifier_status", "legacy_echo", "list_tool_approvals", "request_tool_approval", "sample_search" },
+            new[] { "classifier_status", "computer_input", "legacy_echo", "list_tool_approvals", "request_tool_approval", "sample_search",
+                "plugin_catalog", "plugin_search", "plugin_import", "plugin_load", "plugin_unload", "plugin_diagnostics" },
             descriptors.Select(d => d.ToolId).ToArray());
     }
 
@@ -1554,7 +1555,7 @@ public sealed partial class PuddingToolInfrastructureTests
             "sample_high",
             "{}",
             SampleContext(),
-            new CapabilityPolicy { RequiresGrantToolNames = ["sample_high"] });
+            new CapabilityPolicy { RequiresGrantToolNames = ["sample_high"], AllowShellExecution = true });
 
         Assert.IsTrue(result.Success);
         Assert.AreEqual("executed high", result.Output);
@@ -1623,7 +1624,7 @@ public sealed partial class PuddingToolInfrastructureTests
             {
                 Trace = RuntimeTraceContext.CreateNew(userId: "user-1"),
             },
-            new CapabilityPolicy { RequiresGrantToolNames = ["sample_high"] });
+            new CapabilityPolicy { RequiresGrantToolNames = ["sample_high"], AllowShellExecution = true });
 
         Assert.IsTrue(result.Success);
         Assert.AreEqual("executed high", result.Output);
@@ -1657,7 +1658,7 @@ public sealed partial class PuddingToolInfrastructureTests
             {
                 Trace = RuntimeTraceContext.CreateNew(userId: "user-1"),
             },
-            new CapabilityPolicy { RequiresGrantToolNames = ["sample_high"] });
+            new CapabilityPolicy { RequiresGrantToolNames = ["sample_high"], AllowShellExecution = true });
 
         Assert.IsTrue(result.Success, result.Error);
         Assert.AreEqual("executed high", result.Output);
@@ -1756,7 +1757,7 @@ public sealed partial class PuddingToolInfrastructureTests
             "sample_high",
             "{}",
             context,
-            new CapabilityPolicy { RequiresGrantToolNames = ["sample_high"] });
+            new CapabilityPolicy { RequiresGrantToolNames = ["sample_high"], AllowShellExecution = true });
 
         Assert.IsTrue(executionResult.Success, executionResult.Error);
         Assert.AreEqual("executed high", executionResult.Output);
