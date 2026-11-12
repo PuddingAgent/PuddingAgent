@@ -21,10 +21,13 @@ internal sealed class DingTalkTurnExecutor(TurnExecutorAdapter standard, IChatMe
 {
     public IAsyncEnumerable<TurnExecutionEvent> ExecuteAsync(TurnExecutionContext context, CancellationToken ct)
     {
-        if (context.Origin?.ChannelType == "dingtalk")
+        if (RequiresPublicExecution(context.Origin))
             return PublicAsync(context, ct);
         return standard.ExecuteAsync(context, ct);
     }
+
+    internal static bool RequiresPublicExecution(MessageOrigin? origin) =>
+        origin is { ChannelType: "dingtalk", IsUnboundChannelSender: true };
 
     private async IAsyncEnumerable<TurnExecutionEvent> PublicAsync(TurnExecutionContext context,
         [EnumeratorCancellation] CancellationToken ct)
