@@ -192,6 +192,50 @@ public sealed class ConservativeGoalIterationVerifierTests
     }
 
     [TestMethod]
+    public async Task AllCriteriaPassed_ButReviewNeedsWork_DoesNotComplete()
+    {
+        var verifier = new ConservativeGoalIterationVerifier(new GoalReviewCompletionGate(
+            new FakeReviewJobs(PuddingReviews.Contracts.ReviewJobState.Completed,
+                PuddingReviews.Contracts.ReviewFindingValue.NeedsWork,
+                PuddingReviews.Contracts.ReviewEvidenceLevel.CheckVerified)));
+        var decision = await verifier.VerifyAsync(Capsule(taskStatus: "Completed", criteria: RequiredCriteria,
+            checks: RequiredChecks, reports: CleanReports));
+        Assert.AreNotEqual(GoalVerificationVerdict.Complete, decision.Verdict);
+        Assert.AreEqual("review_needs_work", decision.BlockerCode);
+    }
+
+    [TestMethod]
+    public async Task AllCriteriaPassed_WithSatisfiedReview_Completes()
+    {
+        var verifier = new ConservativeGoalIterationVerifier(new GoalReviewCompletionGate(
+            new FakeReviewJobs(PuddingReviews.Contracts.ReviewJobState.Completed,
+                PuddingReviews.Contracts.ReviewFindingValue.Satisfied,
+                PuddingReviews.Contracts.ReviewEvidenceLevel.CheckVerified)));
+        var decision = await verifier.VerifyAsync(Capsule(taskStatus: "Completed", criteria: RequiredCriteria,
+            checks: RequiredChecks, reports: CleanReports));
+        Assert.AreEqual(GoalVerificationVerdict.Complete, decision.Verdict);
+    }
+
+    [TestMethod]
+    public async Task AllCriteriaPassed_WithPendingReview_DoesNotComplete()
+    {
+        var verifier = new ConservativeGoalIterationVerifier(new GoalReviewCompletionGate(
+            new FakeReviewJobs(PuddingReviews.Contracts.ReviewJobState.Pending, null, null)));
+        var decision = await verifier.VerifyAsync(Capsule(taskStatus: "Completed", criteria: RequiredCriteria,
+            checks: RequiredChecks, reports: CleanReports));
+        Assert.AreNotEqual(GoalVerificationVerdict.Complete, decision.Verdict);
+        Assert.AreEqual("review_pending", decision.BlockerCode);
+    }
+
+    [TestMethod]
+    public async Task AllCriteriaPassed_WithoutAnyReviewJob_CompletesAsBefore()
+    {
+        var verifier = new ConservativeGoalIterationVerifier(new GoalReviewCompletionGate(new FakeReviewJobs(null)));
+        var decision = await verifier.VerifyAsync(Capsule(taskStatus: "Completed", criteria: RequiredCriteria,
+            checks: RequiredChecks, reports: CleanReports));
+        Assert.AreEqual(GoalVerificationVerdict.Complete, decision.Verdict);
+    }
+    [TestMethod]
     public async Task StandaloneGoal_WithAllCriteriaPassed_Completes()
     {
         var verifier = new ConservativeGoalIterationVerifier();
@@ -725,4 +769,24 @@ public sealed class ConservativeGoalIterationVerifierTests
         FinalAssistantReply = finalReply,
         EvidenceComplete = true,
     };
+
+    private sealed class FakeReviewJobs(
+        PuddingReviews.Contracts.ReviewJobState? state,
+        PuddingReviews.Contracts.ReviewFindingValue? finding = null,
+        PuddingReviews.Contracts.ReviewEvidenceLevel? level = null) : PuddingPlatform.Services.Reviews.IReviewJobByGoalObjectiveReader
+    {
+        public Task<PuddingReviews.Contracts.ReviewJobView?> GetLatestByGoalObjectiveAsync(string goalRunId,
+            string objectiveVersion, CancellationToken ct = default)
+        {
+            if (state is null) return Task.FromResult<PuddingReviews.Contracts.ReviewJobView?>(null);
+            var outcome = finding is null
+                ? null
+                : new PuddingReviews.Contracts.ReviewOutcome(finding.Value, level!.Value,
+                    System.Collections.Immutable.ImmutableArray<PuddingReviews.Contracts.ReviewCriterionOutcome>.Empty, null);
+            return Task.FromResult<PuddingReviews.Contracts.ReviewJobView?>(new("job-1", "review-1",
+                new("ws-1", null, "goal-1", 1, 1, "1", "acceptance-v1", "artifact-hash", "policy-v1"), true,
+                "budget-1", DateTimeOffset.UtcNow.AddMinutes(10), state.Value, 1, 1, 7, outcome, null,
+                DateTimeOffset.UtcNow, "actor-1"));
+        }
+    }
 }

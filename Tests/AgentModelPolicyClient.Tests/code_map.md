@@ -1,0 +1,7 @@
+# Tests/AgentModelPolicyClient.Tests
+
+| File | Purpose |
+|---|---|
+| `AgentModelPolicyClient.Tests.csproj` | MSTest.Sdk/4.0.1 runner (`OutputType=Exe`, `UseVSTest=false`); only `ProjectReference` is the sample project; every API is an injected fake `IAgentModelPolicyApi` whose `UpdateAsync` throws because the read-only sample must never write, no real network, no real Core, no real Agent. |
+| `PolicyDemoTests.cs` | Offline coverage for `PolicyDemo`: exactly one `GetEffectiveAsync(new AgentRef(...))` and zero `UpdateAsync`; the four effective snapshots are printed verbatim — explicit inherit-Primary (`inheritPrimary=true` with the inherited model), instance override (`source=instance` with its own model/revision), unconfigured purpose (null model/source plus `missingReason=model_policy_missing`) and persisted-but-not-applied (`appliedRevision < effectiveRevision` plus `pendingReasons`) — with every `purposes` field and every top-level field preserved in one camelCase JSON line; verbatim Chinese/space-padded workspace and agent ids; zero API calls for no/unknown command, wrong argument count and blank fields (exit 2); missing snapshot → `{"found":false}` with exit 3; `AgentModelPolicyException` reduced to `code=...` on stderr with exit 1 and no message leak; caller cancellation → exit 130 with no retry or write; cancellation not requested by the caller and unexpected exceptions are not swallowed; null reference arguments rejected with `ArgumentNullException`. |
+| `code_map.md` | This index. |

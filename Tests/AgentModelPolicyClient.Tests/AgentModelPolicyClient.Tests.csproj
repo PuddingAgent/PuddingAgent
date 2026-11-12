@@ -1,0 +1,9 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UseVSTest>false</UseVSTest>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Samples/AgentModelPolicyClient/AgentModelPolicyClient.csproj" />
+  </ItemGroup>
+</Project>

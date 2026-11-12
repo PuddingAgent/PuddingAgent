@@ -1,0 +1,4 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+  <PropertyGroup><OutputType>Exe</OutputType><UseVSTest>false</UseVSTest></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../Pudding.Api.Sdk/Pudding.Api.Sdk.csproj" /></ItemGroup>
+</Project>

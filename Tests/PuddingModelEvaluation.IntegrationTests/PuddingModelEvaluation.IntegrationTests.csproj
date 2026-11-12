@@ -1,0 +1,7 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+  <PropertyGroup><OutputType>Exe</OutputType><UseVSTest>false</UseVSTest></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Source/PuddingRuntime/PuddingRuntime.csproj" />
+    <ProjectReference Include="../PuddingToolPlugins.Fixture/PuddingToolPlugins.Fixture.csproj" />
+  </ItemGroup>
+</Project>

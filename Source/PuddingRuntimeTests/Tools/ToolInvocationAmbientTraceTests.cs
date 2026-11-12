@@ -31,6 +31,24 @@ public sealed class ToolInvocationAmbientTraceTests
     private const string ToolId = "ambient_capture_tool";
 
     [TestMethod]
+    public async Task ToolBoundary_PreservesHostOwnedBudgetAndCancellation_WithoutSerializingCapability()
+    {
+        using var resources = new PuddingExecutionResources.ExecutionResourceScope(new("workspace-1", "agent-1", "session-1", "run"),
+            new(MaxOutputTokens: 1), DateTimeOffset.UtcNow.AddMinutes(1));
+        var tool = new AmbientCapturingTool();
+        var request = new ToolInvocationRequest
+        {
+            WorkspaceId = "workspace-1", SessionId = "session-1", AgentInstanceId = "agent-1", ToolCallId = "resource-call",
+            ToolName = ToolId, ArgumentsJson = "{}", CapabilityPolicy = AllowPolicy(), ExecutionResources = resources,
+        };
+        Assert.IsFalse(System.Text.Json.JsonSerializer.Serialize(request).Contains("ExecutionResources", StringComparison.Ordinal));
+        Assert.IsTrue((await BuildInvocation(tool).InvokeAsync(request)).Success);
+        Assert.AreSame(resources, tool.ObservedResources);
+        Assert.AreEqual(1L, resources.Snapshot().OutputTokens);
+        resources.Dispose(); Assert.IsTrue(tool.ObservedResources!.Cancellation.IsCancellationRequested);
+    }
+
+    [TestMethod]
     public async Task ToolExecution_Publishes_InvocationTrace_WithAgentIdentity_ToAmbient()
     {
         var tool = new AmbientCapturingTool();
@@ -119,6 +137,7 @@ public sealed class ToolInvocationAmbientTraceTests
         };
 
         public RuntimeTraceContext? ObservedTrace { get; private set; }
+        public PuddingExecutionResources.Contracts.IExecutionResourceScope? ObservedResources { get; private set; }
 
         public async Task<ToolExecutionResult> ExecuteAsync(
             ToolExecutionRequest request,
@@ -127,6 +146,12 @@ public sealed class ToolInvocationAmbientTraceTests
             // 穿过一次 await：真实工具（如浏览器工具）会在更深层的异步调用里读取 Ambient。
             await Task.Yield();
             ObservedTrace = RuntimeTraceContextAccessor.Current;
+            ObservedResources = request.Context.ExecutionResources;
+            if (ObservedResources is not null)
+            {
+                using var reservation = ObservedResources.Reserve(new("fixture/model", "rev", "model", 10, 1, 1, new(1, 1, 1)), 1);
+                reservation.MarkDispatched(); reservation.Settle(new(2, 1));
+            }
             return ToolExecutionResult.Ok("captured");
         }
     }
