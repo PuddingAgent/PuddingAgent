@@ -38,6 +38,32 @@ public sealed class PluginRegisterDirectoryTests
         finally { Directory.Delete(root, true); }
     }
 
+    [TestMethod]
+    public async Task Remove_DropsOnlyTheExactRevision_AndReportsMissingRevision()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pudding-remove-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var store = new PluginPackageStore(Path.Combine(root, "packages"));
+            var source = Path.Combine(root, "src");
+            WritePackage(source, "sample.remove", "1.0.0", entry: "bin/sample.remove.dll", createEntry: true);
+            var package = await store.RegisterDirectoryAsync(source, default);
+            Assert.AreEqual(1, store.Scan().Packages.Count);
+
+            Assert.IsTrue(store.Remove(package.Manifest.Id, package.Manifest.Version, package.ContentHash));
+            Assert.AreEqual(0, store.Scan().Packages.Count);
+            Assert.IsFalse(Directory.Exists(package.Directory), "removed revision must be gone from disk");
+
+            // 幂等：已不存在的修订再次删除返回 false，而不是抛错
+            Assert.IsFalse(store.Remove(package.Manifest.Id, package.Manifest.Version, package.ContentHash));
+
+            // 非法哈希被拒，不当作路径拼接
+            Assert.ThrowsExactly<PluginException>(() => store.Remove(package.Manifest.Id, package.Manifest.Version, ".."));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private static void WritePackage(string directory, string id, string version, string entry, bool createEntry)
     {
         Directory.CreateDirectory(Path.Combine(directory, "bin"));

@@ -127,6 +127,32 @@ public sealed class PluginPackageStore(string root)
         }
     }
 
+    /// <summary>
+    /// Removes one exact revision from the repository. Content is immutable and versioned, so deletion never
+    /// touches other revisions. Callers must refuse while an activation still uses the hash.
+    /// </summary>
+    public bool Remove(string id, string version, string hash)
+    {
+        PluginValidation.Require(hash.Length == 64 && hash.All(Uri.IsHexDigit), "plugin.package_invalid", "Exact content hash is required.");
+        var directory = PluginValidation.Inside(Root, $"{id}/{version}/{hash}");
+        if (!Directory.Exists(directory)) return false;
+        PluginValidation.NoLinks(directory);
+        Directory.Delete(directory, true);
+        PruneEmptyParent(directory);
+        return true;
+    }
+
+    private void PruneEmptyParent(string directory)
+    {
+        var parent = Path.GetDirectoryName(directory);
+        while (!string.IsNullOrEmpty(parent) && parent.Length > Root.Length)
+        {
+            if (!Directory.Exists(parent) || Directory.EnumerateFileSystemEntries(parent).Any()) return;
+            Directory.Delete(parent);
+            parent = Path.GetDirectoryName(parent);
+        }
+    }
+
     public PluginPackage Get(string id, string version, string hash)
     {
         PluginValidation.Require(hash.Length == 64 && hash.All(Uri.IsHexDigit), "plugin.package_invalid", "Exact content hash is required.");
