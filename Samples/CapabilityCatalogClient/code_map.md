@@ -1,0 +1,8 @@
+# Samples/CapabilityCatalogClient
+
+| File | Purpose |
+|---|---|
+| `CapabilityCatalogClient.csproj` | net10.0 console sample (TFM inherited from the root build properties); only `ProjectReference` is `Pudding.Api.Sdk`; no packages. |
+| `CatalogDemo.cs` | Fixed public entry point `RunAsync(args, api, output, error, ct)`: only `list <kind> [cursor]` (2 or 3 tokens) with kind limited to the case-sensitive `tool`/`mcp`/`context`; an absent cursor stays `null` and `CapabilityQuery.MaxCount` stays at its default 50. Values are passed verbatim to exactly one `ICapabilityCatalogApi.ListAsync(new CapabilityQuery(kind, cursor))` call. Argument, unknown-command, wrong-count, invalid-kind and blank errors → fixed usage on stderr + exit 2 with zero API calls; success → one camelCase JSON line of the original `CapabilityCatalogPage` with every `capabilities` entry field (`capabilityId`/`kind`/`displayName`/`revision`/`generation`/`availability`/`missingReason`/`requiresApproval`/`requiredCapabilities`) and every page field (`cursor`/`complete`/`partial`/`generation`/`missingReason`) preserved verbatim, exit 0 even for partial or empty pages; a null page → `code=capability.source_unavailable` on stderr and exit 1; `CapabilityCatalogException` → only `code={Code}` on stderr, exit 1; caller cancellation → exit 130 with no further calls; every other exception propagates. Never pages automatically, invokes a tool, executes MCP, mutates the catalog or treats an entry as an executable authorization. |
+| `Program.cs` | Offline shell only: writes the fixed notice “这是可注入 ICapabilityCatalogApi 的离线示例；请由上层提供已授权的 API。” to stderr and returns 2. No credential reading, no online connection, no host wiring. |
+| `code_map.md` | This index. |

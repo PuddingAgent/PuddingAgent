@@ -31,14 +31,68 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingDesktop.ExitObserver/` | 独立观察 Shell 退出码并保存现场，不管理产品生命周期 | [code_map](Source/PuddingDesktop.ExitObserver/code_map.md) |
 | `Source/PuddingAgent/` | 入口 `Program.cs`：Console / DesktopChild 两种薄壳 | [code_map](Source/PuddingAgent/code_map.md) |
 | `Source/PuddingHost/` | Core 组合根：装配 HTTP 宿主、本机控制地址与各连接器 | [code_map](Source/PuddingHost/code_map.md) |
+| `Source/PuddingSlack/` · `Source/PuddingSlackTests/` | Slack Socket Mode、Web API、持久收件箱与不确定发送回执；BCL-only 叶子 | [组件](Source/PuddingSlack/code_map.md) · [独立测试](Source/PuddingSlackTests/code_map.md) |
+| `Source/PuddingDingTalk/` · `Source/PuddingDingTalkTests/` | 企业群来源校验、群会话图文消息、公开问答与本机反馈登记 | [组件](Source/PuddingDingTalk/code_map.md) · [Core 接入](Source/PuddingHost/Services/DingTalkConversationIngress.cs) · [独立测试](Source/PuddingDingTalkTests/code_map.md) |
 | `Source/PuddingRuntime/` | Agent Loop · LLM 网关调用 · 工具系统 · 上下文管线 · 子代理 · 后台学习 | [code_map](Source/PuddingRuntime/code_map.md) |
+| `Source/Pudding.Api.Contracts/` | 存储无关的 Agent 配置、单轮执行与确定性评分公共合同（BCL-only） | [code_map](Source/Pudding.Api.Contracts/code_map.md) |
+| `Source/Pudding.Api.Sdk/` · `Source/Pudding.Api.SdkTests/` | 配置/执行门面及 HTTP 适配、确定性评分的有类型门面与独立测试 | [SDK](Source/Pudding.Api.Sdk/code_map.md) · [测试](Source/Pudding.Api.SdkTests/code_map.md) |
+| `Source/PuddingAgentConfiguration.Contracts/` · `Source/PuddingAgentConfiguration/` | 授权/原子存储端口与配置更新领域组件 | [端口](Source/PuddingAgentConfiguration.Contracts/code_map.md) · [组件](Source/PuddingAgentConfiguration/code_map.md) |
+| `Source/PuddingAgentConfigurationTests/` · `Tests/PuddingAgentConfiguration.IntegrationTests/` | 配置组件独立测试及 manifest/HTTP 集成测试 | [独立测试](Source/PuddingAgentConfigurationTests/code_map.md) · [集成](Tests/PuddingAgentConfiguration.IntegrationTests/code_map.md) |
+| `Source/PuddingAgentWork.Contracts/` · `Source/PuddingAgentWork/` | 单轮执行授权、受理端口及调用方绑定服务；复用 canonical 执行链 | [端口](Source/PuddingAgentWork.Contracts/code_map.md) · [组件](Source/PuddingAgentWork/code_map.md) |
+| `Source/PuddingAgentWorkTests/` · `Tests/PuddingAgentWork.IntegrationTests/` | 单轮执行组件测试及 SQLite/HTTP 因果回执验收 | [独立测试](Source/PuddingAgentWorkTests/code_map.md) · [集成](Tests/PuddingAgentWork.IntegrationTests/code_map.md) |
+| `Source/PuddingOperatorAccess.Contracts/` · `Source/PuddingOperatorAccess/` | 算子后端端口、授权目录、输入校验、调用预算与撤销；无 Runtime/插件反向依赖 | [端口](Source/PuddingOperatorAccess.Contracts/code_map.md) · [组件](Source/PuddingOperatorAccess/code_map.md) |
+| `Source/PuddingOperatorAccessTests/` · `Tests/PuddingOperatorApi.IntegrationTests/` | 算子独立边界及真实 Worker 到原技能评分器的验收 | [独立测试](Source/PuddingOperatorAccessTests/code_map.md) · [集成](Tests/PuddingOperatorApi.IntegrationTests/code_map.md) |
+| `Source/PuddingExecutionResources.Contracts/` · `Source/PuddingExecutionResources/` | 父任务资源端口、分层预算预留/结算、取消与模型租约 | [端口](Source/PuddingExecutionResources.Contracts/code_map.md) · [资源组件](Source/PuddingExecutionResources/code_map.md) |
+| `Source/PuddingModelEvaluation/` | 受父预算约束的文本分类与逐项证据评审 | [code_map](Source/PuddingModelEvaluation/code_map.md) |
+| `Source/PuddingExecutionResourcesTests/` · `Source/PuddingModelEvaluationTests/` · `Tests/PuddingModelEvaluation.IntegrationTests/` | 独立资源与语义测试、Runtime 模型绑定、真实 Worker 与旧能力回归 | [资源测试](Source/PuddingExecutionResourcesTests/code_map.md) · [评审测试](Source/PuddingModelEvaluationTests/code_map.md) · [集成](Tests/PuddingModelEvaluation.IntegrationTests/code_map.md) |
+| `Source/PuddingEventing.Contracts/` · `Source/PuddingEventing/` | 插件可靠事件与任务端口、事务 outbox、至少一次投递、原子 checkpoint、死信与代际围栏；不含 Goal/Review 业务 | [端口](Source/PuddingEventing.Contracts/code_map.md) · [组件](Source/PuddingEventing/code_map.md) |
+| `Source/PuddingEventingTests/` | 事件/任务协议的独立测试（内存端口适配器、崩溃/竞争/取红） | [code_map](Source/PuddingEventingTests/code_map.md) |
+| `Source/PuddingAgents.Contracts/` · `Source/PuddingAgents/` | Agent 绑定后端端口、目录借用句柄、工作观察/幂等取消、委派与原子池租约；身份由宿主注入 | [端口](Source/PuddingAgents.Contracts/code_map.md) · [组件](Source/PuddingAgents/code_map.md) |
+| `Source/PuddingAgentsTests/` | Agent 目录/工作控制/委派租约的独立测试与取红证据 | [code_map](Source/PuddingAgentsTests/code_map.md) |
+| `Source/PuddingReviews.Contracts/` · `Source/PuddingReviews/` | 持久 Review Job 端口与领域：逻辑唯一键、冻结输入/证据校验、建议级结论与证据级别、owner/revision 围栏与完成 outbox；不写 Goal 终态 | [端口](Source/PuddingReviews.Contracts/code_map.md) · [组件](Source/PuddingReviews/code_map.md) |
+| `Source/PuddingReviewsTests/` | Review Job 幂等/围栏/证据/恢复的独立测试与取红证据 | [code_map](Source/PuddingReviewsTests/code_map.md) |
+| `Source/PuddingModels.Contracts/` · `Source/PuddingModels/` | 有效模型配置（layering/CAS）、能力目录端口、可信报价冻结与租约代际；未知价格不为零、降配不抢占活跃槽 | [端口](Source/PuddingModels.Contracts/code_map.md) · [组件](Source/PuddingModels/code_map.md) |
+| `Source/PuddingModelsTests/` | 配置层级/CAS、报价窗口/缓存计价、租约代际的独立测试与取红证据 | [code_map](Source/PuddingModelsTests/code_map.md) |
+| `Source/PuddingGoalPolicy.Contracts/` · `Source/PuddingGoalPolicy/` | Goal 续跑纯策略：模式、策略快照、权威事实与 Continue/Wait/Complete/Stop 建议；不复制状态机、不写终态 | [端口](Source/PuddingGoalPolicy.Contracts/code_map.md) · [策略](Source/PuddingGoalPolicy/code_map.md) |
+| `Source/PuddingGoalPolicyTests/` | 决策矩阵与最小闭环轨迹测试、变异取红证据 | [code_map](Source/PuddingGoalPolicyTests/code_map.md) |
+| `Source/PuddingCapabilityCatalog.Contracts/` · `Source/PuddingCapabilityCatalog/` | 只读能力目录：kind/界限校验、Revision/Generation/完整性与 partial/forbidden 语义；目录项不是执行授权 | [端口](Source/PuddingCapabilityCatalog.Contracts/code_map.md) · [组件](Source/PuddingCapabilityCatalog/code_map.md) |
+| `Source/PuddingCapabilityCatalogTests/` | 能力目录只读语义与取红证据 | [code_map](Source/PuddingCapabilityCatalogTests/code_map.md) |
+| `Source/PuddingAuthorization.Contracts/` · `Source/PuddingAuthorization/` | 授权判定与审批生命周期：系统 Deny 优先、插件只收紧、批准绑定参数 hash/策略版本、失败不 fail-open | [端口](Source/PuddingAuthorization.Contracts/code_map.md) · [组件](Source/PuddingAuthorization/code_map.md) |
+| `Source/PuddingAuthorizationTests/` | 授权/审批决策矩阵与取红证据 | [code_map](Source/PuddingAuthorizationTests/code_map.md) |
+| `Source/PuddingWorkspace.Contracts/` · `Source/PuddingWorkspace/` | 工作区只读/文件策略：受权列表、逻辑环境快照、路径规范化、越界/链接拒绝、CAS 原子写 | [端口](Source/PuddingWorkspace.Contracts/code_map.md) · [组件](Source/PuddingWorkspace/code_map.md) |
+| `Source/PuddingWorkspaceTests/` | 工作区路径/链接/CAS 与取红证据 | [code_map](Source/PuddingWorkspaceTests/code_map.md) |
+| `Source/PuddingContext.Contracts/` · `Source/PuddingContext/` | 上下文有序构建/裁剪：canonical 顺序与当前用户围栏不变，外部数据只能是 tool，预算/贡献上限/哈希失败均 typed | [端口](Source/PuddingContext.Contracts/code_map.md) · [组件](Source/PuddingContext/code_map.md) |
+| `Source/PuddingContextTests/` | 围栏/冒名/裁剪/预算与取红证据 | [code_map](Source/PuddingContextTests/code_map.md) |
+| `Source/PuddingMcp.Contracts/` · `Source/PuddingMcp/` | MCP 生命周期：启动超时/失败 typed、generation 围栏、超时/不确定为 Unknown 不重试、SSE 事件游标去重/缺口 | [端口](Source/PuddingMcp.Contracts/code_map.md) · [组件](Source/PuddingMcp/code_map.md) |
+| `Source/PuddingMcpTests/` | MCP 生命周期/游标/超时与取红证据 | [code_map](Source/PuddingMcpTests/code_map.md) |
+| `Source/PuddingTools.Contracts/` · `Source/PuddingTools/` | 工具门面：只做搜索/检查/状态、不可见工具不泄露、未知可用性原样、源失败 typed（无执行入口） | [端口](Source/PuddingTools.Contracts/code_map.md) · [组件](Source/PuddingTools/code_map.md) |
+| `Source/PuddingToolsTests/` | 工具搜索/可见性/状态与取红证据 | [code_map](Source/PuddingToolsTests/code_map.md) |
+| `Source/PuddingInvocationPipeline.Contracts/` · `Source/PuddingInvocationPipeline/` | 扩展点注册与管道：Observer/Advice/Transform/Guard 分类、grant/代际围栏、Transform 不可改工具身份/授权/退出码/预算/失败 | [端口](Source/PuddingInvocationPipeline.Contracts/code_map.md) · [组件](Source/PuddingInvocationPipeline/code_map.md) |
+| `Source/PuddingInvocationPipelineTests/` | 扩展注册/排序/grant/Transform 围栏与取红证据 | [code_map](Source/PuddingInvocationPipelineTests/code_map.md) |
+| `Samples/AgentWorkClient/` · `Tests/AgentWorkClient.Tests/` | 单轮执行 SDK 离线消费示例与假 API 测试；不读取凭据或连接宿主 | [示例](Samples/AgentWorkClient/code_map.md) · [测试](Tests/AgentWorkClient.Tests/code_map.md) |
+| `Samples/AgentDirectoryClient/` · `Tests/AgentDirectoryClient.Tests/` | 代理目录离线消费示例与假 API 测试；借用句柄只读，不创建/翻页/连宿主 | [示例](Samples/AgentDirectoryClient/code_map.md) · [测试](Tests/AgentDirectoryClient.Tests/code_map.md) |
+| `Samples/AgentModelPolicyClient/` · `Tests/AgentModelPolicyClient.Tests/` | 有效模型配置离线只读示例与假 API 测试；不实现 Update、不读配置、不发模型请求 | [示例](Samples/AgentModelPolicyClient/code_map.md) · [测试](Tests/AgentModelPolicyClient.Tests/code_map.md) |
+| `Samples/ExecutionBudgetClient/` · `Tests/ExecutionBudgetClient.Tests/` | 跨轮预算快照离线示例与假 API 测试；Unknown/null 上限原样保留，不计算可用余额 | [示例](Samples/ExecutionBudgetClient/code_map.md) · [测试](Tests/ExecutionBudgetClient.Tests/code_map.md) |
+| `Samples/GoalDecisionPresenter/` · `Tests/GoalDecisionPresenter.Tests/` | Goal 决策只读展示函数与 golden 逐字测试；不补写结论、不推导状态 | [示例](Samples/GoalDecisionPresenter/code_map.md) · [测试](Tests/GoalDecisionPresenter.Tests/code_map.md) |
+| `Samples/CapabilityCatalogClient/` · `Tests/CapabilityCatalogClient.Tests/` | 能力目录只读示例与假 API 测试；partial/Forbidden 原样，不执行工具/MCP | [示例](Samples/CapabilityCatalogClient/code_map.md) · [测试](Tests/CapabilityCatalogClient.Tests/code_map.md) |
+| `Samples/Plugins/ReviewAudit/` · `Tests/ReviewAuditPlugin.Tests/` | 只读审计插件示例：观察 review.completed 写一条幂等审计记录；不发消息/不执行工具 | [示例](Samples/Plugins/ReviewAudit/code_map.md) · [测试](Tests/ReviewAuditPlugin.Tests/code_map.md) |
+| `Samples/ModelEvaluationClient/` · `Tests/ModelEvaluationClient.Tests/` | 模型分类/证据评审离线消费示例与假 API 测试；只回显回执，不连宿主、不生成 CallId | [示例](Samples/ModelEvaluationClient/code_map.md) · [测试](Tests/ModelEvaluationClient.Tests/code_map.md) |
+| `Source/Pudding.ToolPlugins.Contracts/` | 无宿主依赖的插件合同与 Worker 端口 | [code_map](Source/Pudding.ToolPlugins.Contracts/code_map.md) |
+| `Source/Pudding.ToolPlugins.Sdk/` | 插件作者基类；只引用 Contracts | [code_map](Source/Pudding.ToolPlugins.Sdk/code_map.md) |
+| `Source/Pudding.ToolPlugins.AgentSdk/` · `Source/Pudding.ToolPlugins.AgentSdkTests/` | 插件到公共配置与确定性评分 SDK 的有类型适配；不接受调用方身份或任意目标 | [SDK](Source/Pudding.ToolPlugins.AgentSdk/code_map.md) · [测试](Source/Pudding.ToolPlugins.AgentSdkTests/code_map.md) |
+| `Source/PuddingAgentDelegation/` · `Source/PuddingAgentDelegationTests/` | 当前调用的配置授权租约、额度、到期与撤销排空；复用公共配置组件 | [组件](Source/PuddingAgentDelegation/code_map.md) · [测试](Source/PuddingAgentDelegationTests/code_map.md) |
+| `Source/Pudding.ToolPlugins.Protocol/` | 有界命名管道帧、版本与请求关联 | [code_map](Source/Pudding.ToolPlugins.Protocol/code_map.md) |
+| `Source/Pudding.ToolPlugins.Runtime/` | 不可变包、作用域实例、工具与建议 Hook、Core 服务 | [code_map](Source/Pudding.ToolPlugins.Runtime/code_map.md) |
+| `Source/Pudding.ToolPlugins.Windows/` | Windows Job 与同用户命名管道监督 | [code_map](Source/Pudding.ToolPlugins.Windows/code_map.md) |
+| `Source/Pudding.ToolPlugins.Worker/` | 唯一装载插件 DLL 的独立进程，附发布 SDK 与示例 | [code_map](Source/Pudding.ToolPlugins.Worker/code_map.md) |
+| `Source/Pudding.ToolPlugins.RuntimeTests/` | 包、权限、状态与租约独立测试 | [code_map](Source/Pudding.ToolPlugins.RuntimeTests/code_map.md) |
+| `Tests/PuddingToolPlugins.Fixture/` | 真实 DLL 故障注入夹具 | [code_map](Tests/PuddingToolPlugins.Fixture/code_map.md) |
+| `Tests/PuddingToolPlugins.IntegrationTests/` | Worker、子进程回收与隔离验收 | [code_map](Tests/PuddingToolPlugins.IntegrationTests/code_map.md) |
+| `Tests/PuddingPluginAgentApi.IntegrationTests/` | 真实 Worker → Runtime broker → 既有配置 writer；CAS、去重、作用域、卸载与重载 | [code_map](Tests/PuddingPluginAgentApi.IntegrationTests/code_map.md) |
+| `Tests/PuddingToolPlugins.HostTests/` | Buffered/Streaming 同任务动态工具与权限验收 | [code_map](Tests/PuddingToolPlugins.HostTests/code_map.md) |
 | `Source/PuddingCore/` | 跨层抽象与契约：接口与基础模型类型（含 Goal 与编排） | [code_map](Source/PuddingCore/code_map.md) |
 | 渠道开发权限 | 工具归属工作区与 Agent；渠道绑定识别发送者，Core 执行时核对操作权限 | [策略服务](Source/PuddingPlatform/Services/ChannelDevelopmentTrust.cs) · [渠道设置](Source/PuddingPlatformAdmin/src/pages/workspace/ChannelTrustSettings.tsx) |
 | `Source/PuddingPlatform/` | Session · Web 与外部 API · EF Core + SQLite · 消息网关 | [code_map](Source/PuddingPlatform/code_map.md) |
-| `Source/PuddingReviews.Contracts/` · `Source/PuddingReviews/` | 持久评审任务的端口、证据校验和执行协调 | [契约](Source/PuddingReviews.Contracts/code_map.md) · [实现](Source/PuddingReviews/code_map.md) |
-| `Source/PuddingReviewsTests/` | 独立验证评审任务、证据与恢复 | [code_map](Source/PuddingReviewsTests/code_map.md) |
-| `Source/PuddingSlack/` · `Source/PuddingSlackTests/` | Slack Socket Mode 协议、成员查询、投递回执与离线测试 | [实现](Source/PuddingSlack/code_map.md) · [测试](Source/PuddingSlackTests/code_map.md) |
-| `Source/PuddingDingTalk/` · `Source/PuddingDingTalkTests/` | 企业群来源校验、公开问答边界与本机反馈登记 | [组件](Source/PuddingDingTalk/code_map.md) · [独立测试](Source/PuddingDingTalkTests/code_map.md) |
 | `Source/PuddingMemoryEngine/` | Library/Book/Chapter 记忆库 · FTS5 · 潜意识检索 | [code_map](Source/PuddingMemoryEngine/code_map.md) |
 | `Source/PuddingMemoryEngineBenchmarks/` | 记忆库与记忆召回的 BenchmarkDotNet 基准工程（不参与运行时装配） | — |
 | `Source/PuddingGateway/` | LLM 服务商网关适配：openai / responses / anthropic 三协议 | [code_map](Source/PuddingGateway/code_map.md) |
@@ -129,7 +183,14 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | 概念 | 权威位置 | 要点 / 不变量 |
 |------|----------|----------------|
 | **Turn 执行与上下文** | `Source/PuddingRuntime/Services/` | 一次请求 = 一个 canonical Turn；`ContextPipeline`/`ContextWindowManager`/`ContextCompactionService` 分层组装+绝对窗口压缩；`AgentExecutionService` 用 `[CURRENT USER TURN input_sha256=…]` 围栏输入，缺失即拒绝；实例提示词经 `AgentPromptSnapshot` 按 manifest 读取，正文指纹驱动下一轮刷新 |
+| **Agent 配置公共 API** | SDK → 配置组件 → `WorkspaceAgentFileService.Configuration.cs` | 名称/描述窄补丁、版本冲突、按调用者去重、同文件原子回执与事件；不暴露 JSON/数据库；管理端 JWT 授权，插件委托授权尚未开放 |
+| **Agent 单轮执行公共 API** | `AgentWork` SDK → `AgentWorkService` → `CanonicalAgentWorkBackend` → 既有受理与 Journal | 稳定操作 ID；原子输入/回执/排队；精确 Turn/Command/Run 终态证据；Completed 不等于目标验收；[契约与接入](Docs/12_features/Agent单轮执行API-P2-契约与接入说明-2026-11-05.md) |
+| **插件 Agent 配置能力** | `Context.AgentConfiguration()` → 调用租约 → 既有配置组件与 Store | Core API 1.1；按当前执行 Agent/session 授权；写入需工具 effect；工作提交尚未开放；[设计与算子开放计划](Docs/12_features/插件Agent配置租约与算子开放设计-2026-11-05.md) |
+| **判定算子公共基础** | `Source/PuddingCore/Operators/` · `Source/PuddingRuntime/Operators/` | 既有评分、判断、分类投影及场景注册表；消费能力与注册/替换权限分离；[开放计划](Docs/12_features/插件Agent配置租约与算子开放设计-2026-11-05.md) |
+| **模型分类与证据验收** | `Context.ModelEvaluations()` → `ModelEvaluationApiFactory` → `PuddingModelEvaluation` → `IModelResourcePool` | Core API 1.3；宿主父身份/预算、单次模型派发、未知用量不返还、取消后排空；结果为建议，不直接完成 Goal；[合同](Docs/12_features/父任务预算与模型算子API-契约与接入-2026-11-05.md) |
+| **插件与上层确定性评分** | `Context.Operators()` → 独立调用租约 → `SkillValueAccessAdapter` → 原评分器 | Core API 1.2；保留量纲、原因与证据；数据不足不变成零分；[合同](Docs/12_features/确定性算子公共API-契约与接入-2026-11-05.md) |
 | **飞书主动收件人** | `Source/PuddingCore/Platform/FeishuRecipientContracts.cs` | `list_feishu_recipients` 查询绑定渠道白名单；`send_message` 按 Open ID 发送，无历史消息依赖；单人默认，多人显式选择 |
+| **Slack 渠道** | `Source/PuddingSlack/` → `Source/PuddingHost/Connectors/SlackConnector.cs` → Message Gateway → Web 渠道会话 | 持久化后 ACK；DM / @提及；`slack_lookup_member` 绑定当前路由查成员 ID；显式提及与 bot 防循环；线程隔离和过程可见；Unknown 不盲目重试；[接入](Docs/01_message_channels/Slack接入.md) |
 | **Message Fabric / send_message** | `Source/PuddingPlatform/Services/` | `MessageDeliveryPolicy` + `MessageDeliveryDispatcher`：inform/report_result 只通知，仅 ask/request_review/delegate 执行；`agent_reply` 永远被动 |
 | **Task 自动派发 / Goal / WorkUnit** | `Source/PuddingPlatform/Services/Scheduling/` | availability → backlog 精炼 → Plan/WorkUnit 编译 → 五态跟踪；promotion/start/repair 只有一个 CAS 写入者 |
 | **工具系统与审批** | `Source/PuddingRuntime/Tools/` + [自动审批设计](Docs/18_superpowers/specs/2026-06-03-auto-tool-approval-design.md) | 复杂任务前三次内进入 `smart_*` 或 `spawn_sub_agent`；只读/构建秒放、危险秒拒、未知形态交 LLM 审批；工具 schema 投递受 `toolExposure` 预算约束（默认 48 个/40 KiB，turn 边界按最近使用淘汰非核心，`search_tools` 可重载） |
@@ -145,6 +206,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | **记忆与存储治理** | `Source/PuddingMemoryEngine/`、`Source/PuddingHost/Storage/` + [ADR-076](Docs/07_architecture/91ADR-076遥测与调试数据保留及Core存储管理ADR.md) | Library/Book/Chapter 是 Agent 主动维护的当前结论与索引；`StorageMaintenanceCoordinator` 是唯一在线维护 writer，保留策略读 `system.json` 且 CAS + fail-closed |
 | **产品工具内核与按会话挂载** | [产品工具清单](Source/PuddingHost/ToolPackages/) · [插件运行手册](Docs/04_tools_and_skills/运行时工具插件.md) | 宿主按工作区、Agent、会话激活工具，按实际 Agent 策略发现，并在调用时执行授权。Agent 自建 DLL 从该轮执行工作目录导入 |
 | **插件 / Hook / 事件 / 投影** | `Source/PuddingCore/` + [参考架构](Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md) | Plugin/Function/Hook/Event/Projection 五类合同；outbox → DomainEventLog → per-consumer checkpoint/retry/dead-letter |
+| **Agent 自建工具插件** | `plugin_import/load/unload` → `ExecutablePluginService` → `PluginManager` → Windows Worker | 会话/实际 Agent 作用域；代号工具名；下轮模型清单刷新；建议 Hook 保留执行事实；[使用与编写](Docs/04_tools_and_skills/运行时工具插件.md) |
 | **Chat 前端投影与虚拟化** | `Source/PuddingPlatformAdmin/`（`src/pages/chat/`） | 服务端出 canonical 事件；`TurnSurfaceStore` → `ExecutionFlowProjectionIndex` → `MessageViewportRuntime` → `TurnContentStream`；快照消息顺序按共享身份锚点合并，实时归属优先 window.turnId，同回合仅最新助手消息接收完整投影；用户行空占位不代表助手完成，终态按 messageId 保留回复再切换活动 Turn |
 | **认证与外部 API** | `Source/PuddingPlatform/Security/` | 看板 Access Token（`pdt_v1_` opaque、摘要存储）、External API v1（ETag/幂等/`202 + Location`）、Loopback ControlToken 双通道鉴权 |
 | **外部 Agent 消息客户端** | [.pudding/skills/puddingagent-message/SKILL.md](.pudding/skills/puddingagent-message/SKILL.md) | Codex / 外部客户端向 PuddingAgent Agent 投递；凭据在仓库外，幂等请求与回执落盘，区分接单、会话 ACK 和终态回复 |
@@ -179,6 +241,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | `Desktop → Core` | `PuddingDesktop/Hosting` → `PuddingHost/Hosting` | Shell 以子进程点火 Core：`STARTING`（每 5s 带协议/PID/序号）→ 全部 hosted service 就绪后 `READY` |
 | `bootstrap_reboot → Guardian → Desktop → Core` | `PuddingRuntime/Tools/BuiltIns/Management/BootstrapRebootTool.cs` → `PuddingDesktop.Guardian` → `PuddingDesktop/Hosting/DesktopApplicationCoordinator.Guardian.cs` | 独立进程先构建候选，认证 HTTP 控制停止/启动，UI 响应与 readiness 稳定验收；快照排除 Core 安装根下运行数据，失败恢复旧包，不回滚用户数据 |
 | `Core 组合根` | `Source/PuddingHost/` | HTTP 宿主、本机控制地址、Browser Bridge、飞书连接器的装配起点 |
+| `SDK / JWT 管理入口 → 单轮执行` | `IAgentWorkApi` → `AgentWorkService` → `CanonicalAgentWorkBackend` → `ISubmitTurnHandler` | 复用原子受理与 worker；以操作 ID 查回确切 Turn/Command 的终态，不创建另一套 Work 状态 |
 | `入口薄壳` | `Source/PuddingAgent/Program.cs` | Console 与 DesktopChild 两种模式分派；Console 只用于开发/诊断 |
 | `WebUI → Runtime` | `TurnExecutorAdapter` → `AgentExecutionAdmissionCoordinator` | 前台 Turn 准入并抢占同 agent 后台执行，旧执行立即 defer 回队列 |
 | `Runtime` | `ContextPipeline` → `AgentExecutionService` | 组装 stable system prefix + volatile User tail，再用 `[CURRENT USER TURN input_sha256=…]` 围栏本轮输入（缺失 fail-closed） |
@@ -253,7 +316,10 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | [`组件化交付规程`](Docs/10_conventions/组件化交付规程.md) · [`调试入口`](Docs/08_how_debuge/README.md) · [`架构`](Docs/07_architecture/架构.md) · [`ADR 全表`](Docs/07_architecture/README.md) | 组件化交付 S1–S5 门禁（强制）· 调试与日志诊断 · 架构总览与模块分册 |
 | [可诊断基础设施设计](Docs/12_features/可诊断基础设施设计-2026-10-07.md) | 诊断事实/类型化因果/事故查询面/故障场景资产：叶子组件边界、S1–S5 施工与门禁、查询与脱敏的强制项 |
 | [会话首屏与渐进加载方案](Docs/12_features/会话首屏与渐进加载架构优化方案-2026-10-18.md) | 提案：有界读模型、统一打开、历史与过程分页、快照游标、增量同步与回填治理 |
-| [工具插件化架构与实施方案](Docs/12_features/工具插件化架构与实施方案-2026-10-09.md) | 提案：不可变插件包、独立 SDK 与 Core 能力接口、Worker 故障隔离、启动元数据扫描、Agent 挂载租约与卸载、诊断闭环、Web 管理及 P0–P6 组件交付门禁 |
+| [工具插件化架构与实施方案](Docs/12_features/工具插件化架构与实施方案-2026-10-09.md) | 通用插件系统的工具贡献切片：不可变包、独立 SDK、Worker、Agent 挂载与卸载、诊断及 Web 管理；软件功能/策略/事件等贡献由公共 API 规划统一定义 |
+| [核心组件与插件公共 API](Docs/12_features/核心组件与插件公共API规划-2026-11-04.md) | 基础设施与通用软件功能插件：工具、功能、策略/provider、事件/Job、渠道与受控界面贡献；组件声明扩展点、插件经公共服务组合行为；[两阶段目标](Docs/12_features/基础设施服务生命周期与最小原型两阶段目标-2026-11-07.md)定义服务/实例合同、生命周期、事件/订阅/Hook，先独立交付再组合最小原型；[任务书 1～8](Docs/12_features/Agent组件化任务书-总则与依赖-2026-11-05.md)规定基础设施/插件先于 Goal 的接入门禁；[S5 架构裁定](Docs/12_features/Agent组件化S5架构裁定与接线门禁-2026-11-06.md)约束事件、预算与身份；[基础设施评估](Docs/14_reports/2026-11-06-基础设施组件化评估与接入缺口.md)与[收敛计划](Docs/12_features/基础设施组件化收敛实施计划-2026-11-06.md)区分独立组件、真实适配和生命周期；[DS-I1-04](Docs/12_features/DS-I1-04-预算账户绑定与幂等创建任务书-2026-11-07.md)限定账户绑定施工范围；[A 阶段组件清单与合同卡](Docs/12_features/基础设施组件清单与合同卡-A阶段-2026-11-07.md)登记 11 个基础域的真实类型/四档等级/缺口、11 项现有领域边界与 A1–A6 门禁对照；[A 阶段第二批施工单](Docs/12_features/A阶段第二批施工任务书-2026-11-07.md)规定账户冲突、编译边界及 Work 到模型发送的施工范围 |
+| [CORE-I1-05 决策记录](Docs/12_features/CORE-I1-05-单轮Work预算身份贯穿-决策记录-2026-11-07.md) · [任务书](Docs/12_features/CORE-I1-05-单轮Work预算身份贯穿任务书-2026-11-07.md) · [第二批任务书](Docs/12_features/A阶段第二批施工任务书-2026-11-07.md) · [CORE-I1-06 决策记录](Docs/12_features/CORE-I1-06-单次模型发送与租约结算-决策记录-2026-11-08.md) | 单轮 Work 预算身份：命令/受理行/受理标记与 frozen canonical 后端交叉校验，限额与模型报价来源冻结，Coordinator→buffered/streaming 载体与 fail-closed；受管策略默认关闭，激活待 I1-06 门禁 |
+| [P0/P1 DeepSeek 施工任务书](Docs/12_features/Agent配置API-P0P1-DeepSeek施工任务书-2026-11-05.md) | 配置 API 冻结核心与三项独立施工单：只读 SDK 示例、分页扩展、wire 边界测试；文件白名单、固定签名与停止条件 |
 | [ADR-098](Docs/07_architecture/112ADR-098Core事件驱动与严格分层基础设施ADR.md) · [事件施工](Docs/12_features/Core事件驱动基础设施施工与代码设计-2026-10-18.md) · [Core 审阅](Docs/14_reports/2026-10-18-Core严格分层与Hook架构审阅.md) | 提案：内部事件持久受理、订阅路由、独立投递、工作交接与 Hook 分层；E0–E8 施工 |
 | [全生命周期注册点目录](Docs/12_features/Agent全生命周期Hook事件与动作注册点目录-2026-10-09.md) · [管道架构](Docs/12_features/Agent生命周期与Hook管道架构设计-2026-10-09.md) · [代码设计](Docs/12_features/Agent生命周期与Hook管道代码设计-2026-10-09.md) · [现状审计](Docs/14_reports/2026-10-09-Agent生命周期与Hook边界审计.md) | 提案：动作/Hook 注册点与管道、生命周期收口（见下「关键语义」） |
 | [浏览器自动化可靠性与渐进阅读设计](Docs/12_features/浏览器自动化可靠性与渐进阅读设计方案-2026-10-08.md) | 浏览器控制权与页面授权、动作回执、稳定 ref、渐进 DOM/markdown 阅读、截图视觉和受约束委派的目标设计与交付门禁（提案） |
