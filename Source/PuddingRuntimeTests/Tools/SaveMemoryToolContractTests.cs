@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Runtime;
 using PuddingCode.Tools;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.Tools;
@@ -204,10 +205,48 @@ public sealed class SaveMemoryToolContractTests
         IImportantMemoryService? importantMemory = null)
         => new(library, null!, NullLogger<SaveMemoryTool>.Instance, importantMemory);
 
+    /// <summary>
+    /// Turn 级溯源：召回评测靠 Chapters.SourceTurnId 才能把记忆绑回催生它的用户消息。
+    /// 这里只验证“工具确实把 ExecutionIdentity.TurnId 递进了写入包”，落库契约在 MemoryEngine 侧测。
+    /// </summary>
+    [TestMethod]
+    public async Task Upsert_CarriesTurnIdFromExecutionIdentity()
+    {
+        var library = new RecordingMemoryLibraryConvenience();
+        var tool = CreateTool(library);
+
+        _ = await ExecuteAsync(tool, new Dictionary<string, object?>
+        {
+            ["action"] = "upsert",
+            ["type"] = "fact",
+            ["content"] = "hello",
+        }, turnId: "turn-42");
+
+        Assert.AreEqual("turn-42", library.LastPackage?.SourceTurnId,
+            "写入包必须带上当前 Turn，否则章节永远无法回溯到用户消息");
+    }
+
+    [TestMethod]
+    public async Task Upsert_WithoutExecutionIdentity_LeavesTurnIdEmpty()
+    {
+        var library = new RecordingMemoryLibraryConvenience();
+        var tool = CreateTool(library);
+
+        _ = await ExecuteAsync(tool, new Dictionary<string, object?>
+        {
+            ["action"] = "upsert",
+            ["type"] = "fact",
+            ["content"] = "hello",
+        });
+
+        Assert.IsNull(library.LastPackage?.SourceTurnId, "没有执行身份时不得编造 TurnId");
+    }
+
     private static async Task<ToolExecutionResult> ExecuteAsync<TArgs>(
         PuddingToolBase<TArgs> tool,
         IReadOnlyDictionary<string, object?> parameters,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? turnId = null)
         where TArgs : class
     {
         return await tool.ExecuteAsync(new ToolExecutionRequest
@@ -219,6 +258,14 @@ public sealed class SaveMemoryToolContractTests
                 AgentInstanceId = "agent",
                 WorkspaceId = "workspace",
                 SessionId = "session",
+                ExecutionIdentity = turnId is null ? null : new RuntimeExecutionIdentity
+                {
+                    Kind = RuntimeExecutionKind.ConversationTurn,
+                    ConversationId = "conversation",
+                    TurnId = turnId,
+                    RunId = "run",
+                    TraceId = null,
+                },
             },
         }, ct);
     }

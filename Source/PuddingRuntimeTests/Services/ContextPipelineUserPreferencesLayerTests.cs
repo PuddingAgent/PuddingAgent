@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using PuddingCode.Abstractions;
@@ -236,6 +236,7 @@ public sealed class ContextPipelineUserPreferencesLayerTests
         public Task<PreferenceWriteResult> SavePreferenceAsync(
             string workspaceId, string key, string value,
             string? sourceSessionId = null, string? agentInstanceId = null,
+            string? sourceTurnId = null,
             CancellationToken ct = default)
             => Task.FromResult(new PreferenceWriteResult(key, value, "book-1", "chapter-1", false));
 
@@ -253,6 +254,7 @@ public sealed class ContextPipelineUserPreferencesLayerTests
         public Task<PreferenceWriteResult> SavePreferenceAsync(
             string workspaceId, string key, string value,
             string? sourceSessionId = null, string? agentInstanceId = null,
+            string? sourceTurnId = null,
             CancellationToken ct = default)
             => throw new InvalidOperationException("simulated prefetch failure");
 

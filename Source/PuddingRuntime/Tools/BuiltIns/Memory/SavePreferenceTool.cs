@@ -1,4 +1,4 @@
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // save_preference — 用户偏好存储工具（Sync）
 // ═══════════════════════════════════════════════════════════════
 
@@ -86,6 +86,7 @@ public sealed class SavePreferenceTool : PuddingToolBase<SavePreferenceArgs>
                 value,
                 sourceSessionId: context.SessionId,
                 agentInstanceId: context.AgentInstanceId,
+                sourceTurnId: context.ExecutionIdentity?.TurnId,
                 ct);
 
             _logger.LogInformation(

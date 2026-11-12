@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 
@@ -46,6 +46,7 @@ public interface IUserPreferenceService
         string value,
         string? sourceSessionId = null,
         string? agentInstanceId = null,
+        string? sourceTurnId = null,
         CancellationToken ct = default);
 
     /// <summary>删除一条用户偏好（按 key 精确匹配）。返回是否删除成功。</summary>
@@ -129,6 +130,7 @@ public sealed class UserPreferenceService : IUserPreferenceService
         string value,
         string? sourceSessionId = null,
         string? agentInstanceId = null,
+        string? sourceTurnId = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(workspaceId))
@@ -164,7 +166,8 @@ public sealed class UserPreferenceService : IUserPreferenceService
             order,
             sourceSessionId,
             agentInstanceId,
-            ct);
+            ct,
+            sourceTurnId);
         await _memoryLibrary.UpdateChapterImportanceAsync(chapter.ChapterId, 0.9, ct);
 
         _logger.LogInformation(
