@@ -126,7 +126,8 @@ public sealed class MemoryLibraryConvenience : IMemoryLibraryConvenience
         var chapter = await _library.AddChapterAsync(
             book.BookId, experience.Title, experience.Content,
             chapterOrder, experience.SourceSessionId,
-            experience.AgentInstanceId, ct);
+            experience.AgentInstanceId, ct,
+            sourceTurnId: experience.SourceTurnId);
 
         // 3. 如果 Importance 非默认值则更新
         if (Math.Abs(experience.Importance - 0.5) > 0.001)

@@ -135,6 +135,13 @@ public class ChapterEntity
     [MaxLength(64)]
     public string? SourceSessionId { get; set; }
 
+    /// <summary>
+    /// 来源 Turn：一个 Turn 恰好对应用户的一条消息，故比 MessageId 更适合与 ChatMessages.turn_id
+    /// 精确配对（记忆召回离线评测需要 cue→章节 的确定因果，而不是时间邻接猜测）。
+    /// </summary>
+    [MaxLength(64)]
+    public string? SourceTurnId { get; set; }
+
     public int WordCount { get; set; }
 
     /// <summary>嵌入向量（float32 字节数组，dim=1536，Base64 存储）。</summary>

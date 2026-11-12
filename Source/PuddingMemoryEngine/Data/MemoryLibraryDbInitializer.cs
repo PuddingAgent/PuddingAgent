@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS Chapters (
     SupersededByChapterId TEXT,
     SupersededAt    INTEGER,
     SourceSessionId TEXT,
+    SourceTurnId    TEXT,
     WordCount       INTEGER NOT NULL DEFAULT 0,
     AgentInstanceId TEXT,
     TitleTokens     TEXT NOT NULL DEFAULT '',
@@ -91,6 +92,10 @@ CREATE TABLE IF NOT EXISTS Chapters (
         // ADR-042: Agent 记忆隔离。共享数据库初始化必须先检查元数据，
         // 不能把预期的 duplicate-column 异常当作正常控制流。
         await EnsureColumnAsync(conn, "Chapters", "AgentInstanceId", "TEXT", logger);
+
+        // 记忆召回评测要把（用户 cue → 章节）配成确定因果对，就必须知道章节来自哪个 Turn；
+        // 存量库升级时幂等补列，旧行 SourceTurnId 为 NULL。
+        await EnsureColumnAsync(conn, "Chapters", "SourceTurnId", "TEXT", logger);
 
         // ── WP-L2a: 会话块向量表（供会话级语义检索，幂等）
         await ExecuteAsync(conn, """

@@ -194,27 +194,29 @@ public sealed class MemoryLibrary : IMemoryLibrary
         string bookId, string title, string content,
         int chapterOrder = 0, string? sourceSessionId = null,
         string? agentInstanceId = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? sourceTurnId = null)
     {
         return await AddChapterInternalAsync(bookId, title, content, chapterOrder,
-            sourceSessionId, null, null, agentInstanceId, ct);
+            sourceSessionId, null, null, agentInstanceId, sourceTurnId, ct);
     }
 
     public async Task<ChapterRecord> AddChapterWithSourceAsync(
         string bookId, string title, string content,
         int chapterOrder = 0, string? sourceSessionId = null,
         string? sourceReference = null, string? referenceType = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? sourceTurnId = null)
     {
         return await AddChapterInternalAsync(bookId, title, content, chapterOrder,
-            sourceSessionId, sourceReference, referenceType, null, ct);
+            sourceSessionId, sourceReference, referenceType, null, sourceTurnId, ct);
     }
 
     private async Task<ChapterRecord> AddChapterInternalAsync(
         string bookId, string title, string content,
         int chapterOrder, string? sourceSessionId,
         string? sourceReference, string? referenceType,
-        string? agentInstanceId,
+        string? agentInstanceId, string? sourceTurnId,
         CancellationToken ct)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
@@ -231,6 +233,7 @@ public sealed class MemoryLibrary : IMemoryLibrary
             ContentType = "markdown",
             Importance = 0.5,
             SourceSessionId = sourceSessionId,
+            SourceTurnId = sourceTurnId,
             SourceReference = sourceReference,
             ReferenceType = referenceType ?? "none",
             AgentInstanceId = agentInstanceId,
@@ -1525,7 +1528,8 @@ public sealed class MemoryLibrary : IMemoryLibrary
         e.ChapterId, e.BookId, e.Title, e.ChapterOrder, e.Content, e.ContentType,
         e.Importance, e.SourceSessionId, e.WordCount, e.CreatedAt, e.UpdatedAt,
         e.SourceReference, e.ReferenceType, e.AgentInstanceId,
-        e.Scene, e.Constraints, e.Tags, e.Status, e.SupersededByChapterId, e.SupersededAt);
+        e.Scene, e.Constraints, e.Tags, e.Status, e.SupersededByChapterId, e.SupersededAt,
+        e.SourceTurnId);
 
     private static ChapterRelationRecord ToRecord(ChapterRelationEntity e) => new(
         e.RelationId, e.SourceChapterId, e.TargetChapterId,
