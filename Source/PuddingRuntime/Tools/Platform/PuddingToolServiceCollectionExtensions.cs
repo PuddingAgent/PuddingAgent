@@ -58,6 +58,7 @@ public static class PuddingToolServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<PuddingRuntime.Services.AgentLoop.IAgentLoopHook, ExecutablePluginHook>());
         services.AddPuddingTool<PluginCatalogTool>();
         services.AddPuddingTool<PluginSearchTool>();
+        services.AddPuddingTool<PluginUninstallTool>();
         services.AddPuddingTool<PluginImportTool>();
         services.AddPuddingTool<PluginLoadTool>();
         services.AddPuddingTool<PluginUnloadTool>();

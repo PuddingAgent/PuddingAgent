@@ -20,7 +20,7 @@ public sealed class HostToolContributions : IContextualPuddingToolSource, IAsync
     private readonly IToolPermissionPolicyService _permissions;
     private static readonly HashSet<Type> Kernel = [typeof(SearchToolsTool), typeof(RequestToolApprovalTool),
         typeof(ListToolApprovalsTool), typeof(PluginCatalogTool), typeof(PluginSearchTool), typeof(PluginDiagnosticsTool),
-        typeof(PluginImportTool), typeof(PluginLoadTool), typeof(PluginUnloadTool)];
+        typeof(PluginImportTool), typeof(PluginLoadTool), typeof(PluginUnloadTool), typeof(PluginUninstallTool)];
 
     private HostToolContributions(IServiceProvider services)
         : this(services, HostToolPackage.ReadInstalled(

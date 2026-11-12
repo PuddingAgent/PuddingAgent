@@ -80,6 +80,33 @@ public sealed class PluginSearchTool(ExecutablePluginService plugins, HostToolCo
             || Capabilities.Any(value => value.Contains(query, StringComparison.OrdinalIgnoreCase));
     }
 }
+[Tool("plugin_uninstall", "plugin_uninstall", "Remove one exact revision from the repository by contentHash. Refuses while any activation still uses that revision; unload first. Does not touch other versions.", ToolCategory.Security, ToolPermissionLevel.High, ToolSafetyFlags.RequiresFileWrite)]
+public sealed class PluginUninstallTool(ExecutablePluginService plugins) : PuddingToolBase<PluginUninstallArgs, object>
+{
+    protected override Task<object> ExecuteCoreAsync(PluginUninstallArgs args, ToolExecutionContext context, CancellationToken ct)
+    {
+        var blocked = PluginRevisionGuard.ActiveUse(plugins.Manager.List(), args.ContentHash);
+        if (blocked is not null)
+            return Task.FromResult<object>(new { removed = false, status = "plugin.active", error = blocked });
+        var removed = plugins.Packages.Remove(args.Id, args.Version, args.ContentHash);
+        return Task.FromResult<object>(new
+        {
+            removed,
+            status = removed ? "plugin.removed" : "plugin.not_found",
+            error = removed ? null : "No repository revision matches id/version/contentHash.",
+        });
+    }
+}
+
+/// <summary>Deleting content out from under a running worker would be unrecoverable, so it is refused.</summary>
+internal static class PluginRevisionGuard
+{
+    public static string? ActiveUse(IEnumerable<PluginActivation> activations, string contentHash) =>
+        activations.FirstOrDefault(a => a.ContentHash == contentHash
+            && !string.Equals(a.State, "Unloaded", StringComparison.Ordinal)) is { } hit
+            ? $"Revision {contentHash[..Math.Min(8, contentHash.Length)]} is still {hit.State} in activation {hit.ActivationId}; unload it first."
+            : null;
+}
 [Tool("plugin_import", "plugin_import", "Validate and register a v2 plugin from a ZIP file or a directory (copied, never moved). Does not execute code or replace an active version. Returns immutable contentHash for plugin_load.", ToolCategory.FileSystem, ToolPermissionLevel.High, ToolSafetyFlags.RequiresFileWrite)]
 public sealed class PluginImportTool(ExecutablePluginService plugins) : PuddingToolBase<PluginImportArgs, PluginPackage>
 {
@@ -130,6 +157,13 @@ public sealed class PluginDiagnosticsTool(ExecutablePluginService plugins, HostT
             hostTools = host?.Catalog(context), failures = plugins.Manager.Diagnostics(ExecutablePluginService.Scope(context)) });
 }
 public sealed record PluginEmptyArgs;
+public sealed record PluginUninstallArgs
+{
+    public required string Id { get; init; }
+    public required string Version { get; init; }
+    [ToolParam("Exact contentHash from plugin_search or the import receipt.")]
+    public required string ContentHash { get; init; }
+}
 public sealed record PluginSearchArgs
 {
     [ToolParam("Case-insensitive substring over id, version, name, description and declared capabilities. Omit to list everything.")]

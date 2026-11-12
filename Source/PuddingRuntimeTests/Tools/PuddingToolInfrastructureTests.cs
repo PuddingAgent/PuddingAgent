@@ -1023,7 +1023,7 @@ public sealed partial class PuddingToolInfrastructureTests
 
         CollectionAssert.AreEquivalent(
             new[] { "classifier_status", "computer_input", "legacy_echo", "list_tool_approvals", "request_tool_approval", "sample_search",
-                "plugin_catalog", "plugin_search", "plugin_import", "plugin_load", "plugin_unload", "plugin_diagnostics" },
+                "plugin_catalog", "plugin_search", "plugin_import", "plugin_load", "plugin_unload", "plugin_uninstall", "plugin_diagnostics" },
             descriptors.Select(d => d.ToolId).ToArray());
     }
 
