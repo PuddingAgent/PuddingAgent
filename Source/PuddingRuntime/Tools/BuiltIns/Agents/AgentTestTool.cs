@@ -70,12 +70,22 @@ public sealed class AgentTestTool : PuddingToolBase<AgentTestArgs>
         // 延迟解析 IPuddingToolRegistry，避免循环依赖
         var toolRegistry = _serviceProvider.GetRequiredService<IPuddingToolRegistry>();
 
-        // 1. 检查工具是否注册
+        // 1. 检查工具是否可用。
+        //    内置注册表只含 BuiltIn 工具；host-service 包（pudding.files / pudding.browser / …）
+        //    声明的工具不在其中。只查注册表会给出**假阴性**：实测 file_read、browser_navigate、
+        //    sleep 在返回 registered=false 的同一时刻完全可调用。因此未命中时继续查统一 Tool 目录。
         var tool = toolRegistry.GetTool(toolId, context.WorkspaceId);
-        var descriptor = toolRegistry.GetDescriptor(toolId, context.WorkspaceId);
+        var resolution = ResolveDescriptor(
+            toolRegistry.GetDescriptor(toolId, context.WorkspaceId),
+            _serviceProvider.GetService<IPuddingToolCatalogService>(),
+            context.WorkspaceId ?? "default",
+            toolId);
+        var descriptor = resolution.Descriptor;
+        var resolvedBy = resolution.ResolvedBy;
+        var suggestions = resolution.Suggestions;
 
-        var registered = tool is not null;
-        var isAvailable = registered; // 基础可用性
+        var registered = tool is not null || descriptor is not null;
+        var isAvailable = registered; // 基础可用性（host-service 首次使用时挂载）
 
         // 2. 获取工具元数据
         string? labeledPermission = null;
@@ -108,7 +118,7 @@ public sealed class AgentTestTool : PuddingToolBase<AgentTestArgs>
 
         // 3. 可选：用安全参数做一次轻量调用测试
         string? testResult = null;
-        if (tool is not null && !string.IsNullOrWhiteSpace(args.TestArgs))
+        if (registered && !string.IsNullOrWhiteSpace(args.TestArgs))
         {
             try
             {
@@ -146,6 +156,10 @@ public sealed class AgentTestTool : PuddingToolBase<AgentTestArgs>
             ToolCategory = toolCategory,
             Registered = registered,
             IsAvailable = isAvailable,
+            SourceKind = descriptor?.SourceKind,
+            SourceId = descriptor?.SourceId,
+            ResolvedBy = resolvedBy,
+            Suggestions = suggestions,
             ActualPermission = actualPermission,
             LabeledPermission = labeledPermission,
             DifferenceDetected = differenceDetected,
@@ -209,6 +223,35 @@ public sealed class AgentTestTool : PuddingToolBase<AgentTestArgs>
         }
     }
 
+    /// <summary>工具描述符的解析结果。</summary>
+    internal sealed record ToolResolution(ToolDescriptor? Descriptor, string ResolvedBy, string? Suggestions);
+
+    /// <summary>
+    /// 先看内置注册表，未命中再查统一 Tool 目录（含 host-service 插件包）。
+    /// 拆成纯函数是为了能直接单测：内置注册表里没有 ≠ 工具不存在。
+    /// </summary>
+    internal static ToolResolution ResolveDescriptor(
+        ToolDescriptor? registered,
+        IPuddingToolCatalogService? catalog,
+        string workspaceId,
+        string toolId)
+    {
+        if (registered is not null) return new(registered, "registry", null);
+
+        var inventory = catalog?.ListTools(workspaceId) ?? [];
+        var matched = inventory.FirstOrDefault(d =>
+            string.Equals(d.ToolId, toolId, StringComparison.OrdinalIgnoreCase));
+        if (matched is not null) return new(matched, "host-catalog", null);
+
+        // 未命中时给出最接近的候选，避免把「拼错 ID」误读成「工具不存在」。
+        var near = inventory
+            .Select(d => d.ToolId)
+            .Where(id => id.Contains(toolId, StringComparison.OrdinalIgnoreCase))
+            .Take(3)
+            .ToArray();
+        return new(null, "none", near.Length > 0 ? string.Join(", ", near) : null);
+    }
+
     private static string Truncate(string text, int maxLen)
     {
         if (string.IsNullOrEmpty(text) || text.Length <= maxLen)
@@ -236,6 +279,22 @@ public sealed class AgentTestReport
 
     [JsonPropertyName("is_available")]
     public bool IsAvailable { get; init; }
+
+    /// <summary>来源类型：BuiltIn 工具为 null，host-service 插件工具为 "Plugin"。</summary>
+    [JsonPropertyName("source_kind")]
+    public string? SourceKind { get; init; }
+
+    /// <summary>来源包 ID（如 pudding.files），用于定位归属。</summary>
+    [JsonPropertyName("source_id")]
+    public string? SourceId { get; init; }
+
+    /// <summary>解析路径：registry=内置注册表，host-catalog=host-service 插件目录，none=未找到。</summary>
+    [JsonPropertyName("resolved_by")]
+    public string? ResolvedBy { get; init; }
+
+    /// <summary>未找到时的近似候选，用于区分「拼错 ID」与「工具不存在」。</summary>
+    [JsonPropertyName("suggestions")]
+    public string? Suggestions { get; init; }
 
     [JsonPropertyName("actual_permission")]
     public string? ActualPermission { get; init; }
