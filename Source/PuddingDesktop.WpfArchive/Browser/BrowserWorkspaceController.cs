@@ -1521,6 +1521,14 @@ public sealed class BrowserWorkspaceController :
             Visible = info.Visible,
             Enabled = info.Enabled,
             Checked = info.Checked,
+            // 这三项曾经在这里被漏掉（桥接侧已修，Desktop 侧没有）：
+            // 漏 Value/SelectedValues ⇒ expect_value 永远只能报 unverified，
+            // 上层只能另开 CDP 通道去验“输入到底写没写进去”；
+            // 漏 InViewport ⇒ 调用方无法区分“屏外但有尺寸”与“真的可见”，
+            // 只能盲猜要不要先滚。
+            Value = info.Value,
+            SelectedValues = info.SelectedValues,
+            InViewport = info.InViewport,
             PageVersion = pageVersion,
             BoundingBox = info.BoundingBox is null ? null : new BrowserBoundingBoxDescriptor
             {
