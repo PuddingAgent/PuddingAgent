@@ -485,8 +485,13 @@ export function useCompaction({
         compacted,
         eventFacts,
       );
-      if (!activeCompactionTurnIdRef.current || closesActive) setCompactionStatus(skipped
-        ? '未压缩：原上下文已保留'
+      // 「本轮没有新的压缩成效」不等于「从未压缩」：
+      // 实测事件序（2026-11-13 16:46:12→16:46:17）：durable full compact 成功
+      // （73,627→5,894）之后，warm-prefix 候选以 skipped 收尾。若 skipped 无条件把
+      // 已验证的「上次压缩：…」覆盖成「未压缩」，界面就会把刚发生的压缩显示成「没压过」。
+      // 保留既有终态：skipped 只否定**本轮**的成效，不否定已经完成的事实。
+      if (!activeCompactionTurnIdRef.current || closesActive) setCompactionStatus(previous => skipped
+        ? previous?.startsWith('上次压缩：') ? previous : '未压缩：原上下文已保留'
         : `上次压缩：${formatCompactionTime(
           eventFacts.occurredAtMs ??
             (options?.notify === false ? undefined : Date.now()),

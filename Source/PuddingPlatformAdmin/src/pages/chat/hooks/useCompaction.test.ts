@@ -106,6 +106,24 @@ describe('useCompaction', () => {
     expect(result.current.loading).toBe(false);
     expect(result.current.compactionStatus).toBe('未压缩：原上下文已保留');
   });
+
+  // 回归（2026-11-13）：durable 压缩完成后，同一轮的 warm-prefix 候选会以 skipped 收尾。
+  // skipped 只能否定「本轮成效」，不得把已验证的「上次压缩：…」改写成「未压缩」——
+  // 否则界面会把刚发生的压缩显示成「没压过」。
+  it('does not downgrade a verified 上次压缩 label when a later skipped candidate closes', () => {
+    const { result } = renderHook(() => useCompactionHarness());
+    act(() => result.current.handleCompactionLifecycleEvent(compactionEvent('context.compaction.started')));
+    act(() => result.current.handleCompactionLifecycleEvent(compactionEvent('context.compaction.completed')));
+    const verified = result.current.compactionStatus;
+    expect(verified).toMatch(/^上次压缩：/);
+
+    act(() => result.current.handleCompactionLifecycleEvent(
+      compactionEvent('context.compaction.skipped', { reason: 'boundary_cancelled' }),
+    ));
+
+    expect(result.current.compactionStatus).toBe(verified);
+  });
+
   it('replayed preparation failure is shown even without a live start event', () => {
     const { result } = renderHook(() => useCompactionHarness());
     act(() => result.current.handleCompactionLifecycleEvent(compactionEvent('context.compaction.failed', {

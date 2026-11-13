@@ -611,6 +611,45 @@ describe('IntentConsole', () => {
     );
   };
 
+  // 回归（2026-11-13）：上下文用量指示器只在「上次压缩：」前缀时刷新，
+  // 而 skipped 终态文案是「未压缩：…」，于是压缩完成后指示器停在旧值，
+  // 直到用户发下一条消息（status→completed）才更新。任何压缩终态都必须刷新。
+  it('refreshes context health when a compaction ends as skipped', async () => {
+    stubDiagnosticsRequests({
+      contextHealth: {
+        sessionId: 'session-1',
+        contextWindowTokens: 1000,
+        effectiveWindowTokens: 900,
+        usedTokens: 100,
+        remainingTokens: 800,
+        usageRatio: 0.1,
+      },
+    });
+
+    const { rerender } = render(
+      <IntentConsole
+        {...baseProps}
+        sessionId="session-1"
+        compactionStatus="正在压缩上下文…"
+      />,
+    );
+
+    await waitFor(() => expect(getContextHealth as jest.Mock).toHaveBeenCalled());
+    const before = (getContextHealth as jest.Mock).mock.calls.length;
+
+    rerender(
+      <IntentConsole
+        {...baseProps}
+        sessionId="session-1"
+        compactionStatus="未压缩：原上下文已保留"
+      />,
+    );
+
+    await waitFor(() =>
+      expect((getContextHealth as jest.Mock).mock.calls.length).toBeGreaterThan(before),
+    );
+  });
+
   it('converts the 0-1 cache ratio without guessing its unit, and labels the window', async () => {
     stubDiagnosticsRequests({
       cacheDiagnostics: {

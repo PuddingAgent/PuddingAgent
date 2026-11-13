@@ -61,6 +61,7 @@ const SkillsTabLazy = React.lazy(
   () => import('../../skill-management/SkillsTab'),
 );
 import ContextUsageRing from './ContextUsageRing';
+import { COMPACTION_RUNNING_LABEL } from '../hooks/useCompaction';
 
 import ComposerStatusDetails, {
   type ComposerRuntimeSummary,
@@ -527,8 +528,14 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     if (status !== 'completed') return;
     void refreshContextHealth();
   }, [status, refreshContextHealth]);
+  // 任何压缩终态都要刷新一次上下文用量：压缩会改变上下文构成，而「一轮结束」不一定
+  // 紧接着发生（压缩可以在空闲期完成）。旧实现只认「上次压缩：」前缀，于是 skipped
+  // 终态不刷新 —— 实测事件序 16:46:12 durable full compact completed（73,627→5,894）
+  // 后，16:46:17 warm-prefix 候选以 skipped 收尾，指示器就停在压缩前的数值，
+  // 直到用户发出下一条消息、status 转为 completed 才更新。
   useEffect(() => {
-    if (!compactionStatus?.startsWith('上次压缩：')) return;
+    if (!compactionStatus) return;
+    if (compactionStatus === COMPACTION_RUNNING_LABEL) return;
     void refreshContextHealth();
   }, [compactionStatus, refreshContextHealth]);
   const voiceAdapterRef = useRef(createDashScopeVoiceInputAdapter());
