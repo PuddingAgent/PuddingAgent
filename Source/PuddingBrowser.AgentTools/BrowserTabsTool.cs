@@ -239,7 +239,9 @@ public sealed class BrowserTabsTool(
     /// 然后在另一处得到一个看不懂的 `no page grant covers …`。
     /// </summary>
     internal const string SingleTargetPageNotice =
-        "single_target_page: this page was created but is not the authorized target (only one page can be driven at a time); ask the user to hand it over in Desktop before driving it";
+        "single_target_page: this page exists but is not the authorized target (only one page can be driven at a time); "
+        + "drive the already-authorized page, or ask the user to switch the Desktop target to this one. "
+        + "This is a routing notice, not a failure - other browser tools keep working on the authorized page.";
 
     private static ToolExecutionResult Success(
         DesktopTabsResult tabs,

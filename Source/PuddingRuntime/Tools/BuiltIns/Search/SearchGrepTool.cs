@@ -38,6 +38,20 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
     private const int DefaultMaxResults = 20;
     private const long MaxFileSizeBytes = 1 * 1024 * 1024;
+
+    /// <summary>
+    /// 校验搜索根。返回 null 表示可用，否则返回面向调用方的失败文案。
+    /// 把「传了文件」与「路径不存在」区分开：前者是高频误用，用一句「目录不存在」
+    /// 会把人引向「路径拼错」的错误方向（实测两例子代理因此整轮失败）。
+    /// </summary>
+    internal static string? InvalidSearchRootMessage(string path)
+    {
+        if (Directory.Exists(path)) return null;
+        if (File.Exists(path))
+            return $"'{path}' is a file, not a directory. 'directory' must be a folder; "
+                + "pass the containing folder, or use 'pattern' to match its content.";
+        return $"Directory '{path}' not found. Provide an existing 'directory', or omit it to search the workspace root.";
+    }
     // ADR-089 U4-4 D4: 默认排除名单不再是本文件里的 12 项私有副本，而是从单一真源渲染而来。
     // 排序：先按长度再按序数，保证字符串稳定（不随 HashSet 枚举顺序变化，测试可断言）。
     private static readonly string DefaultExcludeDirs = string.Join(';', PathNoiseRules.DirectoryNames
@@ -854,9 +868,8 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             return ToolExecutionResult.Fail(
                 "Internal: managed search directory was not resolved.");
 
-        if (!Directory.Exists(cwd))
-            return ToolExecutionResult.Fail(
-                $"Directory '{cwd}' not found. Provide an existing 'directory', or omit it to search the workspace root.");
+        var invalidRoot = InvalidSearchRootMessage(cwd);
+        if (invalidRoot is not null) return ToolExecutionResult.Fail(invalidRoot);
 
         var files = new List<string>();
         var errors = 0;

@@ -145,6 +145,12 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs, Termi
     private readonly ITerminalCommandPolicy _commandPolicy;
     private readonly ILogger<TerminalStartTool> _logger;
 
+    /// <summary>
+    /// 将 yield_time_ms 夹取到 [0, 10000]，缺省 1000。
+    /// 抽成纯函数：它替掉了原来不可测的抛错分支，而那条路径曾把整个子代理回合炸死。
+    /// </summary>
+    internal static int ClampYieldTimeMs(int? requested) => Math.Clamp(requested ?? 1_000, 0, 10_000);
+
     public TerminalStartTool(
         ITerminalProcessManager processManager,
         ILogger<TerminalStartTool> logger,
@@ -163,16 +169,17 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs, Termi
         if (string.IsNullOrWhiteSpace(args.Command))
             throw new InvalidOperationException("command is required.");
 
-        var yieldTimeMs = args.YieldTimeMs ?? 1_000;
-        if (yieldTimeMs is < 0 or > 10_000)
+        // 超出范围不再抛异常：调用方几乎总是想用它「等长任务」（构建/测试），
+        // 而 terminal_start 只收集初始窗口。抛错会让整个调用回合报废。
+        // 夹取后调用仍能拿到可用结果，超限意图交给 terminal_wait 承接。
+        var yieldTimeMs = ClampYieldTimeMs(args.YieldTimeMs);
+        if (args.YieldTimeMs is < 0 or > 10_000)
         {
-            // 只说「范围超了」不够：调用方几乎总是想用它“等长任务”（构建/测试），
-            // 而那件事根本不是 terminal_start 的职责。把正确的工具直接写进错误里，
-            // 省掉一轮「报错→猜→重试」的完整往返（实测两个不同调用方都踩过）。
-            throw new InvalidOperationException(
-                $"yield_time_ms must be between 0 and 10000 (got {yieldTimeMs}). "
-                + "terminal_start only collects the initial output window; to wait for a long build or test run, "
-                + "call terminal_wait with wait_seconds (0-600) instead.");
+            _logger.LogWarning(
+                "[TerminalStartTool] yield_time_ms={Requested} out of range, clamped to {Clamped}. "
+                + "Use terminal_wait with wait_seconds (0-600) to wait for long builds or tests.",
+                args.YieldTimeMs,
+                yieldTimeMs);
         }
 
         try
