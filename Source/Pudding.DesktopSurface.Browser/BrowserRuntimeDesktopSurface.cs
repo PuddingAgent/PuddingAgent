@@ -1087,6 +1087,25 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
             LiveVersion(browserPage.PageVersion),
             browserPage.IsLoading ? DesktopPageReadiness.Loading : DesktopPageReadiness.Unknown, browserPage.Info.Title);
 
+        // 动作后重新观测：fill/type/select/check 会改变元素状态（值、勾选、选中项）。
+        // 只有**动作之后**解析出的句柄才能用于 expect_value —— 用动作前的观察会让上层拿旧值
+        // 比较，假失败会诱发重复派发（实测：type "cd" 后框内已是 "abcd"，回执却判 failed）。
+        var observationIsPreAction = false;
+        if (locator is not null)
+        {
+            var afterHandle = await browserPage.QueryAsync(locator, cancellationToken).ConfigureAwait(false);
+            if (afterHandle is not null)
+            {
+                handle = afterHandle;
+            }
+            else
+            {
+                // 元素被替换/移除：有值断言却拿不到观测 ⇒ 如实标记，让判定器判 unverified
+                //（不能拿动作前的旧值冒充新观测）。
+                observationIsPreAction = true;
+            }
+        }
+
         DesktopElementRef? element = null;
         if (handle is not null)
         {
@@ -1096,7 +1115,7 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
                 return CapabilityResult<DesktopInteractionResult>.Failure(mapped.Error);
             }
 
-            element = mapped.Value;
+            element = mapped.Value with { IsPreActionObservation = observationIsPreAction };
         }
 
         return CapabilityResult<DesktopInteractionResult>.Success(

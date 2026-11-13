@@ -38,6 +38,44 @@ public sealed class InteractMappingTests
     private static readonly DesktopLocator Button = new(DesktopLocatorKind.Css, "button");
 
     [Fact]
+    public async Task Interact_ReResolvesTheElementAfterTheAction()
+    {
+        // 动作会改变元素状态（fill/type 改值）：只有**动作后**解析出的句柄才能用于值断言。
+        // 用动作前的观察会让上层拿旧值比较，假失败会诱发重复输入。
+        var before = Handle("e1", version: 7);
+        var after = Handle("e2", version: 7);
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: before);
+        runtime.Pages["ctx-1/p-1"].HandleAfterAction = after;
+
+        var result = await Surface(runtime).InteractAsync(
+            Call,
+            new BrowserInteractRequest(Target, DesktopInteractionAction.Fill, DesktopPageVersion.Require(7), Button, text: "x"),
+            CancellationToken.None);
+
+        Assert.False(result.IsFailure);
+        Assert.Contains("e2", result.Value.Element!.Reference);          // 动作后的观测
+        Assert.False(result.Value.Element.IsPreActionObservation);
+        Assert.Equal(2, runtime.Pages["ctx-1/p-1"].QueryCount);        // 动作前 + 动作后各一次
+    }
+
+    [Fact]
+    public async Task Interact_MarksTheObservationAsPreAction_WhenTheElementDisappearsAfterTheAction()
+    {
+        // 元素被替换/移除：有值断言却拿不到观测 ⇒ 如实标记，
+        // 让判定器判 unverified，而不是用动作前的旧值冒充新观测。
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+        runtime.Pages["ctx-1/p-1"].DisappearsAfterAction = true;
+
+        var result = await Surface(runtime).InteractAsync(
+            Call,
+            new BrowserInteractRequest(Target, DesktopInteractionAction.Fill, DesktopPageVersion.Require(7), Button, text: "x"),
+            CancellationToken.None);
+
+        Assert.False(result.IsFailure);
+        Assert.True(result.Value.Element!.IsPreActionObservation);
+    }
+
+    [Fact]
     public async Task ClickAdvancesTheVersionAndReportsTheElementItActedOn()
     {
         var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
@@ -380,6 +418,15 @@ public sealed class InteractMappingTests
     {
         private readonly InteractFakeHandle? _handle;
 
+        /// <summary>动作后重新解析应返回的句柄；null 表示与动作前相同（保持既有用例语义）。</summary>
+        public InteractFakeHandle? HandleAfterAction { get; set; }
+
+        /// <summary>动作后重新解析返回 null，用于验证「元素被替换/移除」的路径。</summary>
+        public bool DisappearsAfterAction { get; set; }
+
+        /// <summary>QueryAsync 调用次数（动作前一次 + 动作后一次）。</summary>
+        public int QueryCount { get; private set; }
+
         public InteractFakePage(string id, string contextId, long pageVersion, long advanceTo, InteractFakeHandle? handle)
         {
             Id = new PageId(id);
@@ -428,7 +475,18 @@ public sealed class InteractMappingTests
         public Task<IElementHandle?> QueryAsync(Locator locator, CancellationToken ct)
         {
             Queried = true;
-            return Task.FromResult<IElementHandle?>(_handle);
+            QueryCount++;
+            if (QueryCount == 1)
+            {
+                return Task.FromResult<IElementHandle?>(_handle);
+            }
+
+            if (DisappearsAfterAction)
+            {
+                return Task.FromResult<IElementHandle?>(null);
+            }
+
+            return Task.FromResult<IElementHandle?>(HandleAfterAction ?? _handle);
         }
 
         private void Advance(string action)
