@@ -58,7 +58,7 @@ import type {
   StorageInventoryTrendPoint,
   StorageRetentionPolicy,
 } from './types';
-import { StorageClassDonut, StorageTrendChart, classColor } from './StorageOverviewCharts';
+import { StorageTrendChart, classColor } from './StorageOverviewCharts';
 import { StoragePolicyDrawer } from './StoragePolicyDrawer';
 import { CleanupPreviewModal } from './CleanupPreviewModal';
 import { DatabaseSpacePanel } from './DatabaseSpacePanel';
@@ -978,12 +978,7 @@ const StoragePage: React.FC = () => {
               children: (
                 <div data-testid="storage-tab-trend">
                   <Row gutter={[12, 12]}>
-                    <Col xs={24} lg={10}>
-                      <Card size="small" title="分类占比（估算）">
-                        <StorageClassDonut classes={snapshot?.classes ?? []} />
-                      </Card>
-                    </Col>
-                    <Col xs={24} lg={14}>
+                    <Col xs={24}>
                       <Card
                         size="small"
                         title={`近 ${trendDays} 天存储趋势（堆叠面积，按历史快照聚合）`}

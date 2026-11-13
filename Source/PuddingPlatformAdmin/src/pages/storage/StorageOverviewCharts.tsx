@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Empty, Tooltip, Typography } from 'antd';
+import { Typography } from 'antd';
 import type { StorageInventoryClass, StorageInventoryTrendPoint } from './types';
 import { formatBytes } from './api';
 
@@ -28,105 +28,6 @@ const FALLBACK_COLOR = '#bfbfbf';
 export function classColor(targetId: string): string {
   return STORAGE_CLASS_COLORS[targetId] ?? FALLBACK_COLOR;
 }
-
-function buildDonutSegments(classes: StorageInventoryClass[]) {
-  const known = classes.filter(
-    (item) => (item.estimatedBytes ?? 0) > 0,
-  );
-  const total = known.reduce((sum, item) => sum + (item.estimatedBytes ?? 0), 0);
-  if (total <= 0) return { segments: [] as Array<{ targetId: string; fraction: number }>, total };
-
-  const sorted = [...known].sort((a, b) => (b.estimatedBytes ?? 0) - (a.estimatedBytes ?? 0));
-  let topFraction = 0;
-  const top = sorted.slice(0, 6).map((item) => {
-    const fraction = (item.estimatedBytes ?? 0) / total;
-    topFraction += fraction;
-    return { targetId: item.targetId, fraction };
-  });
-  if (topFraction < 0.999 && sorted.length > 6) {
-    top.push({ targetId: '__other__', fraction: 1 - topFraction });
-  }
-  return { segments: top, total };
-}
-
-/** 分类占比圆环（SVG stroke 分段，不引入图表库依赖）。 */
-export const StorageClassDonut: React.FC<{ classes: StorageInventoryClass[] }> = ({ classes }) => {
-  const { segments, total } = useMemo(() => buildDonutSegments(classes), [classes]);
-  const radius = 72;
-  const circumference = 2 * Math.PI * radius;
-  let offset = 0;
-
-  return (
-    <div style={{ display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
-      {total <= 0 ? (
-        <Empty description="估算中，等待后台采样完成" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-      ) : (
-        <>
-          <svg width={180} height={180} viewBox="0 0 180 180" role="img" aria-label="存储分类占比圆环图">
-            <circle cx="90" cy="90" r={radius} fill="none" stroke="#f0f0f0" strokeWidth="26" />
-            {segments.map((segment) => {
-              const dash = segment.fraction * circumference;
-              const circle = (
-                <circle
-                  key={segment.targetId}
-                  cx="90"
-                  cy="90"
-                  r={radius}
-                  fill="none"
-                  stroke={segment.targetId === '__other__' ? FALLBACK_COLOR : classColor(segment.targetId)}
-                  strokeWidth="26"
-                  strokeDasharray={`${dash} ${circumference - dash}`}
-                  strokeDashoffset={-offset}
-                  transform="rotate(-90 90 90)"
-                />
-              );
-              offset += dash;
-              return circle;
-            })}
-            <text x="90" y="86" textAnchor="middle" style={{ fontSize: 15, fill: 'rgba(0,0,0,0.88)' }}>
-              约 {formatBytes(total)}
-            </text>
-            <text x="90" y="106" textAnchor="middle" style={{ fontSize: 11, fill: 'rgba(0,0,0,0.45)' }}>
-              可清理分类估算合计
-            </text>
-          </svg>
-          <div style={{ display: 'grid', gap: 6, minWidth: 220, flex: 1 }}>
-            {segments.map((segment) => {
-              const inventory = classes.find((item) => item.targetId === segment.targetId);
-              return (
-                <Tooltip
-                  key={segment.targetId}
-                  title={`${inventory?.displayName ?? '其他'}：约 ${formatBytes(inventory?.estimatedBytes ?? (total * segment.fraction))}`}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span
-                      aria-hidden
-                      style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: 2,
-                        background:
-                          segment.targetId === '__other__' ? FALLBACK_COLOR : classColor(segment.targetId),
-                        display: 'inline-block',
-                      }}
-                    />
-                    <Typography.Text style={{ flex: 1 }}>
-                      {segment.targetId === '__other__' ? '其他' : inventory?.displayName ?? segment.targetId}
-                    </Typography.Text>
-                    <Typography.Text type="secondary">
-                      ≈{formatBytes(inventory?.estimatedBytes ?? total * segment.fraction)}（
-                      {(segment.fraction * 100).toFixed(1)}%）
-                    </Typography.Text>
-                  </div>
-                </Tooltip>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
 
 /** 趋势图几何常量：空态复用同一套尺寸，切换时不出现框架跳动。 */
 const TREND_WIDTH = 640;

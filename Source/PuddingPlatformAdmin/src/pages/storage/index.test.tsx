@@ -1,8 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
-import { StorageClassDonut, StorageTrendChart, classColor } from './StorageOverviewCharts';
+import { StorageTrendChart, classColor } from './StorageOverviewCharts';
 import { formatBytes, formatCount, formatUtc } from './api';
-import type { StorageInventoryClass, StorageInventoryTrendPoint } from './types';
+import type { StorageInventoryTrendPoint } from './types';
 
 // ── ADR-076 存储页定向测试：字节/计数口径、估算约数标识、
 // 分类占比图与趋势图渲染。整页集成由浏览器 smoke 覆盖（jsdom 下
@@ -27,43 +27,6 @@ describe('formatBytes / formatCount / formatUtc', () => {
   it('formatUtc 解析 UTC ISO 字符串', () => {
     expect(formatUtc(null)).toBe('—');
     expect(formatUtc('2026-08-24T10:30:00Z')).toContain('2026');
-  });
-});
-
-describe('StorageClassDonut', () => {
-  const classes: StorageInventoryClass[] = [
-    {
-      targetId: 'diagnostics.telemetry-raw',
-      displayName: '原始性能遥测',
-      estimatedBytes: 800_000_000,
-      estimatedRows: 1_730_155,
-      estimateState: 'Updated',
-      updatedAtUtc: '2026-08-24T10:30:00Z',
-    },
-    {
-      targetId: 'evidence.conversation-events',
-      displayName: '会话事件证据',
-      estimatedBytes: 500_000_000,
-      estimateState: 'Updated',
-      updatedAtUtc: '2026-08-24T10:30:00Z',
-    },
-  ];
-
-  it('渲染估算合计、图例名称与约数（不只靠颜色表达）', async () => {
-    render(<StorageClassDonut classes={classes} />);
-
-    await waitFor(() => {
-      expect(screen.getAllByText((_, element) => element?.textContent?.includes('763 MB') === true).length).toBeGreaterThan(0);
-    });
-    expect(screen.getByText('原始性能遥测')).toBeTruthy();
-    expect(screen.getByText('会话事件证据')).toBeTruthy();
-    // 占比同时以文字呈现。
-    expect(screen.getAllByText((_, element) => element?.textContent?.includes('61.5%') === true).length).toBeGreaterThan(0);
-  });
-
-  it('无估算数据时显示估算中提示', () => {
-    render(<StorageClassDonut classes={[]} />);
-    expect(screen.getByText(/估算中/)).toBeTruthy();
   });
 });
 
