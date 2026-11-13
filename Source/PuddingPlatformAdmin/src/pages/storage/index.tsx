@@ -145,6 +145,15 @@ interface ReclaimSegment {
   bytes: number;
   color: string;
   note: string;
+  /**
+   * 本段可预览清理的 targetId（空数组 = 本段不在清理范围）。
+   *
+   * <p>为什么把它做成数据而不是渲染处 if-else：VACUUM 段是「库内空闲页」——
+   * 它没有 targetId，也不属于任何可删数据类，必须靠 VACUUM 才归还文件系统。
+   * 把「能不能清理」写在段上，渲染层就不用知道三种可回收的性质差异。
+   * </p>
+   */
+  previewTargets: string[];
 }
 
 interface ClassRow extends StorageInventoryClass {
@@ -373,6 +382,8 @@ const StoragePage: React.FC = () => {
         bytes: reusableTotal,
         color: '#fa8c16',
         note: '库内可复用页；VACUUM 后才归还文件系统（不可再清理）',
+        // 空闲页不是可删数据：没有任何清理 targetId 能回收它，只能靠 VACUUM。
+        previewTargets: [],
       },
       {
         key: 'redundant-indexes',
@@ -383,6 +394,8 @@ const StoragePage: React.FC = () => {
           redundantIndexBytes == null
             ? '暂无：当前快照没有该分类的估算值'
             : '重复/孤儿索引，删除索引即可回收',
+        // 冗余索引是目录里唯一有独立 targetId 的可删对象。
+        previewTargets: redundantIndexBytes == null ? [] : ['storage.redundant-indexes'],
       },
       {
         key: 'retention',
@@ -390,9 +403,12 @@ const StoragePage: React.FC = () => {
         bytes: classBytesTotal,
         color: '#13c2c2',
         note: '分类估算合计，含仅受策略治理的证据类',
+        // 本段字节是**全部**分类合计，但可手动预览的只有目录允许手删的那些；
+        // 两者口径不同是如实的（证据类只能受策略治理），不在这里合并或伪装。
+        previewTargets: selectableRows.map((row) => row.targetId),
       },
     ],
-    [reusableTotal, redundantIndexBytes, classBytesTotal],
+    [reusableTotal, redundantIndexBytes, classBytesTotal, selectableRows],
   );
 
   const reclaimTotal = useMemo(
@@ -419,8 +435,10 @@ const StoragePage: React.FC = () => {
     }
   };
 
-  const startPreview = async () => {
-    if (selectedTargets.length === 0) {
+  const startPreview = async (explicitTargets?: string[]) => {
+    // 首屏三段条的按钮带自己的 targetId；可清理页签内的按钮仍用勾选状态。
+    const targetIds = explicitTargets ?? selectedTargets;
+    if (targetIds.length === 0) {
       message.warning('请先选择要清理的数据类型');
       return;
     }
@@ -428,7 +446,7 @@ const StoragePage: React.FC = () => {
     setPreviewSubmitting(true);
     setPreviewJobId(null);
     try {
-      const created = await createCleanupPreview({ targetIds: selectedTargets, olderThanDays });
+      const created = await createCleanupPreview({ targetIds, olderThanDays });
       if (!created.hasCandidates) {
         message.info('所选类型在该截止时间之前没有可清理数据');
       }
@@ -847,6 +865,33 @@ const StoragePage: React.FC = () => {
                       <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
                         {segment.note}
                       </Typography.Text>
+                      {segment.previewTargets.length > 0 ? (
+                        <Button
+                          size="small"
+                          type="link"
+                          style={{ padding: 0, height: 'auto' }}
+                          data-testid="reclaim-preview"
+                          data-segment-key={segment.key}
+                          loading={previewSubmitting}
+                          onClick={() => {
+                            // 只创建**预览**（绝不执行）：把该段的 targetId 送进既有 PreviewCleanup 流程，
+                            // 同时同步勾选状态，避开「预览了但可清理页签里没勾」的错觉。
+                            setSelectedTargets(segment.previewTargets);
+                            void startPreview(segment.previewTargets);
+                          }}
+                        >
+                          预览清理
+                        </Button>
+                      ) : (
+                        <Typography.Text
+                          type="secondary"
+                          style={{ fontSize: 12 }}
+                          data-testid="reclaim-not-cleanable"
+                          data-segment-key={segment.key}
+                        >
+                          不在清理范围
+                        </Typography.Text>
+                      )}
                     </div>
                   </Col>
                 ))}
@@ -984,7 +1029,9 @@ const StoragePage: React.FC = () => {
                             icon={<ClearOutlined />}
                             loading={previewSubmitting}
                             disabled={selectedTargets.length === 0}
-                            onClick={startPreview}
+                            // 不能直接传 startPreview：它现在多了一个可选 targetId 参数，
+                            // 而 onClick 会把 MouseEvent 当成第一个实参传进来。
+                            onClick={() => void startPreview()}
                           >
                             预览所选（{selectedTargets.length}）
                           </Button>

@@ -58,6 +58,8 @@ const api = jest.requireMock('./api') as {
   getStorageDataClasses: jest.Mock;
   getStorageOverview: jest.Mock;
   listCleanupJobs: jest.Mock;
+  createCleanupPreview: jest.Mock;
+  confirmCleanupJob: jest.Mock;
 };
 
 // 真值口径：平台库按页计量（pageSizeBytes > 0），全文检索索引目录不是 SQLite 库
@@ -355,5 +357,57 @@ describe('存储页首屏结构（S3a）', () => {
     expect(within(databaseTab).getByText('数据库文件大小（含 WAL）')).toBeTruthy();
     // DatabaseSpacePanel 自带「点按钮才测量」的入口，说明它被整体搬进 Tab 而没有被改写。
     expect(within(databaseTab).getByRole('button', { name: /查看数据库占用/ })).toBeTruthy();
+  });
+
+  // S4：首屏第 3 行三段条接到既有 PreviewCleanup —— 只预览，不执行。
+  it('三段条：VACUUM 段不可预览，其余两段各自只预览自己的 targetId，全程不创建作业', async () => {
+    api.createCleanupPreview.mockResolvedValue({
+      previewId: 'preview-1',
+      createdAtUtc: '2026-11-13T08:00:00Z',
+      expiresAtUtc: '2026-11-13T08:10:00Z',
+      retentionDays: 14,
+      compactAfterCleanup: true,
+      hasCandidates: true,
+      candidateRows: 10,
+      estimatedReclaimableBytes: 1_000,
+      targets: [],
+      warnings: [],
+    } as never);
+
+    await renderPage();
+
+    // VACUUM 段：空闲页只能靠 VACUUM 归还，没有任何可删 targetId ⇒ 不得出现预览入口。
+    const vacuumItem = screen
+      .getAllByTestId('reclaim-item')
+      .find((el) => el.getAttribute('data-segment-key') === 'vacuum');
+    expect(vacuumItem).toBeTruthy();
+    expect(within(vacuumItem as HTMLElement).queryByTestId('reclaim-preview')).toBeNull();
+    expect(within(vacuumItem as HTMLElement).getByTestId('reclaim-not-cleanable')).toBeTruthy();
+
+    // 冗余索引段：只预览它自己那一个 targetId。
+    fireEvent.click(
+      document.querySelector(
+        '[data-testid="reclaim-preview"][data-segment-key="redundant-indexes"]',
+      ) as Element,
+    );
+    await waitFor(() => expect(api.createCleanupPreview).toHaveBeenCalledTimes(1));
+    expect(api.createCleanupPreview.mock.calls[0][0].targetIds).toEqual([
+      'storage.redundant-indexes',
+    ]);
+
+    // 保留策略段：预览目录允许手删的那些；证据类只能受策略治理，不在其中。
+    fireEvent.click(
+      document.querySelector(
+        '[data-testid="reclaim-preview"][data-segment-key="retention"]',
+      ) as Element,
+    );
+    await waitFor(() => expect(api.createCleanupPreview).toHaveBeenCalledTimes(2));
+    const retentionTargets = api.createCleanupPreview.mock.calls[1][0].targetIds as string[];
+    expect(retentionTargets).toContain('diagnostics.telemetry-raw');
+    expect(retentionTargets).toContain('storage.redundant-indexes');
+    expect(retentionTargets).not.toContain('evidence.conversation-events');
+
+    // 只预览不执行：全程不得创建清理作业。
+    expect(api.confirmCleanupJob).not.toHaveBeenCalled();
   });
 });
