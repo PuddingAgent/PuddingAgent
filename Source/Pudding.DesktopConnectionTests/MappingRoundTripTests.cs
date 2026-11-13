@@ -357,6 +357,64 @@ public sealed class MappingRoundTripTests
         Assert.Equal("already_open", frame.Result.DocumentPreview.Status);
     }
 
+    /// <summary>
+    /// 定位筛选（include_hidden / in_viewport_only）必须跨过 protobuf 线。
+    ///
+    /// 这两个字段曾经只存在于运行时 Locator 与 JSON 桥接 DTO，proto 的 LocatorSpec 里没有；
+    /// 写端不写、读端也不读，缺省的 bool 与显式 false 无法区分，于是**不报错地失效**：
+    /// 请求 in_viewport_only=true 仍返回视口外元素，而回执看起来完全正常。
+    /// </summary>
+    [Fact]
+    public void Decode_LocateCommand_CarriesIncludeHiddenAndInViewportOnly()
+    {
+        var filtered = CoreFrameMapping.Decode(
+            LocateCommand(new Proto.LocatorSpec
+            {
+                Kind = "css",
+                Value = "div",
+                IncludeHidden = true,
+                InViewportOnly = true,
+            }),
+            DesktopId);
+
+        Assert.True(filtered.IsSuccess, filtered.IsSuccess ? null : filtered.Error.Message);
+        var locator = filtered.Value.Request.Locate!.Locator;
+        Assert.True(locator.IncludeHidden);
+        Assert.True(locator.InViewportOnly);
+
+        // 负对照：不写这两个字段时必须是 false（证明上面不是在断言一个恒真的常量）。
+        var defaults = CoreFrameMapping.Decode(
+            LocateCommand(new Proto.LocatorSpec { Kind = "css", Value = "div" }),
+            DesktopId);
+
+        Assert.True(defaults.IsSuccess, defaults.IsSuccess ? null : defaults.Error.Message);
+        Assert.False(defaults.Value.Request.Locate!.Locator.IncludeHidden);
+        Assert.False(defaults.Value.Request.Locate.Locator.InViewportOnly);
+    }
+
+    private static Proto.CapabilityCommand LocateCommand(Proto.LocatorSpec locator) => new()
+    {
+        // browser.* 能力强制要求可信调用者身份，缺失会在解码阶段 fail closed。
+        Caller = new Proto.BrowserCallerIdentityMessage
+        {
+            Kind = "agent",
+            CallerId = "agent-1",
+            TaskId = "run-1",
+        },
+        OperationId = "op-locate",
+        Generation = 1,
+        Capability = "browser.locate",
+        Deadline = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTimeOffset(
+            DateTimeOffset.UtcNow.AddSeconds(30)),
+        Locate = new Proto.LocateCommand
+        {
+            Target = new Proto.CommandTarget { ContextId = "ctx-1", PageId = "page-1" },
+            ExpectedPageVersion = 5,
+            MaxResults = 10,
+            Locator = locator,
+        },
+    };
+
     private static Proto.CapabilityCommand DocumentPreviewCommand(string path, string title = "") => new()
     {
         OperationId = "op-doc",
