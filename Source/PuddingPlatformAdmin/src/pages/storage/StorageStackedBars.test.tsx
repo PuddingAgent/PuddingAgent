@@ -338,4 +338,54 @@ describe('StorageStackedBars · 交互与尺寸', () => {
     render(<StorageStackedBars rows={[row]} barHeight={18} />);
     expect(screen.getByTestId('stacked-bar').getAttribute('height')).toBe('18');
   });
+
+  // 图例（2026-11-13）：首屏堆叠条原本没有任何图例，一条横条里出现了红/黄/蓝
+  // 用户只能靠 hover 才知道是什么。图例必须与段同色、同源、且按首次出现去重。
+  it('图例列出本页出现过的分类（去重）且颜色与段一致', () => {
+    render(
+      <StorageStackedBars
+        rows={[
+          {
+            key: 'platform',
+            label: '平台库',
+            totalBytes: 100,
+            segments: [
+              { targetId: 'platform.task-orchestration', label: '任务与目标编排', bytes: 60 },
+              { targetId: 'diagnostics.telemetry-raw', label: '遥测原始数据', bytes: 40 },
+            ],
+          },
+          {
+            key: 'memory',
+            label: '记忆库',
+            totalBytes: 50,
+            // 同一个 targetId 在第二个库里又出现：图例里不得重复。
+            segments: [{ targetId: 'platform.task-orchestration', label: '任务与目标编排', bytes: 50 }],
+          },
+        ]}
+      />,
+    );
+
+    const items = screen.getAllByTestId('stacked-legend-item');
+    expect(items.map((el) => el.getAttribute('data-target-id'))).toEqual([
+      'platform.task-orchestration',
+      'diagnostics.telemetry-raw',
+    ]);
+
+    const legendText = screen.getByTestId('stacked-legend').textContent ?? '';
+    expect(legendText).toContain('任务与目标编排');
+    expect(legendText).toContain('遥测原始数据');
+
+    // 颜色必须与段同源（classColor），不能另造一套。
+    for (const item of items) {
+      const targetId = item.getAttribute('data-target-id') ?? '';
+      const dot = item.querySelector('span[aria-hidden]') as HTMLElement | null;
+      expect(dot).toBeTruthy();
+      expect(dot?.style.background).toBe(
+        `rgb(${parseInt(classColor(targetId).slice(1, 3), 16)}, ${parseInt(
+          classColor(targetId).slice(3, 5),
+          16,
+        )}, ${parseInt(classColor(targetId).slice(5, 7), 16)})`,
+      );
+    }
+  });
 });

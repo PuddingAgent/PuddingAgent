@@ -15,6 +15,12 @@ export const STORAGE_CLASS_COLORS: Record<string, string> = {
   'code-index.obsolete-scopes': '#2f54eb',
   'storage.redundant-indexes': '#a0d911',
   'evidence.conversation-events': '#8c8c8c',
+  // 以下四类是「仅归因、不可清理」的结构性占用（见 StorageDataClassCatalog）。
+  // 不加颜色的话它们会与「未归类」共用 #bfbfbf 回退色，首屏堆叠条就还是看不出构成。
+  'platform.conversation-orchestration': '#597ef7',
+  'platform.task-orchestration': '#9254de',
+  'platform.config-catalog': '#ff7a45',
+  'platform.runtime-metadata': '#36cfc9',
 };
 
 const FALLBACK_COLOR = '#bfbfbf';

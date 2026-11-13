@@ -16,6 +16,18 @@ public static class StorageAdminTargetIds
     public const string ObsoleteCodeIndexScopes = "code-index.obsolete-scopes";
     public const string RedundantIndexes = "storage.redundant-indexes";
 
+    /// <summary>
+    /// **仅用于界面归因**的不可清理分类：平台库里有几十张编排/配置/投影表，
+    /// 既不属于任何可清理数据类、也不在保护清单里，于是会全部落进「未归类」——
+    /// 首屏「各库构成」因此变成一大条无法解释的灰段（实测平台库 12 GB 里约 6 GB 无名）。
+    /// 四类都 <c>ManualCleanupAllowed = false</c>，且表声明的 <c>TimestampColumn</c> 为空 ——
+    /// 没有任何清理路径会拼它们的 DELETE。
+    /// </summary>
+    public const string ConversationOrchestration = "platform.conversation-orchestration";
+    public const string TaskOrchestration = "platform.task-orchestration";
+    public const string ConfigCatalog = "platform.config-catalog";
+    public const string RuntimeMetadata = "platform.runtime-metadata";
+
     /// <summary>Evidence 保留路径：只走独立证据策略，永不进入人工清理选择器。</summary>
     public const string ConversationEventsEvidence = "evidence.conversation-events";
 

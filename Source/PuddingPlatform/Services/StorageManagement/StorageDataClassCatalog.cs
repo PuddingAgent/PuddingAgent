@@ -15,6 +15,11 @@ public static class StorageDataClassCatalog
     public sealed record StoragePhysicalTable
     {
         public required string Table { get; init; }
+        /// <summary>
+        /// 按时间清理用的列。**空字符串 = 该表不参与任何按时间清理**，
+        /// 只在「界面归因」类数据类里出现（那些类 ManualCleanupAllowed=false，
+        /// 永远进不了 Preview，所以该列不会被拼进 DELETE）。
+        /// </summary>
         public required string TimestampColumn { get; init; }
         public string[]? ClearColumns { get; init; }
         /// <summary>DELETE 前必须先归档（Evidence 路径专用）。</summary>
@@ -270,6 +275,107 @@ public static class StorageDataClassCatalog
             ManualCleanupAllowed = false,
             AutomaticCleanupAllowed = true,
             ShowInManualSelector = false,
+        },
+        // ── 以下四类：仅用于界面归因，**永不可清理** ──────────────────────────
+        // 这 44 张表原本既不属于任何可清理数据类、也不在保护区，全部落进「未归类」，
+        // 首屏「各库构成」因此有一大条无法解释的灰段。给它们名字而不是让它们消失：
+        // 用户需要知道那几 GB 是「对话编排」还是「任务编排」，而不是「不知道是啥」。
+        // 共同点：ManualCleanupAllowed=false、TimestampColumn 为空（不参与任何 DELETE）。
+        new()
+        {
+            TargetId = StorageAdminTargetIds.ConversationOrchestration,
+            DisplayName = "对话与执行编排",
+            Description = "会话目录/头、turn、执行运行与控制消息、事件队列、投递与会话投影；" +
+                "是执行事实，只能由各自的领域逻辑推进，不提供按时间删除。",
+            ShowInManualSelector = false,
+            SafetyLevel = StorageSafetyLevel.Evidence,
+            DatabaseFile = PlatformDatabaseFile,
+            Tables =
+            [
+                new StoragePhysicalTable { Table = "conversation_catalog", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "conversation_heads", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "conversation_projection_checkpoints", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "conversation_turns", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "event_queue", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "execution_control_messages", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "execution_runs", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "chat_execution_commands", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "message_deliveries", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "room_participants", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "session_steering_messages", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "session_sub_agents", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "sub_agent_runs", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "connector_stream_projections", TimestampColumn = "" },
+            ],
+        },
+        new()
+        {
+            TargetId = StorageAdminTargetIds.TaskOrchestration,
+            DisplayName = "任务与目标编排",
+            Description = "任务节点/事件/依赖/派发、目标运行与验收、待办；属于编排事实，" +
+                "清理必须走任务领域 API，不提供按时间删除。",
+            ShowInManualSelector = false,
+            SafetyLevel = StorageSafetyLevel.Evidence,
+            DatabaseFile = PlatformDatabaseFile,
+            Tables =
+            [
+                new StoragePhysicalTable { Table = "acceptance_batches", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "goal_iterations", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "goal_outbox", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "goal_runs", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "goal_verifications", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "task_assignment_attempts", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "task_comments", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "task_dependencies", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "task_dispatch_outbox", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "task_evaluations", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "task_events", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "task_execution_bindings", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "task_goal_bindings", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "task_nodes", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "task_plan_runs", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "task_scheduler_intents", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "todo_items", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "todo_lists", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "workspace_tasks", TimestampColumn = "" },
+            ],
+        },
+        new()
+        {
+            TargetId = StorageAdminTargetIds.ConfigCatalog,
+            DisplayName = "配置、凭据与外部接入",
+            Description = "外部访问令牌与作用域/审计、幂等记录、Provider 文件引用；" +
+                "属于安全态与用户权属数据，清理接口永不可达。",
+            ShowInManualSelector = false,
+            SafetyLevel = StorageSafetyLevel.UserData,
+            DatabaseFile = PlatformDatabaseFile,
+            Tables =
+            [
+                new StoragePhysicalTable { Table = "external_access_tokens", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "external_access_token_scopes", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "external_access_token_workspaces", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "external_access_token_audit_events", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "external_api_idempotency", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "llm_provider_file_refs", TimestampColumn = "" },
+            ],
+        },
+        new()
+        {
+            TargetId = StorageAdminTargetIds.RuntimeMetadata,
+            DisplayName = "运行时投影与缓存",
+            Description = "可用性投影、执行预留、日聚合缓存与等待句柄；可从事实源重建，" +
+                "但重建时机由运行时决定，不提供按时间删除。",
+            ShowInManualSelector = false,
+            SafetyLevel = StorageSafetyLevel.Derived,
+            DatabaseFile = PlatformDatabaseFile,
+            Tables =
+            [
+                new StoragePhysicalTable { Table = "agent_availability_projection", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "agent_execution_reservations", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "llm_usage_daily_aggregates", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "stats_daily_cache_days", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "work_unit_await_handles", TimestampColumn = "" },
+            ],
         },
     ];
 

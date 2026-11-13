@@ -115,6 +115,18 @@ export const StorageStackedBars: React.FC<StorageStackedBarsProps> = ({
     [rows],
   );
 
+  // 图例取「本页实际出现过的分类」（按首次出现顺序去重），不是整个目录：
+  // 一条横条里出现的颜色必须能在图例里找到名字，否则彩色段等于没说。
+  const legend = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const row of rows) {
+      for (const segment of row.segments) {
+        if (!seen.has(segment.targetId)) seen.set(segment.targetId, segment.label);
+      }
+    }
+    return Array.from(seen.entries()).map(([targetId, label]) => ({ targetId, label }));
+  }, [rows]);
+
   if (rows.length === 0) {
     // 空态不渲染任何行：一排没有横条的空行只会让人以为「数据没加载出来」。
     return (
@@ -199,6 +211,36 @@ export const StorageStackedBars: React.FC<StorageStackedBarsProps> = ({
           </span>
         </div>
       ))}
+
+      {/* 图例：一条彩色横条如果对应不上名字，等于没传达信息。
+          只列本页实际出现过的分类（按首次出现顺序），不把整个目录铺上来。 */}
+      {legend.length > 0 ? (
+        <div
+          data-testid="stacked-legend"
+          style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 8 }}
+        >
+          {legend.map((entry) => (
+            <span
+              key={entry.targetId}
+              data-testid="stacked-legend-item"
+              data-target-id={entry.targetId}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  width: 9,
+                  height: 9,
+                  borderRadius: 2,
+                  background: classColor(entry.targetId),
+                  display: 'inline-block',
+                }}
+              />
+              <span style={{ fontSize: 12, color: 'rgba(0, 0, 0, 0.65)' }}>{entry.label}</span>
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 };
