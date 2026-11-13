@@ -46,7 +46,15 @@ $targets = if ($Name) {
 $rows = foreach ($t in ($targets | Sort-Object)) {
     $needle = '.work/' + $t
     $needle2 = '.work\' + $t
-    $hits = @($docs | Where-Object { $_.Text.Contains($needle) -or $_.Text.Contains($needle2) })
+    $hits = @($docs | Where-Object {
+            $lines = $_.Text -split "`n"
+            $live = $lines | Where-Object {
+                ($_.Contains($needle) -or $_.Contains($needle2)) -and
+                # 已标注为「已清理/原在/待删/产物」的行是历史描述，不算活引用
+                -not ($_ -match '已清理|原在|待删|产物已|构建产物|已搬入')
+            }
+            $live.Count -gt 0
+        })
     [pscustomobject]@{
         Work        = $t
         CitedBy     = $hits.Count

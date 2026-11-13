@@ -237,7 +237,7 @@ TOTAL_DESCENDANTS=1615  TOTAL_INVOKE_PATTERN=569  TOTAL_VALUE_PATTERN=208  ERROR
 **覆盖是否真的生效？** 为了不重犯前两轮的错误，先加了自证：
 
 ```
-UIA_ASM_LOC=D:\...\.work\winforms-uia-probe\publish\UIAutomationClient.dll
+UIA_ASM_LOC=程序集 `UIAutomationClient.dll`（当时取自 `.work/winforms-uia-probe/publish/`，属于构建产物，非版本库内容；该目录已于 2026-11-13 按清理规程待删）
 UIA_ASM_VER=10.0.0.0
 ```
 
