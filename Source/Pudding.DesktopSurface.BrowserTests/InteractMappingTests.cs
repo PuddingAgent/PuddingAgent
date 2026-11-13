@@ -76,6 +76,26 @@ public sealed class InteractMappingTests
     }
 
     [Fact]
+    public async Task Interact_SucceedsAndMarksPreAction_WhenReResolveThrows()
+    {
+        // 点击关闭按钮/菜单项会让目标隐藏，动作后的重新解析因此报
+        // browser_locator_matches_filtered。那**不是交互失败**：动作已经派发了。
+        // 绝不能因为「事后看不到」就把一次成功的点击报成失败。
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
+        runtime.Pages["ctx-1/p-1"].ThrowsAfterAction =
+            new BrowserOperationException("browser_locator_matches_filtered", "all filtered");
+
+        var result = await Surface(runtime).InteractAsync(
+            Call,
+            new BrowserInteractRequest(Target, DesktopInteractionAction.Click, DesktopPageVersion.Require(7), Button),
+            CancellationToken.None);
+
+        Assert.False(result.IsFailure);                                  // 交互本身成功
+        Assert.Equal("click", runtime.Pages["ctx-1/p-1"].LastAction);   // 动作确实派发了
+        Assert.True(result.Value.Element!.IsPreActionObservation);      // 降级为动作前观测
+    }
+
+    [Fact]
     public async Task ClickAdvancesTheVersionAndReportsTheElementItActedOn()
     {
         var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));
@@ -424,6 +444,10 @@ public sealed class InteractMappingTests
         /// <summary>动作后重新解析返回 null，用于验证「元素被替换/移除」的路径。</summary>
         public bool DisappearsAfterAction { get; set; }
 
+        /// <summary>动作后重新解析抛异常（如 browser_locator_matches_filtered），
+        /// 用于验证「点击会让目标隐藏/消失」时交互不得变成失败。</summary>
+        public BrowserOperationException? ThrowsAfterAction { get; set; }
+
         /// <summary>QueryAsync 调用次数（动作前一次 + 动作后一次）。</summary>
         public int QueryCount { get; private set; }
 
@@ -484,6 +508,11 @@ public sealed class InteractMappingTests
             if (DisappearsAfterAction)
             {
                 return Task.FromResult<IElementHandle?>(null);
+            }
+
+            if (ThrowsAfterAction is not null)
+            {
+                throw ThrowsAfterAction;
             }
 
             return Task.FromResult<IElementHandle?>(HandleAfterAction ?? _handle);

@@ -1093,15 +1093,26 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
         var observationIsPreAction = false;
         if (locator is not null)
         {
-            var afterHandle = await browserPage.QueryAsync(locator, cancellationToken).ConfigureAwait(false);
-            if (afterHandle is not null)
+            try
             {
-                handle = afterHandle;
+                var afterHandle = await browserPage.QueryAsync(locator, cancellationToken).ConfigureAwait(false);
+                if (afterHandle is not null)
+                {
+                    handle = afterHandle;
+                }
+                else
+                {
+                    // 元素被替换/移除：有值断言却拿不到观测 ⇒ 如实标记，让判定器判 unverified
+                    //（不能拿动作前的旧值冒充新观测）。
+                    observationIsPreAction = true;
+                }
             }
-            else
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // 元素被替换/移除：有值断言却拿不到观测 ⇒ 如实标记，让判定器判 unverified
-                //（不能拿动作前的旧值冒充新观测）。
+                // 动作本身可能让目标消失、隐藏或移出视口（关闭按钮、菜单项、展开后折叠）。
+                // 此时重新解析会抛 browser_locator_matches_filtered / not_found ——
+                // 那**不是交互失败**：动作已经派发了。降级为动作前观测，让判定器给 unverified，
+                // 绝不能因为「事后看不到」就把一次成功的点击报成失败。
                 observationIsPreAction = true;
             }
         }
