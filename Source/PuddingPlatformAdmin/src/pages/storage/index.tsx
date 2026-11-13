@@ -138,6 +138,9 @@ const MetricCell: React.FC<{
   </Card>
 );
 
+/** 三段条里「不可预览」的三种不同原因（此前被压成同一句「不在清理范围」，把三件事说成了一件）。 */
+type ReclaimBlockedKind = 'structural' | 'no-data' | 'policy-only';
+
 /** 首屏第 3 行「可回收三段条」的一段：字节 + 一句性质说明（不参与任何合计口径）。 */
 interface ReclaimSegment {
   key: string;
@@ -154,6 +157,16 @@ interface ReclaimSegment {
    * </p>
    */
   previewTargets: string[];
+  /**
+   * 「不能点预览」的原因；null 表示本段可预览。
+   *
+   * <p>三种原因在业务上互不相同，不能合成一句话：structural = 结构上不可清理（空闲页只能靠
+   * VACUUM 归还文件系统）；no-data = 快照还没有该分类的估算值（暂无数据 ≠ 没有可回收）；
+   * policy-only = 有字节，但都不允许手删（只受保留策略治理）。</p>
+   */
+  blockedKind: ReclaimBlockedKind | null;
+  /** 与 blockedKind 配套的一句话，直接展示给用户。 */
+  blockedText: string | null;
 }
 
 interface ClassRow extends StorageInventoryClass {
@@ -404,6 +417,8 @@ const StoragePage: React.FC = () => {
         note: '库内可复用页；VACUUM 后才归还文件系统（不可再清理）',
         // 空闲页不是可删数据：没有任何清理 targetId 能回收它，只能靠 VACUUM。
         previewTargets: [],
+        blockedKind: 'structural',
+        blockedText: '不可清理：空闲页只能靠 VACUUM 归还文件系统，没有任何可删对象',
       },
       {
         key: 'redundant-indexes',
@@ -416,6 +431,11 @@ const StoragePage: React.FC = () => {
             : '重复/孤儿索引，删除索引即可回收',
         // 冗余索引是目录里唯一有独立 targetId 的可删对象。
         previewTargets: redundantIndexBytes == null ? [] : ['storage.redundant-indexes'],
+        blockedKind: redundantIndexBytes == null ? 'no-data' : null,
+        blockedText:
+          redundantIndexBytes == null
+            ? '暂无数据：快照尚未产出「冗余索引」分类的估算值'
+            : null,
       },
       {
         key: 'retention',
@@ -426,6 +446,11 @@ const StoragePage: React.FC = () => {
         // 本段字节是**全部**分类合计，但可手动预览的只有目录允许手删的那些；
         // 两者口径不同是如实的（证据类只能受策略治理），不在这里合并或伪装。
         previewTargets: selectableRows.map((row) => row.targetId),
+        blockedKind: selectableRows.length > 0 ? null : 'policy-only',
+        blockedText:
+          selectableRows.length > 0
+            ? null
+            : '无可手删分类：本段字节全部属于只受保留策略治理的证据类',
       },
     ],
     [reusableTotal, redundantIndexBytes, classBytesTotal, selectableRows],
@@ -929,8 +954,9 @@ const StoragePage: React.FC = () => {
                           style={{ fontSize: 12 }}
                           data-testid="reclaim-not-cleanable"
                           data-segment-key={segment.key}
+                          data-blocked-kind={segment.blockedKind ?? 'unknown'}
                         >
-                          不在清理范围
+                          {segment.blockedText}
                         </Typography.Text>
                       )}
                     </div>

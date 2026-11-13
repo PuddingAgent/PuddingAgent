@@ -468,3 +468,74 @@ describe('各库构成的冷启动恢复（首屏不静默留空）', () => {
     expect(screen.queryByTestId('stacked-bars-error')).toBeNull();
   });
 });
+
+// 三段条此前把三种完全不同的状态压成同一句「不在清理范围」，其中「保留策略」那段最误导：
+// 用户会读成「这 2 GB 不能清」，实际含义是「这 2 GB 里没有一类允许手删」。
+// 下面两个用例锁住：状态必须是数据（data-blocked-kind），且两种状态的文案必须不同。
+describe('可回收三段条的三种不可预览原因（不许压成一句话）', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    api.getDatabaseSpace.mockReset();
+    api.getStorageDataClasses.mockReset();
+    api.getStorageOverview.mockResolvedValue(snapshot);
+    api.getStorageDataClasses.mockResolvedValue(dataClasses);
+    api.getProtectedObjects.mockResolvedValue([]);
+    api.getRetentionPolicy.mockResolvedValue(policy);
+    api.getInventoryTrend.mockResolvedValue([]);
+    api.listCleanupJobs.mockResolvedValue(jobs);
+  });
+
+  it('结构上不可清理的段：单独标注 structural，且不再使用旧文案', async () => {
+    api.getDatabaseSpace.mockResolvedValue(databaseSpaces);
+
+    rendered = render(<StoragePage />);
+    await screen.findByTestId('storage-first-screen');
+
+    await waitFor(() => expect(screen.getAllByTestId('reclaim-item').length).toBe(3));
+
+    const vacuum = screen
+      .getAllByTestId('reclaim-not-cleanable')
+      .find((el) => el.getAttribute('data-segment-key') === 'vacuum');
+    expect(vacuum).toBeTruthy();
+    expect(vacuum?.getAttribute('data-blocked-kind')).toBe('structural');
+    // 文案要说出「为什么不能点」，而不只是一个否定。
+    expect(vacuum?.textContent).toContain('VACUUM');
+    expect(vacuum?.textContent).not.toBe('不在清理范围');
+  });
+
+  it('暂无数据与仅受策略治理是两种不同状态，文案不得相同', async () => {
+    // 快照里没有任何分类：冗余索引拿不到估算值（暂无数据），
+    // 保留策略段虽有字节口径但没有任何允许手删的类（仅受策略治理）。
+    // 冗余索引的估算值来自**快照分类**（不是 getStorageDataClasses），所以要让「暂无数据」
+    // 真出现，必须把该分类从快照里去掉；同时把 getStorageDataClasses 置空，使所有分类
+    // 的 manualCleanupAllowed 均为 false，让保留策略段落到「仅受策略治理」。
+    api.getStorageOverview.mockResolvedValue({
+      ...snapshot,
+      classes: snapshot.classes.filter((row) => row.targetId !== 'storage.redundant-indexes'),
+    });
+    api.getStorageDataClasses.mockResolvedValue([]);
+    api.getDatabaseSpace.mockResolvedValue(databaseSpaces);
+
+    rendered = render(<StoragePage />);
+    await screen.findByTestId('storage-first-screen');
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByTestId('reclaim-not-cleanable')
+          .some((el) => el.getAttribute('data-blocked-kind') === 'no-data'),
+      ).toBe(true),
+    );
+
+    const blocked = screen.getAllByTestId('reclaim-not-cleanable');
+    const noData = blocked.find((el) => el.getAttribute('data-blocked-kind') === 'no-data');
+    const policyOnly = blocked.find((el) => el.getAttribute('data-blocked-kind') === 'policy-only');
+
+    expect(noData).toBeTruthy();
+    expect(policyOnly).toBeTruthy();
+    // 关键断言：两种状态的展示文案必须不同 —— 相同就意味着又压回了一句话。
+    expect(noData?.textContent).not.toEqual(policyOnly?.textContent);
+    expect(noData?.textContent).toContain('暂无数据');
+    expect(policyOnly?.textContent).toContain('保留策略');
+  });
+});
