@@ -96,6 +96,26 @@ public sealed class InteractMappingTests
     }
 
     [Fact]
+    public async Task Interact_FallsBackToPreActionObservation_WhenTheAfterHandleCannotBeMapped()
+    {
+        // 动作后拿到的观察可能无法映射（例如页面刚导航、版本未定）。
+        // 那也不得让一次已派发的交互报失败——回退到动作前观测并如实标记。
+        var before = Handle("e1", version: 7);
+        var unmappable = Handle("e2", version: 0);
+        var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: before);
+        runtime.Pages["ctx-1/p-1"].HandleAfterAction = unmappable;
+
+        var result = await Surface(runtime).InteractAsync(
+            Call,
+            new BrowserInteractRequest(Target, DesktopInteractionAction.Fill, DesktopPageVersion.Require(7), Button, text: "x"),
+            CancellationToken.None);
+
+        Assert.False(result.IsFailure);
+        Assert.True(result.Value.Element!.IsPreActionObservation);
+        Assert.Contains("e1", result.Value.Element!.Reference);
+    }
+
+    [Fact]
     public async Task ClickAdvancesTheVersionAndReportsTheElementItActedOn()
     {
         var runtime = Runtime(pageVersion: 7, advanceTo: 8, handle: Handle("e1", version: 7));

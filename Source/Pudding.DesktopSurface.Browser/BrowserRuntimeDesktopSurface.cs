@@ -1090,6 +1090,10 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
         // 动作后重新观测：fill/type/select/check 会改变元素状态（值、勾选、选中项）。
         // 只有**动作之后**解析出的句柄才能用于 expect_value —— 用动作前的观察会让上层拿旧值
         // 比较，假失败会诱发重复派发（实测：type "cd" 后框内已是 "abcd"，回执却判 failed）。
+        // 保留动作前的句柄：动作后解析可能拿到一个无法映射的观察（例如页面刚导航、
+        // 版本还未定），那时应当回退到动作前观测 + 标记 pre-action，而不是让一次
+        // 已经派发的交互报失败 —— 与解析抛异常的处理保持对称。
+        var preActionHandle = handle;
         var observationIsPreAction = false;
         if (locator is not null)
         {
@@ -1121,6 +1125,15 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
         if (handle is not null)
         {
             var mapped = MapHandle(handle);
+            if (mapped.IsFailure && preActionHandle is not null && !ReferenceEquals(handle, preActionHandle))
+            {
+                // 动作后的观察无法映射（例如版本未定）：退回到动作前那个已知可映射的句柄，
+                // 并如实标记为动作前观测。
+                handle = preActionHandle;
+                observationIsPreAction = true;
+                mapped = MapHandle(handle);
+            }
+
             if (mapped.IsFailure)
             {
                 return CapabilityResult<DesktopInteractionResult>.Failure(mapped.Error);
