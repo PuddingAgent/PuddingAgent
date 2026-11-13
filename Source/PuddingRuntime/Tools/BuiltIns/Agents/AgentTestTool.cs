@@ -87,6 +87,14 @@ public sealed class AgentTestTool : PuddingToolBase<AgentTestArgs>
         var registered = tool is not null || descriptor is not null;
         var isAvailable = registered; // 基础可用性（host-service 首次使用时挂载）
 
+        // 「注册了」不等于「本 Agent 能调用」：search_tools 走的是 ListAvailable，
+        // 那里还有一道能力策略闸门（ToolPermissionPolicyService.CanExposeToAgent）。
+        // 只报 registered=true 会让调用方以为可加载——实测 provider_balance 就是这样：
+        // registered=true / is_available=true，但 search_tools 永远搜不到（不在当前角色的
+        // 有效工具集里）。两个判据不同源，必须分开报。
+        var exposedToAgent = registered && IsExposed(
+            toolRegistry.ListAvailable(context.CapabilityPolicy, context), toolId);
+
         // 2. 获取工具元数据
         string? labeledPermission = null;
         string? actualPermission = null;
@@ -94,6 +102,14 @@ public sealed class AgentTestTool : PuddingToolBase<AgentTestArgs>
         string? toolName = null;
         string? toolCategory = null;
         List<string> differences = [];
+
+        // 两个判据不同源：registered 只说明实现存在，exposed 才决定 search_tools 能否加载。
+        if (registered && !exposedToAgent)
+        {
+            differences.Add(
+                "registered but not exposed to this agent: the capability policy does not include it, " +
+                "so search_tools cannot load it and an invoke would hit the firewall");
+        }
 
         if (descriptor is not null)
         {
@@ -156,6 +172,7 @@ public sealed class AgentTestTool : PuddingToolBase<AgentTestArgs>
             ToolCategory = toolCategory,
             Registered = registered,
             IsAvailable = isAvailable,
+            ExposedToAgent = exposedToAgent,
             SourceKind = descriptor?.SourceKind,
             SourceId = descriptor?.SourceId,
             ResolvedBy = resolvedBy,
@@ -252,6 +269,13 @@ public sealed class AgentTestTool : PuddingToolBase<AgentTestArgs>
         return new(null, "none", near.Length > 0 ? string.Join(", ", near) : null);
     }
 
+    /// <summary>
+    /// 该工具是否在 ListAvailable 的结果里 —— 这正是 search_tools 的判据。
+    /// 抽成纯函数以便直接单测（判据不同源是两类假结论的共同来源）。
+    /// </summary>
+    internal static bool IsExposed(IReadOnlyList<ToolDescriptor> available, string toolId) =>
+        available.Any(d => string.Equals(d.ToolId, toolId, StringComparison.OrdinalIgnoreCase));
+
     private static string Truncate(string text, int maxLen)
     {
         if (string.IsNullOrEmpty(text) || text.Length <= maxLen)
@@ -279,6 +303,13 @@ public sealed class AgentTestReport
 
     [JsonPropertyName("is_available")]
     public bool IsAvailable { get; init; }
+
+    /// <summary>
+    /// 当前能力策略是否允许把它暴露给本 Agent。与 <see cref="Registered"/> 分开报：
+    /// 注册只说明实现存在，暴露才决定 <c>search_tools</c> 能否加载它。
+    /// </summary>
+    [JsonPropertyName("exposed_to_agent")]
+    public bool ExposedToAgent { get; init; }
 
     /// <summary>来源类型：BuiltIn 工具为 null，host-service 插件工具为 "Plugin"。</summary>
     [JsonPropertyName("source_kind")]

@@ -22,6 +22,25 @@ public sealed class AgentTestToolResolutionTests
     };
 
     [TestMethod]
+    public void IsExposed_ReturnsFalse_WhenThePolicyFiltersTheToolOut()
+    {
+        // registered=true 不等于可加载：provider_balance 实测 registered=true / is_available=true，
+        // 但 ListAvailable 里没有它（能力策略不含），search_tools 因此永远搜不到。
+        var available = new[] { Descriptor("plugin_search") };
+
+        Assert.IsFalse(AgentTestTool.IsExposed(available, "provider_balance"));
+        Assert.IsTrue(AgentTestTool.IsExposed(available, "plugin_search"));
+    }
+
+    [TestMethod]
+    public void IsExposed_IsCaseInsensitive()
+    {
+        var available = new[] { Descriptor("provider_balance") };
+
+        Assert.IsTrue(AgentTestTool.IsExposed(available, "PROVIDER_BALANCE"));
+    }
+
+    [TestMethod]
     public void RegistryHit_IsReportedAsRegistry()
     {
         var result = AgentTestTool.ResolveDescriptor(
