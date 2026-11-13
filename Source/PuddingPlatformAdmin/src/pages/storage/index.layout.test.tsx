@@ -10,6 +10,7 @@
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as React from 'react';
+import { formatBytes } from './api';
 import StoragePage from './index';
 
 // ⚠️ 这里刻意用 `type X = import('./types').Y` 而不是 `import type { Y }`：
@@ -409,6 +410,21 @@ describe('存储页首屏结构（S3a）', () => {
 
     // 只预览不执行：全程不得创建清理作业。
     expect(api.confirmCleanupJob).not.toHaveBeenCalled();
+  });
+
+  // 三段共用一条 100% 横条的前提是互不重叠。冗余索引是一个数据类，它的字节已经
+  // 含在分类合计里；若单列成段后不从保留策略段扣掉，同一批字节就占两次宽度。
+  it('三段互不重叠：保留策略段已扣除单列的冗余索引', async () => {
+    await renderPage();
+
+    const retention = screen
+      .getAllByTestId('reclaim-item')
+      .find((el) => el.getAttribute('data-segment-key') === 'retention') as HTMLElement;
+    expect(retention).toBeTruthy();
+
+    // 固定数据：分类合计 2.5e9，其中冗余索引 2e8 ⇒ 本段应为 2.3e9。
+    expect(retention.textContent).toContain(formatBytes(2_300_000_000));
+    expect(retention.textContent).not.toContain(formatBytes(2_500_000_000));
   });
 });
 

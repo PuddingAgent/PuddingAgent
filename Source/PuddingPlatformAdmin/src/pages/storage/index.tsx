@@ -406,6 +406,14 @@ const StoragePage: React.FC = () => {
     return entry?.estimatedBytes ?? null;
   }, [classRows]);
 
+  // 三段共用一条 100% 横条的前提是「互不重叠」。冗余索引本身就是一个数据类，它的
+  // 字节已经算进 classBytesTotal；单列成段后必须从保留策略段扣掉，否则同一批字节
+  // 会在横条上占两次宽度（分母 reclaimTotal 也随之偏大）。
+  const retentionBytes = useMemo(
+    () => Math.max(classBytesTotal - (redundantIndexBytes ?? 0), 0),
+    [classBytesTotal, redundantIndexBytes],
+  );
+
   // 第 3 行只表达「三种性质不同的可回收」，各自带自己的口径，不做四则运算合并。
   const reclaimSegments = useMemo<ReclaimSegment[]>(
     () => [
@@ -440,9 +448,9 @@ const StoragePage: React.FC = () => {
       {
         key: 'retention',
         label: '保留策略可清理',
-        bytes: classBytesTotal,
+        bytes: retentionBytes,
         color: '#13c2c2',
-        note: '分类估算合计，含仅受策略治理的证据类',
+        note: '分类估算合计（已扣除上面单列的冗余索引），含仅受策略治理的证据类',
         // 本段字节是**全部**分类合计，但可手动预览的只有目录允许手删的那些；
         // 两者口径不同是如实的（证据类只能受策略治理），不在这里合并或伪装。
         previewTargets: selectableRows.map((row) => row.targetId),
@@ -453,7 +461,7 @@ const StoragePage: React.FC = () => {
             : '无可手删分类：本段字节全部属于只受保留策略治理的证据类',
       },
     ],
-    [reusableTotal, redundantIndexBytes, classBytesTotal, selectableRows],
+    [reusableTotal, redundantIndexBytes, retentionBytes, selectableRows],
   );
 
   const reclaimTotal = useMemo(
