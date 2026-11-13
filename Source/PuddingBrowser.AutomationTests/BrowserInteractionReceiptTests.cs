@@ -19,6 +19,7 @@ public sealed class BrowserInteractionReceiptTests
         string? expectedValue = null,
         bool elementObserved = true,
         string? observedValue = null,
+        bool valueObservable = true,
         IReadOnlyList<string>? requestedValues = null,
         IReadOnlyList<string>? observedSelected = null,
         bool? requestedChecked = null,
@@ -36,6 +37,7 @@ public sealed class BrowserInteractionReceiptTests
             ExpectedValue: expectedValue,
             ElementObserved: elementObserved,
             ObservedValue: observedValue,
+            ValueObservable: valueObservable,
             ObservedSelectedValues: observedSelected,
             ObservedChecked: observedChecked,
             Execution: execution,
@@ -126,6 +128,26 @@ public sealed class BrowserInteractionReceiptTests
         Assert.AreEqual(BrowserActionVerification.Unverified, receipt.Verification);
         Assert.AreEqual(BrowserActionCompletion.Dispatched, receipt.Completion);
         Assert.AreEqual(0, receipt.Assertions.Count);
+        Assert.IsTrue(receipt.RequiresFollowUp);
+    }
+
+    [TestMethod]
+    public void Expectation_Declared_But_Value_Not_Echoed_Is_Unverified_Not_Failed()
+    {
+        // 实测场景（2026-11-13）：native type "cd" 后框内已是 "abcd"，但 interact 回执
+        // 默认不回显表单值 ⇒ ObservedValue 为 null。此时是「没有观测」，不是「观测不符」。
+        // 判 failed 会让调用方以为输入失败并重复派发，结果是内容被追加第二次。
+        var receipt = BrowserInteractionReceipt.Build(Evidence(
+            DesktopInteractionAction.Fill,
+            requestedText: "abcd",
+            expectedValue: "abcd",
+            elementObserved: true,
+            observedValue: null,
+            valueObservable: false));
+
+        Assert.AreEqual(BrowserActionVerification.Unverified, receipt.Verification);
+        Assert.AreNotEqual(BrowserActionCompletion.Failed, receipt.Completion);
+        Assert.AreEqual(0, receipt.Assertions.Count, "没有观测就不产出断言");
         Assert.IsTrue(receipt.RequiresFollowUp);
     }
 

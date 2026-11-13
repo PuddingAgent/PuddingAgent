@@ -440,6 +440,10 @@ public sealed class BrowserInteractTool(
                 ExpectedValue: args.ExpectValue,
                 ElementObserved: element is not null,
                 ObservedValue: element?.Value,
+                // 值为 null 表示「没读到」（交互回执默认不回显表单值），而不是「读到了空值」。
+                // 前者只能判 unverified；把它当成不符会报出假失败，调用方一重试就把内容再追加一遍。
+                // 将来驱动在交互后回读表单值，这里会自动转为可断言。
+                ValueObservable: element?.Value is not null,
                 ObservedSelectedValues: element?.SelectedValues,
                 ObservedChecked: element?.IsChecked,
                 Execution: BrowserActionExecution.Completed,

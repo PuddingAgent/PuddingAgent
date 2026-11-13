@@ -225,7 +225,7 @@ public sealed class ComponentSurfaceTests
             ["ScreenshotDomRevisionTests"] = 5,
             ["BrowserAssertionRedactionTests"] = 11,
             ["BrowserControlAuthorityTests"] = 16,
-            ["BrowserInteractionReceiptTests"] = 24,
+            ["BrowserInteractionReceiptTests"] = 25,
             ["BrowserMutationPostconditionTests"] = 12,
             ["BrowserOperationLedgerTests"] = 15,
             ["BrowserOperationPolicyTests"] = 10,

@@ -16,6 +16,12 @@ public sealed record BrowserInteractionEvidence(
     string? ExpectedValue = null,
     bool ElementObserved = false,
     string? ObservedValue = null,
+    /// <summary>
+    /// 本次观测里值是否可读。交互回执默认不包含表单值（防泄露），此时
+    /// <see cref="ObservedValue"/> 为 null 只表示「没观测到」，不表示「观测到不相符的值」。
+    /// 两者必须分开：前者 unverified，后者 failed。
+    /// </summary>
+    bool ValueObservable = true,
     IReadOnlyList<string>? ObservedSelectedValues = null,
     bool? ObservedChecked = null,
     BrowserActionExecution Execution = BrowserActionExecution.Completed,
@@ -52,10 +58,22 @@ public static class BrowserInteractionReceipt
         }
 
         var assertions = BuildAssertions(evidence, out var expectationDeclared);
-        var unableToVerify = expectationDeclared && !evidence.ElementObserved;
 
-        // 声明了期望却拿不到观测（元素消失/重渲染）：**不是** failed —— 没有证据说它错了。
-        // 清空断言并置 UnableToVerify，让判定器判为 unverified。
+        // 「声明了期望但没有可用观测」= unverified，**不是** failed。两种情形都算：
+        // ① 元素没观察到（消失/重渲染）；
+        // ② 元素在、但值读不到（interact 回执默认不回显表单值）。
+        // 把 ② 判成 failed 会让调用方以为输入没写进去并重复派发 —— 实测 type "cd" 后框内已是
+        // "abcd"，回执却报 failed/actual=null，重试的结果是内容被追加第二次（"abcdcd"）。
+        // 没有观测只说明「判不了」，不说明「判不过」。
+        // 「声明了期望，但值根本没有回显」≠「观测到不相符的值」。
+        // 前者是判不了（unverified），后者才是 failed。二者都表现为 ObservedValue == null，
+        // 所以由 ValueObservable 显式区分，而不是靠 null 猜。
+        var valueNotEchoed = !evidence.ValueObservable
+            && evidence.ExpectedValue is not null
+            && evidence.ObservedValue is null;
+        var unableToVerify = expectationDeclared && (!evidence.ElementObserved || valueNotEchoed);
+
+        // 拿不到观测就清空断言并置 UnableToVerify，让判定器判为 unverified。
         if (unableToVerify)
         {
             assertions = [];
