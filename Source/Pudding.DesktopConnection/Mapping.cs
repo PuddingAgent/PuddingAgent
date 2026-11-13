@@ -345,7 +345,9 @@ internal static class CoreFrameMapping
                         string.IsNullOrEmpty(spec.Name) ? null : spec.Name,
                         spec.Exact,
                         spec.Nth < 0 ? null : spec.Nth,
-                        string.IsNullOrEmpty(spec.HasText) ? null : spec.HasText);
+                            string.IsNullOrEmpty(spec.HasText) ? null : spec.HasText,
+                            spec.IncludeHidden,
+                            spec.InViewportOnly);
                 }
                 catch (ArgumentException ex)
                 {
@@ -409,7 +411,9 @@ internal static class CoreFrameMapping
                             string.IsNullOrEmpty(spec.Name) ? null : spec.Name,
                             spec.Exact,
                             spec.Nth < 0 ? null : spec.Nth,
-                            string.IsNullOrEmpty(spec.HasText) ? null : spec.HasText);
+                            string.IsNullOrEmpty(spec.HasText) ? null : spec.HasText,
+                            spec.IncludeHidden,
+                            spec.InViewportOnly);
                     }
                     catch (ArgumentException ex)
                     {
@@ -481,7 +485,9 @@ internal static class CoreFrameMapping
                         string.IsNullOrEmpty(screenshotSpec.Name) ? null : screenshotSpec.Name,
                         screenshotSpec.Exact,
                         screenshotSpec.Nth < 0 ? null : screenshotSpec.Nth,
-                        string.IsNullOrEmpty(screenshotSpec.HasText) ? null : screenshotSpec.HasText);
+                        string.IsNullOrEmpty(screenshotSpec.HasText) ? null : screenshotSpec.HasText,
+                        screenshotSpec.IncludeHidden,
+                        screenshotSpec.InViewportOnly);
                 }
             
                 try
@@ -1186,6 +1192,19 @@ internal static class DesktopFrameMapping
                             wireElement.Checked = isChecked;
                         }
 
+                        // 新三项：value / selected_values / in_viewport。
+                        // presence 语义：不知道时不赋值，绝不用空串/false 假装观测过。
+                        if (element.Value is { } elementValue)
+                        {
+                            wireElement.Value = elementValue;
+                        }
+
+                        wireElement.SelectedValues.AddRange(element.SelectedValues ?? Array.Empty<string>());
+                        if (element.InViewport is { } elementInViewport)
+                        {
+                            wireElement.InViewport = elementInViewport;
+                        }
+
                         result.Locate.Elements.Add(wireElement);
                     }
 
@@ -1221,6 +1240,17 @@ internal static class DesktopFrameMapping
                         if (interacted.IsChecked is { } isChecked)
                         {
                             wireElement.Checked = isChecked;
+                        }
+
+                        if (interacted.Value is { } interactedValue)
+                        {
+                            wireElement.Value = interactedValue;
+                        }
+
+                        wireElement.SelectedValues.AddRange(interacted.SelectedValues ?? Array.Empty<string>());
+                        if (interacted.InViewport is { } interactedInViewport)
+                        {
+                            wireElement.InViewport = interactedInViewport;
                         }
 
                         result.Interact.Element = wireElement;

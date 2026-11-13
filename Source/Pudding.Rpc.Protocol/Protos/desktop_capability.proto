@@ -184,6 +184,11 @@ message LocatorSpec {
   bool exact = 4;
   int32 nth = 5;
   string has_text = 6;
+  // 与 visible 正交的两个筛选（设计方案 §6.2）。缺省 false ⇒ 既有行为不变。
+  // 曾经只存在于运行时 Locator 与 JSON 桥接线上，protobuf 契约没有 ⇒ 能力通道静默丢弃，
+  // 请求 in_viewport_only=true 仍返回视口外元素，而回执看起来完全正常。
+  bool include_hidden = 7;
+  bool in_viewport_only = 8;
 }
 
 // 元素引用（按值元数据）：page_version 必须有效，交互提交后不得复用。
@@ -200,6 +205,11 @@ message ElementRef {
   // 元素包围盒（可选）。加宽（2026-10-02）：工具侧 BrowserElementToolValue.BoundingBox 一直存在，
   // 而线缆此前没有 ⇒ 能力通道取不到、Bridge 取得到。用消息字段表达 presence（缺省 = 不知道，不是 0,0,0,0）。
   ElementBox bounding_box = 10;
+  // 交互回执与可见性判定所需（设计方案 §4.2/§6.2）。
+  // value / in_viewport 用 optional 表达 presence("不知道" ≠ 空串/false)。
+  optional string value = 11;
+  repeated string selected_values = 12;
+  optional bool in_viewport = 13;
 }
 
 message ElementBox {

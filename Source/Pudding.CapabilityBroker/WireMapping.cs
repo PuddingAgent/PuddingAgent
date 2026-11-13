@@ -135,6 +135,8 @@ internal static class CoreCommandEncoder
                         Exact = locate.Locator.Exact,
                         Nth = locate.Locator.Nth ?? -1,
                         HasText = locate.Locator.HasText ?? string.Empty,
+                        IncludeHidden = locate.Locator.IncludeHidden,
+                        InViewportOnly = locate.Locator.InViewportOnly,
                     },
                 };
                 break;
@@ -158,6 +160,8 @@ internal static class CoreCommandEncoder
                         Exact = interactLocator.Exact,
                         Nth = interactLocator.Nth ?? -1,
                         HasText = interactLocator.HasText ?? string.Empty,
+                        IncludeHidden = interactLocator.IncludeHidden,
+                        InViewportOnly = interactLocator.InViewportOnly,
                     };
                 }
 
@@ -344,6 +348,8 @@ internal static class CoreCommandEncoder
                         Exact = screenshotLocator.Exact,
                         Nth = screenshotLocator.Nth ?? -1,
                         HasText = screenshotLocator.HasText ?? string.Empty,
+                        IncludeHidden = screenshotLocator.IncludeHidden,
+                        InViewportOnly = screenshotLocator.InViewportOnly,
                     };
                 }
                 break;
@@ -907,7 +913,10 @@ internal static class DesktopResultDecoder
                                 NullIfEmpty(interacted.Text),
                                 interacted.Visible,
                                 interacted.Enabled,
-                                interacted.HasChecked ? interacted.Checked : null)
+                                interacted.HasChecked ? interacted.Checked : null,
+                                interacted.HasValue ? interacted.Value : null,
+                                interacted.SelectedValues.Count == 0 ? null : [.. interacted.SelectedValues],
+                                interacted.HasInViewport ? interacted.InViewport : null)
                             {
                                 BoundingBox = FromWireBox(interacted.BoundingBox),
                             };
@@ -954,7 +963,10 @@ internal static class DesktopResultDecoder
                                 NullIfEmpty(element.Text),
                                 element.Visible,
                                 element.Enabled,
-                                element.HasChecked ? element.Checked : null)
+                                element.HasChecked ? element.Checked : null,
+                                element.HasValue ? element.Value : null,
+                                element.SelectedValues.Count == 0 ? null : [.. element.SelectedValues],
+                                element.HasInViewport ? element.InViewport : null)
                             {
                                 BoundingBox = FromWireBox(element.BoundingBox),
                             });
