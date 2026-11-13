@@ -1927,6 +1927,33 @@ public sealed class BrowserAgentToolsTests
     }
 
     [Fact]
+    public async Task Interact_PressWithoutExplicitInputMode_DefaultsToNative()
+    {
+        // press 的 DOM 路径只能 `el.dispatchEvent(new KeyboardEvent(...))`——不可信事件，
+        // 页面里基于真实键盘的快捷键（上下键切视频、空格暂停）一律不触发，而回执仍报 dispatched，
+        // 是最难排查的那种假成功。所以未显式传 input_mode 时必须默认 native。
+        var runtime = new FakeBrowserRuntime();
+        var context = await runtime.CreateContextAsync(
+            new BrowserContextOptions { Id = new BrowserContextId("ctx-1") }, CancellationToken.None);
+        var page = (FakeBrowserPage)await context.NewPageAsync(new PageCreateOptions(), CancellationToken.None);
+        var surface = new FakeCapabilitySurface(runtime);
+
+        var result = await ExecuteAsync(
+            new BrowserInteractTool(surface, new FakeCallContextFactory(), _originAccessor),
+            JsonSerializer.Serialize(new
+            {
+                action = "press",
+                page_id = page.Id.Value,
+                context_id = "ctx-1",
+                locator = new { kind = "css", value = "body" },
+                text = "ArrowDown"
+            }));
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(DesktopInputMode.Native, surface.LastInteractRequest!.InputMode);
+    }
+
+    [Fact]
     public async Task Interact_NativeInputMode_OnAnUnsupportedAction_FailsExplicitly()
     {
         // 原生输入覆盖键鼠能表达的动作；`select` 不在其中 ⇒ **明确 unsupported**，

@@ -136,7 +136,13 @@ public sealed class BrowserInteractTool(
             return BrowserToolResponse.Failure("browser_invalid_arguments", "unsupported interaction action");
 
         // 输入路径必须显式且被尊重（§7）。未登记的线名 fail closed。
-        var inputMode = DesktopInputMode.Dom;
+        //
+        // press 的默认值**必须**是 native：DOM 路径对 press 只能
+        // `el.dispatchEvent(new KeyboardEvent('keydown', ...))`，那是不可信事件，
+        // 页面里任何基于真实键盘的监听（抖音的上下键切视频、播放器空格暂停等）
+        // 一律不触发——回执报 dispatched，页面却毫无反应，而这正是最难排查的那种“假成功”。
+        // 只有 CDP 的 Input.dispatchKeyEvent 能产生可信按键。
+        var inputMode = action == "press" ? DesktopInputMode.Native : DesktopInputMode.Dom;
         if (!string.IsNullOrWhiteSpace(args.InputMode))
         {
             if (!DesktopInputModeWire.TryParse(args.InputMode.Trim(), out inputMode))
