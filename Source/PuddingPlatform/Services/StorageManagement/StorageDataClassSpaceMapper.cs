@@ -29,7 +29,9 @@ public sealed record StorageDataClassSpace(
 /// 归并要点：dbstat 的每一行已经带 <c>OwnerTable</c>（由探针经 <c>sqlite_master</c> 解析，
 /// 索引归到它所属的表）⇒ **索引占用计入其表所在的数据类**，否则"索引特别多的表"会被明显低估。
 /// 不在任何数据类里的表进 <see cref="UnclassifiedTargetId"/> 桶 —— 如实展示目录没覆盖的部分，
-/// 而不是把它偷偷摊进别的类。
+/// 而不是把它偷偷摊进别的类。已登记在保护清单（<see cref="StorageDataClassCatalog.ProtectedObjectDefinitions"/>）
+/// 里的表另进 <see cref="ProtectedTargetId"/> 桶：它们是**已知且刻意不清理**的占用，
+/// 与「目录没覆盖」是两回事，不能共用一句话。
 /// </para>
 /// </summary>
 public static class StorageDataClassSpaceMapper
@@ -40,18 +42,31 @@ public static class StorageDataClassSpaceMapper
     /// <summary>未归类桶的展示名。</summary>
     public const string UnclassifiedDisplayName = "未归类";
 
+    /// <summary>受保护数据桶的稳定 ID（在保护清单里声明、刻意不提供清理入口）。</summary>
+    public const string ProtectedTargetId = "protected";
+
+    /// <summary>受保护数据桶的展示名。</summary>
+    public const string ProtectedDisplayName = "受保护数据";
+
     /// <summary>
     /// 按数据类归并（结果按占用降序；未归类始终排在最后，即使它最大 —— 它是"待补目录"的信号）。
     /// </summary>
     /// <param name="tables">探针给出的按表明细（应含 <c>OwnerTable</c>）。</param>
     /// <param name="definitions">数据类目录；默认用 <see cref="StorageDataClassCatalog.Definitions"/>。</param>
+    /// <param name="tables">探针给出的按表明细（应含 <c>OwnerTable</c>）。</param>
+    /// <param name="definitions">数据类目录；默认用 <see cref="StorageDataClassCatalog.Definitions"/>。</param>
+    /// <param name="protectedObjects">保护清单；默用 <see cref="StorageDataClassCatalog.ProtectedObjectDefinitions"/>。
+    /// 命中保护清单但不在数据类目录里的表会归入 <see cref="ProtectedTargetId"/>，而不是未归类。</param>
     public static IReadOnlyList<StorageDataClassSpace> Map(
         IReadOnlyList<DatabaseTableSpace> tables,
-        IReadOnlyList<StorageDataClassCatalog.StorageDataClassDefinition>? definitions = null)
+        IReadOnlyList<StorageDataClassCatalog.StorageDataClassDefinition>? definitions = null,
+        IReadOnlyList<StorageDataClassCatalog.StorageProtectedObject>? protectedObjects = null)
     {
         ArgumentNullException.ThrowIfNull(tables);
 
         var owners = BuildOwnerIndex(definitions ?? StorageDataClassCatalog.Definitions);
+        var protectedOwners = BuildProtectedIndex(
+            protectedObjects ?? StorageDataClassCatalog.ProtectedObjectDefinitions);
         var buckets = new Dictionary<string, Bucket>(StringComparer.Ordinal);
         var order = new List<string>();
 
@@ -60,13 +75,19 @@ public static class StorageDataClassSpaceMapper
             // 归属键：解析出的所属表优先，拿不到就退回 B 树自身的名字（索引名也得有归宿）。
             var ownerKey = string.IsNullOrWhiteSpace(table.OwnerTable) ? table.Table : table.OwnerTable!;
             var hasDefinition = owners.TryGetValue(ownerKey, out var definition);
+            // 数据类目录优先：它一旦映射了某表，该表就是可归类/可清理语义，不再归入保护桶。
+            var isProtected = !hasDefinition && protectedOwners.ContainsKey(ownerKey);
 
-            var targetId = hasDefinition ? definition!.TargetId : UnclassifiedTargetId;
+            var targetId = hasDefinition
+                ? definition!.TargetId
+                : isProtected ? ProtectedTargetId : UnclassifiedTargetId;
             if (!buckets.TryGetValue(targetId, out var bucket))
             {
                 bucket = new Bucket(
                     TargetId: targetId,
-                    DisplayName: hasDefinition ? definition!.DisplayName : UnclassifiedDisplayName,
+                    DisplayName: hasDefinition
+                        ? definition!.DisplayName
+                        : isProtected ? ProtectedDisplayName : UnclassifiedDisplayName,
                     SafetyLevel: hasDefinition ? definition!.SafetyLevel.ToString() : string.Empty,
                     ManualCleanupAllowed: hasDefinition && definition!.ManualCleanupAllowed,
                     Tables: new List<string>());
@@ -84,8 +105,14 @@ public static class StorageDataClassSpaceMapper
 
         return order
             .Select(id => buckets[id])
-            // 降序展示；未归类恒排最后（它是"目录没覆盖"的提示，不该因为体积大就抢头条）。
-            .OrderBy(space => space.TargetId == UnclassifiedTargetId ? 1 : 0)
+            // 降序展示；受保护数据排次末、未归类恒排最后（后者是"目录没覆盖"的提示，
+            // 不该因为体积大就抢头条；前者是已知且刻意不清理的占用）。
+            .OrderBy(space => space.TargetId switch
+            {
+                ProtectedTargetId => 1,
+                UnclassifiedTargetId => 2,
+                _ => 0,
+            })
             .ThenByDescending(space => space.Bytes)
             .Select(space => new StorageDataClassSpace(
                 space.TargetId,
@@ -114,6 +141,24 @@ public static class StorageDataClassSpaceMapper
         }
 
         return owners;
+    }
+
+    private static Dictionary<string, StorageDataClassCatalog.StorageProtectedObject> BuildProtectedIndex(
+        IReadOnlyList<StorageDataClassCatalog.StorageProtectedObject> protectedObjects)
+    {
+        var index = new Dictionary<string, StorageDataClassCatalog.StorageProtectedObject>(
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in protectedObjects)
+        {
+            foreach (var table in entry.Tables)
+            {
+                // 同一张表被两条保护声明覆盖时以先声明者为准，理由同 BuildOwnerIndex：
+                // 运维面宁可少说一条也不能整页打不开。
+                index.TryAdd(table, entry);
+            }
+        }
+
+        return index;
     }
 
     private sealed class Bucket(
