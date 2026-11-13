@@ -24,6 +24,9 @@ export const STORAGE_CLASS_COLORS: Record<string, string> = {
   'platform.task-orchestration': '#9254de',
   'platform.config-catalog': '#ff7a45',
   'platform.runtime-metadata': '#36cfc9',
+  // 保护清单单独成桶（mapper 的 protected）：它们已知且刻意不清理。
+  // 不能省这一行——否则会回退成 #bfbfbf，看起来又像「未归类」。
+  'protected': '#595959',
 };
 
 const FALLBACK_COLOR = '#bfbfbf';
