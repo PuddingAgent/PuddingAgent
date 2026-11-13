@@ -123,7 +123,7 @@ public sealed class StorageInventorySnapshotStore
             var previousClasses = _current.Classes.ToDictionary(c => c.TargetId, StringComparer.Ordinal);
 
             var merged = classes is { Count: > 0 }
-                ? classes.Select(Update).ToArray()
+                ? MergeIntoPrevious()
                 : previousClasses.Values.Select(c => c with { EstimateState = StorageEstimateState.Updated }).ToArray();
 
             var capturedAt = _current.CapturedAtUtc == DateTimeOffset.MinValue || !isRefreshing
@@ -153,6 +153,19 @@ public sealed class StorageInventorySnapshotStore
                     && previous.EstimatedBytes is not null)
                     return previous with { UpdatedAtUtc = now };
                 return incoming;
+            }
+
+            StorageInventoryClassDto[] MergeIntoPrevious()
+            {
+                // 累加而不是整体替换：采样器把工作切成多个 slice，每个 slice 只产出
+                // 自己那部分分类。整表替换会让后完成的 slice 覆盖掉前面全部结果
+                // （2026-11-13 实测：刷新后快照只剩最后一个 slice 的 一个分类，
+                //  首屏矩形树图因此只能显示「仅一个分类」）。
+                var byTargetId = new Dictionary<string, StorageInventoryClassDto>(
+                    previousClasses, StringComparer.Ordinal);
+                foreach (var incoming in classes)
+                    byTargetId[incoming.TargetId] = Update(incoming);
+                return byTargetId.Values.OrderBy(c => c.TargetId, StringComparer.Ordinal).ToArray();
             }
 
             return revision;

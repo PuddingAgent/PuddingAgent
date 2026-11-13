@@ -337,7 +337,9 @@ public static class StorageDataClassCatalog
                 new StoragePhysicalTable { Table = "task_scheduler_intents", TimestampColumn = "" },
                 new StoragePhysicalTable { Table = "todo_items", TimestampColumn = "" },
                 new StoragePhysicalTable { Table = "todo_lists", TimestampColumn = "" },
-                new StoragePhysicalTable { Table = "workspace_tasks", TimestampColumn = "" },
+                // workspace_tasks 不在此登记：它是受保护表，由
+                // Catalog_Never_Maps_Protected_Tables 守门。归因层一旦映射它，
+                // 清理目录就指向了受保护数据，删除路径随之可达。
             ],
         },
         new()
@@ -429,7 +431,10 @@ public static class StorageDataClassCatalog
         new()
         {
             Label = "Workspace Task / TaskEvent / Assignment / Orchestration Run+Event",
-            Reason = "任务与编排事实是用户可见的执行历史；按模块保护，没有单一物理表。",
+            // workspace_tasks 是唯一有实体表的任务事实：归因靠保护清单而不靠清理目录，
+            // 否则清理目录就指向了受保护数据（Catalog_Never_Maps_Protected_Tables）。
+            Tables = ["workspace_tasks"],
+            Reason = "任务与编排事实是用户可见的执行历史；按模块保护，其中 workspace_tasks 是受保护物理表。",
         },
         new()
         {

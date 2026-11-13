@@ -221,6 +221,39 @@ public sealed class StorageManagementAdministrationTests : IDisposable
         Assert.False(snapshot.IsRefreshing);
     }
 
+    // 采样器把工作切成多个 slice，每个 slice 只传自己那部分分类。
+    // 曾经是整体替换，后完成的 slice 会把前面的全盖掉（快照只剩 1 个分类）。
+    [Fact]
+    public void Snapshot_Merge_Accumulates_Classes_From_Separate_Slices()
+    {
+        var store = new StorageInventorySnapshotStore(
+            CreatePaths(), NullLogger<StorageInventorySnapshotStore>.Instance);
+
+        store.MergeSnapshot(null, [Class(StorageAdminTargetIds.TelemetryRaw, 100)], isRefreshing: true);
+        store.MergeSnapshot(null, [Class(StorageAdminTargetIds.ConversationEventsEvidence, 200)], isRefreshing: true);
+        store.MergeSnapshot(null, [Class(StorageAdminTargetIds.RuntimeActivity, 300)], isRefreshing: true);
+
+        var targetIds = store.Current.Classes.Select(c => c.TargetId).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+        Assert.Equal(3, targetIds.Length);
+        Assert.Contains(StorageAdminTargetIds.TelemetryRaw, targetIds);
+        Assert.Contains(StorageAdminTargetIds.ConversationEventsEvidence, targetIds);
+        Assert.Contains(StorageAdminTargetIds.RuntimeActivity, targetIds);
+    }
+
+    [Fact]
+    public void Snapshot_Merge_Replaces_Same_TargetId_Instead_Of_Appending()
+    {
+        var store = new StorageInventorySnapshotStore(
+            CreatePaths(), NullLogger<StorageInventorySnapshotStore>.Instance);
+
+        store.MergeSnapshot(null, [Class(StorageAdminTargetIds.TelemetryRaw, 100)], isRefreshing: true);
+        store.MergeSnapshot(null, [Class(StorageAdminTargetIds.TelemetryRaw, 999)], isRefreshing: true);
+
+        var only = store.Current.Classes.Single();
+        Assert.Equal(StorageAdminTargetIds.TelemetryRaw, only.TargetId);
+        Assert.Equal(999, only.EstimatedBytes);
+    }
+
     // ─── 执行器（小批 / 清字段 / cursor）─────────────────────────
 
     [Fact]
