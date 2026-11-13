@@ -188,8 +188,12 @@ const StoragePage: React.FC = () => {
   const [policyOpen, setPolicyOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const refreshTimer = useRef<number | null>(null);
-  // database-space 只测量一次的守卫：装载、重渲染、StrictMode 都不重复付费。
-  const spacesRequested = useRef(false);
+  // database-space 是三态而不是一次性布尔：测量要几秒，Core 刚重启时首次请求可能瞬时失败，
+  // 静默留空态会让用户把「测不到」误读成「没有库占用明细」（2026-11-13 实测首开为空、F5 才有）。
+  const [spacesStatus, setSpacesStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  // 在途请求序号：StrictMode 双挂载与自动重试都会产生并发请求，只让最新一次写 state。
+  const spacesRequestSeq = useRef(0);
+  const spacesRetryTimer = useRef<number | null>(null);
 
   const loadOverview = useCallback(async () => {
     try {
@@ -253,25 +257,41 @@ const StoragePage: React.FC = () => {
     void loadTrend(trendDays);
   }, [trendDays, loadTrend]);
 
-  // 首屏「各库构成」的数据：database-space 是一次显式只读测量（逐表取行数，GB 级库需要几秒），
-  // 所以只在装载时触发一次（ref 去重）。Tab 里的 DatabaseSpacePanel 仍是「点按钮才测量」，
-  // 装载时不会叠第二次请求；两处消费同一端点，但同一时刻只有一处真的在测量。
-  useEffect(() => {
-    if (spacesRequested.current) return;
-    spacesRequested.current = true;
-    let alive = true;
-    (async () => {
-      try {
-        const spaces = await getDatabaseSpace();
-        if (alive) setDatabaseSpaces(spaces);
-      } catch {
-        // 测量失败只让堆叠条回落空态，不影响首屏其余数字。
+  // 首屏「各库构成」的数据：database-space 是一次显式只读测量（逐表取行数，GB 级库需要几秒）。
+  // 装载时自动跑一次，失败自动重试一次——Core 刚重启时首次请求会因连接未就绪而失败。
+  // Tab 里的 DatabaseSpacePanel 仍是「点按钮才测量」，两处消费同一端点。
+  const loadDatabaseSpaces = useCallback(async (attempt = 0) => {
+    const seq = ++spacesRequestSeq.current;
+    setSpacesStatus('loading');
+    try {
+      const spaces = await getDatabaseSpace();
+      if (spacesRequestSeq.current !== seq) return;
+      setDatabaseSpaces(spaces);
+      setSpacesStatus('ready');
+    } catch {
+      if (spacesRequestSeq.current !== seq) return;
+      if (attempt < 1) {
+        spacesRetryTimer.current = window.setTimeout(() => {
+          void loadDatabaseSpaces(attempt + 1);
+        }, 1500);
+        return;
       }
-    })();
-    return () => {
-      alive = false;
-    };
+      // 两次都失败：给出可见状态与手动入口，不把「测不到」伪装成「没有」。
+      setSpacesStatus('error');
+    }
   }, []);
+
+  useEffect(() => {
+    void loadDatabaseSpaces();
+    return () => {
+      // 卸载后不再写 state：递增序号作废在途请求，并清掉待触发的重试。
+      spacesRequestSeq.current += 1;
+      if (spacesRetryTimer.current != null) {
+        window.clearTimeout(spacesRetryTimer.current);
+        spacesRetryTimer.current = null;
+      }
+    };
+  }, [loadDatabaseSpaces]);
 
   // 组件卸载清理快速轮询定时器（不取消 Core 侧共享估算任务）。
   useEffect(
@@ -806,7 +826,28 @@ const StoragePage: React.FC = () => {
                 title="各库构成（按数据类）"
                 extra={<span title={STACKED_NOTE}>长度＝该库占比</span>}
               >
-                <StorageStackedBars rows={stackedRows} />
+                {spacesStatus === 'loading' ? (
+                  <div data-testid="stacked-bars-loading" style={{ padding: '24px 0', color: '#8c8c8c' }}>
+                    正在测量各库构成（逐表取行数，GB 级库需要几秒）…
+                  </div>
+                ) : spacesStatus === 'error' ? (
+                  // 外层 div 承载 testid：antd Alert 是否透传 data-* 是实现细节，不拿它当判据。
+                  <div data-testid="stacked-bars-error">
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message="各库构成测量失败"
+                      description="该端点需要逐表测量，Core 刚重启时可能瞬时不可用。可点右侧重新测量。"
+                      action={
+                        <Button size="small" onClick={() => void loadDatabaseSpaces()}>
+                          重新测量
+                        </Button>
+                      }
+                    />
+                  </div>
+                ) : (
+                  <StorageStackedBars rows={stackedRows} />
+                )}
               </Card>
             </Col>
           </Row>

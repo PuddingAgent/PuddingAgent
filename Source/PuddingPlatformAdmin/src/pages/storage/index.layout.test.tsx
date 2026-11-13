@@ -411,3 +411,60 @@ describe('存储页首屏结构（S3a）', () => {
     expect(api.confirmCleanupJob).not.toHaveBeenCalled();
   });
 });
+
+// database-space 是「逐表测量」，Core 刚重启时首次请求会失败。这两个用例锁住
+// 「失败不许静默留空态」：一个锁自动重试一次，一个锁可见错误 + 手动重新测量。
+describe('各库构成的冷启动恢复（首屏不静默留空）', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // clearAllMocks 只清 calls，**不清 once 队列**：上一条用例若提前失败，
+    // 残留的 mockResolvedValueOnce 会被这一条消费，制造与产品无关的假红/假绿。
+    api.getDatabaseSpace.mockReset();
+    api.getStorageOverview.mockResolvedValue(snapshot);
+    api.getStorageDataClasses.mockResolvedValue(dataClasses);
+    api.getProtectedObjects.mockResolvedValue([]);
+    api.getRetentionPolicy.mockResolvedValue(policy);
+    api.getInventoryTrend.mockResolvedValue([]);
+    api.listCleanupJobs.mockResolvedValue(jobs);
+  });
+
+  it('首次失败会自动重试一次，成功后显示各库构成而不是空态', async () => {
+    api.getDatabaseSpace
+      .mockRejectedValueOnce(new Error('cold start'))
+      .mockResolvedValueOnce(databaseSpaces);
+
+    rendered = render(<StoragePage />);
+    const firstScreen = await screen.findByTestId('storage-first-screen');
+
+    await waitFor(
+      () => {
+        expect(within(firstScreen).queryAllByTestId('stacked-row').length).toBeGreaterThan(0);
+      },
+      { timeout: 4000 },
+    );
+    expect(api.getDatabaseSpace).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId('stacked-bars-error')).toBeNull();
+  });
+
+  it('两次都失败时给出可见错误与重新测量入口，点击后恢复', async () => {
+    api.getDatabaseSpace.mockRejectedValue(new Error('cold start'));
+
+    rendered = render(<StoragePage />);
+    const firstScreen = await screen.findByTestId('storage-first-screen');
+
+    await waitFor(() => expect(screen.getByTestId('stacked-bars-error')).toBeTruthy(), {
+      timeout: 4000,
+    });
+
+    api.getDatabaseSpace.mockResolvedValueOnce(databaseSpaces);
+    fireEvent.click(screen.getByRole('button', { name: '重新测量' }));
+
+    await waitFor(
+      () => {
+        expect(within(firstScreen).queryAllByTestId('stacked-row').length).toBeGreaterThan(0);
+      },
+      { timeout: 4000 },
+    );
+    expect(screen.queryByTestId('stacked-bars-error')).toBeNull();
+  });
+});
