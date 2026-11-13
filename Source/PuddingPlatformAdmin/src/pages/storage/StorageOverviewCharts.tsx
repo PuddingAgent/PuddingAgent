@@ -14,7 +14,10 @@ export const STORAGE_CLASS_COLORS: Record<string, string> = {
   'diagnostics.rollups': '#722ed1',
   'code-index.obsolete-scopes': '#2f54eb',
   'storage.redundant-indexes': '#a0d911',
-  'evidence.conversation-events': '#8c8c8c',
+  // 曾经是 #8c8c8c（深灰）：而「未归类」的回退色是 #bfbfbf（浅灰）—— 两个中性灰并排，
+  // 而这一类恰好是占比最大的一块（实测 65.46%），看上去就像「一大片没归类」。
+  // 占用最大的类必须是彩色，灰只留给「目录没覆盖」。
+  'evidence.conversation-events': '#531dab',
   // 以下四类是「仅归因、不可清理」的结构性占用（见 StorageDataClassCatalog）。
   // 不加颜色的话它们会与「未归类」共用 #bfbfbf 回退色，首屏堆叠条就还是看不出构成。
   'platform.conversation-orchestration': '#597ef7',

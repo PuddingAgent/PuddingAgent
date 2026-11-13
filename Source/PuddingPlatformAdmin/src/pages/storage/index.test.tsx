@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
-import { StorageTrendChart, classColor } from './StorageOverviewCharts';
+import { STORAGE_CLASS_COLORS, StorageTrendChart, classColor } from './StorageOverviewCharts';
 import { formatBytes, formatCount, formatUtc } from './api';
 import type { StorageInventoryTrendPoint } from './types';
 
@@ -103,5 +103,26 @@ describe('classColor', () => {
   it('为固定目录类型返回稳定配色，未知类型回退灰色', () => {
     expect(classColor('diagnostics.telemetry-raw')).toBe('#fa8c16');
     expect(classColor('unknown-target')).toBe('#bfbfbf');
+  });
+});
+
+// 事故回溯：evidence.conversation-events 的配色曾是 #8c8c8c（深灰），而「未归类」的回退色是
+// #bfbfbf（浅灰）。两类并排都是中性灰，而前者恰好是占比最大的一块（实测 65.46%），
+// 于是一整条横条看起来像「一大片没归类」—— 我自己就照着这个误解排查了半小时。
+// 下面这条断言把「灰只留给未归类」钉死：任何已登记的数据类都不许用中性灰。
+describe('配色：灰色只留给「未归类」', () => {
+  const NEUTRAL_GRAYS = ['#bfbfbf', '#8c8c8c'];
+
+  it('每个已登记的数据类都必须是彩色，不得与未归类共用中性灰', () => {
+    const entries = Object.entries(STORAGE_CLASS_COLORS);
+    expect(entries.length).toBeGreaterThan(5);
+    const offenders = entries
+      .filter(([, color]) => NEUTRAL_GRAYS.includes(String(color).toLowerCase()))
+      .map(([targetId]) => targetId);
+    expect(offenders).toEqual([]);
+  });
+
+  it('未登记的 targetId 才回退到未归类灰', () => {
+    expect(classColor('__not_registered__')).toBe('#bfbfbf');
   });
 });
