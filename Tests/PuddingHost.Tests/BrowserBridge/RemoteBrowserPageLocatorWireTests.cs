@@ -90,4 +90,34 @@ public sealed class RemoteBrowserPageLocatorWireTests
     [InlineData(LocatorKind.TestId, "test-id")]
     public void WireNamesMatchThePublishedKebabCaseContract(LocatorKind kind, string expected)
         => Assert.Equal(expected, RemoteBrowserPage.LocatorWireName(kind));
+
+    /// <summary>
+    /// 两个正交筛选必须**过线**：`includeHidden` / `inViewportOnly` 曾在 <c>ToDescriptor</c> 里
+    /// 被整个漏掉，接收端只能拿到默认 <c>false</c>——调用方请求“只取视口内”，
+    /// 实际拿回整个列表，而回执看起来完全正常（实测 908px 视口返回了 y=-346.6 与 y=1471.4）。
+    /// </summary>
+    [Fact]
+    public void DescriptorSentOverTheWireCarriesTheViewportFilters()
+    {
+        var descriptor = RemoteBrowserPage.ToDescriptor(new Locator
+        {
+            Kind = LocatorKind.Css,
+            Value = "probe",
+            IncludeHidden = true,
+            InViewportOnly = true
+        });
+
+        Assert.True(descriptor.IncludeHidden);
+        Assert.True(descriptor.InViewportOnly);
+    }
+
+    /// <summary>反向对照：默认构造不得把两个筛选项悄悄打开（否则“没给”会变成“全要”）。</summary>
+    [Fact]
+    public void DescriptorDefaultsLeaveBothFiltersOff()
+    {
+        var descriptor = RemoteBrowserPage.ToDescriptor(new Locator { Kind = LocatorKind.Css, Value = "probe" });
+
+        Assert.False(descriptor.IncludeHidden);
+        Assert.False(descriptor.InViewportOnly);
+    }
 }
