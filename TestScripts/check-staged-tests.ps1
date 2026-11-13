@@ -44,7 +44,8 @@
 param(
     [string]$BaselinePath = "TestScripts/staged-test-baseline.json",
     [switch]$IncludeAllChanged,
-    [switch]$ListOnly
+    [switch]$ListOnly,
+    [switch]$AllowUnverifiedDeletions
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,10 +57,26 @@ try {
         param([bool]$All)
 
         $lines = if ($All) {
-            & git diff --name-only --diff-filter=ACMR HEAD
+            & git diff --name-only --diff-filter=ACMRD HEAD
         }
         else {
-            & git diff --cached --name-only --diff-filter=ACMR
+            & git diff --cached --name-only --diff-filter=ACMRD
+        }
+        if ($LASTEXITCODE -ne 0) { throw "git diff failed with exit code $LASTEXITCODE" }
+
+        @($lines | Where-Object { $_ -and $_.EndsWith(".cs", [StringComparison]::OrdinalIgnoreCase) })
+    }
+
+    # Deletions carry no type declarations, so they can never be mapped to a test class.
+    # They are tracked separately to stop the gate from claiming a clean verdict over them.
+    function Get-DeletedCsharpFiles {
+        param([bool]$All)
+
+        $lines = if ($All) {
+            & git diff --name-only --diff-filter=D HEAD
+        }
+        else {
+            & git diff --cached --name-only --diff-filter=D
         }
         if ($LASTEXITCODE -ne 0) { throw "git diff failed with exit code $LASTEXITCODE" }
 
@@ -299,6 +316,12 @@ try {
     Write-Host ("=== commit gate: {0} changed C# file(s)" -f $changed.Count)
     foreach ($file in $changed) { Write-Host ("    {0}" -f $file) }
 
+    $deleted = Get-DeletedCsharpFiles -All:$IncludeAllChanged
+    if ($deleted.Count -gt 0) {
+        Write-Host ("=== deleted C# file(s) in this change: {0}" -f $deleted.Count)
+        foreach ($file in $deleted) { Write-Host ("    - {0}" -f $file) }
+    }
+
     $testProjects = Get-TestProjects
     if ($testProjects.Count -eq 0) {
         Write-Warning "no *Tests.csproj found under Tests/; the scan root may be wrong"
@@ -337,6 +360,16 @@ try {
     }
 
     if ($selection.Count -eq 0) {
+        if ($deleted.Count -gt 0 -and -not $AllowUnverifiedDeletions) {
+            Write-Warning ("BLOCKED: {0} C# file(s) deleted and no test project maps to this change" -f $deleted.Count)
+            Write-Warning "Deleting source can break tests that referenced it; this gate cannot map deletions to test classes."
+            Write-Warning "Run the affected suite yourself, then re-run with -AllowUnverifiedDeletions."
+            if ($uncovered.Count -gt 0) { Write-Warning ("uncovered changed file(s): {0}" -f ($uncovered -join ", ")) }
+            exit 1
+        }
+        if ($deleted.Count -gt 0) {
+            Write-Warning ("deletions NOT verified by tests: {0} file(s) (allowed explicitly)" -f $deleted.Count)
+        }
         Write-Host "=== commit gate: no test source references the changed types; nothing to run"
         if ($uncovered.Count -gt 0) { Write-Warning ("uncovered changed file(s): {0}" -f ($uncovered -join ", ")) }
         exit 0
@@ -352,6 +385,10 @@ try {
         }
         Write-Host "=== selection only (-ListOnly)"
         exit 0
+    }
+
+    if ($deleted.Count -gt 0) {
+        Write-Warning ("deletions NOT covered by the selected tests: {0} file(s)" -f $deleted.Count)
     }
 
     # --- run ------------------------------------------------------------------------------------
