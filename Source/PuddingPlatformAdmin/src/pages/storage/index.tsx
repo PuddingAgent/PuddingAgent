@@ -14,6 +14,7 @@ import {
   Space,
   Spin,
   Table,
+  Tabs,
   Tag,
   Tooltip,
   Typography,
@@ -37,6 +38,7 @@ import {
   formatCount,
   formatUtc,
   getCleanupJobEvents,
+  getDatabaseSpace,
   getInventoryTrend,
   getProtectedObjects,
   getRetentionPolicy,
@@ -50,6 +52,7 @@ import type {
   StorageCleanupJobStatus,
   StorageCleanupPreview,
   StorageDataClass,
+  StorageDatabaseSpace,
   StorageInventoryClass,
   StorageInventorySnapshot,
   StorageInventoryTrendPoint,
@@ -59,6 +62,8 @@ import { StorageClassDonut, StorageTrendChart, classColor } from './StorageOverv
 import { StoragePolicyDrawer } from './StoragePolicyDrawer';
 import { CleanupPreviewModal } from './CleanupPreviewModal';
 import { DatabaseSpacePanel } from './DatabaseSpacePanel';
+import { StorageStackedBars, type StackedBarRow } from './StorageStackedBars';
+import { StorageTreemap, type StorageTreemapDatum } from './StorageTreemap';
 import {
   AUTO_CLEANUP_HINT,
   AUTO_CLEANUP_SCHEDULING_NOTE,
@@ -91,6 +96,57 @@ const OLDER_THAN_OPTIONS = [
   { value: 90, label: '早于 90 天' },
 ];
 
+// ── 首屏口径说明（只以 title 悬浮存在，不进正文）────────────────────
+// 这些解释原本是首屏正文里的四行 secondary 文本，视觉权重高于数字本身（改版问题 P4）。
+// 现在数字旁只留一行极短标签，完整口径挂到 title：鼠标悬停可读，一屏高度可预测。
+const HEADLINE_TOTAL_NOTE =
+  '口径：该数字 = 全部数据库的主文件 + WAL + 共享内存，加上非数据库目录（如全文检索索引）的合计。' +
+  '「数据库占用（按数据类）」里每个库的大小只是该库自身的主文件 + WAL + 共享内存，所以那几个库相加会小于这里。';
+const DATABASE_ONLY_NOTE =
+  '数据库主文件 + WAL + 共享内存。单库的 GB = 该库主文件 + WAL + 共享内存（与该库「大小」列同一口径）；' +
+  '首屏「总占用」还含非数据库目录，所以各库相加会小于总占用。';
+const REUSABLE_PAGE_NOTE = '可复用页：已删除数据留下的空闲页，会被后续写入复用，不是可再清理的额度。';
+const CLEANABLE_NOTE = '可清理估算：按当前保留策略还能再删的数据量，不含上述空闲页。';
+const TREEMAP_NOTE =
+  '面积＝字节。分类按 targetId 取色，块内文字只在放得下时出现，精确字节与占比由悬浮提示给出。';
+const STACKED_NOTE =
+  '长度＝该段占「该库已分类段之和」的比例；右侧数字是该库文件大小（含 WAL），所以条上可能留出未分类的空白。';
+const RECLAIM_NOTE =
+  '三项性质不同：空闲页要 VACUUM 才归还文件系统；冗余索引删掉索引即回收；保留策略按时间裁剪。' +
+  '三者不能相加当作「可清理额度」。';
+
+/** 首屏指标格：一个数字 + 一行短标签；完整口径只放在 title 里。 */
+const MetricCell: React.FC<{
+  testId: string;
+  label: string;
+  value: string;
+  note: string;
+  hint: string;
+}> = ({ testId, label, value, note, hint }) => (
+  <Card size="small" styles={{ body: { padding: 12 } }}>
+    <div data-testid={testId} style={{ display: 'grid', gap: 2 }}>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        {label}
+      </Typography.Text>
+      <span title={hint} style={{ fontSize: 22, fontWeight: 600, lineHeight: 1.2, cursor: 'help' }}>
+        {value}
+      </span>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        {note}
+      </Typography.Text>
+    </div>
+  </Card>
+);
+
+/** 首屏第 3 行「可回收三段条」的一段：字节 + 一句性质说明（不参与任何合计口径）。 */
+interface ReclaimSegment {
+  key: string;
+  label: string;
+  bytes: number;
+  color: string;
+  note: string;
+}
+
 interface ClassRow extends StorageInventoryClass {
   policyEnabled?: boolean;
   policyRetentionDays?: number | null;
@@ -110,6 +166,8 @@ const StoragePage: React.FC = () => {
   const [policy, setPolicy] = useState<StorageRetentionPolicy | null>(null);
   const [protectedObjects, setProtectedObjects] = useState<string[]>([]);
   const [trend, setTrend] = useState<StorageInventoryTrendPoint[]>([]);
+  // 首屏「各库构成」需要「库 → 数据类」的拆分，只有 database-space 端点提供。
+  const [databaseSpaces, setDatabaseSpaces] = useState<StorageDatabaseSpace[]>([]);
   const [trendDays, setTrendDays] = useState<number>(30);
   const [jobs, setJobs] = useState<StorageCleanupJob[]>([]);
   const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
@@ -121,6 +179,8 @@ const StoragePage: React.FC = () => {
   const [policyOpen, setPolicyOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const refreshTimer = useRef<number | null>(null);
+  // database-space 只测量一次的守卫：装载、重渲染、StrictMode 都不重复付费。
+  const spacesRequested = useRef(false);
 
   const loadOverview = useCallback(async () => {
     try {
@@ -183,6 +243,26 @@ const StoragePage: React.FC = () => {
   useEffect(() => {
     void loadTrend(trendDays);
   }, [trendDays, loadTrend]);
+
+  // 首屏「各库构成」的数据：database-space 是一次显式只读测量（逐表取行数，GB 级库需要几秒），
+  // 所以只在装载时触发一次（ref 去重）。Tab 里的 DatabaseSpacePanel 仍是「点按钮才测量」，
+  // 装载时不会叠第二次请求；两处消费同一端点，但同一时刻只有一处真的在测量。
+  useEffect(() => {
+    if (spacesRequested.current) return;
+    spacesRequested.current = true;
+    let alive = true;
+    (async () => {
+      try {
+        const spaces = await getDatabaseSpace();
+        if (alive) setDatabaseSpaces(spaces);
+      } catch {
+        // 测量失败只让堆叠条回落空态，不影响首屏其余数字。
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // 组件卸载清理快速轮询定时器（不取消 Core 侧共享估算任务）。
   useEffect(
@@ -247,6 +327,77 @@ const StoragePage: React.FC = () => {
   const classNames = useMemo(
     () => Object.fromEntries(classRows.map((row) => [row.targetId, row.displayName])),
     [classRows],
+  );
+
+  // ── 首屏派生数据：只把已有事实映射成图形入参，不引入新口径 ──────────
+  const treemapData = useMemo<StorageTreemapDatum[]>(
+    () =>
+      (snapshot?.classes ?? []).map((row) => ({
+        targetId: row.targetId,
+        label: row.displayName,
+        bytes: row.estimatedBytes ?? 0,
+      })),
+    [snapshot],
+  );
+
+  const stackedRows = useMemo<StackedBarRow[]>(
+    () =>
+      databaseSpaces
+        .filter((space) => space.exists)
+        .map((space) => ({
+          key: space.key,
+          label: space.displayName,
+          // 文件大小只用于右侧绝对值；占比分母取各段之和（见 StorageStackedBars 注释）。
+          totalBytes: space.fileBytes,
+          segments: space.dataClasses.map((dataClass) => ({
+            targetId: dataClass.targetId,
+            label: dataClass.displayName,
+            bytes: dataClass.bytes,
+          })),
+        })),
+    [databaseSpaces],
+  );
+
+  // 冗余索引是目录里唯一有 targetId 的「可删对象」；缺项时按「暂无」表达，不伪造成 0。
+  const redundantIndexBytes = useMemo(() => {
+    const entry = classRows.find((row) => row.targetId === 'storage.redundant-indexes');
+    return entry?.estimatedBytes ?? null;
+  }, [classRows]);
+
+  // 第 3 行只表达「三种性质不同的可回收」，各自带自己的口径，不做四则运算合并。
+  const reclaimSegments = useMemo<ReclaimSegment[]>(
+    () => [
+      {
+        key: 'vacuum',
+        label: 'VACUUM 可回收',
+        bytes: reusableTotal,
+        color: '#fa8c16',
+        note: '库内可复用页；VACUUM 后才归还文件系统（不可再清理）',
+      },
+      {
+        key: 'redundant-indexes',
+        label: '冗余索引',
+        bytes: redundantIndexBytes ?? 0,
+        color: '#ffc53d',
+        note:
+          redundantIndexBytes == null
+            ? '暂无：当前快照没有该分类的估算值'
+            : '重复/孤儿索引，删除索引即可回收',
+      },
+      {
+        key: 'retention',
+        label: '保留策略可清理',
+        bytes: classBytesTotal,
+        color: '#13c2c2',
+        note: '分类估算合计，含仅受策略治理的证据类',
+      },
+    ],
+    [reusableTotal, redundantIndexBytes, classBytesTotal],
+  );
+
+  const reclaimTotal = useMemo(
+    () => reclaimSegments.reduce((sum, segment) => sum + segment.bytes, 0),
+    [reclaimSegments],
   );
 
   const refreshEstimates = async () => {
@@ -570,219 +721,387 @@ const StoragePage: React.FC = () => {
           />
         ) : null}
 
-        <Row gutter={[12, 12]}>
-          <Col xs={24} lg={12}>
-            <Card size="small" title="存储空间总览">
-              <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                <Tooltip title="口径：该数字 = 全部数据库的主文件 + WAL + 共享内存，加上非数据库目录（如全文检索索引）的合计。下方「数据库占用（按数据类）」里每个库的 GB 只是该库自身的主文件 + WAL + 共享内存，所以那几个库相加会小于这里。">
-                  <Typography.Text strong style={{ fontSize: 20, cursor: 'help' }}>
-                    Pudding 数据约 {formatBytes(databaseTotal)}
-                  </Typography.Text>
-                </Tooltip>
-                <Typography.Text type="secondary">
-                  更新于 {formatUtc(snapshot?.updatedAtUtc)}｜状态：
-                  {snapshot?.isRefreshing ? '后台估算中' : '空闲'}
-                  {snapshot && snapshot.revision > 0 ? `｜revision ${snapshot.revision}` : ''}
-                </Typography.Text>
-                <Typography.Text type="secondary">
-                  数据库主文件 + WAL + 共享内存 {formatBytes(databaseTotal - nonDatabaseTotal)}｜
-                  非数据库目录（全文检索索引等）{formatBytes(nonDatabaseTotal)}｜库内可复用页{' '}
-                  {formatBytes(reusableTotal)}｜可清理分类估算合计 ≈{formatBytes(classBytesTotal)}
-                </Typography.Text>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  顶部合计含非数据库目录，所以「数据库占用（按数据类）」里各库的 GB 相加会小于这里；
-                  单库的 GB = 该库主文件 + WAL + 共享内存（与下表「大小」列同一口径）。
-                </Typography.Text>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  可复用页：已删除数据留下的空闲页，会被后续写入复用，不是可再清理的额度。
-                </Typography.Text>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  可清理估算：按当前保留策略还能再删的数据量，不含上述空闲页。
-                </Typography.Text>
-                <Table
-                  size="small"
-                  pagination={false}
-                  rowKey="databaseId"
-                  dataSource={snapshot?.databases ?? []}
-                  columns={[
-                    { title: '数据库', dataIndex: 'displayName' },
-                    {
-                      title: (
-                        <Tooltip title="该库主文件 + WAL + 共享内存；顶部「Pudding 数据约」是这些库与非数据库目录的合计">
-                          <span>大小（含 WAL）</span>
-                        </Tooltip>
-                      ),
-                      dataIndex: 'totalBytes',
-                      align: 'right' as const,
-                      render: (value: number) => formatBytes(value),
-                    },
-                    {
-                      title: '可复用页',
-                      dataIndex: 'reusableFreeBytes',
-                      align: 'right' as const,
-                      render: (value: number) => formatBytes(value),
-                    },
-                  ]}
-                />
-              </Space>
-            </Card>
-          </Col>
-          <Col xs={24} lg={12}>
-            <Card
-              size="small"
-              title="分类占比（估算）"
-              extra={
-                <Segmented
-                  size="small"
-                  value={trendDays}
-                  options={[
-                    { label: '7 天', value: 7 },
-                    { label: '30 天', value: 30 },
-                    { label: '90 天', value: 90 },
-                  ]}
-                  onChange={(value) => setTrendDays(value as number)}
-                />
-              }
-            >
-              <StorageClassDonut classes={snapshot?.classes ?? []} />
-            </Card>
-          </Col>
-          <Col span={24}>
-            <Card size="small" title={`近 ${trendDays} 天存储趋势（堆叠面积，按历史快照聚合）`}>
-              <StorageTrendChart points={trend} days={trendDays} classNames={classNames} />
-            </Card>
-          </Col>
-          <Col span={24}>
-            <Card size="small" title="分类统计报表">
-              <Typography.Text
-                type="secondary"
-                style={{ fontSize: 12, display: 'block', marginBottom: 8 }}
+        <div data-testid="storage-first-screen">
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            快照更新于 {formatUtc(snapshot?.updatedAtUtc)}｜状态：
+            {snapshot?.isRefreshing ? '后台估算中' : '空闲'}
+            {snapshot && snapshot.revision > 0 ? `｜revision ${snapshot.revision}` : ''}
+          </Typography.Text>
+
+          {/* 行1：指标条 —— 数字留在正文，口径说明只挂在 title 上 */}
+          <Row gutter={[12, 12]} style={{ marginTop: 8 }}>
+            <Col xs={12} md={6}>
+              <MetricCell
+                testId="metric-total"
+                label="总占用"
+                value={formatBytes(databaseTotal)}
+                note="含非数据库目录"
+                hint={HEADLINE_TOTAL_NOTE}
+              />
+            </Col>
+            <Col xs={12} md={6}>
+              <MetricCell
+                testId="metric-databases"
+                label="数据库合计"
+                value={formatBytes(databaseTotal - nonDatabaseTotal)}
+                note="主文件 + WAL + 共享内存"
+                hint={DATABASE_ONLY_NOTE}
+              />
+            </Col>
+            <Col xs={12} md={6}>
+              <MetricCell
+                testId="metric-non-database"
+                label="非数据库目录"
+                value={formatBytes(nonDatabaseTotal)}
+                note="全文检索索引等"
+                hint={HEADLINE_TOTAL_NOTE}
+              />
+            </Col>
+            <Col xs={12} md={6}>
+              <MetricCell
+                testId="metric-reusable"
+                label="可回收"
+                value={formatBytes(reusableTotal)}
+                note="库内可复用页"
+                hint={REUSABLE_PAGE_NOTE}
+              />
+            </Col>
+          </Row>
+
+          {/* 行2：左矩形树图（分类面积）+ 右每库堆叠条（库内构成） */}
+          <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
+            <Col xs={24} lg={12}>
+              <Card
+                size="small"
+                title="分类占用（矩形树图）"
+                extra={<span title={TREEMAP_NOTE}>面积＝字节</span>}
               >
-                {AUTO_CLEANUP_SCHEDULING_NOTE}
-              </Typography.Text>
-              <Table<ClassRow>
+                <div style={{ width: '100%', overflowX: 'auto' }}>
+                  {/* 高度固定：首屏总高度要可预测，图形不随数据条数变化。 */}
+                  <StorageTreemap data={treemapData} width={560} height={240} />
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} lg={12}>
+              <Card
                 size="small"
-                rowKey="targetId"
-                pagination={false}
-                dataSource={classRows}
-                columns={reportColumns}
-              />
-            </Card>
-          </Col>
-          <Col span={24}>
-            <DatabaseSpacePanel
-              databases={snapshot?.databases ?? []}
-              headlineTotalBytes={databaseTotal}
-            />
-          </Col>
-          <Col xs={24} lg={14}>
-            <Card
-              size="small"
-              title="可清理数据"
-              extra={
-                <Space>
-                  <Select
-                    size="small"
-                    value={olderThanDays}
-                    options={OLDER_THAN_OPTIONS}
-                    onChange={setOlderThanDays}
-                    style={{ width: 120 }}
-                  />
-                  <Button
-                    size="small"
-                    type="primary"
-                    danger
-                    icon={<ClearOutlined />}
-                    loading={previewSubmitting}
-                    disabled={selectedTargets.length === 0}
-                    onClick={startPreview}
-                  >
-                    预览所选（{selectedTargets.length}）
-                  </Button>
-                </Space>
-              }
-            >
-              <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                {selectableRows.length === 0 ? (
-                  <Typography.Text type="secondary">等待目录与快照加载…</Typography.Text>
-                ) : null}
-                {selectableRows.map((row) => (
-                  <div key={row.targetId} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Checkbox
-                      checked={selectedTargets.includes(row.targetId)}
-                      onChange={(event) => {
-                        setSelectedTargets((previous) =>
-                          event.target.checked
-                            ? [...previous, row.targetId]
-                            : previous.filter((id) => id !== row.targetId),
-                        );
-                      }}
-                    >
-                      <Space size={8}>
-                        <span aria-hidden style={{ width: 10, height: 10, borderRadius: 2, background: classColor(row.targetId), display: 'inline-block' }} />
-                        {row.displayName}
+                title="各库构成（按数据类）"
+                extra={<span title={STACKED_NOTE}>长度＝该库占比</span>}
+              >
+                <StorageStackedBars rows={stackedRows} />
+              </Card>
+            </Col>
+          </Row>
+
+          {/* 行3：可回收三段条 —— 三项性质不同，各自带口径，不合并成一个「可清理额度」 */}
+          <Card
+            size="small"
+            style={{ marginTop: 12 }}
+            title="可回收空间（三项性质不同）"
+            extra={<span title={CLEANABLE_NOTE + RECLAIM_NOTE}>口径见悬浮</span>}
+          >
+            <div data-testid="reclaim-strip" style={{ display: 'grid', gap: 8 }}>
+              <div
+                aria-hidden
+                style={{
+                  display: 'flex',
+                  height: 10,
+                  borderRadius: 2,
+                  overflow: 'hidden',
+                  background: '#f0f0f0',
+                }}
+              >
+                {reclaimTotal <= 0
+                  ? null
+                  : reclaimSegments.map((segment) => (
+                      <div
+                        key={segment.key}
+                        data-testid="reclaim-segment"
+                        data-segment-key={segment.key}
+                        title={`${segment.label} · ≈${formatBytes(segment.bytes)}`}
+                        style={{
+                          width: `${(segment.bytes / reclaimTotal) * 100}%`,
+                          background: segment.color,
+                        }}
+                      />
+                    ))}
+              </div>
+              <Row gutter={[12, 8]}>
+                {reclaimSegments.map((segment) => (
+                  <Col xs={24} md={8} key={segment.key}>
+                    <div data-testid="reclaim-item" data-segment-key={segment.key}>
+                      <Space size={6} align="baseline">
+                        <span
+                          aria-hidden
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: 2,
+                            background: segment.color,
+                            display: 'inline-block',
+                          }}
+                        />
+                        <Typography.Text strong>{segment.label}</Typography.Text>
+                        <Typography.Text type="secondary">≈{formatBytes(segment.bytes)}</Typography.Text>
                       </Space>
-                    </Checkbox>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      ≈{formatBytes(row.estimatedBytes)}｜≈{formatCount(row.estimatedRows)}{' '}
-                      {row.targetId.includes('logs') ? '文件' : '行'}｜最早 {formatUtc(row.oldestUtc)}
-                    </Typography.Text>
-                    {row.requiresRollup ? (
-                      <Tag color="orange">自动清理默认关闭（聚合未实现）</Tag>
-                    ) : null}
-                  </div>
+                      <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+                        {segment.note}
+                      </Typography.Text>
+                    </div>
+                  </Col>
                 ))}
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  清理条件统一为 eventTime &lt; 截止时间（等于截止时间的数据保留）。
-                </Typography.Text>
-              </Space>
-            </Card>
-          </Col>
-          <Col xs={24} lg={10}>
-            <Card size="small" title={<Space><SafetyCertificateOutlined /> 受保护数据（不可选择）</Space>}>
-              <Space direction="vertical" size={2}>
-                {protectedObjects.map((entry) => (
-                  <Typography.Text key={entry} type="secondary" style={{ fontSize: 12 }}>
-                    ● {entry}
-                  </Typography.Text>
-                ))}
-                {classRows
-                  .filter((row) => !row.manualAllowed)
-                  .map((row) => (
-                    <Typography.Text key={row.targetId} style={{ fontSize: 12 }}>
-                      ● {row.displayName}：仅按独立证据保留策略治理（当前{' '}
-                      {row.policyEnabled ? `${row.policyRetentionDays} 天自动归档裁剪` : '关闭'}）
+              </Row>
+            </div>
+          </Card>
+        </div>
+
+        {/* 其余内容收进 Tabs：默认只渲染当前页签，首屏高度不再被它们撑开 */}
+        <Tabs
+          style={{ marginTop: 12 }}
+          destroyOnHidden
+          items={[
+            {
+              key: 'trend',
+              label: '趋势',
+              children: (
+                <div data-testid="storage-tab-trend">
+                  <Row gutter={[12, 12]}>
+                    <Col xs={24} lg={10}>
+                      <Card size="small" title="分类占比（估算）">
+                        <StorageClassDonut classes={snapshot?.classes ?? []} />
+                      </Card>
+                    </Col>
+                    <Col xs={24} lg={14}>
+                      <Card
+                        size="small"
+                        title={`近 ${trendDays} 天存储趋势（堆叠面积，按历史快照聚合）`}
+                        extra={
+                          <Segmented
+                            size="small"
+                            value={trendDays}
+                            options={[
+                              { label: '7 天', value: 7 },
+                              { label: '30 天', value: 30 },
+                              { label: '90 天', value: 90 },
+                            ]}
+                            onChange={(value) => setTrendDays(value as number)}
+                          />
+                        }
+                      >
+                        <StorageTrendChart points={trend} days={trendDays} classNames={classNames} />
+                      </Card>
+                    </Col>
+                  </Row>
+                </div>
+              ),
+            },
+            {
+              key: 'report',
+              label: '分类报表',
+              children: (
+                <div data-testid="storage-tab-report">
+                  <Card size="small" title="分类统计报表">
+                    <Typography.Text
+                      type="secondary"
+                      style={{ fontSize: 12, display: 'block', marginBottom: 8 }}
+                    >
+                      {AUTO_CLEANUP_SCHEDULING_NOTE}
                     </Typography.Text>
-                  ))}
-              </Space>
-            </Card>
-          </Col>
-          <Col span={24}>
-            <Card
-              size="small"
-              title={
-                <Space>
-                  <DatabaseOutlined /> 清理作业
-                  {activeJobs.length ? <Tag color="processing">{activeJobs.length} 个进行中</Tag> : null}
-                </Space>
-              }
-              extra={<EyeOutlined />}
-            >
-              <Table<StorageCleanupJob>
-                size="small"
-                rowKey="jobId"
-                pagination={{ pageSize: 10, hideOnSinglePage: true }}
-                dataSource={jobs}
-                columns={jobColumns}
-              />
-              {previewJobId ? (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  最新作业：{previewJobId}
-                </Typography.Text>
-              ) : null}
-            </Card>
-          </Col>
-        </Row>
+                    <Table<ClassRow>
+                      size="small"
+                      rowKey="targetId"
+                      pagination={false}
+                      dataSource={classRows}
+                      columns={reportColumns}
+                    />
+                  </Card>
+                </div>
+              ),
+            },
+            {
+              key: 'database',
+              label: '数据库占用',
+              children: (
+                <div data-testid="storage-tab-database">
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Card size="small" title="数据库文件大小（含 WAL）">
+                      <Table
+                        size="small"
+                        pagination={false}
+                        rowKey="databaseId"
+                        dataSource={snapshot?.databases ?? []}
+                        columns={[
+                          { title: '数据库', dataIndex: 'displayName' },
+                          {
+                            title: (
+                              <Tooltip title="该库主文件 + WAL + 共享内存；首屏「总占用」是这些库与非数据库目录的合计">
+                                <span>大小（含 WAL）</span>
+                              </Tooltip>
+                            ),
+                            dataIndex: 'totalBytes',
+                            align: 'right' as const,
+                            render: (value: number) => formatBytes(value),
+                          },
+                          {
+                            title: '可复用页',
+                            dataIndex: 'reusableFreeBytes',
+                            align: 'right' as const,
+                            render: (value: number) => formatBytes(value),
+                          },
+                        ]}
+                      />
+                    </Card>
+                    <DatabaseSpacePanel
+                      databases={snapshot?.databases ?? []}
+                      headlineTotalBytes={databaseTotal}
+                    />
+                  </Space>
+                </div>
+              ),
+            },
+            {
+              key: 'cleanup',
+              label: '可清理',
+              children: (
+                <div data-testid="storage-tab-cleanup">
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Card
+                      size="small"
+                      title="可清理数据"
+                      extra={
+                        <Space>
+                          <Select
+                            size="small"
+                            value={olderThanDays}
+                            options={OLDER_THAN_OPTIONS}
+                            onChange={setOlderThanDays}
+                            style={{ width: 120 }}
+                          />
+                          <Button
+                            size="small"
+                            type="primary"
+                            danger
+                            icon={<ClearOutlined />}
+                            loading={previewSubmitting}
+                            disabled={selectedTargets.length === 0}
+                            onClick={startPreview}
+                          >
+                            预览所选（{selectedTargets.length}）
+                          </Button>
+                        </Space>
+                      }
+                    >
+                      <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                        {selectableRows.length === 0 ? (
+                          <Typography.Text type="secondary">等待目录与快照加载…</Typography.Text>
+                        ) : null}
+                        {selectableRows.map((row) => (
+                          <div
+                            key={row.targetId}
+                            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                          >
+                            <Checkbox
+                              checked={selectedTargets.includes(row.targetId)}
+                              onChange={(event) => {
+                                setSelectedTargets((previous) =>
+                                  event.target.checked
+                                    ? [...previous, row.targetId]
+                                    : previous.filter((id) => id !== row.targetId),
+                                );
+                              }}
+                            >
+                              <Space size={8}>
+                                <span
+                                  aria-hidden
+                                  style={{
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: 2,
+                                    background: classColor(row.targetId),
+                                    display: 'inline-block',
+                                  }}
+                                />
+                                {row.displayName}
+                              </Space>
+                            </Checkbox>
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                              ≈{formatBytes(row.estimatedBytes)}｜≈{formatCount(row.estimatedRows)}{' '}
+                              {row.targetId.includes('logs') ? '文件' : '行'}｜最早{' '}
+                              {formatUtc(row.oldestUtc)}
+                            </Typography.Text>
+                            {row.requiresRollup ? (
+                              <Tag color="orange">自动清理默认关闭（聚合未实现）</Tag>
+                            ) : null}
+                          </div>
+                        ))}
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          清理条件统一为 eventTime &lt; 截止时间（等于截止时间的数据保留）。
+                        </Typography.Text>
+                      </Space>
+                    </Card>
+                    <Card
+                      size="small"
+                      title={
+                        <Space>
+                          <DatabaseOutlined /> 清理作业
+                          {activeJobs.length ? (
+                            <Tag color="processing">{activeJobs.length} 个进行中</Tag>
+                          ) : null}
+                        </Space>
+                      }
+                      extra={<EyeOutlined />}
+                    >
+                      <Table<StorageCleanupJob>
+                        size="small"
+                        rowKey="jobId"
+                        pagination={{ pageSize: 10, hideOnSinglePage: true }}
+                        dataSource={jobs}
+                        columns={jobColumns}
+                      />
+                      {previewJobId ? (
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          最新作业：{previewJobId}
+                        </Typography.Text>
+                      ) : null}
+                    </Card>
+                  </Space>
+                </div>
+              ),
+            },
+            {
+              key: 'protected',
+              label: '受保护',
+              children: (
+                <div data-testid="storage-tab-protected">
+                  <Card
+                    size="small"
+                    title={
+                      <Space>
+                        <SafetyCertificateOutlined /> 受保护数据（不可选择）
+                      </Space>
+                    }
+                  >
+                    <Space direction="vertical" size={2}>
+                      {protectedObjects.map((entry) => (
+                        <Typography.Text key={entry} type="secondary" style={{ fontSize: 12 }}>
+                          ● {entry}
+                        </Typography.Text>
+                      ))}
+                      {classRows
+                        .filter((row) => !row.manualAllowed)
+                        .map((row) => (
+                          <Typography.Text key={row.targetId} style={{ fontSize: 12 }}>
+                            ● {row.displayName}：仅按独立证据保留策略治理（当前{' '}
+                            {row.policyEnabled ? `${row.policyRetentionDays} 天自动归档裁剪` : '关闭'}）
+                          </Typography.Text>
+                        ))}
+                    </Space>
+                  </Card>
+                </div>
+              ),
+            },
+          ]}
+        />
       </Spin>
 
       <CleanupPreviewModal
