@@ -112,6 +112,45 @@ public sealed class StorageMaintenanceServiceTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// 回归（2026-11-13，存储页一屏化 S1）：分析响应必须真的带上两个目录派生的结构化映射。
+    ///
+    /// <para>
+    /// 钉住的是**接线**而不是映射本身的内容：映射正确性由 PuddingPlatformTests 的
+    /// <c>StorageDataClassTableMapTests</c> 覆盖，但那些用例直接读静态目录，
+    /// 即使把 <c>StorageMaintenanceService</c> 里的 <c>StorageAnalysisEnrichment.Apply</c>
+    /// 整行删掉也仍然全绿 —— 线上响应会静默丢掉两个字段而没有一条测试会红。
+    /// 本用例走真实的 <see cref="StorageMaintenanceService.AnalyzeAsync"/>，把那一行钉死。
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Analyze_AttachesTableMaps_SoTheWiringCannotSilentlyDisappear()
+    {
+        var paths = PuddingDataPaths.FromRoot(_dataRoot);
+        Directory.CreateDirectory(paths.DatabasesRoot);
+        var platformPath = Path.Combine(paths.DatabasesRoot, "pudding_platform.db");
+        await CreatePlatformDatabaseAsync(platformPath);
+
+        using var service = CreateService(paths, out var coordinator);
+        await coordinator.StartAsync(CancellationToken.None);
+        try
+        {
+            var analysis = await service.AnalyzeAsync();
+
+            // 未赋值时这两个字段是共享的只读空字典（纯增量的默认值），所以"非空"就是接线生效的证据。
+            Assert.Contains("conversation_events", analysis.TableToDataClasses.Keys);
+            Assert.Contains("ChatMessages", analysis.TableProtectionReasons.Keys);
+
+            // 受保护表的数据类答案是**空数组**（可判定），不是缺键。
+            Assert.True(analysis.TableToDataClasses.TryGetValue("ChatMessages", out var classes));
+            Assert.Empty(classes);
+        }
+        finally
+        {
+            await coordinator.StopAsync(CancellationToken.None);
+        }
+    }
+
     [Fact]
     public async Task Unsupported_Target_Is_Rejected_Without_Writing()
     {
