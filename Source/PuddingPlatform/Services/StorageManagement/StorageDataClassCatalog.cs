@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using PuddingCode.Storage;
 
 namespace PuddingPlatform.Services.StorageManagement;
@@ -45,6 +46,27 @@ public static class StorageDataClassCatalog
         /// <summary>派生目标由 IStorageDerivedTargetHandler 执行（code-index / 索引）。</summary>
         public bool RequiresDerivedHandler { get; init; }
         public string? HandlerId { get; init; }
+    }
+
+    /// <summary>
+    /// ADR-076 §3.2 受保护对象的**结构化**声明：把原来只有人读字符串的保护清单拆成
+    /// 「标签 + 受保护的物理表 + 原因」。<see cref="ProtectedObjects"/> 保留原字符串形状
+    /// （由本清单的 <see cref="Label"/> 派生，内容与顺序逐字不变），既有消费方零改动。
+    /// </summary>
+    public sealed record StorageProtectedObject
+    {
+        /// <summary>人读标签：与原 <see cref="ProtectedObjects"/> 条目逐字一致。</summary>
+        public required string Label { get; init; }
+
+        /// <summary>
+        /// 该条目覆盖的物理表名（大小写不敏感）。为空表示该条目**没有单一物理表**：
+        /// 要么按路径保护（源代码/附件），要么描述的是模块概念（turn/run/outbox）。
+        /// 只登记能在 PlatformDbContext 里核到的表名 —— 不猜。
+        /// </summary>
+        public IReadOnlyList<string> Tables { get; init; } = [];
+
+        /// <summary>保护原因（可判定，界面直接展示，不经任何解析）。</summary>
+        public required string Reason { get; init; }
     }
 
     public const string PlatformDatabaseFile = "pudding_platform.db";
@@ -252,20 +274,147 @@ public static class StorageDataClassCatalog
     ];
 
     /// <summary>
-    /// 强制保护对象（ADR-076 §3.2）。任何清理目标不得覆盖；供目录保护测试与 UI 受保护区展示。
+    /// 强制保护对象（ADR-076 §3.2）的**结构化**声明。任何清理目标不得覆盖。
+    /// <para>
+    /// 为什么显式声明表名而不是解析下面的人读标签：既有标签有的含两个表名
+    /// （"ChatMessages / room_messages"）、有的只写模块概念
+    /// （"conversation turn / execution run / ..."）、有的根本不是表（"源代码 / 用户文件"）。
+    /// 靠中文全角括号加斜杠切分只能得到"看起来像"的结果，而保护清单不允许"看起来像"。
+    /// </para>
+    /// </summary>
+    public static readonly IReadOnlyList<StorageProtectedObject> ProtectedObjectDefinitions =
+    [
+        new()
+        {
+            Label = "ChatMessages / room_messages（会话正文）",
+            Tables = ["ChatMessages", "room_messages"],
+            Reason = "会话正文：用户与 Agent 的原始对话记录，只能经会话/消息领域 API 读写。",
+        },
+        new()
+        {
+            Label = "session_event_log / conversation_events 未归档部分（执行事实源）",
+            // session_event_log 在当前 PlatformDbContext 里没有对应物理表，故不登记表名。
+            Tables = ["conversation_events"],
+            Reason = "权威执行事实源：必须先归档再按证据策略裁剪，未归档行不可清理。",
+        },
+        new()
+        {
+            Label = "conversation turn / execution run / command / control message / delivery / outbox",
+            Reason = "执行链与投递链路是审计与重放依据；按模块保护，没有单一物理表。",
+        },
+        new()
+        {
+            Label = "llm_gateway_usage_events（Provider 计费事实）",
+            Tables = ["llm_gateway_usage_events"],
+            Reason = "Provider 计费事实：账单核对依据，删除后无法重建。",
+        },
+        new()
+        {
+            Label = "TokenUsageEvents（会话/角色/上下文归因账本）",
+            Tables = ["TokenUsageEvents"],
+            Reason = "Token 归因账本：会话/角色/上下文的成本归因依据，删除后无法重建。",
+        },
+        new()
+        {
+            Label = "TokenUsageStats（长期聚合账本）",
+            Tables = ["TokenUsageStats"],
+            Reason = "长期聚合账本：TokenUsageEvents 的按月聚合，删除后无法重建。",
+        },
+        new()
+        {
+            Label = "Workspace Task / TaskEvent / Assignment / Orchestration Run+Event",
+            Reason = "任务与编排事实是用户可见的执行历史；按模块保护，没有单一物理表。",
+        },
+        new()
+        {
+            Label = "Agent / Skill / Memory / Knowledge / 配置 / 密钥 / 用户与权限",
+            Reason = "定义态与安全态数据属于用户/系统权属；清理接口永不可达。",
+        },
+        new()
+        {
+            Label = "源代码 / 用户文件 / 附件 / 不可重建 Artifact",
+            Reason = "非数据库对象：按路径保护，永不进入数据库清理。",
+        },
+    ];
+
+    /// <summary>
+    /// 人读保护清单。<b>内容与顺序逐字未变</b>（改为由 <see cref="ProtectedObjectDefinitions"/> 派生，
+    /// 避免人读清单与结构化清单各说一套）；既有消费方（<c>StorageAdminController</c> 的
+    /// <c>protected-objects</c> 端点）零改动。
     /// </summary>
     public static readonly IReadOnlyList<string> ProtectedObjects =
-    [
-        "ChatMessages / room_messages（会话正文）",
-        "session_event_log / conversation_events 未归档部分（执行事实源）",
-        "conversation turn / execution run / command / control message / delivery / outbox",
-        "llm_gateway_usage_events（Provider 计费事实）",
-        "TokenUsageEvents（会话/角色/上下文归因账本）",
-        "TokenUsageStats（长期聚合账本）",
-        "Workspace Task / TaskEvent / Assignment / Orchestration Run+Event",
-        "Agent / Skill / Memory / Knowledge / 配置 / 密钥 / 用户与权限",
-        "源代码 / 用户文件 / 附件 / 不可重建 Artifact",
-    ];
+        ProtectedObjectDefinitions.Select(definition => definition.Label).ToArray();
+
+    /// <summary>
+    /// 表 → 保护原因。由 <see cref="ProtectedObjectDefinitions"/> 里声明了
+    /// <see cref="StorageProtectedObject.Tables"/> 的条目展开；没有物理表的条目
+    /// （路径保护、模块概念）只留在结构化清单与人读清单里。
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> ProtectedTableReasons =
+        new ReadOnlyDictionary<string, string>(BuildProtectedTableReasons());
+
+    /// <summary>
+    /// 表 → 声明该表的清理数据类 targetId（<b>纯目录派生</b>：唯一来源是 <see cref="Definitions"/> 的
+    /// <see cref="StorageDataClassDefinition.Tables"/>，不另建表名清单）。
+    /// <para>
+    /// 三个刻意选择：① 同一张表被多个数据类声明时（如 <c>telemetry_metric_events</c> 同时属于
+    /// debug-payload 与 telemetry-raw）<b>列出全部</b>声明者 —— 这里表达"归属事实"而不是"占用分摊"，
+    /// 因此不与 <see cref="StorageDataClassSpaceMapper"/> 的"先声明者为准"保持一致；
+    /// ② 值为空数组是<b>可判定的答案</b>（"不属于任何可清理数据类"，典型是受保护表），不是缺失；
+    /// ③ 键大小写不敏感（SQLite 表名大小写不敏感，dbstat 回的是建表时的写法）。
+    /// </para>
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> TableDataClasses =
+        new ReadOnlyDictionary<string, IReadOnlyList<string>>(BuildTableDataClasses());
+
+    private static Dictionary<string, string> BuildProtectedTableReasons()
+    {
+        var reasons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var definition in ProtectedObjectDefinitions)
+        {
+            foreach (var table in definition.Tables)
+            {
+                // 同一张表被两条保护条目覆盖时以先声明者为准：保护原因只需"能判定"，
+                // 而抛异常会让整个存储管理页打不开（与 StorageDataClassSpaceMapper 同一取舍）。
+                reasons.TryAdd(table, definition.Reason);
+            }
+        }
+
+        return reasons;
+    }
+
+    private static Dictionary<string, IReadOnlyList<string>> BuildTableDataClasses()
+    {
+        var owners = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var definition in Definitions)
+        {
+            foreach (var table in definition.Tables)
+            {
+                if (!owners.TryGetValue(table.Table, out var targetIds))
+                {
+                    targetIds = [];
+                    owners[table.Table] = targetIds;
+                }
+
+                if (!targetIds.Contains(definition.TargetId, StringComparer.Ordinal))
+                {
+                    targetIds.Add(definition.TargetId);
+                }
+            }
+        }
+
+        // 受保护表也给出条目（空数组）：每张已知的表都有可判定的数据类答案，
+        // 前端遇到空数组时再查 ProtectedTableReasons 就能区分"未归类"与"受保护"。
+        foreach (var protectedTable in ProtectedTableReasons.Keys)
+        {
+            owners.TryAdd(protectedTable, []);
+        }
+
+        return owners.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<string>)pair.Value.ToArray(),
+            StringComparer.OrdinalIgnoreCase);
+    }
 
     public static StorageDataClassDefinition? Find(string targetId) =>
         Definitions.FirstOrDefault(d => string.Equals(d.TargetId, targetId, StringComparison.Ordinal));

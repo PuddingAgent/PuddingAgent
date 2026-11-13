@@ -45,7 +45,7 @@ Agent 单轮执行 API：`Extensions/PuddingServiceCollectionExtensions.cs` 调�
 | `Tools/ScreenCaptureTool.cs` + `ScreenCapture/` | 🔑 Agent 自用屏幕采集：多屏/区域/窗口三口径、物理像素坐标、GDI + SkiaSharp 编码、结果落 Vision Artifact |
 | `Tools/ComputerObserveTool.cs` | 可见窗口客户区原图/编号图与候选 ID；复用 Vision Artifact，多模态路由不支持时明确无像素；与 Runtime 输入工具共享 ComputerDesktopSession |
 | `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库 schema 初始化（见下「关键语义」） |
-| `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理；固定语义白名单、服务端预览、批量删除、checkpoint/VACUUM |
+| `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理；固定语义白名单、服务端预览、批量删除、checkpoint/VACUUM；分析返回前经 `StorageAnalysisEnrichment.Apply` 附上「表 → 数据类」「表 → 保护原因」两个纯增量映射 |
 | `Controllers/StorageManagementController.cs` | `/api/admin/storage/databases` 分析、清理预览与执行 API |
 | `Hosting/StorageManagementAuthorization.cs` | 平台 admin JWT，或 DesktopChild Loopback + ControlToken 的管理策略 |
 | `Controllers/IndexAdminController.cs` | 索引状态只读 API（fullText + codeIndex）（见下「关键语义」） |

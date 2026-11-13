@@ -504,14 +504,15 @@ public sealed class StorageMaintenanceService(
         };
 
         var databases = new[] { platform, codeIndex, memory, controller, fullTextIndex };
-        return new StorageDatabaseAnalysis
+        // 纯增量：附上目录派生的「表 → 数据类」与「表 → 保护原因」；既有字段原样不动。
+        return StorageAnalysisEnrichment.Apply(new StorageDatabaseAnalysis
         {
             CapturedAt = DateTimeOffset.Now,
             TotalBytes = databases.Sum(database => database.TotalBytes),
             Databases = databases,
             Items = items,
             Warnings = warnings.Distinct(StringComparer.Ordinal).ToArray(),
-        };
+        });
     }
 
     private async Task<StorageDatabaseFileSnapshot> ReadDatabaseSnapshotAsync(
