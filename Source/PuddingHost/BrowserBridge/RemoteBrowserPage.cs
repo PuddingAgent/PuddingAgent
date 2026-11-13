@@ -322,7 +322,11 @@ public sealed class RemoteBrowserPage : IBrowserPage, IPointerInputPage
         Name = locator.Name,
         Exact = locator.Exact,
         Nth = locator.Nth,
-        HasText = locator.HasText
+        HasText = locator.HasText,
+        // 这两个正交筛选必须过线：漏传时接收端只能拿到默认值 false，
+        // “请求视口内却收到视口外”“请求包含隐藏却仍被滤掉”都会静默发生。
+        IncludeHidden = locator.IncludeHidden,
+        InViewportOnly = locator.InViewportOnly
     };
 
     /// <summary>

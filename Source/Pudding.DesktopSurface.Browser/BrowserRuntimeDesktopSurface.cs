@@ -469,6 +469,8 @@ public sealed class BrowserRuntimeDesktopSurface : IDesktopContextCapabilitySurf
         HasText = locator.HasText,
         // 默认排除隐藏元素（设计方案 §6.2）；屏外但有尺寸的元素仍可定位。
         IncludeHidden = locator.IncludeHidden,
+        // 同样必须带上：它与 IncludeHidden 正交，丢了就变成“请求视口内却拿到视口外”。
+        InViewportOnly = locator.InViewportOnly,
         // v1 不支持 Frame/Has：契约层不表达，故不设置（线缆上也拒绝）。
     };
 

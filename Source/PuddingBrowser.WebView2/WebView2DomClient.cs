@@ -206,6 +206,15 @@ internal static partial class WebView2DomClient
         return Regex.IsMatch(input, regex, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
+    /// <summary>
+    /// 运行时 locator → DOM 脚本载荷。
+    ///
+    /// ⚠️ 这里的字段名必须与脚本里读的一致（脚本读 <c>locator.includeHidden</c> /
+    /// <c>locator.inViewportOnly</c>）。曾经漏传这两项，后果是**静默失效**：
+    /// 脚本读到 <c>undefined</c>，两个筛选分支永远走 falsy——
+    /// 请求 <c>in_viewport_only=true</c> 仍然返回视口外的元素，而回执看起来完全正常。
+    /// 凡向脚本传参，两边的键必须一一对应；新增字段时要同时看这个载荷与脚本。
+    /// </summary>
     private static object ToPayload(Locator locator) => new
     {
         kind = locator.Kind.ToString().ToLowerInvariant(),
@@ -213,7 +222,9 @@ internal static partial class WebView2DomClient
         locator.Name,
         locator.Exact,
         locator.Nth,
-        locator.HasText
+        locator.HasText,
+        locator.IncludeHidden,
+        locator.InViewportOnly
     };
 
     private static async Task<T> ExecuteAsync<T>(

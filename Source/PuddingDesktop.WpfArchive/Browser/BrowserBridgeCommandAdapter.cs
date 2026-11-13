@@ -678,7 +678,11 @@ public static class BrowserBridgeCommandAdapter
                 wireLocator.Name,
                 wireLocator.Exact,
                 wireLocator.Nth,
-                wireLocator.HasText);
+                wireLocator.HasText,
+                // 两个正交筛选必须从线缆落地：不接就会静默变回 false，
+                // 调用方以为自己在“只取视口内”，实际拿到了整个列表。
+                wireLocator.IncludeHidden,
+                wireLocator.InViewportOnly);
             return true;
         }
         catch (ArgumentException ex)

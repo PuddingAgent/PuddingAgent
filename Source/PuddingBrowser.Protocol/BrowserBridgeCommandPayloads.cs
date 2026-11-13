@@ -58,6 +58,15 @@ public sealed record BrowserLocatorDescriptor
     public bool Exact { get; init; }
     public int? Nth { get; init; }
     public string? HasText { get; init; }
+
+    /// <summary>
+    /// 把隐藏元素也算作匹配（默认 <c>false</c>）。
+    /// **必须过线**：接收端拿不到就只能当 <c>false</c>，而调用方以为自己说的是 <c>true</c>。
+    /// </summary>
+    public bool IncludeHidden { get; init; }
+
+    /// <summary>只返回与视口相交的元素（默认 <c>false</c>）；与 <see cref="IncludeHidden"/> 正交。</summary>
+    public bool InViewportOnly { get; init; }
 }
 
 public sealed record PageSnapshotArguments
