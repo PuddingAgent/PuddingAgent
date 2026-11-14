@@ -82,6 +82,29 @@ public sealed class SessionSteeringService : ISessionSteeringService
         return entity;
     }
 
+    /// <inheritdoc />
+    public async Task<SessionSteeringEnqueueResult> EnqueueAsync(
+        SessionSteeringEnqueueRequest request,
+        CancellationToken ct = default)
+    {
+        // 复用 CreateAsync 的校验与幂等逻辑：空正文 / 空 turn 直接报错（不静默丢弃），
+        // SourceQueueItemId 命中既有条目时返回它而不是新建。
+        var entity = await CreateAsync(new CreateSessionSteeringMessage(
+            WorkspaceId: request.WorkspaceId,
+            SessionId: request.SessionId,
+            TargetTurnId: request.TargetTurnId,
+            AgentId: request.AgentId,
+            MessageText: request.MessageText,
+            SourceQueueItemId: request.SourceQueueItemId,
+            CreatedBy: request.CreatedBy,
+            Priority: request.Priority), ct);
+
+        return new SessionSteeringEnqueueResult(
+            entity.SteeringId,
+            entity.Status,
+            entity.CreatedAtUtc);
+    }
+
     public async Task<ConsumedSessionSteeringMessage?> ConsumeNextAsync(
         string sessionId,
         string? agentId,
