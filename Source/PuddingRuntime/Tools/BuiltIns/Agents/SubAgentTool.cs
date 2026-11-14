@@ -200,11 +200,13 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         var originToolId = GetStringProp(json, "origin_tool_id")
                         ?? GetStringProp(json, "originToolId")
                         ?? "spawn_sub_agent";
-        var workingDirectory = GetStringArg(
-            json,
-            request,
-            "working_directory",
-            "workingDirectory");
+        // 2026-11-14：未显式指定 working_directory 时，继承父代理的工作目录。
+        // 旧行为回落到工作区根（D:\Data\workspaces\<ws>），而仓库常在 D:\CodeProject\...，
+        // 于是子代理的相对路径全部失效，只能靠任务书里写绝对路径（§九实测：一次 run 把
+        // dir 结果写到了工作区 temp 而不是仓库 temp，就是这个原因）。
+        var workingDirectory = ResolveWorkingDirectory(
+            GetStringArg(json, request, "working_directory", "workingDirectory"),
+            context.WorkingDirectory);
                 var capabilityRequirements = GetStringProp(json, "capability_requirements")
                                  ?? GetStringProp(json, "capabilityRequirements")
                                  ?? request.Parameters.GetValueOrDefault("capability_requirements");
@@ -1221,6 +1223,13 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
     private sealed record ResolvedChildLlmRoute(
         LlmInvocationProfile Profile,
         LlmConfig Config);
+
+    /// <summary>
+    /// 子代理工作目录的解析规则：显式值优先，否则继承父代理 cwd（两者都空则保持 null）。
+    /// 抽成纯函数是为了能直接断言这条规则，而不是靠跑一次真子代理去观察。
+    /// </summary>
+    internal static string? ResolveWorkingDirectory(string? explicitValue, string? parentValue) =>
+        string.IsNullOrWhiteSpace(explicitValue) ? parentValue : explicitValue;
 
     private sealed record SubAgentToolRequest(
         string Input,

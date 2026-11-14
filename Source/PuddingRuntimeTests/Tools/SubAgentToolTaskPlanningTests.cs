@@ -212,6 +212,50 @@ public sealed class SubAgentToolTaskPlanningTests
         Assert.AreEqual(workingDirectory, invocation.LastRequest!.WorkingDirectory);
     }
 
+    // 2026-11-14：未显式指定时继承父代理 cwd。
+    // 旧行为回落到工作区根，子代理的相对路径全部失效（§九实测）。
+    [TestMethod]
+    public async Task ExecuteAsync_InheritsParentWorkingDirectory_WhenNotSpecified()
+    {
+        var invocation = new RecordingSubAgentInvocationService { NextStatus = "completed" };
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2));
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+        var parentWorkingDirectory = Path.Combine(Directory.GetCurrentDirectory(), "repo-root");
+
+        var result = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "call-1",
+            ArgumentsJson = """{"task":"Inspect the runtime","sync":true}""",
+            Context = new ToolExecutionContext
+            {
+                AgentInstanceId = "agent_parent",
+                WorkspaceId = "workspace_1",
+                SessionId = "session_parent",
+                WorkingDirectory = parentWorkingDirectory,
+            },
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsNotNull(invocation.LastRequest);
+        Assert.AreEqual(
+            parentWorkingDirectory,
+            invocation.LastRequest!.WorkingDirectory,
+            "未指定 working_directory 时必须继承父代理 cwd，而不是回落到工作区根");
+    }
+
+    // 反向对照：显式值优先，继承不得覆盖调用方明确指定的目录。
+    [TestMethod]
+    public void ResolveWorkingDirectory_ExplicitWinsOverInherited()
+    {
+        Assert.AreEqual("/explicit", SubAgentTool.ResolveWorkingDirectory("/explicit", "/parent"));
+        Assert.AreEqual("/parent", SubAgentTool.ResolveWorkingDirectory(null, "/parent"));
+        Assert.AreEqual("/parent", SubAgentTool.ResolveWorkingDirectory("   ", "/parent"));
+        Assert.IsNull(SubAgentTool.ResolveWorkingDirectory(null, null), "两边都空时保持 null，不凭空造值");
+    }
+
     [TestMethod]
     public async Task ExecuteAsync_PreservesOriginAndContextIsolationArguments()
     {
