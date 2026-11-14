@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "file_search",
     name: "Search files",
-    description: "按文件名搜索（文件搜索）并返回规范化绝对路径。默认使用 Everything Provider（如有）。Everything 需要绝对目录；验证错误会包含从宿主机枚举到的可用盘符根。搜索多个盘时对每个盘根调用一次。Everything 不可用时回退到内置递归文件搜索。使用 action=list 可检查提供方。",
+    description: "按文件名搜索（文件搜索）并返回规范化绝对路径，结果一行一个（行数即条目数，便于按行分页读取）。默认使用 Everything Provider（如有）。Everything 需要绝对目录；验证错误会包含从宿主机枚举到的可用盘符根。搜索多个盘时对每个盘根调用一次。Everything 不可用时回退到内置递归文件搜索。使用 action=list 可检查提供方。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     SortOrder = 41)]
@@ -219,13 +219,23 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
                 StringComparison.OrdinalIgnoreCase)
             && p.IsAvailable);
 
+    /// <summary>
+    /// 2026-11-14：缩进序列化——一题一行。
+    /// 旧实现用单行紧凑 JSON：196 条路径 = 1 行 21.9 KB（实测 original_lines=3）。
+    /// 超过内联预算被 spill 后，提示语要求 “use file_read with offset_lines/limit_lines”，
+    /// 而整份内容只有 1 行——行窗口对它没有意义，模型只能整份重读，或绕道 shell 再造一份行式清单。
+    /// 缩进后仍是合法 JSON（既有调用方的 JsonSerializer.Deserialize 不变），但每个条目独占一行，
+    /// 行窗口分页真正可用。
+    /// </summary>
+    private static readonly JsonSerializerOptions IndentedPathsJson = new() { WriteIndented = true };
+
     private static string BuildSearchOutput(
         IReadOnlyList<string> results,
         string? fallbackFrom,
         string selectedProvider,
         string? fallbackReason)
     {
-        var output = JsonSerializer.Serialize(results);
+        var output = JsonSerializer.Serialize(results, IndentedPathsJson);
         if (string.IsNullOrWhiteSpace(fallbackFrom))
             return output;
 

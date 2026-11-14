@@ -429,6 +429,68 @@ public sealed class FileSearchToolTests
         }
     }
 
+    // ===== 2026-11-14：缩进序列化——一题一行（让 spill 后的行窗口分页真正可用）=====
+
+    // 一题一行：n 条结果 → n+2 行（开/闭方括号各一行），每条内部行去除缩进/引号/逗号后是一条绝对路径。
+    // 反证：旧实现是紧凑 JSON，n 条结果全是 1 行（实测 original_lines=3），
+    // 而 spill 提示语是 “use file_read with offset_lines/limit_lines”——行窗口对 1 行没意义。
+    [TestMethod]
+    public async Task FileSearch_OutputIsOneEntryPerLine()
+    {
+        var root = CreateTempDir("perline-");
+        try
+        {
+            await WriteFileAsync(root, "a.csproj");
+            await WriteFileAsync(root, "b.csproj");
+            await WriteFileInSubDirAsync(root, "sub/c.csproj");
+
+            var result = await RunBuiltInFileSearchAsync(root, "*.csproj");
+
+            Assert.IsTrue(result.Success, result.Error);
+
+            // 1) 契约仍然成立：输出必须是可反序列化的 JSON 字符串数组。
+            var paths = JsonSerializer.Deserialize<string[]>(result.Output);
+            Assert.IsNotNull(paths, "输出必须仍是合法 JSON 字符串数组：\n" + result.Output);
+            Assert.AreEqual(3, paths.Length);
+
+            // 2) 分页可用：行数 = 条目数 + 2（方括号），每条独占一行。
+            var lines = result.Output.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+            Assert.AreEqual(5, lines.Length, "应为 [ + 3 条 + ]，实际输出：\n" + result.Output);
+            var entries = lines.Skip(1).Take(lines.Length - 2).ToArray();
+            foreach (var entry in entries)
+            {
+                var trimmed = entry.Trim().TrimEnd(',').Trim('"');
+                Assert.IsTrue(Path.IsPathRooted(trimmed), $"每行必须恰好是一条绝对路径，实际行：{entry}");
+            }
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
+    // 空结果仍保留 `[]` 占位且不给覆盖声明（与既有 Empty_Manifest 用例互补：这里走内置 provider）。
+    [TestMethod]
+    public async Task FileSearch_EmptyResult_KeepsJsonPlaceholderAndGuidance()
+    {
+        var root = CreateTempDir("emptyph-");
+        try
+        {
+            await WriteFileAsync(root, "a.csproj");
+
+            var result = await RunBuiltInFileSearchAsync(root, "*.nothing");
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.NoMatch, result.Status);
+            StringAssert.Contains(result.Output, "[]");
+            Assert.IsTrue(result.Output.Trim().Length > "[]".Length, "no_match 仍应给出引导文本");
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
     private static string CreateTempDir(string prefix)
     {
         var dir = Path.Combine(Directory.GetCurrentDirectory(), "temp", prefix + Guid.NewGuid().ToString("N"));
