@@ -7,6 +7,11 @@ namespace PuddingCode.Runtime;
 public sealed record ContextAssemblyRequest
 {
     public required string WorkspaceId { get; init; }
+    /// <summary>
+    /// 本次执行文件工具的实际根目录。与 WorkspaceId 不同：后者只表示业务身份，
+    /// 不得用于反推路径。非空时写入 WORKSPACE ENVIRONMENT 层的 WorkingDirectory。
+    /// </summary>
+    public string? WorkingDirectory { get; init; }
     public required string SessionId { get; init; }
     public required string AgentInstanceId { get; init; }
     /// <summary>

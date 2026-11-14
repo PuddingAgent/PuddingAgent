@@ -54,6 +54,7 @@ public sealed class ContextAssemblyService : IContextAssemblyService
         {
             Template = template,
             WorkspaceId = request.WorkspaceId,
+            WorkingDirectory = request.WorkingDirectory,
             SessionId = request.SessionId,
             AgentTemplateId = request.AgentTemplateId,
             UserMessage = request.UserMessage,

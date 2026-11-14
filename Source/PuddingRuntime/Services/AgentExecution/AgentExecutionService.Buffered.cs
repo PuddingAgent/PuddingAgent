@@ -218,6 +218,7 @@ public sealed partial class AgentExecutionService
                     var facadeResult = await _contextAssemblyService.AssembleAsync(new PuddingCode.Runtime.ContextAssemblyRequest
                     {
                         WorkspaceId = request.WorkspaceId ?? string.Empty,
+                        WorkingDirectory = request.WorkingDirectory,
                         SessionId = request.SessionId,
                         AgentInstanceId = instance.AgentInstanceId,
                         ConfigurationAgentInstanceId = request.ConfigurationAgentInstanceId,
