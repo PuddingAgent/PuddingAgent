@@ -165,7 +165,7 @@ internal static class HostFileToolPaths
 [Tool(
     id: "file_read",
     name: "Read file",
-    description: "从宿主工作区读取 UTF-8 文本文件。Read a UTF-8 text file from the host workspace. 默认超过 300 行或 8KB 时返回前 400 行，用 OffsetLines+LimitLines 从指定行继续或 TailLines 读末尾；优先渐进读取。完整工具结果即使显式 FullFile=true 也会由运行时保存为 artifact，模型历史只保留有界预览。",
+    description: "从宿主工作区读取 UTF-8 文本文件。Read a UTF-8 text file from the host workspace. 单次返回恒不超过 8 KiB：无论用分页参数、FullFile 还是 MaxChars，超预算即按字节截断并给出可直接照抄的 OffsetLines 续读位置。优先渐进读取：用 OffsetLines+LimitLines 从指定行继续，或用 TailLines 读末尾。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -233,6 +233,29 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
             taken++;
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// 单次 inline 输出的最后一道字节闸门。
+    ///
+    /// 2026-11-14：<c>FullFile=true</c>、显式分页参数（HeadLines / TailLines / OffsetLines+LimitLines）
+    /// 与 <c>MaxChars</c> 原先都会**绕过**行数 guardrail，于是同一条 21 KiB 结果被运行时二次
+    /// spill 成新 artifact；artifact 的 notice 又引导模型 <c>file_read</c> —— 模型在「读 artifact」
+    /// 与「生成 artifact」之间无限循环。实测 claude-sonnet-5-5 用 <c>FullFile=true</c> 读一个
+    /// 4 行 / 21 KiB 的 artifact，32 请求 / 414 万 token 仍未收敛。
+    ///
+    /// 因此：行数是软约束（由调用方参数决定想读多少），**字节数是硬不变量**（永不超
+    /// <see cref="InlineBudgetBytes"/>）。超预算时给出可直接照抄的续读位置。
+    /// </summary>
+    private static string BoundInlineBody(string body, int startLine, out int emittedLines)
+    {
+        var lines = body.Split('\n');
+        var bounded = TakeLinesWithinByteBudget(lines, lines.Length, out emittedLines);
+        if (emittedLines >= lines.Length)
+            return bounded;
+
+        var next = startLine + emittedLines;
+        return $"{bounded}\n... [TRUNCATED: lines {startLine + 1}..{next} shown ({Encoding.UTF8.GetByteCount(bounded)} bytes, inline budget {InlineBudgetBytes}). Use OffsetLines={next}+LimitLines to continue from line {next + 1}.]";
     }
 
     /// <summary>按 UTF-8 字节数截断字符串，不切断代理对。</summary>
@@ -306,11 +329,12 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                         $"{meta}\n{preview}\n... [GUARDRAIL: {totalLines} lines, {totalChars} chars — showing first {taken} lines ({Encoding.UTF8.GetByteCount(preview)} bytes, inline budget {InlineBudgetBytes}). Use OffsetLines={taken}+LimitLines to continue from line {taken + 1}, or TailLines for the end.]");
                 }
 
+                var windowStart = 0;
                 if (args.MaxChars.HasValue && totalChars > args.MaxChars.Value)
                 {
                     content = content[..args.MaxChars.Value];
                     return ToolExecutionResult.Ok(
-                        $"{meta}\n{content}\n... (truncated at {args.MaxChars.Value} chars, total {totalChars} chars, {totalLines} lines, encoding=utf-8)");
+                        $"{meta}\n{BoundInlineBody(content, windowStart, out _)}\n... (truncated at {args.MaxChars.Value} chars, total {totalChars} chars, {totalLines} lines, encoding=utf-8)");
                 }
 
                 if (args.HeadLines.HasValue)
@@ -319,11 +343,13 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 }
                 else if (args.TailLines.HasValue)
                 {
-                    content = string.Join("\n", lines.Skip(Math.Max(0, lines.Length - args.TailLines.Value)));
+                    windowStart = Math.Max(0, lines.Length - args.TailLines.Value);
+                    content = string.Join("\n", lines.Skip(windowStart));
                 }
                 else if (args.OffsetLines.HasValue)
                 {
                     var offset = Math.Max(0, args.OffsetLines.Value);
+                    windowStart = offset;
                     if (offset >= lines.Length)
                     {
                         // Out-of-range offset: return empty (consistent with the large-file path).
@@ -336,7 +362,7 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                     }
                 }
 
-                return ToolExecutionResult.Ok($"{meta}\n{content}");
+                return ToolExecutionResult.Ok($"{meta}\n{BoundInlineBody(content, windowStart, out _)}");
             }
 
             // Large file path: use FileChunkService for streaming reads
@@ -367,11 +393,12 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 {
                     fullContent = fullContent[..args.MaxChars.Value];
                     return ToolExecutionResult.Ok(
-                        $"{metaLarge}\n{fullContent}\n... (truncated at {args.MaxChars.Value} chars, total {fullChars} chars, {totalLinesLarge} lines, encoding=utf-8)");
+                        $"{metaLarge}\n{BoundInlineBody(fullContent, 0, out _)}\n... (truncated at {args.MaxChars.Value} chars, total {fullChars} chars, {totalLinesLarge} lines, encoding=utf-8)");
                 }
-                return ToolExecutionResult.Ok($"{metaLarge}\n{fullContent}");
+                return ToolExecutionResult.Ok($"{metaLarge}\n{BoundInlineBody(fullContent, 0, out _)}");
             }
 
+            var windowStartLarge = 0;
             string windowContent;
             if (args.HeadLines.HasValue)
             {
@@ -379,13 +406,14 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
             }
             else if (args.TailLines.HasValue)
             {
-                var offset = Math.Max(0, totalLinesLarge - args.TailLines.Value);
-                windowContent = await _chunk.ReadChunkAsync(fullPath, offset, args.TailLines.Value, ct);
+                windowStartLarge = Math.Max(0, totalLinesLarge - args.TailLines.Value);
+                windowContent = await _chunk.ReadChunkAsync(fullPath, windowStartLarge, args.TailLines.Value, ct);
             }
             else if (args.OffsetLines.HasValue)
             {
-                var limit = args.LimitLines ?? (totalLinesLarge - args.OffsetLines.Value);
-                windowContent = await _chunk.ReadChunkAsync(fullPath, args.OffsetLines.Value, limit, ct);
+                windowStartLarge = Math.Max(0, args.OffsetLines.Value);
+                var limit = args.LimitLines ?? (totalLinesLarge - windowStartLarge);
+                windowContent = await _chunk.ReadChunkAsync(fullPath, windowStartLarge, limit, ct);
             }
             else
             {
@@ -393,7 +421,7 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 windowContent = await _chunk.ReadChunkAsync(fullPath, 0, totalLinesLarge, ct);
             }
 
-            return ToolExecutionResult.Ok($"{metaLarge}\n{windowContent}");
+            return ToolExecutionResult.Ok($"{metaLarge}\n{BoundInlineBody(windowContent, windowStartLarge, out _)}");
         }
         catch (Exception ex)
         {
@@ -422,7 +450,7 @@ public sealed record FileReadArgs
         [ToolParam("Maximum lines to read. Use with OffsetLines for arbitrary window.")]
     public int? LimitLines { get; init; }
 
-    [ToolParam("Set true to bypass the guardrail and read the full file content, regardless of size.")]
+    [ToolParam("Read as many lines as fit in one call (skips the default 400-line window). The 8 KiB inline byte budget still applies, so oversized results are truncated with a continuation offset.")]
     public bool? FullFile { get; init; }
 }
 

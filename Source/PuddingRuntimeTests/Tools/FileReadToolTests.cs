@@ -347,6 +347,78 @@ public sealed class FileReadToolTests
             $"large-file guardrail returned {bytes} bytes, above the {ToolResultContextPolicy.MaxInlineUtf8Bytes}-byte bound.");
     }
 
+    // Test 15: FullFile=true must NOT bypass the inline byte budget.
+    // Regression: FullFile (and explicit pagination) skipped the guardrail entirely, so a model
+    // reading a spilled 21 KiB artifact got the whole thing back, the runtime spilled it again,
+    // and the artifact notice told the model to file_read again -- the loop was still reachable.
+    // Observed: claude-sonnet-5-5, 32 requests / 4.15M tokens, no convergence.
+    [TestMethod]
+    public async Task FullFile_DoesNotBypassInlineByteBudget()
+    {
+        // Three logical lines but ~21 KiB: exactly the shape of a spilled tool-result artifact.
+        var wide = new string('x', 21_000);
+        var content = "header line\n" + wide + "\nfooter line";
+        var filePath = Path.Combine(_tempDir, "wide_few_lines.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["FullFile"] = true
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        var bytes = Encoding.UTF8.GetByteCount(result.Output);
+        Assert.IsTrue(
+            bytes <= ToolResultContextPolicy.MaxInlineUtf8Bytes,
+            $"FullFile=true returned {bytes} bytes, above the {ToolResultContextPolicy.MaxInlineUtf8Bytes}-byte bound; " +
+            "the artifact read-back loop is still reachable.");
+        StringAssert.Contains(result.Output, "OffsetLines=");
+    }
+
+    // Test 16: explicit pagination must NOT bypass the inline byte budget either.
+    [TestMethod]
+    public async Task ExplicitPagination_DoesNotBypassInlineByteBudget()
+    {
+        var lines = Enumerable.Range(1, 2000).Select(i => $"line {i:D5} " + new string('z', 80));
+        var content = string.Join("\n", lines);
+        var filePath = Path.Combine(_tempDir, "wide_paged.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["OffsetLines"] = 0,
+            ["LimitLines"] = 2000
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        var bytes = Encoding.UTF8.GetByteCount(result.Output);
+        Assert.IsTrue(
+            bytes <= ToolResultContextPolicy.MaxInlineUtf8Bytes,
+            $"OffsetLines=0+LimitLines=2000 returned {bytes} bytes, above the {ToolResultContextPolicy.MaxInlineUtf8Bytes}-byte bound.");
+    }
+
+    // Test 17: positive control -- the byte gate must not truncate content that already fits.
+    [TestMethod]
+    public async Task FullFile_SmallFile_ReturnsWholeContentWithoutTruncationNotice()
+    {
+        var content = "alpha\nbeta\ngamma";
+        var filePath = Path.Combine(_tempDir, "small_full.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["FullFile"] = true
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "alpha");
+        StringAssert.Contains(result.Output, "gamma");
+        Assert.IsFalse(result.Output.Contains("TRUNCATED"), result.Output);
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(
         FileReadTool tool,
         string path,
