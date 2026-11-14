@@ -98,6 +98,32 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             return Fail("spawn_sub_agent requires a valid JSON object. Use either {\"task\":\"...\"} or {\"tasks\":[...]}.");
 
         var delegation = ReadDelegationProtocol(json, request);
+
+        // === 取消运行中的子代理（缺陷 D1 的 Agent 侧入口）===
+        // 刻意放在 task 解析与池化分支之前：按 subSessionId 定位，不依赖 task，也不依赖 pool_name。
+        // 教训：本分支最初被放在 task 校验之后，导致「仅传 pool_action=cancel」永远被参数校验拦下而不可达。
+        if (string.Equals(args.PoolAction?.Trim(), "cancel", StringComparison.OrdinalIgnoreCase))
+        {
+            var canceller = _services.GetService<ISubAgentManager>();
+            if (canceller is null)
+                return Fail("? ISubAgentManager 服务未注册。");
+
+            var targetSubAgentId = args.SubAgentId?.Trim();
+            if (string.IsNullOrWhiteSpace(targetSubAgentId))
+                return Fail("取消子代理需要 sub_agent_id。先用 query_sub_agents 查看运行中的子代理及其 id。");
+
+            var cancelReason = string.IsNullOrWhiteSpace(args.CancelReason)
+                ? "Cancelled by parent agent"
+                : args.CancelReason!.Trim();
+
+            var cancelAccepted = await canceller.CancelAsync(targetSubAgentId, cancelReason, ct);
+            return cancelAccepted
+                ? Success(
+                    $"? 子代理 {targetSubAgentId} 已取消。",
+                    new { sub_agent_id = targetSubAgentId, status = "cancelled", reason = cancelReason })
+                : Fail($"? 子代理 {targetSubAgentId} 不存在，或已结束（无运行中的执行可取消）。");
+        }
+
         var task = GetStringProp(json, "task")
                 ?? GetStringProp(json, "prompt")
                 ?? request.Parameters.GetValueOrDefault("task");
@@ -239,30 +265,6 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             childLlmRoute.Profile.ProfileId,
             childLlmRoute.Profile.ModelId,
             request.SessionId);
-
-        // === 取消运行中的子代理（缺陷 D1 的 Agent 侧入口）===
-        // 刻意放在池化分支之前：按 subSessionId 定位，不依赖 pool_name。
-        if (string.Equals(args.PoolAction?.Trim(), "cancel", StringComparison.OrdinalIgnoreCase))
-        {
-            var canceller = _services.GetService<ISubAgentManager>();
-            if (canceller is null)
-                return Fail("? ISubAgentManager 服务未注册。");
-
-            var targetSubAgentId = args.SubAgentId?.Trim();
-            if (string.IsNullOrWhiteSpace(targetSubAgentId))
-                return Fail("取消子代理需要 sub_agent_id。先用 query_sub_agents 查看运行中的子代理及其 id。");
-
-            var cancelReason = string.IsNullOrWhiteSpace(args.CancelReason)
-                ? "Cancelled by parent agent"
-                : args.CancelReason!.Trim();
-
-            var cancelAccepted = await canceller.CancelAsync(targetSubAgentId, cancelReason, ct);
-            return cancelAccepted
-                ? Success(
-                    $"? 子代理 {targetSubAgentId} 已取消。",
-                    new { sub_agent_id = targetSubAgentId, status = "cancelled", reason = cancelReason })
-                : Fail($"? 子代理 {targetSubAgentId} 不存在，或已结束（无运行中的执行可取消）。");
-        }
 
         // === 池化子代理路由 ===
         // 当 pool_name 非空时，走池化复用路径；否则走原有一次性子代理逻辑。
