@@ -240,6 +240,30 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             childLlmRoute.Profile.ModelId,
             request.SessionId);
 
+        // === 取消运行中的子代理（缺陷 D1 的 Agent 侧入口）===
+        // 刻意放在池化分支之前：按 subSessionId 定位，不依赖 pool_name。
+        if (string.Equals(args.PoolAction?.Trim(), "cancel", StringComparison.OrdinalIgnoreCase))
+        {
+            var canceller = _services.GetService<ISubAgentManager>();
+            if (canceller is null)
+                return Fail("? ISubAgentManager 服务未注册。");
+
+            var targetSubAgentId = args.SubAgentId?.Trim();
+            if (string.IsNullOrWhiteSpace(targetSubAgentId))
+                return Fail("取消子代理需要 sub_agent_id。先用 query_sub_agents 查看运行中的子代理及其 id。");
+
+            var cancelReason = string.IsNullOrWhiteSpace(args.CancelReason)
+                ? "Cancelled by parent agent"
+                : args.CancelReason!.Trim();
+
+            var cancelAccepted = await canceller.CancelAsync(targetSubAgentId, cancelReason, ct);
+            return cancelAccepted
+                ? Success(
+                    $"? 子代理 {targetSubAgentId} 已取消。",
+                    new { sub_agent_id = targetSubAgentId, status = "cancelled", reason = cancelReason })
+                : Fail($"? 子代理 {targetSubAgentId} 不存在，或已结束（无运行中的执行可取消）。");
+        }
+
         // === 池化子代理路由 ===
         // 当 pool_name 非空时，走池化复用路径；否则走原有一次性子代理逻辑。
         if (!string.IsNullOrWhiteSpace(args.PoolName))
@@ -1479,10 +1503,23 @@ public sealed record SubAgentToolArgs
     public string? PoolName { get; init; }
 
     /// <summary>
-    /// 池操作: create(创建并执行), execute(执行任务,默认), destroy(销毁子代理), sleep(休眠), list(列出池状态)
+    /// 池操作: create(创建并执行), execute(执行任务,默认), destroy(销毁子代理), sleep(休眠),
+    /// list(列出池状态), cleanup, cleanup-bulk, cancel(取消一个运行中的子代理)。
+    /// cancel 不需要 pool_name，按 sub_agent_id 定位。
     /// </summary>
-    [ToolParam("池操作: create, execute(默认), destroy, sleep, list, cleanup, cleanup-bulk")]
+    [ToolParam("池操作: create, execute(默认), destroy, sleep, list, cleanup, cleanup-bulk, cancel(取消运行中的子代理，需 sub_agent_id)")]
     public string? PoolAction { get; init; }
+
+    /// <summary>
+    /// 要取消的子代理 id（形如 "&lt;parent&gt;-sub-&lt;hash&gt;"），仅用于 pool_action=cancel。
+    /// 可从 query_sub_agents 的 list/running 结果获取。
+    /// </summary>
+    [ToolParam("要取消的子代理 id（用于 pool_action=cancel）；可从 query_sub_agents 获取")]
+    public string? SubAgentId { get; init; }
+
+    /// <summary>取消原因（可选，仅用于 pool_action=cancel）。会写入运行归档与事件。</summary>
+    [ToolParam("取消原因（可选，用于 pool_action=cancel）")]
+    public string? CancelReason { get; init; }
 
     /// <summary>
     /// 池化子代理角色（可选），用于区分用途：如 dev-agent, reviewer, explorer

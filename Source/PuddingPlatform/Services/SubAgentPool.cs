@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
@@ -329,8 +329,15 @@ public sealed class SubAgentPool : ISubAgentPool
 
             if (entry.Status == PooledSubAgentStatus.Busy)
             {
-                _logger.LogWarning(
-                    "[SubAgentPool] SleepAsync: '{Name}' is busy, force-sleeping", name);
+                // 与缺陷 D1 同型：busy 时只改 Status=Sleeping 会让执行继续在后台烧 token，
+                // 而日志里的 force-sleeping 会让人以为已经停下（日志在说谎）。
+                // 先真取消执行链，再标记休眠。
+                _logger.LogInformation(
+                    "[SubAgentPool] SleepAsync: '{Name}' is busy, cancelling the in-flight run before sleeping", name);
+                await _subAgentManager.CancelAsync(
+                    entry.SubSessionId,
+                    "Pooled sub-agent put to sleep",
+                    ct);
             }
 
             entry.Status = PooledSubAgentStatus.Sleeping;
@@ -364,7 +371,17 @@ public sealed class SubAgentPool : ISubAgentPool
                 return false;
             }
 
+            var wasBusy = entry.Status == PooledSubAgentStatus.Busy;
             entry.Status = PooledSubAgentStatus.Dead;
+
+            // 同 SleepAsync：条目已死并不代表执行循环已停。先真取消，避免「已销毁但仍在烧 token」。
+            if (wasBusy)
+            {
+                await _subAgentManager.CancelAsync(
+                    entry.SubSessionId,
+                    "Pooled sub-agent destroyed",
+                    ct);
+            }
 
             _logger.LogInformation(
                 "[SubAgentPool] Destroyed '{Name}' subSessionId={Sub} taskCount={TaskCount}",

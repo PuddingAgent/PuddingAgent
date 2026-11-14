@@ -421,14 +421,88 @@ public sealed class SubAgentPoolTests
         Assert.AreEqual(1, snapshot.TaskCount);
         Assert.IsFalse(snapshot.LastSuccess);
     }
-}
 
 // ═══════════════════════════════════════════════════════════
 // Test doubles
 // ═══════════════════════════════════════════════════════════
 
+    // ═══════════════════════════════════════
+    // Busy 条目的休眠/销毁必须先真取消执行（缺陷 D1 同型）
+    // ═══════════════════════════════════════
+
+    [TestMethod]
+    public async Task SleepAsync_BusyEntry_CancelsInFlightRun()
+    {
+        var manager = new TestSubAgentManager { DelayMs = 250 };
+        var pool = CreatePool(manager);
+        var created = await pool.CreateAsync("agent-a", CreateSpawnRequest());
+
+        var exec = pool.ExecuteAsync("agent-a", CreateSpawnRequest());
+        var becameBusy = false;
+        for (var i = 0; i < 200; i++)
+        {
+            if ((await pool.GetAsync("agent-a"))?.Status == PooledSubAgentStatus.Busy)
+            {
+                becameBusy = true;
+                break;
+            }
+            await Task.Delay(5);
+        }
+        Assert.IsTrue(becameBusy, "precondition: the pooled entry must reach Busy");
+
+        await pool.SleepAsync("agent-a");
+        await exec;
+
+        Assert.IsTrue(manager.CancelledSubSessionIds.Contains(created.SubSessionId),
+            "SleepAsync on a Busy entry must cancel the in-flight run; " +
+            "changing Status alone leaves the loop spending while the log claims 'force-sleeping'");
+    }
+
+    [TestMethod]
+    public async Task DestroyAsync_BusyEntry_CancelsInFlightRun()
+    {
+        var manager = new TestSubAgentManager { DelayMs = 250 };
+        var pool = CreatePool(manager);
+        var created = await pool.CreateAsync("agent-a", CreateSpawnRequest());
+
+        var exec = pool.ExecuteAsync("agent-a", CreateSpawnRequest());
+        var becameBusy = false;
+        for (var i = 0; i < 200; i++)
+        {
+            if ((await pool.GetAsync("agent-a"))?.Status == PooledSubAgentStatus.Busy)
+            {
+                becameBusy = true;
+                break;
+            }
+            await Task.Delay(5);
+        }
+        Assert.IsTrue(becameBusy, "precondition: the pooled entry must reach Busy");
+
+        await pool.DestroyAsync("agent-a");
+        await exec;
+
+        Assert.IsTrue(manager.CancelledSubSessionIds.Contains(created.SubSessionId),
+            "DestroyAsync on a Busy entry must cancel the in-flight run; " +
+            "a dead pool entry does not stop a running loop");
+    }
+
+    [TestMethod]
+    public async Task SleepAsync_IdleEntry_DoesNotCancelAnything()
+    {
+        var manager = new TestSubAgentManager();
+        var pool = CreatePool(manager);
+        await pool.CreateAsync("agent-a", CreateSpawnRequest());
+
+        await pool.SleepAsync("agent-a");
+
+        Assert.AreEqual(0, manager.CancelledSubSessionIds.Count,
+            "an idle entry has nothing to cancel; cancelling anyway would emit spurious events");
+    }
+}
+
 public sealed class TestSubAgentManager : ISubAgentManager
 {
+    public List<string> CancelledSubSessionIds { get; } = new();
     public int DelayMs { get; set; }
     public bool ShouldFail { get; set; }
     private int _spawnCounter;
@@ -468,7 +542,10 @@ public sealed class TestSubAgentManager : ISubAgentManager
     public Task<int> CancelAllAsync(string parentSessionId, CancellationToken ct = default)
         => Task.FromResult(0);
     public Task<bool> CancelAsync(string subSessionId, string reason, CancellationToken ct = default)
-        => Task.FromResult(false);
+    {
+        CancelledSubSessionIds.Add(subSessionId);
+        return Task.FromResult(true);
+    }
     public Task<IReadOnlyList<SubAgentStatus>> GetSubAgentsAsync(string parentSessionId, SubAgentQueryFilter? filter = null, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<SubAgentStatus>>(Array.Empty<SubAgentStatus>());
     public Task<int> GetRunningCountAsync(string parentSessionId, CancellationToken ct = default)
