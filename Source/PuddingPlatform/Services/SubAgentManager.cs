@@ -41,6 +41,15 @@ public sealed class SubAgentManager : ISubAgentManager
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _workspaceGates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _templateGates = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// 正在执行的子代理运行令牌注册表。
+    /// 缺陷 D1（Docs/03_multi_agent/2026-11-14-子代理可控性与多模型适配诊断.md）的接线点：
+    /// 修复前驱动执行的令牌是 ExecuteAsyncSubAgentWithLimitsAsync 内的 using var 局部变量，
+    /// 外界取不到，因此 CancelAllAsync 只能改状态、不能真正停下运行。
+    /// 可选参数是刻意的 —— 与 _browserDelegation 同理，避免让既有测试全部变红。
+    /// </summary>
+    private readonly SubAgentRunCancellationRegistry _runCancellations;
+
     public SubAgentManager(
         ISessionStateManager ssm,
         IServiceProvider services,
@@ -50,7 +59,8 @@ public sealed class SubAgentManager : ISubAgentManager
         IRuntimeActivitySink activitySink,
         IRuntimeTraceAccessor traceAccessor,
         IRuntimeExecutionConfigService? executionConfig = null,
-        PuddingCode.Abstractions.IBrowserDelegationLifecycle? browserDelegation = null)
+        PuddingCode.Abstractions.IBrowserDelegationLifecycle? browserDelegation = null,
+        SubAgentRunCancellationRegistry? runCancellations = null)
     {
         _ssm = ssm;
         _services = services;
@@ -61,6 +71,7 @@ public sealed class SubAgentManager : ISubAgentManager
         _traceAccessor = traceAccessor;
         _executionConfig = executionConfig;
         _browserDelegation = browserDelegation;
+        _runCancellations = runCancellations ?? new SubAgentRunCancellationRegistry();
     }
 
     /// <summary>子代理 subSessionId → runId 的内存映射（供异步完成回调使用）。</summary>
@@ -145,6 +156,7 @@ public sealed class SubAgentManager : ISubAgentManager
             try
             {
                 var r = await ExecuteAsyncSubAgentWithLimitsAsync(
+                    subSessionId,
                     request,
                     (timeoutSeconds, executionDeadlineUtc, runCt) => DispatchChildAgentAsync(
                         subSessionId,
@@ -369,6 +381,7 @@ public sealed class SubAgentManager : ISubAgentManager
         try
         {
             r = await ExecuteAsyncSubAgentWithLimitsAsync(
+                subSessionId,
                 request,
                 (timeoutSeconds, executionDeadlineUtc, runCt) => DispatchChildAgentAsync(
                     subSessionId,
@@ -476,6 +489,10 @@ public sealed class SubAgentManager : ISubAgentManager
 
         foreach (var sa in toCancel)
         {
+            // 先真正中断执行链，再做状态记账。顺序不可颠倒 —— 反过来就等于「先宣告已结束，
+            // 而 loop 还在跑」，这正是缺陷 D1 的原始形态。
+            CancelRunningRun(sa.SubSessionId);
+
             await _ssm.TrackSubAgentCompleteAsync(sa.SubSessionId, new SubAgentResult
             {
                 Success = false,
@@ -531,6 +548,20 @@ public sealed class SubAgentManager : ISubAgentManager
             toCancel.Count, parentSessionId);
 
         return toCancel.Count;
+    }
+
+    /// <summary>
+    /// 向正在执行的子代理发出真正的取消信号（缺陷 D1 的修复点）。
+    /// 未登记时（已结束、或未经本管理器启动）返回 false——未知不折叠成已取消。
+    /// </summary>
+    private bool CancelRunningRun(string subSessionId)
+    {
+        if (!_runCancellations.Cancel(subSessionId))
+            return false;
+
+        _logger.LogInformation(
+            "[SubAgentMgr] Signalled cancellation to running sub-agent {Sub}", subSessionId);
+        return true;
     }
 
     // ════════════════════════════════════════════════════════
@@ -617,6 +648,7 @@ public sealed class SubAgentManager : ISubAgentManager
     // ════════════════════════════════════════════════════════
 
     private async Task<T> ExecuteAsyncSubAgentWithLimitsAsync<T>(
+        string subSessionId,
         SubAgentSpawnRequest request,
         Func<int, DateTimeOffset, CancellationToken, Task<T>> action,
         CancellationToken ct)
@@ -638,6 +670,11 @@ public sealed class SubAgentManager : ISubAgentManager
 
         using var deadlineCts = new CancellationTokenSource(remaining);
         using var runCts = CancellationTokenSource.CreateLinkedTokenSource(ct, deadlineCts.Token);
+
+        // 将本次运行的令牌登记到注册表：这是「停止」能真正生效的唯一通路（缺陷 D1）。
+        // 不登记的话，runCts 只是个局部变量，CancelAllAsync 永远拿不到它。
+        var runToken = _runCancellations.Register(subSessionId, runCts.Token);
+
         var workspaceAcquired = false;
         var templateAcquired = false;
         try
@@ -647,7 +684,7 @@ public sealed class SubAgentManager : ISubAgentManager
             await templateGate.WaitAsync(runCts.Token);
             templateAcquired = true;
 
-            return await action(timeoutSeconds, executionDeadlineUtc, runCts.Token);
+            return await action(timeoutSeconds, executionDeadlineUtc, runToken);
         }
         catch (OperationCanceledException) when (
             deadlineCts.IsCancellationRequested && !ct.IsCancellationRequested)
@@ -657,6 +694,9 @@ public sealed class SubAgentManager : ISubAgentManager
         }
         finally
         {
+            // 终态收尾后才移除：取消之后仍需可查询「曾登记过」。
+            _runCancellations.TryRemove(subSessionId);
+
             if (templateAcquired)
                 templateGate.Release();
             if (workspaceAcquired)
