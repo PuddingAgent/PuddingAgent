@@ -158,8 +158,11 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             var output = BuildSearchOutput(results, fallbackFrom, providerId, fallbackReason);
             // ADR-089 U0-S3：覆盖声明单点产出，且仅非 Complete 时出现（对齐 U0-S2 SearchGrepTool
             // 惯例：Complete = 无声明行 + status ok/no_match）；同一声明恰好一次（U0-S2 教训见 ff79f3b）。
+            // 覆盖声明必须出现在结果首行：结果超过内联上限被 spill 时模型只看到前缀，
+            // 声明留在尾部会被截掉，模型于是把不完整清单当成完整清单（2026-11-14 实测：
+            // file_search 返回 196 中的 100 条，声明在尾部，子代理据此报 DONE）。
             if (!coverage.IsComplete)
-                output += Environment.NewLine + BuildCoverageNote(coverage);
+                output = BuildCoverageNote(coverage) + Environment.NewLine + output;
             var noMatch = coverage.IsComplete && results.Count == 0;
             if (noMatch)
                 output += Environment.NewLine + Environment.NewLine + BuildNoResultsGuidance(providerId, directory, pattern, recursive);
@@ -184,7 +187,7 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
                     builtInFallback.ProviderId,
                     $"provider query failed: {ex.Message}");
                 if (!fallbackResult.Coverage.IsComplete)
-                    output += Environment.NewLine + BuildCoverageNote(fallbackResult.Coverage);
+                    output = BuildCoverageNote(fallbackResult.Coverage) + Environment.NewLine + output;
                 var noMatch = fallbackResult.Coverage.IsComplete && results.Count == 0;
                 if (noMatch)
                 {

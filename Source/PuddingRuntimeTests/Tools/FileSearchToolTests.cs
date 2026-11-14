@@ -225,6 +225,39 @@ public sealed class FileSearchToolTests
         }
     }
 
+    // 覆盖声明必须领衔输出：结果超过内联上限被 spill 时模型只看到前缀，声明留在尾部
+    // 会被截掉，模型于是把不完整清单当成完整清单（2026-11-14 实测：196 个 .csproj
+    // 只回 100 条，声明在尾部，子代理据此报 DONE）。
+    [TestMethod]
+    public async Task NonComplete_Coverage_Note_Leads_The_Payload()
+    {
+        var root = CreateTempDir("u0s3-lead-");
+        try
+        {
+            var sdk = new StubEverythingSdk([]);
+            var tool = new FileSearchTool([new EverythingSearchProvider(sdk), new ThrowingBuiltInProvider()]);
+
+            var result = await ExecuteAsync(tool, $$"""
+            {
+              "directory": "{{JsonEscape(root)}}",
+              "pattern": "*.txt",
+              "recursive": true
+            }
+            """);
+
+            Assert.IsTrue(result.Success, result.Error);
+            var firstLine = result.Output.Split('\n')[0].TrimEnd('\r');
+            Assert.IsTrue(
+                firstLine.StartsWith("(coverage:", StringComparison.Ordinal),
+                $"coverage note must lead the payload so it survives inline truncation; first line was: {firstLine}");
+            Assert.AreEqual(1, CountOccurrences(result.Output, "(coverage:"), "coverage note must still appear exactly once");
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
     // T6：require_provider=true 时尊重单一 provider 语义——不差分，但保持 Partial 诚实上报。
     [TestMethod]
     public async Task RequireProvider_Keeps_Partial_Without_Differential_Enumeration()
