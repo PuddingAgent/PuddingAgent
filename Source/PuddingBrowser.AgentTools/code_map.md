@@ -96,6 +96,8 @@ ParentRunId"这种可伪造推断）；无上下文/无 agent 标识/子代理�
 inViewportOnly 或滚动容器」（把"这次筛选没用对"与"这种定位方式坏了"分开）；`stale_element_reference` ⇒ 不可重试 + 重新观察再定位；未登记异常码保守按 `internal_error`（可能已产生副作用）
 **`BrowserLocatorInput.cs`**：定位器输入模型。⚠️ **嵌套字段必须用 camelCase**（`includeHidden`，不是 `include_hidden`）：工具框架的 snake_case 归一化只作用于**顶层参数**（`PuddingToolContracts.DeserializeArgs` 只重写根对象的属性名）
 
+**`BrowserInteractArgumentPolicy.cs`**：指针动作的参数形状判定（纯函数，可单测）。`pointer_click`/`pointer_move` **给了 `locator`** 就翻成 `click`/`hover`——坐标动作没有元素身份，判定层拦不住点偏/点空/被遮挡，翻成元素动作才能复用可见性/视口/遮挡/禁用判定与派发前坐标重采样；**不给**则逐字保持纯坐标行为；两者同时给直接拒绝（静默取其一 = “回执说成功但点错了地方”）。规则单独成函数而不是埋在工具 lambda 里，是因为这类“改写成另一个动作”的分支错了仍会报成功。
+
 ## 调用链
 
 调用链：`Agent Loop → search_tools → Browser*Tool`（八个工具类）→ `IDesktopBrowserCapabilitySurface`（窄端口）+ `IDesktopCapabilityCallContextFactory`；
