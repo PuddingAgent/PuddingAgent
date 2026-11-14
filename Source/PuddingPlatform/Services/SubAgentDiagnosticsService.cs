@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
@@ -9,8 +9,11 @@ namespace PuddingPlatform.Services;
 
 /// <summary>
 /// ISubAgentDiagnosticsService 的文件系统实现。
-/// 只读 run.json manifest 文件，不加载 events.jsonl，保证性能。
+/// 默认只读 run.json manifest 文件，不加载 events.jsonl，保证性能。
 /// 单个 run.json 解析失败不中断整体扫描。
+/// 例外（2026-11-14）：run.json 只在终态才带 TotalRounds / TotalToolCalls，
+/// 因此仅在「字段缺失且状态为 running」时，用 <see cref="SubAgentRunProgressReader"/> 从增量日志现算；
+/// 终态运行仍然只读 run.json，本类的性能约定不变。
 /// </summary>
 public sealed class SubAgentDiagnosticsService : ISubAgentDiagnosticsService
 {
@@ -79,6 +82,19 @@ public sealed class SubAgentDiagnosticsService : ISubAgentDiagnosticsService
 
                 var durationMs = (long)((manifest.CompletedAt ?? now) - manifest.StartedAt).TotalMilliseconds;
 
+                // 2026-11-14：run.json 只在终态写 TotalRounds/TotalToolCalls，运行中为 null。
+                // 旧实现直接 ?? 0，导致「正在跑 12 轮」的子代理对外报「0 轮」。
+                // 只在缺字段且状态为 running 时读增量日志——终态运行不付这个代价。
+                var totalRounds = manifest.TotalRounds;
+                var totalToolCalls = manifest.TotalToolCalls;
+                if ((totalRounds is null || totalToolCalls is null)
+                    && string.Equals(manifest.Status, "running", StringComparison.OrdinalIgnoreCase)
+                    && SubAgentRunProgressReader.TryRead(runDir) is { } progress)
+                {
+                    totalRounds ??= progress.Rounds;
+                    totalToolCalls ??= progress.ToolCalls;
+                }
+
                 summaries.Add(new SubAgentRunSummary
                 {
                     RunId = manifest.RunId,
@@ -89,8 +105,8 @@ public sealed class SubAgentDiagnosticsService : ISubAgentDiagnosticsService
                     StartedAt = manifest.StartedAt,
                     CompletedAt = manifest.CompletedAt,
                     DurationMs = Math.Max(0, durationMs),
-                    TotalRounds = manifest.TotalRounds ?? 0,
-                    TotalToolCalls = manifest.TotalToolCalls ?? 0,
+                    TotalRounds = totalRounds ?? 0,
+                    TotalToolCalls = totalToolCalls ?? 0,
                     ErrorMessage = manifest.ErrorMessage,
                 });
 
@@ -297,7 +313,10 @@ public sealed class SubAgentDiagnosticsService : ISubAgentDiagnosticsService
                 {
                     using var doc = JsonDocument.Parse(line);
                     var root = doc.RootElement;
-                    var type = root.TryGetProperty("type", out var t) ? t.GetString() : null;
+                    // 2026-11-14：事件行的实际字段是 eventType（不是 type），
+                    // 且 duration_ms 在 payload 里而不是根上。旧代码两条都读错，
+                    // 于是本方法对任何 run 都返回「全 0 的合法对象」——不报错，只是永远没数。
+                    var type = root.TryGetProperty("eventType", out var t) ? t.GetString() : null;
                     var tsStr = root.TryGetProperty("timestamp", out var ts) ? ts.GetString() : null;
                     if (type is null || tsStr is null) continue;
                     if (!DateTimeOffset.TryParse(tsStr, out var timestamp)) continue;
@@ -312,16 +331,31 @@ public sealed class SubAgentDiagnosticsService : ISubAgentDiagnosticsService
                             currentLlmStart = epoch;
                             break;
                         case "subagent.llm.completed":
+                            // 只做 LLM 耗时累加；轮次改由 round.completed 单点计数，避免两处定义漂移。
                             if (currentLlmStart.HasValue)
                             {
                                 llmMs += Math.Max(0, epoch - currentLlmStart.Value);
                                 currentLlmStart = null;
-                                rounds++;
                             }
+                            break;
+                        case "subagent.round.completed":
+                            rounds++;
                             break;
                         case "subagent.tool.completed":
                         case "subagent.tool.failed":
-                            var dur = root.TryGetProperty("duration_ms", out var d) ? d.GetInt64() : 0;
+                            // 优先 payload.duration_ms（当前格式），兼容根级旧格式。
+                            long dur = 0;
+                            if (root.TryGetProperty("payload", out var payload)
+                                && payload.TryGetProperty("duration_ms", out var pd)
+                                && pd.TryGetInt64(out var pdv))
+                            {
+                                dur = pdv;
+                            }
+                            else if (root.TryGetProperty("duration_ms", out var rd) && rd.TryGetInt64(out var rdv))
+                            {
+                                dur = rdv;
+                            }
+
                             toolMs += Math.Max(0, dur);
                             toolCalls++;
                             break;
