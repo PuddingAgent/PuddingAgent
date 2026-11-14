@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
+using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
@@ -122,6 +123,34 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                     $"? 子代理 {targetSubAgentId} 已取消。",
                     new { sub_agent_id = targetSubAgentId, status = "cancelled", reason = cancelReason })
                 : Fail($"? 子代理 {targetSubAgentId} 不存在，或已结束（无运行中的执行可取消）。");
+        }
+
+        // === 查看子代理运行日志（事件 + 工具审计尾部）===
+        // 与 cancel 同样放在 task 解析之前：按 sub_agent_id 定位，不依赖 task，也不依赖 pool_name。
+        if (string.Equals(args.PoolAction?.Trim(), "logs", StringComparison.OrdinalIgnoreCase))
+        {
+            var logTarget = args.SubAgentId?.Trim();
+            if (string.IsNullOrWhiteSpace(logTarget))
+                return Fail("查看子代理日志需要 sub_agent_id。先用 query_sub_agents 列出子代理及其 id。");
+
+            var dataPaths = _services.GetService<PuddingDataPaths>();
+            if (dataPaths is null)
+                return Fail("? PuddingDataPaths 服务未注册。");
+
+            var snapshot = SubAgentRunLogReader.ReadLatest(dataPaths, logTarget, args.LogsTail ?? 20);
+            if (snapshot is null)
+                return Fail($"? 找不到 sub_agent_id={logTarget} 的运行归档（可能尚未创建或已被清理）。");
+
+            return Success(
+                snapshot.ToDisplayText(),
+                new
+                {
+                    sub_agent_id = logTarget,
+                    run_id = snapshot.RunId,
+                    status = snapshot.Status,
+                    events = snapshot.EventCount,
+                    tool_calls = snapshot.ToolCallCount,
+                });
         }
 
         var task = GetStringProp(json, "task")
@@ -1520,8 +1549,12 @@ public sealed record SubAgentToolArgs
     /// list(列出池状态), cleanup, cleanup-bulk, cancel(取消一个运行中的子代理)。
     /// cancel 不需要 pool_name，按 sub_agent_id 定位。
     /// </summary>
-    [ToolParam("池操作: create, execute(默认), destroy, sleep, list, cleanup, cleanup-bulk, cancel(取消运行中的子代理，需 sub_agent_id)")]
+    [ToolParam("池操作: create, execute(默认), destroy, sleep, list, cleanup, cleanup-bulk, cancel(取消运行中的子代理，需 sub_agent_id), logs(查看子代理事件与工具调用尾部，需 sub_agent_id)")]
     public string? PoolAction { get; init; }
+
+    /// <summary>logs 动作返回的尾部条数（事件与工具调用各自取最后 N 条）。</summary>
+    [ToolParam("logs 动作返回的尾部条数（事件与工具调用各取最后 N 条），默认 20，范围 1~200。")]
+    public int? LogsTail { get; init; }
 
     /// <summary>
     /// 要取消的子代理 id（形如 "&lt;parent&gt;-sub-&lt;hash&gt;"），仅用于 pool_action=cancel。
