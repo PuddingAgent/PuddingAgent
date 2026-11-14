@@ -323,17 +323,55 @@ public sealed class SubAgentDiagnosticsService : ISubAgentDiagnosticsService
         _ => "Run latency_breakdown for detailed timing analysis",
     };
 
+    /// <summary>
+    /// 定位 run 目录。
+    /// <para>
+    /// 2026-11-14：原先用 <c>EnumerateFiles(workspacesRoot, "events.jsonl", AllDirectories)</c> 全量枚举——
+    /// 为了定位**一个**目录，得遍历整个数据根下的所有文件。
+    /// 目录布局由 <c>PuddingDataPaths.SubAgentRunRoot</c> 单点确定：
+    /// <c>workspaces/&lt;ws&gt;/agents/&lt;agent&gt;/runs/&lt;runId&gt;</c>，而 runId 就是最后一级目录名，
+    /// 所以只需三层目录列举即可命中，不碰任何文件。
+    /// </para>
+    /// </summary>
     private string? FindRunDirectory(string runId)
     {
+        if (string.IsNullOrWhiteSpace(runId))
+            return null;
+
         var workspacesRoot = _paths.WorkspacesRoot;
         if (!Directory.Exists(workspacesRoot)) return null;
 
-        foreach (var eventsFile in Directory.EnumerateFiles(workspacesRoot, "events.jsonl", SearchOption.AllDirectories))
+        foreach (var workspace in SafeGetDirectories(workspacesRoot))
         {
-            var dir = Path.GetDirectoryName(eventsFile);
-            if (dir is not null && Path.GetFileName(dir) == runId)
-                return dir;
+            var agentsRoot = Path.Combine(workspace, "agents");
+            if (!Directory.Exists(agentsRoot))
+                continue;
+
+            foreach (var agentDir in SafeGetDirectories(agentsRoot))
+            {
+                var candidate = Path.Combine(agentDir, "runs", runId);
+                if (Directory.Exists(candidate))
+                    return candidate;
+            }
         }
+
         return null;
+    }
+
+    /// <summary>目录列举失败（权限/竞争）时当作空，不让诊断整体失败。</summary>
+    private static IEnumerable<string> SafeGetDirectories(string path)
+    {
+        try
+        {
+            return Directory.GetDirectories(path);
+        }
+        catch (IOException)
+        {
+            return [];
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return [];
+        }
     }
 }
