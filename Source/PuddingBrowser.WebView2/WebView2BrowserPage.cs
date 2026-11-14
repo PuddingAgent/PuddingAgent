@@ -1287,6 +1287,87 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
         }
     }
 
+    /// <summary>派发前最多重采样几次，用于把过期的坐标换成最新坐标。</summary>
+    private const int NativeStabilityResamples = 2;
+
+    /// <summary>两次采样的包围盒在此容差（CSS 像素）内视为稳定，无需再采。</summary>
+    private const double NativeStabilityTolerance = 1.0;
+
+    /// <summary>
+    /// R1：native 派发前的目标可行性判定。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// native 输入（CDP <c>Input.*</c>）打的是视口坐标，不是元素引用。因此「元素存在」不等于
+    /// 「点得到」：元素可能在视口外，也可能已经 disabled。这两种情况下坐标依旧合法，事件会
+    /// 落在空白或另一个元素上，而回执报 dispatched —— 这类静默点偏是最难排查的一种假成功。
+    /// </para>
+    /// <para>
+    /// 另外页面自己会动（轮播、视频自动播放、动画展开）。定位时算出的坐标到派发时可能已经过期，
+    /// 所以这里做事后重采样：拿「最后一次重新解析」得到的 handle 去派发，而不是最初那次定位的结果。
+    /// 重采样只换坐标、不阻断动作——稳定就早退，持续动画则用最新一帧，避免新增失败模式。
+    /// </para>
+    /// </remarks>
+    private async Task<IElementHandle> EnsureNativeTargetAsync(
+        Locator locator,
+        IElementHandle handle,
+        string action,
+        CancellationToken ct)
+    {
+        var info = handle.Info;
+
+        if (info.InViewport is false)
+        {
+            // 先滚入再重查：滚动本身改变坐标，所以必须重新解析，不能复用旧 handle。
+            await ExecuteInteractionAsync("scroll", locator, value: null, deltaX: null, deltaY: null, ct)
+                .ConfigureAwait(false);
+
+            var scrolled = await QueryAsync(locator, ct).ConfigureAwait(false);
+            if (scrolled is null || scrolled.Info.InViewport is not true)
+            {
+                throw new BrowserOperationException(
+                    "browser_element_not_in_viewport",
+                    "the matched element could not be scrolled into the viewport; native input would miss it");
+            }
+
+            handle = scrolled;
+            info = handle.Info;
+        }
+
+        if (!info.Enabled)
+        {
+            throw new BrowserOperationException(
+                "browser_element_disabled",
+                $"the matched element is disabled; a native {action} would be silently ignored");
+        }
+
+        for (var attempt = 0; attempt < NativeStabilityResamples; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            var previous = info.BoundingBox;
+            var fresh = await QueryAsync(locator, ct).ConfigureAwait(false)
+                ?? throw new BrowserOperationException(
+                    "browser_element_not_found",
+                    "the matched element disappeared before native input could be dispatched");
+
+            handle = fresh;
+            info = handle.Info;
+
+            if (previous is { } before && info.BoundingBox is { } after && IsSameBox(before, after))
+            {
+                break;
+            }
+        }
+
+        return handle;
+    }
+
+    private static bool IsSameBox(BoundingBox before, BoundingBox after)
+        => Math.Abs(before.X - after.X) < NativeStabilityTolerance
+            && Math.Abs(before.Y - after.Y) < NativeStabilityTolerance
+            && Math.Abs(before.Width - after.Width) < NativeStabilityTolerance
+            && Math.Abs(before.Height - after.Height) < NativeStabilityTolerance;
+
     /// <summary>
     /// **原生输入路径**（设计方案 §7）：按 <c>NativeInputSequence</c> 规划好的 CDP 调用逐条发出。
     ///
@@ -1308,6 +1389,11 @@ public sealed class WebView2BrowserPage : IBrowserPage, IPointerInputPage
         var handle = await QueryAsync(locator, ct).ConfigureAwait(false)
             ?? throw new BrowserOperationException(
                 "browser_element_not_found", $"no element matches {locator}");
+
+        // R1：native 输入派发的是坐标，必须在派发前确认元素此刻真的能被命中。
+        // 仅靠 QueryAsync 的 visible 过滤不够——视口外、已禁用的元素一样有合法几何，
+        // CDP 照样把事件打到那个坐标上：落到别的元素或空白，回执却报 dispatched（静默点偏）。
+        handle = await EnsureNativeTargetAsync(locator, handle, action, ct).ConfigureAwait(false);
 
         var box = await handle.GetBoundingBoxAsync(ct).ConfigureAwait(false)
             ?? throw new BrowserOperationException(
