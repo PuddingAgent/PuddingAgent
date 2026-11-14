@@ -994,7 +994,7 @@ public sealed class DesktopService : IDesktopCapabilityExecutor, IAsyncDisposabl
     /// （<see cref="DesktopCapabilityError"/> 构造时会再截断长度并剔除控制字符）。
     /// 未登记的码**不外泄消息**、只回码本身——既保住可诊断性，也不把页面数据带出去。
     /// </summary>
-    private static DesktopCapabilityError MapBrowserOperationFailure(BrowserOperationException ex)
+    internal static DesktopCapabilityError MapBrowserOperationFailure(BrowserOperationException ex)
     {
         // 把**稳定 code 原文**带进消息：能力层的错误码是枚举，若只给 invalid_request / invalid_target，
         // 工具侧那张按「browser_* 码」写的修复提示表就永远命中不了（缺口 G6）。
