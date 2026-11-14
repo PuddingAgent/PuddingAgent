@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using PuddingCode.Configuration;
+using PuddingCode.SubAgents;
 
 namespace PuddingRuntime.Services.Skills;
 
@@ -12,7 +13,8 @@ public sealed record SubAgentRunLogSnapshot(
     int EventCount,
     int ToolCallCount,
     IReadOnlyList<string> EventLines,
-    IReadOnlyList<string> ToolLines)
+    IReadOnlyList<string> ToolLines,
+    SubAgentLatencyBreakdown? Latency = null)
 {
     /// <summary>渲染成紧凑文本。</summary>
     public string ToDisplayText()
@@ -32,6 +34,18 @@ public sealed record SubAgentRunLogSnapshot(
             sb.AppendLine("(none)");
         foreach (var line in ToolLines)
             sb.AppendLine(line);
+
+        if (Latency is { } latency)
+        {
+            // 2026-11-14：把时间去哪了直接摆出来。
+            // 「看」到事件不等于「看懂」——LLM 占多少、工具占多少、开销占多少才是判断依据。
+            sb.AppendLine("--- latency ---");
+            sb.Append(CultureInfo.InvariantCulture,
+                $"total={latency.TotalDurationMs}ms llm={latency.LlmDurationMs}ms({latency.LlmPct}%) " +
+                $"tool={latency.ToolDurationMs}ms({latency.ToolPct}%) " +
+                $"overhead={latency.OverheadMs}ms({latency.OverheadPct}%) " +
+                $"rounds={latency.RoundCount} tool_calls={latency.ToolCallCount}");
+        }
 
         return sb.ToString().TrimEnd();
     }
@@ -93,16 +107,19 @@ internal static class SubAgentRunLogReader
         var eventsPath = Path.Combine(runDirectory, EventsFile);
         var toolsPath = Path.Combine(runDirectory, ToolsFile);
 
-        var events = ReadTail(eventsPath, safeTail, FormatEventLine);
+        // 单次扫描：同一趟里算出延迟分解、取事件尾部、数总行数。
+        var aggregator = new SubAgentLatencyAggregator();
+        var events = ReadEventTail(eventsPath, safeTail, aggregator, out var eventCount);
         var tools = ReadTail(toolsPath, safeTail, FormatToolLine);
 
         return new SubAgentRunLogSnapshot(
             runId,
             status,
-            CountLines(eventsPath),
+            eventCount,
             CountLines(toolsPath),
             events,
-            tools);
+            tools,
+            aggregator.Build(runId));
     }
 
     /// <summary>一步到位：定位 + 读取。</summary>
@@ -178,6 +195,44 @@ internal static class SubAgentRunLogReader
         {
             return ("(unreadable)", "(unreadable)");
         }
+    }
+
+    /// <summary>事件日志的单趟处理：取尾部 + 聚合延迟 + 数总行数。</summary>
+    private static List<string> ReadEventTail(
+        string path,
+        int tail,
+        SubAgentLatencyAggregator aggregator,
+        out int total)
+    {
+        total = 0;
+        var buffer = new Queue<string>(tail);
+        if (!File.Exists(path))
+            return [];
+
+        try
+        {
+            foreach (var line in File.ReadLines(path))
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+
+                total++;
+                aggregator.AddEventLine(line);
+
+                var formatted = FormatEventLine(line);
+                if (formatted is null)
+                    continue;
+
+                if (buffer.Count == tail)
+                    buffer.Dequeue();
+                buffer.Enqueue(formatted);
+            }
+        }
+        catch (IOException)
+        {
+        }
+
+        return [.. buffer];
     }
 
     /// <summary>流式取尾部，不把整份日志读进内存。</summary>

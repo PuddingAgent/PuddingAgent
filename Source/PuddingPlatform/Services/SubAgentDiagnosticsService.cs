@@ -293,95 +293,16 @@ public sealed class SubAgentDiagnosticsService : ISubAgentDiagnosticsService
 
         try
         {
-            var lines = await File.ReadAllLinesAsync(eventsPath, ct);
-            long llmMs = 0;
-            long toolMs = 0;
-            int rounds = 0;
-            int toolCalls = 0;
-            long? firstTs = null;
-            long? lastTs = null;
-
-            // 跟踪每轮的 LLM started 时间戳
-            long? currentLlmStart = null;
-
-            foreach (var line in lines)
+            // 2026-11-14：聚合逻辑收敛到 SubAgentLatencyAggregator，与 pool_action=logs 共用同一实现。
+            // 两处各写一份必然漂移（例如轮次到底数 llm.completed 还是 round.completed）。
+            var aggregator = new SubAgentLatencyAggregator();
+            foreach (var line in await File.ReadAllLinesAsync(eventsPath, ct))
             {
-                if (string.IsNullOrWhiteSpace(line)) continue;
                 ct.ThrowIfCancellationRequested();
-
-                try
-                {
-                    using var doc = JsonDocument.Parse(line);
-                    var root = doc.RootElement;
-                    // 2026-11-14：事件行的实际字段是 eventType（不是 type），
-                    // 且 duration_ms 在 payload 里而不是根上。旧代码两条都读错，
-                    // 于是本方法对任何 run 都返回「全 0 的合法对象」——不报错，只是永远没数。
-                    var type = root.TryGetProperty("eventType", out var t) ? t.GetString() : null;
-                    var tsStr = root.TryGetProperty("timestamp", out var ts) ? ts.GetString() : null;
-                    if (type is null || tsStr is null) continue;
-                    if (!DateTimeOffset.TryParse(tsStr, out var timestamp)) continue;
-                    var epoch = timestamp.ToUnixTimeMilliseconds();
-
-                    if (firstTs is null) firstTs = epoch;
-                    lastTs = epoch;
-
-                    switch (type)
-                    {
-                        case "subagent.llm.started":
-                            currentLlmStart = epoch;
-                            break;
-                        case "subagent.llm.completed":
-                            // 只做 LLM 耗时累加；轮次改由 round.completed 单点计数，避免两处定义漂移。
-                            if (currentLlmStart.HasValue)
-                            {
-                                llmMs += Math.Max(0, epoch - currentLlmStart.Value);
-                                currentLlmStart = null;
-                            }
-                            break;
-                        case "subagent.round.completed":
-                            rounds++;
-                            break;
-                        case "subagent.tool.completed":
-                        case "subagent.tool.failed":
-                            // 优先 payload.duration_ms（当前格式），兼容根级旧格式。
-                            long dur = 0;
-                            if (root.TryGetProperty("payload", out var payload)
-                                && payload.TryGetProperty("duration_ms", out var pd)
-                                && pd.TryGetInt64(out var pdv))
-                            {
-                                dur = pdv;
-                            }
-                            else if (root.TryGetProperty("duration_ms", out var rd) && rd.TryGetInt64(out var rdv))
-                            {
-                                dur = rdv;
-                            }
-
-                            toolMs += Math.Max(0, dur);
-                            toolCalls++;
-                            break;
-                    }
-                }
-                catch { /* skip malformed */ }
+                aggregator.AddEventLine(line);
             }
 
-            var totalMs = firstTs.HasValue && lastTs.HasValue
-                ? Math.Max(0, lastTs.Value - firstTs.Value)
-                : 0L;
-            var overheadMs = Math.Max(0, totalMs - llmMs - toolMs);
-
-            return new SubAgentLatencyBreakdown
-            {
-                RunId = runId,
-                TotalDurationMs = totalMs,
-                LlmDurationMs = llmMs,
-                ToolDurationMs = toolMs,
-                OverheadMs = overheadMs,
-                RoundCount = rounds,
-                ToolCallCount = toolCalls,
-                LlmPct = totalMs > 0 ? Math.Round((double)llmMs / totalMs * 100, 1) : 0,
-                ToolPct = totalMs > 0 ? Math.Round((double)toolMs / totalMs * 100, 1) : 0,
-                OverheadPct = totalMs > 0 ? Math.Round((double)overheadMs / totalMs * 100, 1) : 0,
-            };
+            return aggregator.Build(runId);
         }
         catch (Exception ex)
         {
