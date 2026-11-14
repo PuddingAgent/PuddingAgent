@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
 using System.Text.Json;
 using PuddingCode.Tools;
+using PuddingRuntime.Services;
 using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntimeTests.Tools;
@@ -293,6 +294,57 @@ public sealed class FileReadToolTests
 
         Assert.IsTrue(result.Success, result.Error);
         Assert.IsFalse(result.Output.Contains("line 03000"));
+    }
+
+    // Test 13: guardrail output must fit the tool-result inline budget.
+    // Regression: the 2026-08-22 window bump (120→400 lines) made the default preview
+    // exceed ToolResultContextPolicy's 8 KiB bound. Every file_read then got spilled
+    // into a brand-new artifact whose notice told the model to file_read again — the
+    // model looped between "read artifact" and "produce artifact" (observed: 28 requests,
+    // 3.62M tokens, no convergence).
+    [TestMethod]
+    public async Task Guardrail_WideLines_OutputFitsInlineBudget()
+    {
+        // 400 lines x ~100 wide bytes = ~40 KiB, far above the inline bound.
+        var lines = Enumerable.Range(1, 400).Select(i => $"line {i} " + new string('x', 90));
+        var content = string.Join("\n", lines);
+        var filePath = Path.Combine(_tempDir, "wide.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath);
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "GUARDRAIL");
+        var bytes = Encoding.UTF8.GetByteCount(result.Output);
+        Assert.IsTrue(
+            bytes <= ToolResultContextPolicy.MaxInlineUtf8Bytes,
+            $"file_read returned {bytes} bytes, above the {ToolResultContextPolicy.MaxInlineUtf8Bytes}-byte inline bound; " +
+            "the result would be spilled again and the model would re-read it forever.");
+    }
+
+    // Test 14: the large-file path must respect the same bound.
+    [TestMethod]
+    public async Task Guardrail_LargeFile_OutputFitsInlineBudget()
+    {
+        var lines = Enumerable.Range(1, 3000).Select(i => $"line {i:D5} " + new string('y', 80));
+        var content = string.Join("\n", lines);
+        var filePath = Path.Combine(_tempDir, "wide_large.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var fileInfo = new FileInfo(filePath);
+        Assert.IsTrue(fileInfo.Length > FileChunkService.LargeFileByteThreshold,
+            $"File should exceed large-file byte threshold, got {fileInfo.Length}");
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath);
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "GUARDRAIL");
+        var bytes = Encoding.UTF8.GetByteCount(result.Output);
+        Assert.IsTrue(
+            bytes <= ToolResultContextPolicy.MaxInlineUtf8Bytes,
+            $"large-file guardrail returned {bytes} bytes, above the {ToolResultContextPolicy.MaxInlineUtf8Bytes}-byte bound.");
     }
 
     private static Task<ToolExecutionResult> ExecuteAsync(

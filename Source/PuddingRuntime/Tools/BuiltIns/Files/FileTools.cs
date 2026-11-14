@@ -191,6 +191,71 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
         _chunk = chunk;
     }
 
+    /// <summary>guardrail 预览的行数上限（与 2026-08-22 的 400 行保持一致）。</summary>
+    private const int GuardrailPreviewLines = 400;
+
+    /// <summary>留给 GUARDRAIL 提示与 [META] 头的字节余量。</summary>
+    private const int InlineReserveBytes = 512;
+
+    /// <summary>
+    /// file_read 单次 inline 返回的字节预算。必须严格小于
+    /// <see cref="ToolResultContextPolicy.MaxInlineUtf8Bytes"/>：一旦超出，整条结果会被再次
+    /// spill 成新 artifact，artifact 的 notice 又引导模型用 file_read 继续读——模型于是在
+    /// 「读 artifact」与「生成 artifact」之间无限循环，永远无法读完。
+    /// </summary>
+    private static int InlineBudgetBytes => ToolResultContextPolicy.MaxInlineUtf8Bytes - InlineReserveBytes;
+
+    /// <summary>
+    /// 取前若干行，并保证 UTF-8 字节数不超预算（行数与字节取更严格者）。
+    /// 至少返回一行：单行即超预算时按字节截断，避免模型什么都看不到。
+    /// </summary>
+    private static string TakeLinesWithinByteBudget(IReadOnlyList<string> lines, int maxLines, out int taken)
+    {
+        var budget = InlineBudgetBytes;
+        var sb = new StringBuilder();
+        var bytes = 0;
+        taken = 0;
+        var cap = Math.Min(maxLines, lines.Count);
+        for (var i = 0; i < cap; i++)
+        {
+            var line = lines[i];
+            if (i == 0 && Encoding.UTF8.GetByteCount(line) > budget)
+                line = TruncateToUtf8Bytes(line, budget);
+
+            var lineBytes = Encoding.UTF8.GetByteCount(line) + (i > 0 ? 1 : 0);
+            if (i > 0 && bytes + lineBytes > budget)
+                break;
+
+            if (i > 0)
+                sb.Append('\n');
+            sb.Append(line);
+            bytes += lineBytes;
+            taken++;
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>按 UTF-8 字节数截断字符串，不切断代理对。</summary>
+    private static string TruncateToUtf8Bytes(string value, int maxBytes)
+    {
+        if (Encoding.UTF8.GetByteCount(value) <= maxBytes)
+            return value;
+
+        var lo = 0;
+        var hi = value.Length;
+        while (lo < hi)
+        {
+            var mid = (lo + hi + 1) / 2;
+            if (Encoding.UTF8.GetByteCount(value.AsSpan(0, mid)) <= maxBytes)
+                lo = mid;
+            else
+                hi = mid - 1;
+        }
+        if (lo > 0 && lo < value.Length && char.IsLowSurrogate(value[lo]))
+            lo--;
+        return value[..lo];
+    }
+
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         FileReadArgs args, ToolExecutionContext context, CancellationToken ct)
     {
@@ -231,10 +296,14 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 var hasExplicitSlice = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue;
                 if (!hasExplicitSlice && args.FullFile != true && (totalLines > 300 || fileInfo.Length > 8_192))
                 {
-                    // 2026-08-22 模型倾向适配：窗口 120→400 行，减少同文件翻页重读
-                    var preview = string.Join("\n", lines.Take(400));
+                    // 2026-08-22 模型倾向适配：窗口 120→400 行，减少同文件翻页重读。
+                    // 2026-11-14 修正：400 行在宽行文件上可达 40 KiB，远超 ToolResultContextPolicy
+                    // 的 8 KiB 注入上限；结果被再次 spill 成新 artifact，而 artifact 的 notice 又
+                    // 引导模型 file_read —— 模型在「读 artifact」与「生成 artifact」之间无限循环
+                    // （实测 28 请求 / 362 万 token 未收敛）。改为行数与字节预算双约束。
+                    var preview = TakeLinesWithinByteBudget(lines, GuardrailPreviewLines, out var taken);
                     return ToolExecutionResult.Ok(
-                        $"{meta}\n{preview}\n... [GUARDRAIL: {totalLines} lines, {totalChars} chars — showing first 400 lines. Use OffsetLines+LimitLines to continue from line 401, or TailLines for the end.]");
+                        $"{meta}\n{preview}\n... [GUARDRAIL: {totalLines} lines, {totalChars} chars — showing first {taken} lines ({Encoding.UTF8.GetByteCount(preview)} bytes, inline budget {InlineBudgetBytes}). Use OffsetLines={taken}+LimitLines to continue from line {taken + 1}, or TailLines for the end.]");
                 }
 
                 if (args.MaxChars.HasValue && totalChars > args.MaxChars.Value)
@@ -281,9 +350,11 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
             var hasExplicitSliceLarge = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue;
             if (!hasExplicitSliceLarge && args.FullFile != true && (totalLinesLarge > 300 || fileInfo.Length > 8_192))
             {
-                var preview = await _chunk.ReadChunkAsync(fullPath, 0, 400, ct);
+                var rawPreview = await _chunk.ReadChunkAsync(fullPath, 0, GuardrailPreviewLines, ct);
+                // 同上：字节预算与行数取更严格者，否则会被二次 spill。
+                var preview = TakeLinesWithinByteBudget(rawPreview.Split('\n'), GuardrailPreviewLines, out var takenLarge);
                 return ToolExecutionResult.Ok(
-                    $"{metaLarge}\n{preview}\n... [GUARDRAIL: {totalLinesLarge} lines, {totalCharsLarge} chars — showing first 400 lines. Use OffsetLines+LimitLines to continue from line 401, or TailLines for the end.]");
+                    $"{metaLarge}\n{preview}\n... [GUARDRAIL: {totalLinesLarge} lines, {totalCharsLarge} chars — showing first {takenLarge} lines ({Encoding.UTF8.GetByteCount(preview)} bytes, inline budget {InlineBudgetBytes}). Use OffsetLines={takenLarge}+LimitLines to continue from line {takenLarge + 1}, or TailLines for the end.]");
             }
 
             // MaxChars requires full read for accurate char count — warn and truncate
