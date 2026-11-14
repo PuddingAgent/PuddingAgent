@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
@@ -467,6 +467,8 @@ public sealed class TestSubAgentManager : ISubAgentManager
 
     public Task<int> CancelAllAsync(string parentSessionId, CancellationToken ct = default)
         => Task.FromResult(0);
+    public Task<bool> CancelAsync(string subSessionId, string reason, CancellationToken ct = default)
+        => Task.FromResult(false);
     public Task<IReadOnlyList<SubAgentStatus>> GetSubAgentsAsync(string parentSessionId, SubAgentQueryFilter? filter = null, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<SubAgentStatus>>(Array.Empty<SubAgentStatus>());
     public Task<int> GetRunningCountAsync(string parentSessionId, CancellationToken ct = default)

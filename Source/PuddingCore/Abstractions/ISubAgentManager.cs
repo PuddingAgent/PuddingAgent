@@ -42,6 +42,17 @@ public interface ISubAgentManager
     /// </summary>
     Task<int> CancelAllAsync(string parentSessionId, CancellationToken ct = default);
 
+    /// <summary>
+    /// 取消**单个**运行中的子代理（缺陷 D1 的 Agent 侧入口）。
+    /// 与 <see cref="CancelAllAsync"/> 共用同一条记账链：先向执行链发取消信号，再写终态。
+    /// </summary>
+    /// <returns>
+    /// true = 找到并已终止该子代理；
+    /// false = 子代理不存在，或状态已终态且执行链已无运行令牌（无需再取消）。
+    /// </returns>
+    Task<bool> CancelAsync(
+        string subSessionId, string reason, CancellationToken ct = default);
+
     // ════════════════════════════════════════════════════════
     // 状态查询
     // ════════════════════════════════════════════════════════

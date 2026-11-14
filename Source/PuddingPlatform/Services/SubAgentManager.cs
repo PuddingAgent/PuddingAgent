@@ -488,66 +488,103 @@ public sealed class SubAgentManager : ISubAgentManager
         var toCancel = running.Where(s => s.Status == "running").ToList();
 
         foreach (var sa in toCancel)
-        {
-            // 先真正中断执行链，再做状态记账。顺序不可颠倒 —— 反过来就等于「先宣告已结束，
-            // 而 loop 还在跑」，这正是缺陷 D1 的原始形态。
-            CancelRunningRun(sa.SubSessionId);
-
-            await _ssm.TrackSubAgentCompleteAsync(sa.SubSessionId, new SubAgentResult
-            {
-                Success = false,
-                Error = "Cancelled by parent",
-                CompletedAt = DateTimeOffset.UtcNow,
-            }, ct);
-
-            // 完成运行归档（ADR-021，幂等保护）
-            if (_runIdMap.TryRemove(sa.SubSessionId, out var cancelledRunId))
-            {
-                await RevokeBrowserDelegationAsync(cancelledRunId).ConfigureAwait(false);
-                var writeResult = await _runStore.CompleteRunAsync(cancelledRunId, new SubAgentRunCompletion
-                {
-                    Status = "cancelled",
-                    ErrorMessage = "Cancelled by parent",
-                }, ct);
-                if (writeResult != SubAgentRunTerminalWriteResult.Applied)
-                    _logger.LogWarning("[SubAgentMgr] CompleteRunAsync(cancel) returned {Result} for runId={RunId}", writeResult, cancelledRunId);
-            }
-
-            // 发布 subagent.run.cancelled 事件
-            await _eventBus.PublishAsync(new InternalEvent
-            {
-                Type = "subagent.run.cancelled",
-                SchemaVersion = EventSchemaRegistry.GetSchemaVersion("subagent.run.cancelled"),
-                Priority = EventPriorityLevel.Normal,
-                Source = new EventSource { SourceType = "subagent", SourceId = sa.SubSessionId },
-                WorkspaceId = null,
-                SessionId = parentSessionId,
-                Payload = new { sub_agent_id = sa.SubSessionId, reason = "Cancelled by parent" },
-                Metadata = new Dictionary<string, string>
-                {
-                    ["parent_session"] = parentSessionId,
-                    ["run_id"] = cancelledRunId ?? "",
-                },
-            }, ct);
-
-            await _activitySink.RecordAsync(new RuntimeActivity
-            {
-                Trace = RuntimeTraceContext.CreateNew(
-                    sessionId: parentSessionId,
-                    workspaceId: null,
-                    executionId: sa.SubSessionId),
-                Component = RuntimeActivityComponents.SubAgent,
-                Operation = "cancel",
-                Status = RuntimeActivityStatuses.Cancelled,
-                Summary = $"Cancelled sub-agent {sa.SubSessionId}",
-            }, ct);
-        }
+            await CancelOneAsync(sa, parentSessionId, CancelReasonByParent, ct);
 
         _logger.LogInformation(
             "[SubAgentMgr] Cancelled {Count} sub-agents parent={Parent}",
             toCancel.Count, parentSessionId);
 
         return toCancel.Count;
+    }
+
+    private const string CancelReasonByParent = "Cancelled by parent";
+
+    /// <summary>
+    /// 取消**单个**运行中的子代理。与 CancelAllAsync 共用同一条记账链，
+    /// 避免两处各写一遍导致行为漂移。
+    /// </summary>
+    public async Task<bool> CancelAsync(
+        string subSessionId, string reason, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(subSessionId))
+            return false;
+
+        var status = await GetStatusAsync(subSessionId, ct);
+        if (status is null)
+        {
+            _logger.LogWarning("[SubAgentMgr] CancelAsync: sub-agent {Sub} not found", subSessionId);
+            return false;
+        }
+
+        // 先发信号。即使状态已不是 running，也尝试一次——D1 修复前的历史运行可能
+        // 「状态已记账、loop 仍在跑」，只信状态会把这种残留放过。
+        var signalled = CancelRunningRun(subSessionId);
+
+        if (!string.Equals(status.Status, "running", StringComparison.Ordinal))
+        {
+            // 已终态：不再重复记账（否则会把已完成的时间、结果覆盖成取消）。
+            return signalled;
+        }
+
+        await CancelOneAsync(status, status.ParentSessionId, reason, ct);
+        return true;
+    }
+
+    private async Task CancelOneAsync(
+        SubAgentStatus sa, string parentSessionId, string reason, CancellationToken ct)
+    {
+        // 先真正中断执行链，再做状态记账。顺序不可颠倒 —— 反过来就等于「先宣告已结束，
+        // 而 loop 还在跑」，这正是缺陷 D1 的原始形态。
+        CancelRunningRun(sa.SubSessionId);
+
+        await _ssm.TrackSubAgentCompleteAsync(sa.SubSessionId, new SubAgentResult
+        {
+            Success = false,
+            Error = reason,
+            CompletedAt = DateTimeOffset.UtcNow,
+        }, ct);
+
+        // 完成运行归档（ADR-021，幂等保护）
+        if (_runIdMap.TryRemove(sa.SubSessionId, out var cancelledRunId))
+        {
+            await RevokeBrowserDelegationAsync(cancelledRunId).ConfigureAwait(false);
+            var writeResult = await _runStore.CompleteRunAsync(cancelledRunId, new SubAgentRunCompletion
+            {
+                Status = "cancelled",
+                ErrorMessage = reason,
+            }, ct);
+            if (writeResult != SubAgentRunTerminalWriteResult.Applied)
+                _logger.LogWarning("[SubAgentMgr] CompleteRunAsync(cancel) returned {Result} for runId={RunId}", writeResult, cancelledRunId);
+        }
+
+        // 发布 subagent.run.cancelled 事件
+        await _eventBus.PublishAsync(new InternalEvent
+        {
+            Type = "subagent.run.cancelled",
+            SchemaVersion = EventSchemaRegistry.GetSchemaVersion("subagent.run.cancelled"),
+            Priority = EventPriorityLevel.Normal,
+            Source = new EventSource { SourceType = "subagent", SourceId = sa.SubSessionId },
+            WorkspaceId = null,
+            SessionId = parentSessionId,
+            Payload = new { sub_agent_id = sa.SubSessionId, reason },
+            Metadata = new Dictionary<string, string>
+            {
+                ["parent_session"] = parentSessionId,
+                ["run_id"] = cancelledRunId ?? "",
+            },
+        }, ct);
+
+        await _activitySink.RecordAsync(new RuntimeActivity
+        {
+            Trace = RuntimeTraceContext.CreateNew(
+                sessionId: parentSessionId,
+                workspaceId: null,
+                executionId: sa.SubSessionId),
+            Component = RuntimeActivityComponents.SubAgent,
+            Operation = "cancel",
+            Status = RuntimeActivityStatuses.Cancelled,
+            Summary = $"Cancelled sub-agent {sa.SubSessionId}",
+        }, ct);
     }
 
     /// <summary>

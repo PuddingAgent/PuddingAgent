@@ -159,6 +159,87 @@ public sealed class SubAgentCancellationWiringTests
     // fakes
     // ═══════════════════════════════════════════════════════════
 
+    // CancelAsync（单实例入口）
+    // ═══════════════════════════════════════
+
+    [TestMethod]
+    public async Task CancelAsync_RunningSubAgent_SignalsAndBooks()
+    {
+        var registry = new SubAgentRunCancellationRegistry();
+        var ssm = new FakeSessionStateManager();
+        ssm.SubAgents.Add(RunningStatus());
+        var manager = CreateManager(ssm, registry);
+        var token = registry.Register(SubSession, CancellationToken.None);
+
+        var ok = await manager.CancelAsync(SubSession, "user requested stop");
+
+        Assert.IsTrue(ok, "CancelAsync must report success for a running sub-agent");
+        Assert.IsTrue(token.IsCancellationRequested,
+            "D1: single-instance cancel must reach the running token too");
+        Assert.IsTrue(ssm.Completed.Contains(SubSession), "terminal state must be booked");
+    }
+
+    [TestMethod]
+    public async Task CancelAsync_UnknownSubAgent_ReturnsFalse()
+    {
+        var ssm = new FakeSessionStateManager();
+        var manager = CreateManager(ssm, new SubAgentRunCancellationRegistry());
+
+        Assert.IsFalse(await manager.CancelAsync("parent-session-sub-missing", "x"));
+        Assert.IsFalse(await manager.CancelAsync("", "x"));
+        Assert.IsFalse(await manager.CancelAsync("   ", "x"));
+    }
+
+    [TestMethod]
+    public async Task CancelAsync_CompletedSubAgent_DoesNotReBookTerminalState()
+    {
+        var registry = new SubAgentRunCancellationRegistry();
+        var ssm = new FakeSessionStateManager();
+        ssm.SubAgents.Add(new SubAgentStatus
+        {
+            RunId = "run-done",
+            ParentSessionId = ParentSession,
+            SubSessionId = SubSession,
+            Status = "completed",
+            TaskSummary = "already finished",
+            SpawnedAt = DateTimeOffset.UtcNow,
+        });
+        var manager = CreateManager(ssm, registry);
+
+        var ok = await manager.CancelAsync(SubSession, "too late");
+
+        Assert.IsFalse(ok, "a finished sub-agent is not cancellable and must report so");
+        Assert.AreEqual(0, ssm.Completed.Count,
+            "re-booking a completed sub-agent would overwrite its real result with 'cancelled'");
+    }
+
+    [TestMethod]
+    public async Task CancelAsync_DoesNotAffectSibling()
+    {
+        var registry = new SubAgentRunCancellationRegistry();
+        var ssm = new FakeSessionStateManager();
+        ssm.SubAgents.Add(RunningStatus());
+        ssm.SubAgents.Add(new SubAgentStatus
+        {
+            RunId = "run-sibling",
+            ParentSessionId = ParentSession,
+            SubSessionId = "parent-session-sub-sibling",
+            Status = "running",
+            TaskSummary = "must survive",
+            SpawnedAt = DateTimeOffset.UtcNow,
+        });
+        var manager = CreateManager(ssm, registry);
+        var target = registry.Register(SubSession, CancellationToken.None);
+        var sibling = registry.Register("parent-session-sub-sibling", CancellationToken.None);
+
+        await manager.CancelAsync(SubSession, "only this one");
+
+        Assert.IsTrue(target.IsCancellationRequested);
+        Assert.IsFalse(sibling.IsCancellationRequested,
+            "single-instance cancel must not spill over to sibling runs");
+        Assert.IsFalse(ssm.Completed.Contains("parent-session-sub-sibling"));
+    }
+
     private sealed class FakeSessionStateManager : ISessionStateManager
     {
         public List<SubAgentStatus> SubAgents { get; } = new();
