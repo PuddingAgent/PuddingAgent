@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -112,7 +112,18 @@ public sealed class HostShellTool : PuddingToolBase<HostShellToolArgs>
         };
     }
 
-    private static string? BuildSpecializedToolTip(string command)
+    /// <summary>
+    /// 根据命令首词追加「下次用专用工具」提示。
+    /// <para>
+    /// 2026-11-14 不变量：提示里只能点名「子代理一定已加载」的工具，
+    /// 即 <c>SubAgentTool</c> 的 <c>PreloadToolIds</c> 三元集（file_read / file_search / search_grep）。
+    /// 旧版对 <c>dir</c> 推荐 <c>list_dir</c>，而 list_dir 既不在 CoreToolIds、也不在子代理预加载集，
+    /// 于是那句提示指向一个当时拿不到的工具（要先用 search_tools 装载才能用）——提示等于无效。
+    /// 改成 file_search：它在预加载集里，且 (directory + pattern) 同样能列目录。
+    /// internal 以便单测直接验证（沿用本仓 InternalsVisibleTo 约定）。
+    /// </para>
+    /// </summary>
+    internal static string? BuildSpecializedToolTip(string command)
     {
         var first = command.TrimStart().Split(' ', 2).FirstOrDefault()?.TrimEnd(':').ToLowerInvariant();
         return first switch
@@ -120,11 +131,11 @@ public sealed class HostShellTool : PuddingToolBase<HostShellToolArgs>
             "select-string" or "sls" or "grep" or "findstr" or "rg" =>
                 "Tip: use `search_grep` next time — regex content search with clean output and no quoting pitfalls.",
             "get-childitem" or "gci" or "dir" or "ls" =>
-                "Tip: use `list_dir` next time — structured directory listing without table-format noise.",
+                "Tip: use `file_search` next time (directory + pattern) — structured, pageable results without table-format noise.",
             "get-content" or "gc" or "cat" or "type" =>
                 "Tip: use `file_read` next time — line-windowed reads with offset/limit and stable metadata.",
             "test-path" =>
-                "Tip: use `list_dir` (parent directory) or `file_read` (first lines) to check existence with structured output.",
+                "Tip: use `file_search` (directory + pattern) or `file_read` (first lines) to check existence with structured output.",
             _ => null,
         };
     }

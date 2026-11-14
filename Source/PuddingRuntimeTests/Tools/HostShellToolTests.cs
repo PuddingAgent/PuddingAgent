@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
@@ -199,6 +200,58 @@ public sealed class HostShellToolTests
         CollectionAssert.AreEquivalent(
             new[] { "command", "shell", "working_directory", "timeout_seconds", "reason", "tail_lines" },
             descriptor.Parameters.Properties.Select(p => p.Name).ToArray());
+    }
+
+    // 2026-11-14 不变量：提示里只能点名子代理一定已加载的工具。
+    // 子代理预加载集 = SubAgentTool.PreloadToolIds（file_read / file_search / search_grep）；
+    // CoreToolIds 不含 list_dir，所以旧版对 dir 推荐 list_dir 的提示是拿不到的。
+    [TestMethod]
+    public void ShellTip_OnlyNamesToolsTheSubAgentAlwaysHas()
+    {
+        var alwaysLoaded = new[] { "file_read", "file_search", "search_grep" };
+        var triggers = new[]
+        {
+            "select-string foo", "grep -n foo", "findstr foo", "rg foo",
+            "get-childitem .", "gci", "dir /s /b", "ls",
+            "get-content a.txt", "cat a.txt", "type a.txt",
+            "test-path a.txt",
+        };
+
+        foreach (var command in triggers)
+        {
+            var tip = HostShellTool.BuildSpecializedToolTip(command);
+            Assert.IsNotNull(tip, $"'{command}' 应产生提示");
+
+            var named = Regex.Matches(tip, "`([a-z_]+)`").Select(m => m.Groups[1].Value).ToArray();
+            Assert.IsTrue(named.Length > 0, $"'{command}' 的提示未点名任何工具：{tip}");
+            foreach (var name in named)
+            {
+                CollectionAssert.Contains(
+                    alwaysLoaded,
+                    name,
+                    $"'{command}' 的提示点名了子代理可能未加载的工具 '{name}'（提示无法执行）：{tip}");
+            }
+        }
+    }
+
+    // 反证：旧实现在 dir 上点名 list_dir。这条专门锁住那次回归。
+    [TestMethod]
+    public void ShellTip_Dir_DoesNotRecommendListDir()
+    {
+        var tip = HostShellTool.BuildSpecializedToolTip("dir /s /b Source\\*.csproj");
+
+        Assert.IsNotNull(tip);
+        StringAssert.Contains(tip, "file_search");
+        Assert.IsFalse(tip.Contains("list_dir"), $"list_dir 不在子代理预加载集，不得点名：{tip}");
+    }
+
+    // 正向对照：不匹配任何专用工具的命令不发提示（不能为了覆盖率一律加）。
+    [TestMethod]
+    public void ShellTip_ReturnsNull_ForUnrelatedCommand()
+    {
+        Assert.IsNull(HostShellTool.BuildSpecializedToolTip("echo hello"));
+        Assert.IsNull(HostShellTool.BuildSpecializedToolTip("dotnet build"));
+        Assert.IsNull(HostShellTool.BuildSpecializedToolTip(""));
     }
 
     private static HostShellTool CreateHostShellTool()
