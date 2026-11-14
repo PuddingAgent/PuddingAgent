@@ -316,6 +316,12 @@ public sealed record ContextRequest
 {
     public AgentTemplateDefinition Template { get; init; } = null!;
     public string WorkspaceId { get; init; } = string.Empty;
+    /// <summary>
+    /// 本次执行文件工具的实际根目录。子代理与主代理的工作目录可能不同，
+    /// 但历史上它只用于约束工具，从未写进 prompt——模型因此不知道自己“在哪里”，
+    /// 只能靠 shell 探测（实测 GPT 子代理用了 4 次 shell）。非空时写入 WORKSPACE ENVIRONMENT 层。
+    /// </summary>
+    public string? WorkingDirectory { get; init; }
     public string SessionId { get; init; } = string.Empty;
     /// <summary>
     /// P0-5 step 4a: session 已加载工具集合的 append-only 快照（渐进发现，不收缩）。

@@ -344,6 +344,7 @@ public sealed partial class AgentExecutionService
             {
                 Template = template,
                 WorkspaceId = request.WorkspaceId ?? string.Empty,
+                WorkingDirectory = request.WorkingDirectory,
                 SessionId = request.SessionId,
                 // 有界可见集与本次 schema 投递面同口径：Deferred 名单 = catalog − visible。
                 LoadedToolIds = exposedToolIds,

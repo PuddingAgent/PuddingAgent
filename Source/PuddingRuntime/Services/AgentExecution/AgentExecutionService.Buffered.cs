@@ -248,6 +248,7 @@ public sealed partial class AgentExecutionService
                     {
                         Template = template,
                         WorkspaceId = request.WorkspaceId ?? string.Empty,
+                        WorkingDirectory = request.WorkingDirectory,
                         SessionId = request.SessionId,
                         LoadedToolIds = exposedToolIds,
                         AgentTemplateId = request.AgentTemplateId,
@@ -364,6 +365,7 @@ public sealed partial class AgentExecutionService
                     {
                         Template = template,
                         WorkspaceId = request.WorkspaceId ?? string.Empty,
+                        WorkingDirectory = request.WorkingDirectory,
                         SessionId = request.SessionId,
                         LoadedToolIds = exposedToolIds,
                         AgentTemplateId = request.AgentTemplateId,

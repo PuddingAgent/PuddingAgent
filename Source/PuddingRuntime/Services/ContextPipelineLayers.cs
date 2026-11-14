@@ -255,10 +255,18 @@ public sealed partial class ContextPipeline
     internal string? GetWorkspaceRoot(string workspaceId) => _envProvider.GetWorkspaceRoot(workspaceId);
 
     private string BuildWorkspaceEnvironmentLayer(ContextRequest request)
+        => BuildWorkspaceEnvironmentText(GetWorkspaceRoot(request.WorkspaceId), request.WorkingDirectory);
+
+    /// <summary>
+    /// 纯函数形式的 WORKSPACE ENVIRONMENT 层（可单测，不依赖 envProvider）。
+    /// 「我在哪里」：文件工具的实际根目录是 workingDirectory，通常比 workspaceRoot 更窄。
+    /// 不告诉模型的话，它只能自己探测（实测子代理因此用 shell 跑 dir/pwd）。
+    /// 两者同值时省略，不白花 token。
+    /// </summary>
+    internal static string BuildWorkspaceEnvironmentText(string? workspaceRoot, string? workingDirectory)
     {
         var sb = new StringBuilder();
         sb.AppendLine("--- LAYER: WORKSPACE ENVIRONMENT ---");
-        var workspaceRoot = GetWorkspaceRoot(request.WorkspaceId);
         if (workspaceRoot is not null)
         {
             sb.AppendLine($"WorkspaceRoot: {workspaceRoot}");
@@ -266,6 +274,13 @@ public sealed partial class ContextPipeline
         else
         {
             sb.AppendLine("WorkspaceRoot: unavailable");
+        }
+
+        if (!string.IsNullOrWhiteSpace(workingDirectory)
+            && !string.Equals(workingDirectory, workspaceRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            sb.AppendLine($"WorkingDirectory: {workingDirectory}");
+            sb.AppendLine("WorkingDirectory 是本次文件工具的实际根目录；相对路径按它解析。");
         }
 
         return sb.ToString();
