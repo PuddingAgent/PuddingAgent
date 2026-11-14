@@ -135,6 +135,15 @@ public sealed record SubAgentSpawnRequest
     /// <summary>复用已有子代理会话 ID。非空时跳过新 ID 生成，直接使用此 ID。
     /// 用于子代理池复用场景，保持会话连续以利用 KV-cache。</summary>
     public string? ReuseSubSessionId { get; init; }
+
+    /// <summary>
+    /// 派发时预加载的工具 id。子代理是新 session，已加载集为空，默认只能看到
+    /// CoreToolIds（插件/目标/消息/自省/休眠等平台管理面），真正干活的
+    /// file_read / search_grep / file_search 落在 deferred，必须额外花一轮 search_tools 才能拿到。
+    /// 非空时这些工具会进入该子代理 session 的已加载集，首轮即可直接使用。
+    /// 为空时行为与今天完全一致（不预加载）。
+    /// </summary>
+    public IReadOnlyList<string>? PreloadToolIds { get; init; }
     /// <summary>
     /// Internal Pudding budget override for role-specific workflows. Null uses runtime.execution.json.
     /// This is not exposed by spawn_sub_agent to the parent model.

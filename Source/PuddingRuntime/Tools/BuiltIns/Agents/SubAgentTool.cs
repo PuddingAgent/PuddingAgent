@@ -959,6 +959,14 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
     }
 
     /// <summary>
+    /// 子代理默认预加载的工具。选这三个的理由：只读调查是子代理的绝大多数用法，
+    /// 且它们正是 ToolExposurePlanner.CapabilityBundleMembers 里 read 包的成员，语义自洽。
+    /// 不放进 CoreToolIds——那是所有 agent 共用的全局常量，改它会波及主代理与所有模板。
+    /// </summary>
+    private static readonly IReadOnlyList<string> DefaultSubAgentPreloadToolIds =
+        ["file_read", "file_search", "search_grep"];
+
+    /// <summary>
     /// 构造 SubAgentSpawnRequest，供池化路径（Create/Execute）使用。
     /// 复用与一次性路径相同的解析结果（模板、LLM 路由、能力策略等）。
     /// </summary>
@@ -991,6 +999,9 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             LlmProfile = llmRoute.Profile,
             ParentContextSnapshot = parentContextSnapshot,
             CapabilityPolicy = capability,
+            // 预置只读三件套：子代理新 session 已加载集为空，不预加载的话它们会落在 deferred，
+            // 首轮必须先 search_tools 才能读文件（Claude/GPT 实测均如此，白付一轮）。
+            PreloadToolIds = DefaultSubAgentPreloadToolIds,
             TaskPlanId = taskPlanning.TaskPlanId,
             TaskNodeId = taskPlanning.TaskNodeId,
             ParentTaskNodeId = taskPlanning.ParentTaskNodeId,

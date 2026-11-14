@@ -983,6 +983,9 @@ public sealed class SubAgentManager : ISubAgentManager
             LlmConfig = request.LlmConfig,
                         LlmProfile = request.LlmProfile,
             ParentContextSnapshot = request.ParentContextSnapshot,
+            // 子代理是新 session，已加载集为空；不预加载的话 read 三件套会落在 deferred，
+            // 首轮必须先 search_tools 才能读文件（实测 Claude/GPT 均如此）。
+            PreloadToolIds = request.PreloadToolIds,
             MaxRounds = request.MaxRounds ?? subAgentOptions.MaxRounds,
             MaxElapsedSeconds = timeoutSeconds,
             MaxToolCallsTotal = request.MaxToolCallsTotal

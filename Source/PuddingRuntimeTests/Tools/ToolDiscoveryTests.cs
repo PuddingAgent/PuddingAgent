@@ -329,6 +329,59 @@ public sealed class ToolDiscoveryTests
             manifest.VisibleTools.Select(tool => tool.Name).ToArray());
     }
 
+    [TestMethod]
+    public void ExposurePlanner_SubAgentPreload_PutsReadBundleInVisibleSet()
+    {
+        // 接近真实的子代理工具面：核心管理类 + 一大堆其它 + 干活三件套。
+        var tools = new List<LlmToolDefinition>
+        {
+            Definition("search_tools"),
+            Definition("goal_read"),
+            Definition("send_message"),
+            Definition("sleep"),
+            Definition("spawn_sub_agent"),
+        };
+        tools.AddRange(Enumerable.Range(0, 30).Select(index => Definition($"deferred_{index:00}")));
+        tools.Add(Definition("file_read"));
+        tools.Add(Definition("file_search"));
+        tools.Add(Definition("search_grep"));
+
+        // 修复前的子代理：新 session 已加载集为空，干活三件套全落在 deferred。
+        var withoutPreload = ToolExposurePlanner.CreatePlan(
+            tools, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var withoutVisible = withoutPreload.VisibleTools.Select(tool => tool.Name).ToArray();
+        CollectionAssert.DoesNotContain(withoutVisible, "file_read");
+        CollectionAssert.DoesNotContain(withoutVisible, "file_search");
+        CollectionAssert.DoesNotContain(withoutVisible, "search_grep");
+
+        // 修复后：派发方声明 PreloadToolIds，首轮就在可见集里，不必额外跑一轮 search_tools。
+        var loaded = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "file_read", "file_search", "search_grep",
+        };
+        var withPreload = ToolExposurePlanner.CreatePlan(tools, loaded);
+        var withVisible = withPreload.VisibleTools.Select(tool => tool.Name).ToArray();
+        CollectionAssert.Contains(withVisible, "file_read");
+        CollectionAssert.Contains(withVisible, "file_search");
+        CollectionAssert.Contains(withVisible, "search_grep");
+        // 核心管理面的语义不变
+        CollectionAssert.Contains(withVisible, "search_tools");
+        CollectionAssert.Contains(withVisible, "goal_read");
+    }
+
+    [TestMethod]
+    public void CoreToolIds_DoesNotContain_SubAgentWorkingSet()
+    {
+        // 设计决定：read 三件套通过 PreloadToolIds 按需预加载，**不**塞进全局核心集。
+        // CoreToolIds 是所有 agent 共用的常量，往里面加东西会让每个 agent 的首轮前缀变化，
+        // 并且让主代理也白白多背 schema。本用例把这条决定钉死。
+        var core = ToolExposurePlanner.CoreToolIds.ToList();
+        CollectionAssert.DoesNotContain(core, "file_read");
+        CollectionAssert.DoesNotContain(core, "file_search");
+        CollectionAssert.DoesNotContain(core, "search_grep");
+        CollectionAssert.Contains(core, "search_tools");
+    }
+
     private static LlmToolDefinition Definition(string name) => new()
     {
         Name = name,

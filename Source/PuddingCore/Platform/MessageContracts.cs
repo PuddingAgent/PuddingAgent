@@ -186,6 +186,12 @@ public sealed record RuntimeDispatchRequest
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     /// <summary>由 Platform 注入的 function-call 工具定义（来源于能力注册表）。</summary>
     public IReadOnlyList<LlmToolDefinition>? ToolDefinitions { get; init; }
+    /// <summary>
+    /// 本次执行需要预先视为已加载的工具 id（子代理干活的 read 三件套等）。
+    /// Runtime 在装配工具面前并入 session 已加载集合，使这些工具首轮就在可见集里，
+    /// 不必额外跑一轮 search_tools。为空时行为不变。
+    /// </summary>
+    public IReadOnlyList<string>? PreloadToolIds { get; init; }
     /// <summary>Agent 模板关联的 Skill 包列表（含预签名下载 URL）。Runtime 启动容器时下载并挂载至 /skills/。</summary>
     public IReadOnlyList<SkillPackageInfo>? SkillPackages { get; init; }
     /// <summary>消息来源元数据，由 Dispatcher 填充。Runtime 在构造 LLM 上下文时据此渲染 pudding-message JSON 信封。</summary>

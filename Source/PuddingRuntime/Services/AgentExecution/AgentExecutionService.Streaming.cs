@@ -212,6 +212,26 @@ public sealed partial class AgentExecutionService
         var toolBuildStartedAt = DateTimeOffset.UtcNow;
         var toolBuildSw = System.Diagnostics.Stopwatch.StartNew();
         var loadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
+
+        // 与 Buffered 路径同义：子代理新 session 已加载集为空，需按派发方声明预加载干活工具，
+        // 否则 read 三件套会在 deferred，首轮必须先 search_tools。
+        if (request.PreloadToolIds is { Count: > 0 })
+        {
+            var missingPreload = request.PreloadToolIds
+                .Where(id => !string.IsNullOrWhiteSpace(id) && !loadedToolIds.Contains(id))
+                .Select(id => id.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (missingPreload.Count > 0)
+            {
+                _sessionManager.RememberLoadedToolIds(request.SessionId, missingPreload);
+                foreach (var preloadedId in missingPreload)
+                    loadedToolIds.Add(preloadedId);
+                _logger.LogInformation(
+                    "[AgentExec] Preloaded {Count} tool(s) session={Session} tools={Tools}",
+                    missingPreload.Count, request.SessionId, string.Join(",", missingPreload));
+            }
+        }
         var toolCatalogRevision = _toolSchemaService?.CatalogRevision ?? 0;
         var catalogRequest = request with { AgentInstanceId = instance.AgentInstanceId };
         HashSet<string> availableToolNames;

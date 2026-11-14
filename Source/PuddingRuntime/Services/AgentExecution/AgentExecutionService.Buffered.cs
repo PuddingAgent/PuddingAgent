@@ -156,6 +156,30 @@ public sealed partial class AgentExecutionService
         // ── 工具清单与有界可见集：在 dispatch 边界冻结，供上下文装配与整个 loop 复用 ──
         // 预算只在 turn 边界重算；同一 dispatch 内的 round 边界仍保持 append-only（见 PromoteLoadedToolsForNextRound）。
         var loadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
+
+        // 缺陷修复：子代理是新 session，已加载集为空，默认只能看到 CoreToolIds
+        // （插件/目标/消息/自省/休眠等平台管理面）；真正干活的 file_read / search_grep /
+        // file_search 落在 deferred，首轮必须先 search_tools 才能拿到（Claude 与 GPT 实测均如此）。
+        // 派发方可通过 PreloadToolIds 声明本次需要的工具，这里并入并持久化到 session，
+        // 使首轮就在可见集里，且后续轮次只增不减（append-only，不回头收缩源头域）。
+        if (request.PreloadToolIds is { Count: > 0 })
+        {
+            var missingPreload = request.PreloadToolIds
+                .Where(id => !string.IsNullOrWhiteSpace(id) && !loadedToolIds.Contains(id))
+                .Select(id => id.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (missingPreload.Count > 0)
+            {
+                _sessionManager.RememberLoadedToolIds(request.SessionId, missingPreload);
+                foreach (var preloadedId in missingPreload)
+                    loadedToolIds.Add(preloadedId);
+                _logger.LogInformation(
+                    "[AgentExec] Preloaded {Count} tool(s) session={Session} tools={Tools}",
+                    missingPreload.Count, request.SessionId, string.Join(",", missingPreload));
+            }
+        }
+
         var toolCatalogRevision = _toolSchemaService?.CatalogRevision ?? 0;
         var catalogRequest = request with { AgentInstanceId = instance.AgentInstanceId };
         var frozenTools = BuildFrozenToolManifest(effectiveCapability, template, catalogRequest, loadedToolIds);
