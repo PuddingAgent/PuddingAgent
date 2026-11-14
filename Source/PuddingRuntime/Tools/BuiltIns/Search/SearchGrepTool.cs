@@ -1113,11 +1113,9 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 tmpPath = Path.GetTempFileName();
                 File.WriteAllText(tmpPath, string.Join("\n", results), new UTF8Encoding(false));
 
-                var output = string.Join("\n", results.Take(MaxInlineResults));
-                if (notes.Count > 0)
-                    output += "\n" + string.Join("\n", notes);
-                output += "\n" + string.Format(PaginationReportMessage, results.Count, tmpPath);
-                return ToolExecutionResult.Ok(output, status: status);
+                var paginationReport = string.Format(PaginationReportMessage, results.Count, tmpPath);
+                return ToolExecutionResult.Ok(
+                    ComposeDeclarationsFirst(notes, paginationReport, results.Take(MaxInlineResults)), status: status);
             }
             catch (Exception ex)
             {
@@ -1129,10 +1127,26 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             }
         }
 
-        var finalOutput = string.Join("\n", results);
-        if (notes.Count > 0)
-            finalOutput += "\n" + string.Join("\n", notes);
-        return ToolExecutionResult.Ok(finalOutput, status: status);
+        return ToolExecutionResult.Ok(ComposeDeclarationsFirst(notes, paginationReport: null, results), status: status);
+    }
+
+    /// <summary>
+    /// 把「本结果不完整」的声明放到输出最前面，结果行跟在其后。
+    /// 动机（2026-11-14 实测）：结果超过 8 KiB 内联上限会被 spill，消费者只拿得到前缀；
+    /// 声明若追加在尾部，就会连同被截掉的后半段一起消失——模型于是把部分结果当完整结果
+    /// （file_search 交付 100/196 条却报 DONE）。声明前置后，截断只会削掉结果行，削不掉声明。
+    /// </summary>
+    private static string ComposeDeclarationsFirst(
+        IReadOnlyList<string> notes, string? paginationReport, IEnumerable<string> resultLines)
+    {
+        var builder = new StringBuilder();
+        foreach (var note in notes)
+            builder.Append(note).Append('\n');
+        if (paginationReport is not null)
+            builder.Append(paginationReport).Append('\n');
+        foreach (var line in resultLines)
+            builder.Append(line).Append('\n');
+        return builder.Length == 0 ? string.Empty : builder.ToString(0, builder.Length - 1);
     }
 
         /// <summary>

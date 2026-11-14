@@ -1778,6 +1778,89 @@ public sealed class SearchGrepToolTests
         }
     }
 
+    [TestMethod]
+    public async Task CoverageDeclaration_PrecedesResults_WhenCoverageIsPartial()
+    {
+        // 2026-11-14：覆盖声明曾追加在输出尾部。结果超过 8 KiB 内联上限会被 spill，
+        // 消费者只拿得到前缀，声明随之消失，模型把部分结果当成完整结果（file_search 交付 100/196 报 DONE）。
+        // 本条断言「声明在第一条结果之前」——与「声明恰好一次」互补，互不代偿。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllLinesAsync(Path.Combine(tempDir, "hits.txt"),
+        [
+            "NEEDLE one",
+            "NEEDLE two",
+            "NEEDLE three",
+        ]);
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            // max_results=1 ⇒ 第 2 个命中即停：results 有 1 条、覆盖必然 partial。
+            var result = await ExecuteAsync(tool, "NEEDLE",
+                new Dictionary<string, string> { ["pattern"] = "*.txt", ["max_results"] = "1" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Truncated, result.Status);
+
+            var coverageIndex = result.Output.IndexOf("(coverage: partial", StringComparison.Ordinal);
+            var firstMatchIndex = result.Output.IndexOf("hits.txt:", StringComparison.Ordinal);
+            Assert.IsTrue(firstMatchIndex >= 0, $"expected at least one match line; output was: {result.Output}");
+            Assert.IsTrue(coverageIndex >= 0, $"expected a coverage declaration exactly once; output was: {result.Output}");
+            Assert.IsTrue(coverageIndex < firstMatchIndex,
+                $"coverage declaration must precede the results so spill truncation cannot drop it; output was: {result.Output}");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task PaginationReport_PrecedesResults_WhenResultsExceedInlineLimit()
+    {
+        // 分页报告同样是「本次只给了前 100 条」的事实声明，必须与覆盖声明一起前置。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var many = new List<string>();
+        for (var i = 1; i <= 120; i++)
+            many.Add($"NEEDLE line {i}");
+        await File.WriteAllLinesAsync(Path.Combine(tempDir, "many.txt"), many);
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            // max_results=200 而实际 120 命中 ⇒ 超过 MaxInlineResults(100)，走分页路径。
+            var result = await ExecuteAsync(tool, "NEEDLE",
+                new Dictionary<string, string> { ["pattern"] = "*.txt", ["max_results"] = "200" });
+
+            Assert.IsTrue(result.Success, result.Error);
+
+            var reportIndex = result.Output.IndexOf("完整结果已释放到临时文件", StringComparison.Ordinal);
+            var firstMatchIndex = result.Output.IndexOf("many.txt:", StringComparison.Ordinal);
+            Assert.IsTrue(reportIndex >= 0, $"expected a pagination report; output was: {result.Output}");
+            Assert.IsTrue(firstMatchIndex >= 0, $"expected at least one match line; output was: {result.Output}");
+            Assert.IsTrue(reportIndex < firstMatchIndex,
+                $"pagination report must precede the results so spill truncation cannot drop it; output was: {result.Output}");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(
         SearchGrepTool tool,
         string query,
