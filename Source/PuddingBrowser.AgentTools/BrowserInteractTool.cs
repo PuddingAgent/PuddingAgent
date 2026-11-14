@@ -105,7 +105,7 @@ public sealed record BrowserInteractArgs
 
     name: "Browser interact",
 
-    description: "Click, fill, type, press, hover, scroll, select, or check an element — or act on raw viewport coordinates with pointer_click/pointer_move/pointer_drag — in a visible Desktop browser tab.",
+    description: "Click, fill, type, press, hover, scroll, select, or check an element — or act on raw viewport coordinates with pointer_click/pointer_move/pointer_drag. pointer_click and pointer_move also accept a locator; with a locator they are judged and dispatched as click/hover (visibility, viewport, obstruction, disabled), which is the safer form — in a visible Desktop browser tab.",
 
     category: ToolCategory.Network,
 
@@ -208,22 +208,23 @@ public sealed class BrowserInteractTool(
                 return BrowserToolResponse.Failure("browser_invalid_arguments",
                     "expected_page_version must be the positive pageVersion from the snapshot/locate that produced this ref; re-observe before retrying");
 
-            // 指针动作按**坐标**表达（契约层 §8.2 明确禁止 locator 与坐标混用）。
-            // 于是这里的门禁方向与其它动作相反：必须拦坐标缺失、放行 locator 为空——
-            // 否则工具层要 locator、契约层拒 locator，任何参数组合都过不去（两层互斥）。
+            // 指针动作默认按**坐标**表达（契约层 §8.2 禁止 locator 与坐标混用）。
+            // 但坐标动作本身没有元素身份：判定层看不到它在点谁，滚出视口、被遮挡、已被
+            // 禁用都拦不住，只能靠调用方保证坐标有效。因此允许用 locator 表达同一意图——
+            // 此时**转成元素动作**（click/hover），复用已有的可见性/视口/遮挡/禁用判定与
+            // 派发前坐标重采样。两者只能给一个，混用直接拒绝（不静默取其一）。
             if (action is "pointer_click" or "pointer_move" or "pointer_drag")
             {
-                if (args.X is null || args.Y is null)
-                    return BrowserToolResponse.Failure("browser_invalid_arguments",
-                        "pointer actions require both x and y (CSS viewport pixels)");
+                var (resolved, pointerError) = BrowserInteractArgumentPolicy.ResolvePointer(
+                    action,
+                    hasLocator: locator is not null,
+                    hasPoint: args.X is not null && args.Y is not null,
+                    hasDragTarget: args.ToX is not null && args.ToY is not null);
 
-                if (action == "pointer_drag" && (args.ToX is null || args.ToY is null))
-                    return BrowserToolResponse.Failure("browser_invalid_arguments",
-                        "action=pointer_drag requires both to_x and to_y (CSS viewport pixels)");
+                if (pointerError is not null)
+                    return BrowserToolResponse.Failure("browser_invalid_arguments", pointerError);
 
-                if (locator is not null)
-                    return BrowserToolResponse.Failure("browser_invalid_arguments",
-                        "pointer actions take coordinates, not a locator");
+                action = resolved;
             }
             else if (action != "scroll" && locator is null)
                 return BrowserToolResponse.Failure("browser_invalid_arguments", "locator is required for this action");
