@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "file_search",
     name: "Search files",
-    description: "按文件名搜索（文件搜索）并返回规范化绝对路径，结果一行一个（行数即条目数，便于按行分页读取）。默认使用 Everything Provider（如有）。Everything 需要绝对目录；验证错误会包含从宿主机枚举到的可用盘符根。搜索多个盘时对每个盘根调用一次。Everything 不可用时回退到内置递归文件搜索。使用 action=list 可检查提供方。",
+    description: "按文件名搜索（文件搜索）并返回规范化绝对路径，结果一行一个（行数即条目数，便于按行分页读取）。默认使用 Everything Provider（如有）。Everything 需要绝对目录；验证错误会包含从宿主机枚举到的可用盘符根。搜索多个盘时对每个盘根调用一次。Everything 不可用时回退到内置递归文件搜索。使用 action=list 可检查提供方。max_results 默认 50、上限 500：需要全量清单时一次设到上限，否则命中上限后没有游标续取，只能换 directory/pattern 缩小范围重搜。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     SortOrder = 41)]

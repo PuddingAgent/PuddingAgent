@@ -432,6 +432,20 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
+    public void FileSearchTool_Descriptor_Documents_MaxResults_Ceiling_And_No_Cursor()
+    {
+        var tool = new FileSearchTool([new FakeFileSearchProvider("BuiltInRecursiveFileSearch")]);
+
+        // 2026-11-15：实测 gpt-6.1-sol 在「列出全部 .csproj」任务里把 max_results 设成 100，
+        // 196 条要搜三次（每次约 23 KB 进上下文）。工具没有游标续取，模型只能重搜，
+        // 而描述里对默认值/上限一字未提。此测试锁住「描述必须讲清上限与无游标」。
+        StringAssert.Contains(tool.Descriptor.Description, "max_results");
+        StringAssert.Contains(tool.Descriptor.Description, "默认 50");
+        StringAssert.Contains(tool.Descriptor.Description, "上限 500");
+        StringAssert.Contains(tool.Descriptor.Description, "没有游标续取");
+    }
+
+    [TestMethod]
     public async Task FileSearchTool_Lists_Available_Providers()
     {
         var tool = new FileSearchTool(
