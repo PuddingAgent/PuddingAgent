@@ -1192,6 +1192,61 @@ public sealed partial class PuddingToolInfrastructureTests
         }
     }
 
+    // 描述里让模型「把 max_entries 调大再列一次」，但超过硬顶 2000 会被夹取 ——
+    // 那个动作就做不到了。超顶必须回传，否则模型会反复加码（2026-11-16）。
+    [TestMethod]
+    public async Task ListDirectoryTool_Over_Ceiling_MaxEntries_Is_Disclosed()
+    {
+        var root = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "temp",
+            "list-dir-ceiling-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "a.txt"), "a");
+            await File.WriteAllTextAsync(Path.Combine(root, "b.txt"), "b");
+
+            var tool = new ListDirectoryTool();
+            var context = new ToolExecutionContext
+            {
+                WorkspaceId = "workspace",
+                SessionId = "session",
+                AgentInstanceId = "agent",
+                WorkingDirectory = root,
+            };
+
+            var over = await tool.ExecuteAsync(new ToolExecutionRequest
+            {
+                ToolCallId = "list-ceiling-over",
+                ArgumentsJson = """{"path":".","max_entries":5000}""",
+                Context = context,
+            });
+
+            Assert.IsTrue(over.Success, over.Error);
+            StringAssert.Contains(over.Output, "MaxEntriesNotice", "超顶必须披露，否则描述里那句「调大再列一次」是做不到的动作");
+            StringAssert.Contains(over.Output, "hard ceiling 2000");
+            StringAssert.Contains(over.Output, "narrow with pattern");
+
+            // 反向对照：不超顶时不得出现披露（否则披露恒真，等于没有披露）。
+            var atCeiling = await tool.ExecuteAsync(new ToolExecutionRequest
+            {
+                ToolCallId = "list-ceiling-at",
+                ArgumentsJson = """{"path":".","max_entries":2000}""",
+                Context = context,
+            });
+
+            Assert.IsTrue(atCeiling.Success, atCeiling.Error);
+            Assert.IsFalse(
+                atCeiling.Output.Contains("MaxEntriesNotice", StringComparison.Ordinal),
+                "未超顶时不得出现披露");
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
     // 通道必须被文档化，否则模型无从得知。
     [TestMethod]
     public void ListDirectoryTool_Descriptor_Documents_Noise_Opt_In_And_MaxEntries()
