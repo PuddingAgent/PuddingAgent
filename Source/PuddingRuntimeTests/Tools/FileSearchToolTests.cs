@@ -201,6 +201,39 @@ public sealed class FileSearchToolTests
         }
     }
 
+    // T5d：唯一命中落在默认排除的噪声目录里 ⇒ 结果为空，但这不是「已验证无匹配」。
+    // 磁盘上确实有匹配，报 no_match 等于告诉模型没有这个文件（2026-11-15 观察）。
+    [TestMethod]
+    public async Task All_Matches_Dropped_By_Noise_Filter_Is_Not_A_Verified_NoMatch()
+    {
+        var root = CreateTempDir("u0s3-noised-");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "bin"));
+            var noisy = await WriteFileAsync(root, Path.Combine("bin", "noisy.txt"));
+            var sdk = new StubEverythingSdk([new EverythingQueryItem(noisy)], isCompleteManifest: true);
+            var tool = new FileSearchTool([new EverythingSearchProvider(sdk), new CountingBuiltInProvider()]);
+
+            var result = await ExecuteAsync(tool, $$"""
+            {
+              "directory": "{{JsonEscape(root)}}",
+              "pattern": "*.txt",
+              "recursive": true
+            }
+            """);
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(1, CountOccurrences(result.Output, "(noise: dropped 1"),
+                "the drop must be declared on the first line");
+            Assert.AreEqual(ToolResultStatuses.Ok, result.Status,
+                "matches dropped by the default exclude policy are not a verified no-match");
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
     // T5b：清单不可自证且差分枚举失败 → Partial + 空结果，不得输出 no_match / "No files matched"。
     [TestMethod]
     public async Task NonComplete_Coverage_Never_Reports_NoMatch()

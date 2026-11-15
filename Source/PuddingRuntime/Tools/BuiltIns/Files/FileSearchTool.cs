@@ -180,7 +180,7 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
                 && noise.Dropped == 0 && primaryResult.NoiseDirectoriesSkipped == 0;
             if (noMatch)
                 output += Environment.NewLine + Environment.NewLine + BuildNoResultsGuidance(providerId, directory, pattern, recursive);
-            return ToolExecutionResult.Ok(output, status: BuildResultStatus(coverage, results.Count));
+            return ToolExecutionResult.Ok(output, status: BuildResultStatus(coverage, results.Count, noMatch));
         }
         catch (Exception ex) when (
             ex is not OperationCanceledException
@@ -219,7 +219,7 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
                                   recursive);
                 }
 
-                return ToolExecutionResult.Ok(output, status: BuildResultStatus(fallbackResult.Coverage, results.Count));
+                return ToolExecutionResult.Ok(output, status: BuildResultStatus(fallbackResult.Coverage, results.Count, noMatch));
             }
             catch (Exception fallbackException) when (fallbackException is not OperationCanceledException)
             {
@@ -433,10 +433,15 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
 
     // 状态映射（对齐 U0-S2 SearchGrepTool）：只有覆盖 Complete 才允许 no_match；
     // 非 Complete 一律 truncated（结构化状态），细节由覆盖声明承载。
-    private static string BuildResultStatus(RetrievalCoverage coverage, int resultCount) =>
+    //
+    // 2026-11-15：“空结果”与“已验证无匹配”是两件事。唯一命中被默认排除策略（噪声目录）
+    // 挡住时 results 也为空，但磁盘上确实有匹配，报 no_match 等于告诉模型“没有这个文件”。
+    // 故把调用方已算好的 noMatch 作为“已验证”的唯一真源传入，不再用 resultCount==0 反推。
+    private static string BuildResultStatus(RetrievalCoverage coverage, int resultCount, bool verifiedNoMatch) =>
         !coverage.IsComplete ? ToolResultStatuses.Truncated
-        : resultCount == 0 ? ToolResultStatuses.NoMatch
-        : ToolResultStatuses.Ok;
+        : resultCount == 0
+            ? (verifiedNoMatch ? ToolResultStatuses.NoMatch : ToolResultStatuses.Ok)
+            : ToolResultStatuses.Ok;
 
     private static string BuildEverythingDirectoryGuidance(string problem) =>
         problem + Environment.NewLine +
