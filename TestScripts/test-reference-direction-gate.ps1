@@ -23,6 +23,7 @@ $Expected = @(
     'PuddingComputer.Automation'
     'PuddingComputer.UIAutomation'
     'PuddingComputer.Windows'
+    'PuddingSpeech'
 )
 
 # 契约层：它们的自定义 target 是「全禁」而非白名单，比 PUDDING001 更严
