@@ -126,7 +126,9 @@ public static class HttpFetchFailureClassifier
             return new HttpFetchFailure(
                 HttpFetchFailureKind.Timeout,
                 $"Request timed out: {Clip(text)}",
-                "Retry once with a larger timeout_seconds.",
+                // FlurlWebClient clamps timeout_seconds to 120, so "retry with a larger value" is advice
+                // the caller cannot follow. Name the ceiling and offer routes that actually work.
+                "timeout_seconds is capped at 120s, so raising it further cannot help. Narrow the target (a smaller page or a direct raw file) or use deepseek_fetch.",
                 Retryable: true);
         }
 

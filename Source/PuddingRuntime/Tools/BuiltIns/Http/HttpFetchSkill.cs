@@ -223,7 +223,7 @@ public sealed record HttpFetchArgs
     [ToolParam("Request body content type. Default: application/json.")]
     public string? ContentType { get; init; }
 
-    [ToolParam("Request timeout in seconds. Default is configured by the web client.")]
+    [ToolParam("Request timeout in seconds. Range 1-120; values outside the range are clamped. Default is configured by the web client.")]
     public int? TimeoutSeconds { get; init; }
 
     [ToolParam("Output format: outline, markdown, text, raw, or json. Default: markdown.")]

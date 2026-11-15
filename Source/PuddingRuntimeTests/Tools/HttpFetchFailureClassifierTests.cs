@@ -106,4 +106,24 @@ public sealed class HttpFetchFailureClassifierTests
         StringAssert.Contains(message, failure.Hint);
         StringAssert.Contains(message, " | ");
     }
+
+    [TestMethod]
+    public void Timeout_Hint_Does_Not_Recommend_A_Clamped_Knob()
+    {
+        var exception = new TaskCanceledException(
+            "The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.");
+
+        var failure = HttpFetchFailureClassifier.ClassifyException(exception);
+
+        // timeout_seconds is clamped to 120 by FlurlWebClient, so telling the caller to raise it
+        // is a remedy it cannot execute. The hint must name the ceiling and offer a path that works.
+        Assert.IsFalse(
+            failure.Hint.Contains("larger timeout_seconds", StringComparison.OrdinalIgnoreCase),
+            $"hint must not recommend raising a clamped value: {failure.Hint}");
+        StringAssert.Contains(failure.Hint, "120");
+        Assert.IsTrue(
+            failure.Hint.Contains("deepseek_fetch", StringComparison.OrdinalIgnoreCase) ||
+            failure.Hint.Contains("narrow", StringComparison.OrdinalIgnoreCase),
+            $"hint must offer an executable alternative: {failure.Hint}");
+    }
 }
