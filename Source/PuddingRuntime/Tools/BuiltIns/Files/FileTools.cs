@@ -567,7 +567,7 @@ public sealed record FileWriteArgs
 [Tool(
     id: "list_dir",
     name: "List directory",
-    description: "返回宿主工作区目录的结构化清单。需要文件名和元数据时优先使用此工具而非 shell ls/dir。默认排除 bin/obj/node_modules/.git/dist 等构建与依赖目录（与 search_grep 同源）；需要全量时设 include_noise_dirs=true，相当于 ls -a。max_entries 默认 100、上限 2000；recursive=true 在大目录上会产生大量条目并可能触发截断，优先用 pattern 收窄。Return a structured listing for a directory in the host workspace. Prefer this over shell ls/dir when the agent needs file names and metadata.",
+    description: "返回宿主工作区目录的结构化清单。需要文件名和元数据时优先使用此工具而非 shell ls/dir。默认排除 bin/obj/node_modules/.git/dist 等构建与依赖目录（与 search_grep 同源）；需要全量时设 include_noise_dirs=true，相当于 ls -a。max_entries 默认 100、上限 2000；recursive=true 在大目录上会产生大量条目并可能触发截断，优先用 pattern 收窄。达到 max_entries 时 Count 等于该上限且 Truncated 置 true——这只表示**停在了上限**，不代表已确认还有更多条目；要确认是否真被截断，把 max_entries 调大再列一次。Return a structured listing for a directory in the host workspace. Prefer this over shell ls/dir when the agent needs file names and metadata.",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

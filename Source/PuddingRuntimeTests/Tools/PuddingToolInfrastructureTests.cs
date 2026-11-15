@@ -1040,6 +1040,16 @@ public sealed partial class PuddingToolInfrastructureTests
         StringAssert.Contains(tool.Descriptor.Description, "max_entries");
     }
 
+    // Truncated 的成因必须与它实际表示的意思一致：停在 cap ≠ 确认还有更多。
+    [TestMethod]
+    public void ListDirectoryTool_Descriptor_Explains_TruncatedMeansTheCapWasReached()
+    {
+        var tool = new ListDirectoryTool();
+
+        StringAssert.Contains(tool.Descriptor.Description, "Truncated");
+        StringAssert.Contains(tool.Descriptor.Description, "max_entries 调大");
+    }
+
     [TestMethod]
     public async Task ListDirectoryTool_UsesExecutionWorkingDirectory()
     {
