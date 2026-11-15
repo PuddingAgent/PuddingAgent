@@ -152,9 +152,9 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
 
         try
         {
-            var primaryResult = await provider.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, ct);
+            var primaryResult = await provider.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, false, ct);
             var (results, coverage) = await MergeWithBaselineAsync(
-                primaryResult, providerId, requireProvider, directory, pattern, recursive, maxResults, ct);
+                primaryResult, providerId, requireProvider, directory, pattern, recursive, maxResults, args.IncludeNoiseDirs == true, ct);
             // 噪声目录过滤（2026-11-15）：默认与 list_dir / search_grep 同口径；
             // include_noise_dirs=true 时不过滤（ls -a 语义）。
             var noise = ApplyNoiseFilter(results, directory, args.IncludeNoiseDirs == true);
@@ -186,7 +186,7 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             try
             {
                 // 降级到基线枚举时其覆盖状态已自定案（Complete/Truncated），无需再差分。
-                var fallbackResult = await builtInFallback.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, ct);
+                var fallbackResult = await builtInFallback.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, false, ct);
                 var results = NormalizeAbsolutePaths(fallbackResult.Paths, directory);
                 var noise = ApplyNoiseFilter(results, directory, args.IncludeNoiseDirs == true);
                 results = noise.Kept;
@@ -318,6 +318,7 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
         string pattern,
         bool recursive,
         int maxResults,
+        bool includeNoiseDirs,
         CancellationToken ct)
     {
         primary = primary with { Paths = NormalizeAbsolutePaths(primary.Paths, directory) };
@@ -337,7 +338,7 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
         FileSearchProviderResult baseline;
         try
         {
-            baseline = await builtIn.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, ct);
+            baseline = await builtIn.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, !includeNoiseDirs, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -502,7 +503,13 @@ public interface IFileSearchProvider
     /// 是否需要差分补足同 scope 枚举。默认实现包装 <see cref="SearchAsync"/> 并声明 Complete——
     /// 旧合同没有“不完整”信号，按既有语义信任其自述完整，保证外部实现零改动兼容。
     /// </summary>
-    async Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct)
+    async Task<FileSearchProviderResult> SearchWithCoverageAsync(
+        string directory,
+        string pattern,
+        bool recursive,
+        int maxResults,
+        bool excludeNoiseDirectories,
+        CancellationToken ct)
     {
         var paths = await SearchAsync(directory, pattern, recursive, maxResults, ct);
         return new FileSearchProviderResult(paths, RetrievalCoverage.Complete());
@@ -536,15 +543,27 @@ internal sealed class BuiltInRecursiveFileSearchProvider : IFileSearchProvider
     public bool IsAvailable => true;
 
     public async Task<IReadOnlyList<string>> SearchAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct)
-        => (await SearchWithCoverageAsync(directory, pattern, recursive, maxResults, ct)).Paths;
+        => (await SearchWithCoverageAsync(directory, pattern, recursive, maxResults, false, ct)).Paths;
 
     // ADR-089 U0-S3：基线枚举必须与 Everything 路径同一匹配合同（设计 L128）——
     // 全量枚举 "*" 后统一用 FileSearchPatternMatcher 复核，消除 Windows searchPattern
     // （3 字符扩展名怪癖等）与 glob 语义的口径分歧；覆盖状态诚实上报，供上层差分定案。
-    public Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct)
-        => Task.Run(() => Search(directory, pattern, recursive, maxResults, ct), ct);
+    public Task<FileSearchProviderResult> SearchWithCoverageAsync(
+        string directory,
+        string pattern,
+        bool recursive,
+        int maxResults,
+        bool excludeNoiseDirectories,
+        CancellationToken ct)
+        => Task.Run(() => Search(directory, pattern, recursive, maxResults, excludeNoiseDirectories, ct), ct);
 
-    private FileSearchProviderResult Search(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct)
+    private FileSearchProviderResult Search(
+        string directory,
+        string pattern,
+        bool recursive,
+        int maxResults,
+        bool excludeNoiseDirectories,
+        CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxResults);
@@ -590,8 +609,16 @@ internal sealed class BuiltInRecursiveFileSearchProvider : IFileSearchProvider
                     var entry = entries.Current;
                     if ((entry.Attributes & FileAttributes.Directory) != 0)
                     {
-                        if (recursive)
-                            pending.Enqueue(entry.FullName);
+                        if (!recursive)
+                            continue;
+                        // 枚举预算优化（2026-11-15）：被默认排除的噪声目录不再入队。
+                        // 否则 bin/obj 会吃掉整个条目预算（本仓 Source 实测 958,920 条中 27,931 条才是
+                        // 非噪声），基线枚举永远撞顶 → 每次搜索都报 partial，覆盖声明退化成恒真噪声。
+                        // 差分基线的职责是「验证可见 scope 是否看全」，而可见 scope 本就排除了噪声目录，
+                        // 因此这里跳过它们与上层 NoiseFilter 的承诺一致。
+                        if (excludeNoiseDirectories && FileNoisePathFilter.IsNoiseDirectory(entry.FullName, root))
+                            continue;
+                        pending.Enqueue(entry.FullName);
                         continue;
                     }
                     if (!FileSearchPatternMatcher.Matches(entry.FullName, root, pattern))
@@ -663,8 +690,16 @@ internal sealed class EverythingSearchProvider : IFileSearchProvider
 
     // ADR-089 U0-S3（设计 L100/L107/L108）：Everything 是索引快照，结果必须按真实路径 +
     // scope + glob 后置复核；清单完整性无 SDK 自证出口时声明 Partial，由上层差分补足定案。
-    public async Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct)
+    // excludeNoiseDirectories 对 Everything 无意义：索引查询本身不做目录遍历，噪声过滤由调用方后置执行。
+    public async Task<FileSearchProviderResult> SearchWithCoverageAsync(
+        string directory,
+        string pattern,
+        bool recursive,
+        int maxResults,
+        bool excludeNoiseDirectories,
+        CancellationToken ct)
     {
+        _ = excludeNoiseDirectories;
         if (!_sdk.IsAvailable(out var unavailableReason))
             throw new InvalidOperationException(unavailableReason ?? "Everything SDK is not available.");
 

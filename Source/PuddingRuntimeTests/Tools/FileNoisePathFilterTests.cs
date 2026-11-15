@@ -20,6 +20,31 @@ public sealed class FileNoisePathFilterTests
         Assert.IsTrue(FileNoisePathFilter.IsUnderNoiseDirectory(path, root));
     }
 
+    // 目录判定与文件判定的关键区别：传给 IsNoiseDirectory 的路径本身就是目录，
+    // 最后一段必须参与判定；否则枚举剪枝会全部失效（2026-11-15 实测事故）。
+    [TestMethod]
+    public void Noise_Directory_Itself_Is_Detected_When_Used_As_A_Directory()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "noise-probe");
+        var bin = Path.Combine(root, "bin");
+
+        Assert.IsTrue(FileNoisePathFilter.IsNoiseDirectory(bin, root));
+        Assert.IsTrue(FileNoisePathFilter.IsNoiseDirectory(Path.Combine(root, "src", "obj"), root));
+        // 同一个路径用文件语义判断必须为 false —— 两个方法守的是不同意图，不能互相代替。
+        Assert.IsFalse(FileNoisePathFilter.IsUnderNoiseDirectory(bin, root));
+    }
+
+    // 搜索根本身就在噪声目录里时，它的子目录不得被判成噪声（否则显式进 bin 也拿不到东西）。
+    // 注意子目录名不能用 Debug/Release —— 它们本身就在 PathNoiseRules.DirectoryNames 里。
+    [TestMethod]
+    public void Subdirectory_Of_A_Noise_Root_Is_Not_Noise()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "noise-probe", "bin");
+
+        Assert.IsFalse(FileNoisePathFilter.IsNoiseDirectory(Path.Combine(root, "sub"), root));
+        Assert.IsTrue(FileNoisePathFilter.IsNoiseDirectory(Path.Combine(root, "sub", "obj"), root));
+    }
+
     [TestMethod]
     public void Ordinary_Source_Path_Is_Not_Noise()
     {

@@ -939,10 +939,10 @@ public sealed class FileSearchToolTests
         public Task<IReadOnlyList<string>> SearchAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct) =>
             _inner.SearchAsync(directory, pattern, recursive, maxResults, ct);
 
-        public async Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct)
+        public async Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, bool excludeNoiseDirectories, CancellationToken ct)
         {
             SearchCallCount++;
-            return await _inner.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, ct);
+            return await _inner.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, excludeNoiseDirectories, ct);
         }
     }
 
@@ -956,7 +956,7 @@ public sealed class FileSearchToolTests
         public Task<IReadOnlyList<string>> SearchAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct) =>
             throw new IOException("stub enumeration failure");
 
-        public Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct) =>
+        public Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, bool excludeNoiseDirectories, CancellationToken ct) =>
             throw new IOException("stub enumeration failure");
     }
 
@@ -970,7 +970,7 @@ public sealed class FileSearchToolTests
         public Task<IReadOnlyList<string>> SearchAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct) =>
             Task.FromResult(paths);
 
-        public Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct) =>
+        public Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, bool excludeNoiseDirectories, CancellationToken ct) =>
             Task.FromResult(new FileSearchProviderResult(
                 paths,
                 RetrievalCoverage.Of(

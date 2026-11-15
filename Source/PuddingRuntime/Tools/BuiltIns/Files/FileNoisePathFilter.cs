@@ -24,6 +24,45 @@ internal static class FileNoisePathFilter
     /// </summary>
     public static bool IsUnderNoiseDirectory(string path, string searchRoot)
     {
+        if (!TryGetRelativeSegments(path, searchRoot, out var segments))
+            return false;
+
+        // 最后一段是文件名（或路径本身），不参与目录判定。
+        return ContainsNoiseDirectory(segments, segments.Length - 1);
+    }
+
+    /// <summary>
+    /// 判断 <paramref name="directoryPath"/> 本身是否就是一个噪声目录。调用方已确认它是目录，
+    /// 因此最后一段同样参与判定。
+    /// <para>
+    /// 为何需要单独一个方法：<see cref="IsUnderNoiseDirectory"/> 按「最后一段是文件名」的约定
+    /// 跳过末段，所以传目录路径进去永远返回 false。枚举时若要剪枝，必须用这个入口
+    /// （2026-11-15 实测：用它剪枝一度完全失效，只因删掉了这个区别）。
+    /// </para>
+    /// </summary>
+    public static bool IsNoiseDirectory(string directoryPath, string searchRoot)
+    {
+        if (!TryGetRelativeSegments(directoryPath, searchRoot, out var segments))
+            return false;
+
+        return ContainsNoiseDirectory(segments, segments.Length);
+    }
+
+    private static bool ContainsNoiseDirectory(string[] segments, int count)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            if (PathNoiseRules.DirectoryNames.Contains(segments[i]))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetRelativeSegments(string path, string searchRoot, out string[] segments)
+    {
+        segments = [];
+
         if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(searchRoot))
             return false;
 
@@ -43,17 +82,9 @@ internal static class FileNoisePathFilter
         if (relative.StartsWith("..", StringComparison.Ordinal))
             return false;
 
-        var segments = relative.Split(
+        segments = relative.Split(
             [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
             StringSplitOptions.RemoveEmptyEntries);
-
-        // 最后一段是文件名（或路径本身），不参与目录判定。
-        for (var i = 0; i < segments.Length - 1; i++)
-        {
-            if (PathNoiseRules.DirectoryNames.Contains(segments[i]))
-                return true;
-        }
-
-        return false;
+        return true;
     }
 }
