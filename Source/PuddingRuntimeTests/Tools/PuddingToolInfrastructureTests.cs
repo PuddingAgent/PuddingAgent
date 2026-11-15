@@ -1071,6 +1071,67 @@ public sealed partial class PuddingToolInfrastructureTests
         }
     }
 
+    // 2026-11-15：Truncated 必须只表示「确有条目被省略」。条目数恰好等于 max_entries 时
+    // 没有任何条目被丢弃，因此不得置位；存在第 N+1 条时才置位，且只返回前 N 条。
+    [TestMethod]
+    public async Task ListDirectoryTool_Truncated_Is_False_When_Count_Equals_MaxEntries_Exactly()
+    {
+        var root = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "temp",
+            "list-dir-exact-cap-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "a.txt"), "a");
+            await File.WriteAllTextAsync(Path.Combine(root, "b.txt"), "b");
+            await File.WriteAllTextAsync(Path.Combine(root, "c.txt"), "c");
+
+            var tool = new ListDirectoryTool();
+            var context = new ToolExecutionContext
+            {
+                WorkspaceId = "workspace",
+                SessionId = "session",
+                AgentInstanceId = "agent",
+                WorkingDirectory = root,
+            };
+
+            var exact = await tool.ExecuteAsync(new ToolExecutionRequest
+            {
+                ToolCallId = "list-exact-cap",
+                ArgumentsJson = """{"path":".","max_entries":3}""",
+                Context = context,
+            });
+
+            Assert.IsTrue(exact.Success, exact.Error);
+            StringAssert.Contains(exact.Output, "\"Count\":3", "恰好 3 条应全部返回");
+            StringAssert.Contains(
+                exact.Output,
+                "\"Truncated\":false",
+                "恰好 3 条 / 上限 3 时没有任何条目被省略，Truncated 必须为 false");
+
+            // 正向对照：确有第 4 条时必须置位，且仍只返回前 3 条。
+            await File.WriteAllTextAsync(Path.Combine(root, "d.txt"), "d");
+            var over = await tool.ExecuteAsync(new ToolExecutionRequest
+            {
+                ToolCallId = "list-over-cap",
+                ArgumentsJson = """{"path":".","max_entries":3}""",
+                Context = context,
+            });
+
+            Assert.IsTrue(over.Success, over.Error);
+            StringAssert.Contains(over.Output, "\"Count\":3", "超出上限时只返回前 3 条");
+            StringAssert.Contains(
+                over.Output,
+                "\"Truncated\":true",
+                "存在第 4 条时必须报告截断");
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
     // 通道必须被文档化，否则模型无从得知。
     [TestMethod]
     public void ListDirectoryTool_Descriptor_Documents_Noise_Opt_In_And_MaxEntries()
@@ -1085,13 +1146,18 @@ public sealed partial class PuddingToolInfrastructureTests
         StringAssert.Contains(tool.Descriptor.Description, "max_entries");
     }
 
-    // Truncated 的成因必须与它实际表示的意思一致：停在 cap ≠ 确认还有更多。
+    // Truncated 现在只表示「确有条目被省略」：工具多探一条，恰好等于上限不算截断。
     [TestMethod]
-    public void ListDirectoryTool_Descriptor_Explains_TruncatedMeansTheCapWasReached()
+    public void ListDirectoryTool_Descriptor_StatesTruncatedMeansEntriesWereOmitted()
     {
         var tool = new ListDirectoryTool();
 
         StringAssert.Contains(tool.Descriptor.Description, "Truncated");
+        StringAssert.Contains(
+            tool.Descriptor.Description,
+            "确有条目被省略",
+            "描述必须说明 Truncated 只表示确有省略，而不是停在 cap");
+        StringAssert.Contains(tool.Descriptor.Description, "恰好", "描述必须点明恰好等于上限不算截断");
         StringAssert.Contains(tool.Descriptor.Description, "max_entries 调大");
     }
 
