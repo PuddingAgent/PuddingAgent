@@ -74,16 +74,33 @@ public sealed class TerminalStartEfficiencyTests
     [TestMethod]
     [DataRow(-1)]
     [DataRow(10001)]
-    public async Task Start_Invalid_Yield_Does_Not_Launch_Command(int milliseconds)
+    public async Task Start_Out_Of_Range_Yield_Is_Clamped_And_Disclosed(int milliseconds)
     {
         var manager = CreateManager();
         var result = await Execute(manager, $$"""{"command":"echo ok","yield_time_ms":{{milliseconds}}}""");
-        Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.Error!, "yield_time_ms");
-        // 只报范围不够：调用方几乎总是想用它“等长任务”，必须被告知改用 terminal_wait。
-        // 这条断言让「删掉那句指引」的回归必然取红（变异已验证）。
-        StringAssert.Contains(result.Error!, "terminal_wait");
-        manager.Verify(m => m.StartAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        // 2026-11-13 起超范围不再抛错（抛错会让整个回合报废），但夹取改变了
+        // 「这次调用实际等了多久」的语义，所以必须回传给调用方，不能只写服务端日志。
+        Assert.IsTrue(result.Success, result.Error);
+        manager.Verify(
+            m => m.StartAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        StringAssert.Contains(result.Output, "yield_time_notice");
+        StringAssert.Contains(result.Output, "yield_time_ms=");
+        // 只夹取不指路不够：调用方几乎总是想用它「等长任务」，必须被告知改用 terminal_wait。
+        StringAssert.Contains(result.Output, "terminal_wait");
+    }
+
+    [TestMethod]
+    public async Task Start_In_Range_Yield_Carries_No_Notice()
+    {
+        var manager = CreateManager();
+        var result = await Execute(manager, """{"command":"echo ok","yield_time_ms":500}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsFalse(
+            result.Output.Contains("yield_time_notice", StringComparison.Ordinal),
+            "范围内的 yield_time_ms 不得产生披露：恒真的披露等于没有披露。");
     }
 
     [TestMethod]

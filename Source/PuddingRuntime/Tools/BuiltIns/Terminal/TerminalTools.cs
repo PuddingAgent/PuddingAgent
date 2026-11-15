@@ -134,7 +134,7 @@ internal static class TerminalToolJson
 [Tool(
     id: "terminal_start",
     name: "Terminal start",
-    description: "启动终端任务，默认最多等待 1000ms，让短命令在同一次调用返回结果；yield_time_ms=0 立即返回。Windows 使用 CMD，其他系统使用 Bash；目录放 cwd，PowerShell 脚本显式用 pwsh -NoProfile -Command。只有返回 job.status=Running 时才用 terminal_wait，from_offset 传 output.next_offset；构建/测试 wait_seconds 180-600，避免短等待反复轮询。",
+    description: "启动终端任务，默认最多等待 1000ms，让短命令在同一次调用返回结果；yield_time_ms=0 立即返回，上限 10000（超限会被夹取，并在结果 yield_time_notice 里说明）。Windows 使用 CMD，其他系统使用 Bash；目录放 cwd，PowerShell 脚本显式用 pwsh -NoProfile -Command。只有返回 job.status=Running 时才用 terminal_wait，from_offset 传 output.next_offset；构建/测试 wait_seconds 180-600，避免短等待反复轮询。",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,
@@ -173,7 +173,10 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs, Termi
         // 而 terminal_start 只收集初始窗口。抛错会让整个调用回合报废。
         // 夹取后调用仍能拿到可用结果，超限意图交给 terminal_wait 承接。
         var yieldTimeMs = ClampYieldTimeMs(args.YieldTimeMs);
-        if (args.YieldTimeMs is < 0 or > 10_000)
+        var yieldTimeNotice = args.YieldTimeMs is < 0 or > 10_000
+            ? $"yield_time_ms={args.YieldTimeMs} is outside [0, 10000] and was clamped to {yieldTimeMs}. terminal_start only collects the initial window; use terminal_wait with wait_seconds 0-600 for long builds or tests."
+            : null;
+        if (yieldTimeNotice is not null)
         {
             _logger.LogWarning(
                 "[TerminalStartTool] yield_time_ms={Requested} out of range, clamped to {Clamped}. "
@@ -242,6 +245,7 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs, Termi
         return new TerminalStartResult
         {
             Job = output?.Job ?? TerminalToolJson.ToJobDto(info),
+            YieldTimeNotice = yieldTimeNotice,
             Output = output,
             NextAction = snapshot is null
                 ? "Call terminal_wait once with job_id and wait_seconds sized to the expected runtime (builds/tests: 180-600); it blocks until the job exits. Do not poll with short waits."
@@ -690,6 +694,14 @@ public sealed record TerminalStartResult
 
     [JsonPropertyName("next_action")]
     public required string NextAction { get; init; }
+
+    /// <summary>
+    /// yield_time_ms 被夹取时的披露。夹取会改变「这次调用等了多久」的语义，
+    /// 只写进服务端日志等于让调用方看不见；为空表示没有发生夹取。
+    /// </summary>
+    [JsonPropertyName("yield_time_notice")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? YieldTimeNotice { get; init; }
 }
 
 public sealed record TerminalWaitResult
