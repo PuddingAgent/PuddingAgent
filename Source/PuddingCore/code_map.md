@@ -131,7 +131,7 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | 目录/文件 | 用途 |
 |------|------|
 | `Agents/` | Agent 抽象定义 |
-| `SubAgents/` | 子代理抽象与可测策略（地址解析、进度节流、回信额度、延迟聚合）；策略类均为纯函数或可注入时钟，不依赖宿主 |
+| `SubAgents/` | 子代理抽象与可测策略（地址解析、进度节流、回信额度及其按 run 归并的账本容器、延迟聚合）；策略类均为纯函数或可注入时钟，不依赖宿主 |
 | `Platform/BuiltInAgentTemplates.cs` | 内置 Agent 模板的唯一权威源；V2 Default/Grant 直接决定 Low/High 子代理工具投影，Host 不得复制同全名类 |
 | `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约；工具曝光预算；`ContextMaintenanceOptions` 的注册窗口比例与摘要无进展期限 |
 | `Runtime/ContextAssemblyContracts.cs` | 上下文装配契约 |

@@ -6,6 +6,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
+using PuddingCode.SubAgents;
 using PuddingCode.Tools;
 
 namespace PuddingRuntime.Services.Tools;
@@ -24,8 +25,20 @@ public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IServiceScopeFactory? _scopeFactory;
+    private readonly PuddingCode.SubAgents.SubAgentParentReportLedger _parentReportLedger;
 
-    public SendMessageTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
+    /// <param name="scopeFactory">消息织物与飞书路由所在的容器。</param>
+    /// <param name="parentReportLedger">
+    /// 子代理回信额度账本容器。留空时用默认配置新建一个——<b>不</b>退化成「无限额」，
+    /// 否则漏配一处就等于关掉了防护，而调用方从回执上看不出区别。
+    /// </param>
+    public SendMessageTool(
+        IServiceScopeFactory scopeFactory,
+        PuddingCode.SubAgents.SubAgentParentReportLedger? parentReportLedger = null)
+    {
+        _scopeFactory = scopeFactory;
+        _parentReportLedger = parentReportLedger ?? new PuddingCode.SubAgents.SubAgentParentReportLedger();
+    }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SendMessageArgs args, ToolExecutionContext context, CancellationToken ct)
@@ -44,6 +57,27 @@ public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
             rawTo, context.ExecutionIdentity?.ParentAgentId);
         if (parentResolution.Error is { } parentAliasError)
             return ToolExecutionResult.Fail(parentAliasError);
+
+        // 回信额度：父代理真正付出的是它自己的上下文窗口，而这个代价不出现在子代理的账单上，
+        // 所以必须在**发出之前**拦住超额，而不是靠子代理自觉。判定不消耗额度，只有真的送达
+        // 才提交——否则一次传输失败会白扣一条，事后看日志会得到「没收到却说超额」的错误解释。
+        SubAgentParentReportBudget? parentBudget = null;
+        var now = DateTimeOffset.UtcNow;
+        if (parentResolution.IsParentAlias)
+        {
+            var runId = context.ExecutionIdentity?.RunId;
+            if (string.IsNullOrWhiteSpace(runId))
+            {
+                // 缺 RunId 时所有子代理会共用一份额度，等于把按 run 记账静默换成全局记账。
+                return ToolExecutionResult.Fail(
+                    "无法确定本次运行的 RunId，拒绝回信：额度必须按 run 记账，缺 RunId 会退化成全局共享。");
+            }
+
+            parentBudget = _parentReportLedger.GetOrCreate(runId, now);
+            var plan = parentBudget.TryAcquire(now);
+            if (!plan.Allowed)
+                return ToolExecutionResult.Fail(plan.Reason);
+        }
 
         var targets = ParseTargets(parentResolution.Address ?? rawTo, context.WorkspaceId, roomId);
         if (targets.Count == 0)
@@ -97,6 +131,7 @@ public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
         try
         {
             var result = await SendAsync(envelope, ct);
+            parentBudget?.Commit(now);
             return ToolExecutionResult.Ok(JsonSerializer.Serialize(new
             {
                 status = "ok", result.MessageId, result.RoomId, result.DeliveryIds,

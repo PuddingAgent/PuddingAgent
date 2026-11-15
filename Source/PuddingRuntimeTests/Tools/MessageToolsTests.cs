@@ -113,6 +113,107 @@ public sealed class MessageToolsTests
     }
 
     [TestMethod]
+    public async Task SendMessageTool_Stops_Parent_Replies_After_The_Per_Run_Quota()
+    {
+        // 父代理真正付出的是它自己的上下文窗口，而这个代价不出现在子代理的账单上，
+        // 所以超额必须在发出前拦住，不能靠子代理自觉。
+        var fabric = new RecordingMessageSystem();
+        var ledger = new PuddingCode.SubAgents.SubAgentParentReportLedger();
+        ledger.GetOrCreate("run-child", DateTimeOffset.UtcNow, maxMessages: 2, minInterval: TimeSpan.Zero);
+        var tool = new SendMessageTool(CreateScopeFactory(fabric), ledger);
+
+        var first = await ExecuteParentReplyAsync(tool, "run-child", "step 1 done");
+        var second = await ExecuteParentReplyAsync(tool, "run-child", "step 2 done");
+        var third = await ExecuteParentReplyAsync(tool, "run-child", "step 3 done");
+
+        Assert.IsTrue(first.Success, first.Error);
+        Assert.IsTrue(second.Success, second.Error);
+        Assert.IsFalse(third.Success);
+        StringAssert.Contains(third.Error, "quota exhausted");
+        Assert.AreEqual(2, fabric.Sent.Count);
+        Assert.AreEqual("parent-agent-7", fabric.Sent[0].To[0].Id);
+    }
+
+    [TestMethod]
+    public async Task SendMessageTool_Rejects_Parent_Reply_Inside_The_Minimum_Interval()
+    {
+        var fabric = new RecordingMessageSystem();
+        var ledger = new PuddingCode.SubAgents.SubAgentParentReportLedger();
+        ledger.GetOrCreate("run-child", DateTimeOffset.UtcNow, maxMessages: 5, minInterval: TimeSpan.FromSeconds(20));
+        var tool = new SendMessageTool(CreateScopeFactory(fabric), ledger);
+
+        var first = await ExecuteParentReplyAsync(tool, "run-child", "a");
+        var second = await ExecuteParentReplyAsync(tool, "run-child", "b");
+
+        Assert.IsTrue(first.Success, first.Error);
+        Assert.IsFalse(second.Success);
+        StringAssert.Contains(second.Error, "minimum is 20s");
+        Assert.AreEqual(1, fabric.Sent.Count);
+    }
+
+    [TestMethod]
+    public async Task SendMessageTool_Keeps_Parent_Reply_Quota_Per_Run()
+    {
+        // 额度按 run 记账：换个 run 就该拿到自己的额度，否则两个子代理互相挤占，
+        // 后启动的那个会在没发过任何消息的情况下被判超额。
+        var fabric = new RecordingMessageSystem();
+        var ledger = new PuddingCode.SubAgents.SubAgentParentReportLedger();
+        ledger.GetOrCreate("run-a", DateTimeOffset.UtcNow, maxMessages: 1, minInterval: TimeSpan.Zero);
+        ledger.GetOrCreate("run-b", DateTimeOffset.UtcNow, maxMessages: 1, minInterval: TimeSpan.Zero);
+        var tool = new SendMessageTool(CreateScopeFactory(fabric), ledger);
+
+        var fromA = await ExecuteParentReplyAsync(tool, "run-a", "a");
+        var fromB = await ExecuteParentReplyAsync(tool, "run-b", "b");
+
+        Assert.IsTrue(fromA.Success, fromA.Error);
+        Assert.IsTrue(fromB.Success, fromB.Error);
+        Assert.AreEqual(2, fabric.Sent.Count);
+    }
+
+    [TestMethod]
+    public async Task SendMessageTool_Rejects_Parent_Reply_Without_RunId()
+    {
+        // 缺 RunId 会让所有子代理共用一份额度，等于把按 run 记账静默换成全局记账。
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric));
+
+        var result = await ExecuteParentReplyAsync(tool, string.Empty, "hello");
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "RunId");
+        Assert.IsEmpty(fabric.Sent);
+    }
+
+    private static Task<ToolExecutionResult> ExecuteParentReplyAsync(
+        SendMessageTool tool,
+        string runId,
+        string content) =>
+        tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "call-parent-reply",
+            ArgumentsJson = JsonSerializer.Serialize(new Dictionary<string, string>
+            {
+                ["to"] = "agent:parent",
+                ["content"] = content,
+            }),
+            Context = new ToolExecutionContext
+            {
+                AgentInstanceId = "sub-session-1",
+                WorkspaceId = "default",
+                SessionId = "sub-session-1",
+                ExecutionIdentity = new RuntimeExecutionIdentity
+                {
+                    Kind = RuntimeExecutionKind.SubAgent,
+                    ConversationId = "parent-session",
+                    RunId = runId,
+                    TraceId = null,
+                    ParentRunId = "run-parent",
+                    ParentAgentId = "parent-agent-7",
+                },
+            },
+        });
+
+    [TestMethod]
     public async Task SendMessageTool_Ask_RequestsOneExecutableResponse()
     {
         var fabric = new RecordingMessageSystem();
