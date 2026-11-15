@@ -153,6 +153,41 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 });
         }
 
+        // === 给运行中的子代理发一条消息 ===
+        // 与 cancel / logs 同样放在 task 解析之前：按 sub_agent_id 定位，不依赖 task，也不依赖 pool_name。
+        if (string.Equals(args.PoolAction?.Trim(), "steer", StringComparison.OrdinalIgnoreCase))
+        {
+            var steerManager = _services.GetService<ISubAgentManager>();
+            if (steerManager is null)
+                return Fail("? ISubAgentManager 服务未注册。");
+
+            var steerTarget = args.SubAgentId?.Trim();
+            if (string.IsNullOrWhiteSpace(steerTarget))
+                return Fail("给子代理发消息需要 sub_agent_id。先用 query_sub_agents 列出运行中的子代理及其 id。");
+
+            var steerText = GetStringProp(json, "message")
+                         ?? GetStringProp(json, "steer_message")
+                         ?? args.SteerMessage;
+            if (string.IsNullOrWhiteSpace(steerText))
+                return Fail("给子代理发消息需要 message（要注入的正文）。");
+
+            var steered = await steerManager.SteerAsync(
+                steerTarget, steerText!.Trim(), context.AgentInstanceId, ct);
+
+            return steered.Outcome switch
+            {
+                PuddingCode.SubAgents.SubAgentSteerOutcome.Queued => Success(
+                    $"? 已投递给子代理 {steerTarget}，它会在下一轮 LLM 调用前收到。",
+                    new { sub_agent_id = steerTarget, steering_id = steered.SteeringId, status = "queued" }),
+                // 不静默入队：写给已结束运行的消息没人会消费，只会躺到 TTL 过期。
+                PuddingCode.SubAgents.SubAgentSteerOutcome.NotRunning => Fail(
+                    $"? 子代理 {steerTarget} 当前不在运行，消息不会被消费，因此未提交。先用 query_sub_agents 确认状态。"),
+                PuddingCode.SubAgents.SubAgentSteerOutcome.TargetUnresolved => Fail(
+                    $"? 子代理 {steerTarget} 的运行清单缺少定位字段（workspace / session / 父 turn），为避免投错主体已拒绝。{steered.Detail}"),
+                _ => Fail($"? 投递失败：{steered.Detail}"),
+            };
+        }
+
         var task = GetStringProp(json, "task")
                 ?? GetStringProp(json, "prompt")
                 ?? request.Parameters.GetValueOrDefault("task");
@@ -1558,7 +1593,7 @@ public sealed record SubAgentToolArgs
     /// list(列出池状态), cleanup, cleanup-bulk, cancel(取消一个运行中的子代理)。
     /// cancel 不需要 pool_name，按 sub_agent_id 定位。
     /// </summary>
-    [ToolParam("池操作: create, execute(默认), destroy, sleep, list, cleanup, cleanup-bulk, cancel(取消运行中的子代理，需 sub_agent_id), logs(查看子代理事件与工具调用尾部，需 sub_agent_id)")]
+    [ToolParam("池操作: create, execute(默认), destroy, sleep, list, cleanup, cleanup-bulk, cancel(取消运行中的子代理，需 sub_agent_id), logs(查看子代理事件与工具调用尾部，需 sub_agent_id), steer(给运行中的子代理发一条消息，需 sub_agent_id 与 message)")]
     public string? PoolAction { get; init; }
 
     /// <summary>logs 动作返回的尾部条数（事件与工具调用各自取最后 N 条）。</summary>
@@ -1575,6 +1610,13 @@ public sealed record SubAgentToolArgs
     /// <summary>取消原因（可选，仅用于 pool_action=cancel）。会写入运行归档与事件。</summary>
     [ToolParam("取消原因（可选，用于 pool_action=cancel）")]
     public string? CancelReason { get; init; }
+
+    /// <summary>
+    /// 要注入运行中子代理的消息正文（仅用于 pool_action=steer）。
+    /// 消息在子代理<b>下一次 LLM 调用前</b>作为 User 消息注入，不打断当前轮。
+    /// </summary>
+    [ToolParam("要发给运行中子代理的消息正文（用于 pool_action=steer）；在它下一轮 LLM 调用前注入，不打断当前轮")]
+    public string? SteerMessage { get; init; }
 
     /// <summary>
     /// 池化子代理角色（可选），用于区分用途：如 dev-agent, reviewer, explorer

@@ -212,6 +212,29 @@ public sealed class SubAgentToolTaskPlanningTests
         Assert.AreEqual(workingDirectory, invocation.LastRequest!.WorkingDirectory);
     }
 
+    // 2026-11-15：steer 必须在 task 校验之前可达。
+    // 教训：cancel 分支最初放在校验之后，导致「仅传 pool_action」永远被参数校验拦下而不可达。
+    [TestMethod]
+    public async Task ExecuteAsync_SteerAction_IsReachableWithoutTaskArgument()
+    {
+        var invocation = new RecordingSubAgentInvocationService { NextStatus = "completed" };
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2));
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+
+        var result = await tool.ExecuteAsync(CreateRequest(
+            """{"pool_action":"steer","sub_agent_id":"sub-x","message":"改成先看 churn"}"""));
+
+        // 本用例不断言最终成功（测试容器里没必要装全量子代理服务），只断言它**没被参数校验拦下**：
+        // 只要错误不是「task 或 tasks 是必需的」，就证明分支在校验之前可达。
+        Assert.IsFalse(result.Success);
+        Assert.IsFalse(
+            result.Error?.Contains("是必需的", StringComparison.Ordinal) ?? false,
+            $"steer must be reachable before task validation; got: {result.Error}");
+    }
+
     // 2026-11-14：未显式指定时继承父代理 cwd。
     // 旧行为回落到工作区根，子代理的相对路径全部失效（§九实测）。
     [TestMethod]
