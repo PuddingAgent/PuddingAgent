@@ -22,6 +22,9 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
 {
     private readonly IEnumerable<IFileSearchProvider> _providers;
 
+    // 硬顶：请求值被夹取时必须在结果里说明「顶在哪里」，否则模型会反复加码（2026-11-16）。
+    internal const int MaxResultsCeiling = 500;
+
     public FileSearchTool(IEnumerable<IFileSearchProvider> providers)
     {
         _providers = providers;
@@ -139,7 +142,7 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
 
         var pattern = string.IsNullOrWhiteSpace(args.Pattern) ? "*" : args.Pattern;
         var recursive = args.Recursive ?? true;
-        var maxResults = Math.Clamp(args.MaxResults ?? 50, 1, 500);
+        var maxResults = Math.Clamp(args.MaxResults ?? 50, 1, MaxResultsCeiling);
 
         if (pattern.Contains("**"))
         {
@@ -156,6 +159,17 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
                 directory, pattern, recursive, maxResults, args.IncludeNoiseDirs != true, ct);
             var (results, coverage) = await MergeWithBaselineAsync(
                 primaryResult, providerId, requireProvider, directory, pattern, recursive, maxResults, args.IncludeNoiseDirs == true, ct);
+
+            // 请求值超过硬顶时，「调大 max_results」不是有效药方（2026-11-16）：夹取后照样会报
+            // result limit 500，模型会加码到 9999 再来一遍。必须说明顶在哪里、该换什么办法。
+            if (args.MaxResults is > MaxResultsCeiling && coverage.Status == RetrievalCoverageStatus.Truncated)
+            {
+                coverage = new RetrievalCoverage(
+                    coverage.Status,
+                    [.. coverage.Reasons,
+                     $"max_results={args.MaxResults} exceeds the hard ceiling {MaxResultsCeiling} and was clamped; raising it further cannot return more — narrow the directory scope instead"],
+                    isComplete: false);
+            }
             // 噪声目录过滤（2026-11-15）：默认与 list_dir / search_grep 同口径；
             // include_noise_dirs=true 时不过滤（ls -a 语义）。
             var noise = ApplyNoiseFilter(results, directory, args.IncludeNoiseDirs == true);
@@ -828,7 +842,7 @@ internal sealed class EverythingSdk : IEverythingSdk
             Everything_SetMatchPath(true);
             Everything_SetMatchCase(false);
             Everything_SetRegex(false);
-            Everything_SetMax((uint)Math.Clamp(request.MaxResults, 1, 500));
+            Everything_SetMax((uint)Math.Clamp(request.MaxResults, 1, FileSearchTool.MaxResultsCeiling));
 
             if (!Everything_QueryW(true))
                 throw CreateQueryException();

@@ -998,6 +998,58 @@ public sealed class FileSearchToolTests
             throw new IOException("stub enumeration failure");
     }
 
+    // 2026-11-16：max_results 超过硬顶时，「调大 max_results」不是有效药方——与上面那条同一类错药方。
+    // 夹取后照样报 result limit 500，模型会加码到 9999 再来一遍；必须说明顶在哪里。
+    [TestMethod]
+    public async Task Over_Ceiling_Max_Results_Is_Disclosed_So_The_Model_Stops_Raising_It()
+    {
+        var root = CreateTempDir("ceiling-");
+        try
+        {
+            var a = await WriteFileAsync(root, "a.csproj");
+            var synthetic = Enumerable.Range(0, 600)
+                .Select(i => Path.Combine(root, $"s{i:D3}.csproj"))
+                .ToArray();
+
+            var tool = new FileSearchTool([
+                new EverythingSearchProvider(new StubEverythingSdk([new EverythingQueryItem(a)])),
+                new TruncatedBuiltInProvider([a, .. synthetic])]);
+
+            var over = await ExecuteAsync(tool, $$"""
+            {
+              "directory": "{{JsonEscape(root)}}",
+              "pattern": "*.csproj",
+              "recursive": true,
+              "max_results": 9999
+            }
+            """);
+
+            Assert.IsTrue(over.Success, over.Error);
+            StringAssert.Contains(over.Output, "result limit 500", "结果集真满额时仍要点名上限");
+            StringAssert.Contains(over.Output, "hard ceiling 500", "夹取必须披露，否则模型会继续加码");
+
+            // 反向对照：不超顶时不得出现夹取披露（否则披露恒真，等于没有披露）。
+            var atCeiling = await ExecuteAsync(tool, $$"""
+            {
+              "directory": "{{JsonEscape(root)}}",
+              "pattern": "*.csproj",
+              "recursive": true,
+              "max_results": 500
+            }
+            """);
+
+            Assert.IsTrue(atCeiling.Success, atCeiling.Error);
+            StringAssert.Contains(atCeiling.Output, "result limit 500");
+            Assert.IsFalse(
+                atCeiling.Output.Contains("hard ceiling", StringComparison.Ordinal),
+                "未超顶时不得出现夹取披露");
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
     /// <summary>基线撞内部条目上限桩：结果集远未满额，但无法证实完整。</summary>
     private sealed class TruncatedBuiltInProvider(IReadOnlyList<string> paths) : IFileSearchProvider
     {
