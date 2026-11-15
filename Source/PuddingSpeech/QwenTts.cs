@@ -23,6 +23,20 @@ public static class QwenTts
         return JsonSerializer.Serialize(new { model, input }, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
     }
 
+    /// <summary>Normalizes WAV/raw PCM to mono PCM16 without buffering the complete audio.</summary>
+    public static async IAsyncEnumerable<byte[]> ReadPcmAudioAsync(Stream stream, int sampleRate,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var decoder = new PcmStreamDecoder(sampleRate);
+        await foreach (var audio in ReadAudioAsync(stream, ct))
+        {
+            var pcm = decoder.Push(audio);
+            if (pcm.Length > 0) yield return pcm;
+        }
+        var tail = decoder.Complete();
+        if (tail.Length > 0) yield return tail;
+    }
+
     /// <summary>Yields audio as it arrives; EOF without a provider terminal is an error.</summary>
     public static async IAsyncEnumerable<byte[]> ReadAudioAsync(Stream stream, [EnumeratorCancellation] CancellationToken ct = default)
     {

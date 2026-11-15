@@ -135,6 +135,51 @@ public sealed class SpeechTests
         Assert.Throws<SpeechFailure>(() => QwenTts.BuildRequest("unknown", "qwen-new", "text", "voice", "wav", 24000));
     }
 
+    [TestMethod]
+    public async Task Tts_StreamWaveHeaderSplitAcrossFrames_IsStripped()
+    {
+        var wave = Wave();
+        BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(24), 24000);
+        BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(28), 48000);
+        BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(4), 0x7fffffbf);
+        BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(40), 0x7fffff9b);
+        for (var i = 44; i < wave.Length; i++) wave[i] = (byte)i;
+        await using var stream = TtsStream(wave[..2], wave[2..19], wave[19..43], wave[43..80], wave[80..]);
+        var result = new List<byte>();
+        await foreach (var pcm in QwenTts.ReadPcmAudioAsync(stream, 24000)) result.AddRange(pcm);
+        CollectionAssert.AreEqual(wave[44..], result.ToArray());
+    }
+
+    [TestMethod]
+    public async Task Tts_WrongWaveRateAndTruncatedHeader_AreRejected()
+    {
+        foreach (var invalid in new[] { Wave(), Wave()[..30], "RIF"u8.ToArray() })
+        {
+            await using var stream = TtsStream(invalid);
+            await Assert.ThrowsAsync<SpeechFailure>(async () =>
+            { await foreach (var _ in QwenTts.ReadPcmAudioAsync(stream, 24000)) { } });
+        }
+        await using var raw = TtsStream(new byte[] { 1, 2 });
+        var result = new List<byte>();
+        await foreach (var pcm in QwenTts.ReadPcmAudioAsync(raw, 24000)) result.AddRange(pcm);
+        CollectionAssert.AreEqual(new byte[] { 1, 2 }, result.ToArray());
+    }
+
+    [TestMethod]
+    public async Task Tts_NormalizedPcmStillYieldsBeforeNextNetworkRead()
+    {
+        var wave = Wave(4);
+        BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(24), 24000);
+        using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await using var stream = new BlockingTailStream(TtsFrame(wave));
+        await using var events = QwenTts.ReadPcmAudioAsync(stream, 24000, cancel.Token).GetAsyncEnumerator();
+        Assert.IsTrue(await events.MoveNextAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1)));
+        Assert.HasCount(4, events.Current);
+    }
+
+    private static string TtsFrame(byte[] audio) => "data: " + JsonSerializer.Serialize(new { output = new { audio = new { data = Convert.ToBase64String(audio) } } }) + "\n\n";
+    private static MemoryStream TtsStream(params byte[][] chunks) => new(Encoding.UTF8.GetBytes(string.Concat(chunks.Select(TtsFrame)) + "data: [DONE]\n\n"));
+
     private static byte[] Wave(int size = 320)
     {
         var data = new byte[44 + size];
@@ -192,14 +237,14 @@ public sealed class SpeechTests
         private string Result(string text, bool final) => $"{{\"header\":{{\"task_id\":\"{taskId}\",\"event\":\"result-generated\"}},\"payload\":{{\"output\":{{\"sentence\":{{\"sentence_id\":1,\"text\":\"{text}\",\"sentence_end\":{final.ToString().ToLowerInvariant()}}}}}}}}}";
     }
 
-    private sealed class BlockingTailStream : Stream
+    private sealed class BlockingTailStream(string? firstFrame = null) : Stream
     {
         private bool sent;
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
         {
             if (sent) { await Task.Delay(Timeout.Infinite, ct); return 0; }
             sent = true;
-            var bytes = Encoding.UTF8.GetBytes("data: {\"output\":{\"audio\":{\"data\":\"AQI=\"}}}\n\n");
+            var bytes = Encoding.UTF8.GetBytes(firstFrame ?? "data: {\"output\":{\"audio\":{\"data\":\"AQI=\"}}}\n\n");
             bytes.CopyTo(buffer); return bytes.Length;
         }
         public override bool CanRead => true;
