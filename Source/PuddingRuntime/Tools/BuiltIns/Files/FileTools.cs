@@ -567,7 +567,7 @@ public sealed record FileWriteArgs
 [Tool(
     id: "list_dir",
     name: "List directory",
-    description: "返回宿主工作区目录的结构化清单。需要文件名和元数据时优先使用此工具而非 shell ls/dir。Return a structured listing for a directory in the host workspace. Prefer this over shell ls/dir when the agent needs file names and metadata.",
+    description: "返回宿主工作区目录的结构化清单。需要文件名和元数据时优先使用此工具而非 shell ls/dir。默认排除 bin/obj/node_modules/.git/dist 等构建与依赖目录（与 search_grep 同源）；需要全量时设 include_noise_dirs=true，相当于 ls -a。max_entries 默认 100、上限 2000；recursive=true 在大目录上会产生大量条目并可能触发截断，优先用 pattern 收窄。Return a structured listing for a directory in the host workspace. Prefer this over shell ls/dir when the agent needs file names and metadata.",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -596,6 +596,7 @@ public sealed class ListDirectoryTool : PuddingToolBase<ListDirectoryArgs>
 
         var recursive = args.Recursive == true;
         var includeHidden = args.IncludeHidden == true;
+        var includeNoiseDirs = args.IncludeNoiseDirs == true;
         var maxEntries = Math.Clamp(args.MaxEntries ?? 100, 1, 2_000);
         var pattern = string.IsNullOrWhiteSpace(args.Pattern) ? "*" : args.Pattern;
         var entries = new List<ListDirectoryEntry>();
@@ -603,7 +604,7 @@ public sealed class ListDirectoryTool : PuddingToolBase<ListDirectoryArgs>
 
         try
         {
-            Walk(fullPath, fullPath, recursive, includeHidden, pattern, maxEntries, entries, ref truncated, ct);
+            Walk(fullPath, fullPath, recursive, includeHidden, includeNoiseDirs, pattern, maxEntries, entries, ref truncated, ct);
             var payload = new ListDirectoryResult(
                 Path.GetRelativePath(
                     HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory),
@@ -624,6 +625,7 @@ public sealed class ListDirectoryTool : PuddingToolBase<ListDirectoryArgs>
         string directory,
         bool recursive,
         bool includeHidden,
+        bool includeNoiseDirs,
         string pattern,
         int maxEntries,
         List<ListDirectoryEntry> entries,
@@ -648,7 +650,7 @@ public sealed class ListDirectoryTool : PuddingToolBase<ListDirectoryArgs>
             if (!includeHidden && isHidden)
                 continue;
 
-            if (isDirectory && s_defaultExcludedDirectories.Contains(name))
+            if (!includeNoiseDirs && isDirectory && s_defaultExcludedDirectories.Contains(name))
                 continue;
 
             var relativePath = Path.GetRelativePath(root, entry);
@@ -672,7 +674,7 @@ public sealed class ListDirectoryTool : PuddingToolBase<ListDirectoryArgs>
             }
 
             if (recursive && isDirectory)
-                Walk(root, entry, recursive, includeHidden, pattern, maxEntries, entries, ref truncated, ct);
+                Walk(root, entry, recursive, includeHidden, includeNoiseDirs, pattern, maxEntries, entries, ref truncated, ct);
         }
     }
 }
@@ -690,6 +692,9 @@ public sealed record ListDirectoryArgs
 
     [ToolParam("When true, include hidden files and directories. Default: false.")]
     public bool? IncludeHidden { get; init; }
+
+    [ToolParam("When true, also return entries under noise directories (bin, obj, node_modules, .git, dist, ...). Default: false — same contract as ls vs ls -a. Use it when you must prove what actually exists under a build or output directory.")]
+    public bool? IncludeNoiseDirs { get; init; }
 
     [ToolParam("Optional glob-like pattern for file names or relative paths. Directories are still returned so recursive results retain structure.")]
     public string? Pattern { get; init; }

@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "file_search",
     name: "Search files",
-    description: "按文件名搜索（文件搜索）并返回规范化绝对路径，结果一行一个（行数即条目数，便于按行分页读取）。默认使用 Everything Provider（如有）。Everything 需要绝对目录；验证错误会包含从宿主机枚举到的可用盘符根。搜索多个盘时对每个盘根调用一次。Everything 不可用时回退到内置递归文件搜索。使用 action=list 可检查提供方。max_results 默认 50、上限 500：需要全量清单时一次设到上限，否则命中上限后没有游标续取，只能换 directory/pattern 缩小范围重搜。",
+    description: "按文件名搜索（文件搜索）并返回规范化绝对路径，结果一行一个（行数即条目数，便于按行分页读取）。默认排除 bin/obj/node_modules/.git/dist 等构建与依赖目录（与 list_dir、search_grep 同源）；需要全量时设 include_noise_dirs=true，相当于 ls -a。被排除的条数会在输出首行声明，不会静默丢弃。默认使用 Everything Provider（如有）。Everything 需要绝对目录；验证错误会包含从宿主机枚举到的可用盘符根。搜索多个盘时对每个盘根调用一次。Everything 不可用时回退到内置递归文件搜索。使用 action=list 可检查提供方。max_results 默认 50、上限 500：需要全量清单时一次设到上限，否则命中上限后没有游标续取，只能换 directory/pattern 缩小范围重搜。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     SortOrder = 41)]
@@ -155,7 +155,13 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             var primaryResult = await provider.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, ct);
             var (results, coverage) = await MergeWithBaselineAsync(
                 primaryResult, providerId, requireProvider, directory, pattern, recursive, maxResults, ct);
+            // 噪声目录过滤（2026-11-15）：默认与 list_dir / search_grep 同口径；
+            // include_noise_dirs=true 时不过滤（ls -a 语义）。
+            var noise = ApplyNoiseFilter(results, directory, args.IncludeNoiseDirs == true);
+            results = noise.Kept;
             var output = BuildSearchOutput(results, fallbackFrom, providerId, fallbackReason);
+            if (noise.Dropped > 0)
+                output = BuildNoiseNote(noise.Dropped) + Environment.NewLine + output;
             // ADR-089 U0-S3：覆盖声明单点产出，且仅非 Complete 时出现（对齐 U0-S2 SearchGrepTool
             // 惯例：Complete = 无声明行 + status ok/no_match）；同一声明恰好一次（U0-S2 教训见 ff79f3b）。
             // 覆盖声明必须出现在结果首行：结果超过内联上限被 spill 时模型只看到前缀，
@@ -163,7 +169,8 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             // file_search 返回 196 中的 100 条，声明在尾部，子代理据此报 DONE）。
             if (!coverage.IsComplete)
                 output = BuildCoverageNote(coverage) + Environment.NewLine + output;
-            var noMatch = coverage.IsComplete && results.Count == 0;
+            // 全部命中都被噪声过滤掉时不得报 no_match：磁盘上确实有匹配，只是被排除策略挡住了。
+            var noMatch = coverage.IsComplete && results.Count == 0 && noise.Dropped == 0;
             if (noMatch)
                 output += Environment.NewLine + Environment.NewLine + BuildNoResultsGuidance(providerId, directory, pattern, recursive);
             return ToolExecutionResult.Ok(output, status: BuildResultStatus(coverage, results.Count));
@@ -181,14 +188,18 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
                 // 降级到基线枚举时其覆盖状态已自定案（Complete/Truncated），无需再差分。
                 var fallbackResult = await builtInFallback.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, ct);
                 var results = NormalizeAbsolutePaths(fallbackResult.Paths, directory);
+                var noise = ApplyNoiseFilter(results, directory, args.IncludeNoiseDirs == true);
+                results = noise.Kept;
                 var output = BuildSearchOutput(
                     results,
                     providerId,
                     builtInFallback.ProviderId,
                     $"provider query failed: {ex.Message}");
+                if (noise.Dropped > 0)
+                    output = BuildNoiseNote(noise.Dropped) + Environment.NewLine + output;
                 if (!fallbackResult.Coverage.IsComplete)
                     output = BuildCoverageNote(fallbackResult.Coverage) + Environment.NewLine + output;
-                var noMatch = fallbackResult.Coverage.IsComplete && results.Count == 0;
+                var noMatch = fallbackResult.Coverage.IsComplete && results.Count == 0 && noise.Dropped == 0;
                 if (noMatch)
                 {
                     output += Environment.NewLine + Environment.NewLine +
@@ -230,6 +241,41 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
     /// 缩进后仍是合法 JSON（既有调用方的 JsonSerializer.Deserialize 不变），但每个条目独占一行，
     /// 行窗口分页真正可用。
     /// </summary>
+    private readonly record struct NoiseFilterOutcome(IReadOnlyList<string> Kept, int Dropped);
+
+    /// <summary>
+    /// 默认剔除噪声目录下的命中（与 list_dir / search_grep 同口径），并返回被丢弃条数。
+    /// <paramref name="includeNoiseDirs"/> 为 true 时原样返回（ls -a 语义）。
+    /// </summary>
+    private static NoiseFilterOutcome ApplyNoiseFilter(
+        IReadOnlyList<string> results,
+        string searchRoot,
+        bool includeNoiseDirs)
+    {
+        if (includeNoiseDirs || results.Count == 0)
+            return new NoiseFilterOutcome(results, 0);
+
+        var kept = new List<string>(results.Count);
+        var dropped = 0;
+        foreach (var path in results)
+        {
+            if (FileNoisePathFilter.IsUnderNoiseDirectory(path, searchRoot))
+                dropped++;
+            else
+                kept.Add(path);
+        }
+
+        return dropped == 0 ? new NoiseFilterOutcome(results, 0) : new NoiseFilterOutcome(kept, dropped);
+    }
+
+    /// <summary>
+    /// 丢弃声明必须出现在结果首行：结果超内联上限被 spill 时模型只看到前缀，
+    /// 尾部声明会被截掉（同 2026-11-14 覆盖声明的教训）。
+    /// </summary>
+    private static string BuildNoiseNote(int dropped) =>
+        $"(noise: dropped {dropped} path(s) under build/dependency directories such as bin, obj, node_modules, .git; " +
+        "pass include_noise_dirs=true to include them)";
+
     private static readonly JsonSerializerOptions IndentedPathsJson = new() { WriteIndented = true };
 
     private static string BuildSearchOutput(
@@ -422,6 +468,9 @@ public sealed record FileSearchArgs
 
     [ToolParam("Maximum result count, 1-500. Default: 50.")]
     public int? MaxResults { get; init; }
+
+    [ToolParam("When true, also return matches that live under noise directories (bin, obj, node_modules, .git, dist, ...). Default: false — same contract as ls vs ls -a. Dropped matches are always declared on the first output line.")]
+    public bool? IncludeNoiseDirs { get; init; }
 }
 
 public interface IFileSearchProvider

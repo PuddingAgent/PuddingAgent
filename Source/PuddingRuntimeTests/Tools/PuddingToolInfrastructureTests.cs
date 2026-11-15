@@ -969,6 +969,77 @@ public sealed partial class PuddingToolInfrastructureTests
         Assert.AreEqual(0, builtIn.SearchCallCount);
     }
 
+    // 2026-11-15：默认像 ls 一样精简，但必须有 ls -a 通道，否则 agent 拿不到全部信息。
+    [TestMethod]
+    public async Task ListDirectoryTool_Noise_Dirs_Require_Explicit_Opt_In()
+    {
+        var root = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "temp",
+            "list-dir-noise-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "root-marker.txt"), "marker");
+            var bin = Path.Combine(root, "bin", "Debug");
+            Directory.CreateDirectory(bin);
+            await File.WriteAllTextAsync(Path.Combine(bin, "inside-bin.txt"), "x");
+
+            var tool = new ListDirectoryTool();
+            var context = new ToolExecutionContext
+            {
+                WorkspaceId = "workspace",
+                SessionId = "session",
+                AgentInstanceId = "agent",
+                WorkingDirectory = root,
+            };
+
+            var defaultResult = await tool.ExecuteAsync(new ToolExecutionRequest
+            {
+                ToolCallId = "list-noise-default",
+                ArgumentsJson = """{"path":".","recursive":true}""",
+                Context = context,
+            });
+
+            Assert.IsTrue(defaultResult.Success, defaultResult.Error);
+            StringAssert.Contains(defaultResult.Output, "root-marker.txt");
+            Assert.IsFalse(
+                defaultResult.Output.Contains("inside-bin.txt", StringComparison.Ordinal),
+                "bin 默认必须排除（与 search_grep / file_search 同口径）");
+
+            var optedIn = await tool.ExecuteAsync(new ToolExecutionRequest
+            {
+                ToolCallId = "list-noise-opt-in",
+                ArgumentsJson = """{"path":".","recursive":true,"include_noise_dirs":true}""",
+                Context = context,
+            });
+
+            Assert.IsTrue(optedIn.Success, optedIn.Error);
+            StringAssert.Contains(
+                optedIn.Output,
+                "inside-bin.txt",
+                "include_noise_dirs=true 必须能拿到 bin 下的内容（ls -a 通道）");
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
+    // 通道必须被文档化，否则模型无从得知。
+    [TestMethod]
+    public void ListDirectoryTool_Descriptor_Documents_Noise_Opt_In_And_MaxEntries()
+    {
+        var tool = new ListDirectoryTool();
+
+        CollectionAssert.Contains(
+            tool.Descriptor.Parameters.Properties.Select(p => p.Name).ToList(),
+            "include_noise_dirs");
+        StringAssert.Contains(tool.Descriptor.Description, "include_noise_dirs");
+        StringAssert.Contains(tool.Descriptor.Description, "ls -a");
+        StringAssert.Contains(tool.Descriptor.Description, "max_entries");
+    }
+
     [TestMethod]
     public async Task ListDirectoryTool_UsesExecutionWorkingDirectory()
     {

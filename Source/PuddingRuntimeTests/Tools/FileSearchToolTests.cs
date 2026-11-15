@@ -769,6 +769,103 @@ public sealed class FileSearchToolTests
         }
     }
 
+    // 2026-11-15：默认与 list_dir / search_grep 同口径排除噪声目录；丢弃必须在首行声明。
+    [TestMethod]
+    public async Task Noise_Directory_Hits_Are_Dropped_By_Default_And_Declared_On_First_Line()
+    {
+        var root = CreateTempDir("noise-default-");
+        try
+        {
+            var kept = await WriteFileAsync(root, "kept.csproj");
+            var noiseDir = Path.Combine(root, "bin", "Debug");
+            Directory.CreateDirectory(noiseDir);
+            var noisy = Path.Combine(noiseDir, "noise.csproj");
+            await File.WriteAllTextAsync(noisy, "x");
+
+            var sdk = new StubEverythingSdk(
+                [new EverythingQueryItem(kept), new EverythingQueryItem(noisy)],
+                isCompleteManifest: true);
+            var tool = new FileSearchTool([new EverythingSearchProvider(sdk), new CountingBuiltInProvider()]);
+
+            var result = await ExecuteAsync(tool, $$"""
+            {
+              "directory": "{{JsonEscape(root)}}",
+              "pattern": "*.csproj",
+              "recursive": true
+            }
+            """);
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "kept.csproj");
+            Assert.IsFalse(
+                result.Output.Contains("noise.csproj", StringComparison.Ordinal),
+                "bin 下的命中默认必须被排除（与 list_dir / search_grep 同口径）");
+            var firstLine = result.Output.Split('\n')[0].TrimEnd('\r');
+            StringAssert.StartsWith(
+                firstLine,
+                "(noise: dropped 1",
+                "丢弃声明必须在首行，否则 spill 后模型看不到");
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
+    // 2026-11-15：ls -a 通道——显式要求时不得再过滤。
+    [TestMethod]
+    public async Task IncludeNoiseDirs_Returns_Previously_Dropped_Hits()
+    {
+        var root = CreateTempDir("noise-optin-");
+        try
+        {
+            var kept = await WriteFileAsync(root, "kept.csproj");
+            var noiseDir = Path.Combine(root, "obj", "Release");
+            Directory.CreateDirectory(noiseDir);
+            var noisy = Path.Combine(noiseDir, "noise.csproj");
+            await File.WriteAllTextAsync(noisy, "x");
+
+            var sdk = new StubEverythingSdk(
+                [new EverythingQueryItem(kept), new EverythingQueryItem(noisy)],
+                isCompleteManifest: true);
+            var tool = new FileSearchTool([new EverythingSearchProvider(sdk), new CountingBuiltInProvider()]);
+
+            var result = await ExecuteAsync(tool, $$"""
+            {
+              "directory": "{{JsonEscape(root)}}",
+              "pattern": "*.csproj",
+              "recursive": true,
+              "include_noise_dirs": true
+            }
+            """);
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "noise.csproj", "include_noise_dirs=true 必须能拿到全量（ls -a 通道）");
+            StringAssert.Contains(result.Output, "kept.csproj");
+            Assert.AreEqual(
+                0,
+                CountOccurrences(result.Output, "(noise:"),
+                "不过滤时不得输出丢弃声明");
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
+    // 参数必须被文档化：模型只能从 schema 得知有这条通道。
+    [TestMethod]
+    public void Descriptor_Documents_IncludeNoiseDirs_And_LsA_Contract()
+    {
+        var tool = new FileSearchTool([]);
+
+        CollectionAssert.Contains(
+            tool.Descriptor.Parameters.Properties.Select(p => p.Name).ToList(),
+            "include_noise_dirs");
+        StringAssert.Contains(tool.Descriptor.Description, "include_noise_dirs");
+        StringAssert.Contains(tool.Descriptor.Description, "ls -a");
+    }
+
     /// <summary>内置基线计数器：委托真实枚举实现，只为断言"差分是否发生/未发生"。</summary>
     private sealed class CountingBuiltInProvider : IFileSearchProvider
     {
