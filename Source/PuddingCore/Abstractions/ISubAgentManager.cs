@@ -1,6 +1,7 @@
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
+using PuddingCode.SubAgents;
 
 namespace PuddingCode.Abstractions;
 
@@ -52,6 +53,24 @@ public interface ISubAgentManager
     /// </returns>
     Task<bool> CancelAsync(
         string subSessionId, string reason, CancellationToken ct = default);
+
+    /// <summary>
+    /// 向一个**正在运行**的子代理投递一条 steering 消息。
+    /// <para>
+    /// 消息写入 session_steering_messages，由子代理 loop 在下一次 LLM 调用前按
+    /// (subSessionId, 父 turn) 取出并作为 User 消息注入——不打断当前轮，只在轮次边界生效。
+    /// </para>
+    /// <para>
+    /// 只对运行中的子代理有意义：已终态的运行没有 loop 会消费它。因此对非运行中目标返回
+    /// <see cref="SubAgentSteerOutcome.NotRunning"/> 而不是静默入队——静默入队的消息只会躺到 TTL 过期，
+    /// 而调用方从回执上看不出区别。
+    /// </para>
+    /// </summary>
+    Task<SubAgentSteerResult> SteerAsync(
+        string subSessionId,
+        string message,
+        string? createdBy = null,
+        CancellationToken ct = default);
 
     // ════════════════════════════════════════════════════════
     // 状态查询

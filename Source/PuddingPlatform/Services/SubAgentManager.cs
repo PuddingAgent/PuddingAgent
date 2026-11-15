@@ -50,6 +50,12 @@ public sealed class SubAgentManager : ISubAgentManager
     /// </summary>
     private readonly SubAgentRunCancellationRegistry _runCancellations;
 
+    /// <summary>
+    /// 向运行中的子代理投递 steering 消息的存储（可空：未注入时 SteerAsync 不可用，其余能力不受影响）。
+    /// 可选参数与 _browserDelegation 同理，避免让既有测试全部变红。
+    /// </summary>
+    private readonly PuddingCode.Abstractions.ISessionSteeringService? _steering;
+
     public SubAgentManager(
         ISessionStateManager ssm,
         IServiceProvider services,
@@ -60,7 +66,8 @@ public sealed class SubAgentManager : ISubAgentManager
         IRuntimeTraceAccessor traceAccessor,
         IRuntimeExecutionConfigService? executionConfig = null,
         PuddingCode.Abstractions.IBrowserDelegationLifecycle? browserDelegation = null,
-        SubAgentRunCancellationRegistry? runCancellations = null)
+        SubAgentRunCancellationRegistry? runCancellations = null,
+        PuddingCode.Abstractions.ISessionSteeringService? steering = null)
     {
         _ssm = ssm;
         _services = services;
@@ -72,6 +79,7 @@ public sealed class SubAgentManager : ISubAgentManager
         _executionConfig = executionConfig;
         _browserDelegation = browserDelegation;
         _runCancellations = runCancellations ?? new SubAgentRunCancellationRegistry();
+        _steering = steering;
     }
 
     /// <summary>子代理 subSessionId → runId 的内存映射（供异步完成回调使用）。</summary>
@@ -674,6 +682,51 @@ public sealed class SubAgentManager : ISubAgentManager
     /// 查询 subSessionId 对应的 runId（避免 AgentExecutionService 重复创建 run archive）。
     /// 异步子代理在 SpawnAsync 中已创建 run，同步子代理则返回 null 由调用方创建。
     /// </summary>
+    public async Task<SubAgentSteerResult> SteerAsync(
+        string subSessionId,
+        string message,
+        string? createdBy = null,
+        CancellationToken ct = default)
+    {
+        // 只有本进程正在跑的运行才有 loop 会消费消息。判定本身抽成纯函数，便于逐分支断言。
+        var isRunning = _runCancellations.IsRegistered(subSessionId);
+        SubAgentRunManifest? manifest = null;
+        if (isRunning
+            && _runIdMap.TryGetValue(subSessionId, out var runId)
+            && !string.IsNullOrWhiteSpace(runId))
+        {
+            // 定位键取自 run manifest（与创建时写入的一致），不另造一套推导。
+            var archive = await _runStore.GetRunArchiveAsync(runId, ct);
+            manifest = archive?.Manifest;
+        }
+
+        var plan = SubAgentSteerPlanner.Plan(subSessionId, message, isRunning, manifest);
+        if (plan.Outcome != SubAgentSteerOutcome.Queued || plan.Target is null)
+            return new SubAgentSteerResult(plan.Outcome, Detail: plan.Detail);
+
+        var steering = _steering;
+        if (steering is null)
+            return new SubAgentSteerResult(
+                SubAgentSteerOutcome.NotRunning, Detail: "steering service is not configured");
+
+        var target = plan.Target;
+        var enqueued = await steering.EnqueueAsync(new PuddingCode.Abstractions.SessionSteeringEnqueueRequest(
+            WorkspaceId: target.WorkspaceId,
+            SessionId: target.SessionId,
+            TargetTurnId: target.TargetTurnId,
+            AgentId: null,
+            MessageText: message,
+            CreatedBy: createdBy), ct);
+
+        _logger.LogInformation(
+            "[SubAgent] Steered sub={Sub} turn={Turn} steering={Steering}",
+            target.SessionId,
+            target.TargetTurnId,
+            enqueued.SteeringId);
+
+        return new SubAgentSteerResult(SubAgentSteerOutcome.Queued, enqueued.SteeringId);
+    }
+
     public string? TryGetRunId(string subSessionId)
     {
         _runIdMap.TryGetValue(subSessionId, out var runId);

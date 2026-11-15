@@ -546,6 +546,8 @@ public sealed class TestSubAgentManager : ISubAgentManager
         CancelledSubSessionIds.Add(subSessionId);
         return Task.FromResult(true);
     }
+    public Task<PuddingCode.SubAgents.SubAgentSteerResult> SteerAsync(string subSessionId, string message, string? createdBy = null, CancellationToken ct = default)
+        => Task.FromResult(new PuddingCode.SubAgents.SubAgentSteerResult(PuddingCode.SubAgents.SubAgentSteerOutcome.NotRunning, Detail: "test double"));
     public Task<IReadOnlyList<SubAgentStatus>> GetSubAgentsAsync(string parentSessionId, SubAgentQueryFilter? filter = null, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<SubAgentStatus>>(Array.Empty<SubAgentStatus>());
     public Task<int> GetRunningCountAsync(string parentSessionId, CancellationToken ct = default)
