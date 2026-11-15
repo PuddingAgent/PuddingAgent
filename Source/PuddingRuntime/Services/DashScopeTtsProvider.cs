@@ -78,7 +78,10 @@ public sealed class DashScopeTtsProvider : ITtsProvider
 
         await using var audioStream = await response.Content.ReadAsStreamAsync(ct);
         var sequence = 0;
-        await foreach (var audio in PuddingSpeech.QwenTts.ReadAudioAsync(audioStream, ct))
+        var audioFrames = _modelConfig.ModelId is "qwen3-tts-flash" or "qwen3-tts-instruct-flash"
+            ? PuddingSpeech.QwenTts.ReadPcmAudioAsync(audioStream, request.SampleRate, ct)
+            : PuddingSpeech.QwenTts.ReadAudioAsync(audioStream, ct);
+        await foreach (var audio in audioFrames)
         {
             yield return VoiceSynthesisStreamEvent.AudioDelta(
                     messageId: request.MessageId,

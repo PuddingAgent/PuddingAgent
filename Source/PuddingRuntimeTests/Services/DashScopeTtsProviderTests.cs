@@ -114,6 +114,25 @@ public sealed class DashScopeTtsProviderTests
     // ── 流式测试 ──
 
     [TestMethod]
+    public async Task QwenStream_ReturnsPcmWithoutWaveContainer()
+    {
+        var wave = new byte[48];
+        "RIFF"u8.CopyTo(wave); "WAVEfmt "u8.CopyTo(wave.AsSpan(8)); "data"u8.CopyTo(wave.AsSpan(36));
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(16), 16);
+        wave[20] = 1; wave[22] = 1; wave[32] = 2; wave[34] = 16;
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(wave.AsSpan(24), 24000);
+        new byte[] { 1, 2, 3, 4 }.CopyTo(wave, 44);
+        var frame = System.Text.Json.JsonSerializer.Serialize(new { output = new { audio = new { data = Convert.ToBase64String(wave) }, finish_reason = "stop" } });
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        { Content = new StringContent($"data: {frame}\n\n") });
+        var provider = new DashScopeTtsProvider(new HttpClient(handler), CreateProviderConfig(),
+            CreateModelConfig("qwen3-tts-flash"), NullLogger<DashScopeTtsProvider>.Instance);
+        var samples = new List<byte>();
+        await foreach (var audio in provider.StreamAsync(CreateRequest(format: "pcm"))) samples.AddRange(audio.AudioBytes!);
+        CollectionAssert.AreEqual(new byte[] { 1, 2, 3, 4 }, samples.ToArray());
+    }
+
+    [TestMethod]
     public async Task Stream_ReturnsThreeAudioChunks()
     {
         // 验证 HTTP roundtrip：POST + SSE header 返回完整 SSE 正文
