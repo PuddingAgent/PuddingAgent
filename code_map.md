@@ -341,6 +341,8 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | [SSH 工具设计](Docs/12_features/SSH工具组件化设计与实施方案-2026-10-08.md) · [ADR-096](Docs/07_architecture/110ADR-096SSH执行前置围栏与有界终止ADR.md) · [S5 前置修补](Docs/12_features/SSH-S5前置修补与代码级施工方案-2026-10-12.md) · [SSH 调研](Docs/07_architecture/71PuddingSSH远程执行能力调研报告.md) | SSH 的 `.ssh`/主机信任、远程执行与 SFTP 设计（见下「关键语义」） |
 | [产品架构裁定](Docs/12_features/ADR-Desktop-Shell-WebUI-Separate-Core-2026-09-29.md) · [能力通道](Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md) · [余额与计费](Docs/12_features/服务商余额查询与多服务商计费适配器设计方案.md) | WinUI Shell + Web UI + 独立 Core · gRPC 能力通道切片 · 余额徽标与计费适配 |
 | [参考架构总蓝图](Docs/19_references/deepseek-reference-architecture-master-plan-2026-08-14.md) · [插件/Hook/事件](Docs/19_references/deepseek_harness/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md) | 「一切业务能力皆插件」总蓝图（T00–T16）· Plugin/Function/Hook/Event/Projection 合同 |
+| [DeepSeek chat-demo 对照](Docs/19_references/deepseek-chat-demo-源码对照与改进优先级-2026-11-15.md) · [应用能力集成方案](Docs/12_features/DeepSeek应用能力集成方案-2026-11-15.md) | 原生搜索/链接、文档、语音与标题的现有代码入口、协议回放边界及分阶段施工门禁（提案） |
+| [统一 ASR/TTS 与聊天语音体验](Docs/12_features/统一ASR-TTS能力与聊天语音体验优化方案-2026-11-15.md) | 统一语音业务服务、Qwen/火山/DeepSeek 协议适配、录音提交/取消与播放生命周期（提案） |
 | [工具系统对齐](Docs/19_references/deepseek_harness/deepseek-harness-tool-system-alignment-2026-08-14.md) · [消息卡片对齐](Docs/19_references/deepseek_harness/deepseek-harness-message-card-alignment-2026-08-14.md) | 工具 canonical output / callId / 结构化错误 / spill · 消息与推理的 UI 投影合同 |
 | [`Docs/00_changelog/`](Docs/00_changelog/README.md) · `Docs/14_reports/` · `Docs/16_qa/` · `Docs/15_tasks/` | 修改日志唯一去处（规则见其 README）· 诊断与验收报告 · 验收记录 · 历史任务（只读证据，不是索引） |
 
