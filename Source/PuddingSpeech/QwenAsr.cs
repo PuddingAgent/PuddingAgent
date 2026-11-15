@@ -14,7 +14,7 @@ public interface ISpeechSocket : IAsyncDisposable
 
 public sealed record TranscriptSegment(int Id, string Text, bool IsFinal);
 
-public sealed class QwenAsr(Func<CancellationToken, Task<ISpeechSocket>> connect)
+public sealed class QwenAsr(Func<CancellationToken, Task<ISpeechSocket>> connect) : IStreamingSpeechRecognizer
 {
     public const string Model = "qwen-audio-3.1-asr-flash-message";
 
@@ -22,6 +22,20 @@ public sealed class QwenAsr(Func<CancellationToken, Task<ISpeechSocket>> connect
         byte[] wave, string? language = null, [EnumeratorCancellation] CancellationToken ct = default)
     {
         var pcm = PcmWave.ReadPcm16KhzMono(wave);
+        await foreach (var segment in RecognizePcmAsync(Frames(), language, ct)) yield return segment;
+
+        async IAsyncEnumerable<ReadOnlyMemory<byte>> Frames()
+        {
+            for (var offset = 0; offset < pcm.Length; offset += 3200)
+                yield return pcm.AsMemory(offset, Math.Min(3200, pcm.Length - offset));
+            await Task.CompletedTask;
+        }
+    }
+
+    public async IAsyncEnumerable<TranscriptSegment> RecognizePcmAsync(
+        IAsyncEnumerable<ReadOnlyMemory<byte>> audio, string? language = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
         lifetime.CancelAfter(TimeSpan.FromSeconds(150));
         await using var socket = await connect(lifetime.Token);
@@ -43,7 +57,7 @@ public sealed class QwenAsr(Func<CancellationToken, Task<ISpeechSocket>> connect
         var completed = false;
         try
         {
-            while (await socket.ReceiveAsync(lifetime.Token) is { } json)
+            while (await ReceiveNextAsync() is { } json)
             {
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
@@ -81,8 +95,16 @@ public sealed class QwenAsr(Func<CancellationToken, Task<ISpeechSocket>> connect
             try
             {
                 await started.Task.WaitAsync(lifetime.Token);
-                for (var offset = 0; offset < pcm.Length; offset += 3200)
-                    await socket.SendAudioAsync(pcm.AsMemory(offset, Math.Min(3200, pcm.Length - offset)), lifetime.Token);
+                var bytes = 0;
+                await foreach (var frame in audio.WithCancellation(lifetime.Token))
+                {
+                    if (frame.Length == 0 || frame.Length % 2 != 0 || frame.Length > 32000)
+                        throw new SpeechFailure("voice_unsupported_audio", "音频帧需为 16 kHz 单声道 PCM16。", 415);
+                    bytes = checked(bytes + frame.Length);
+                    if (bytes > PcmWave.SampleRate * 2 * PcmWave.MaxSeconds)
+                        throw new SpeechFailure("voice_input_too_large", "录音超过 120 秒，请分段输入。", 413);
+                    await socket.SendAudioAsync(frame, lifetime.Token);
+                }
                 await socket.SendTextAsync(JsonSerializer.Serialize(new
                 {
                     header = new { action = "finish-task", task_id = taskId, streaming = "duplex" },
@@ -90,6 +112,13 @@ public sealed class QwenAsr(Func<CancellationToken, Task<ISpeechSocket>> connect
                 }), lifetime.Token);
             }
             catch { await lifetime.CancelAsync(); throw; }
+        }
+
+        async Task<string?> ReceiveNextAsync()
+        {
+            try { return await socket.ReceiveAsync(lifetime.Token); }
+            catch (OperationCanceledException) when (sender.IsFaulted)
+            { await sender; throw; }
         }
     }
 }
