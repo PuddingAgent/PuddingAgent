@@ -49,6 +49,20 @@ public sealed class FileNoisePathFilterTests
         Assert.IsFalse(FileNoisePathFilter.IsUnderNoiseDirectory(path, root));
     }
 
+    // 补验（2026-11-15）：上一版两条测试都不能单独证明「最后一段不参与判定」——
+    // bin.csproj 本身就不等于 bin，把末段算进去也照样绿。
+    // 真正能取红的是「文件名恰好等于噪声目录名、且无扩展名」这个形状。
+    [TestMethod]
+    public void File_Named_Exactly_A_Noise_Directory_Is_Not_Noise()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "noise-probe");
+        var path = Path.Combine(root, "src", "bin");
+
+        Assert.IsFalse(
+            FileNoisePathFilter.IsUnderNoiseDirectory(path, root),
+            "同名文件（无扩展名）不得被当成噪声目录");
+    }
+
     [TestMethod]
     public void Noise_Matching_Is_Case_Insensitive()
     {
