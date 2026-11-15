@@ -126,6 +126,33 @@ public sealed class FileSearchBudgetTests
         finally { Directory.Delete(root, true); }
     }
 
+    /// <summary>
+    /// 真树探针（环境门控）：在小夹具里证明完还不等于在 958,920 条的真实树上成立。
+    /// 设置 PUDDING_FILE_SEARCH_REAL_TREE=<目录> 才跑，否则 Inconclusive。
+    /// 判据：同一棵树、同一份 50,000 条目预算，剪枝能完成、不剪枝撞顶。
+    /// </summary>
+    [TestMethod]
+    public async Task RealTree_CompletesWithPrune_AndTruncatesWithout()
+    {
+        var root = Environment.GetEnvironmentVariable("PUDDING_FILE_SEARCH_REAL_TREE");
+        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+        {
+            Assert.Inconclusive("PUDDING_FILE_SEARCH_REAL_TREE not set; skipping the real-tree probe.");
+            return;
+        }
+
+        var provider = new BuiltInRecursiveFileSearchProvider(TimeProvider.System, TimeSpan.FromSeconds(60), 50_000);
+
+        var pruned = await provider.SearchWithCoverageAsync(root, "*.csproj", true, 500, true, CancellationToken.None);
+        Assert.AreEqual(RetrievalCoverageStatus.Complete, pruned.Coverage.Status,
+            $"pruned walk must finish on {root}; reasons: {string.Join("; ", pruned.Coverage.Reasons)}");
+        Assert.IsTrue(pruned.Paths.Count >= 100, $"expected a substantial project count, got {pruned.Paths.Count}");
+
+        var unpruned = await provider.SearchWithCoverageAsync(root, "*.csproj", true, 500, false, CancellationToken.None);
+        Assert.AreEqual(RetrievalCoverageStatus.Truncated, unpruned.Coverage.Status,
+            "without pruning the same tree must still hit the entry cap, otherwise this probe proves nothing");
+    }
+
     private sealed class AdvancingClock : TimeProvider
     {
         private long _ticks;
