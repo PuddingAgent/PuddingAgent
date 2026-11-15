@@ -152,7 +152,8 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
 
         try
         {
-            var primaryResult = await provider.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, false, ct);
+            var primaryResult = await provider.SearchWithCoverageAsync(
+                directory, pattern, recursive, maxResults, args.IncludeNoiseDirs != true, ct);
             var (results, coverage) = await MergeWithBaselineAsync(
                 primaryResult, providerId, requireProvider, directory, pattern, recursive, maxResults, args.IncludeNoiseDirs == true, ct);
             // 噪声目录过滤（2026-11-15）：默认与 list_dir / search_grep 同口径；
@@ -170,7 +171,8 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             if (!coverage.IsComplete)
                 output = BuildCoverageNote(coverage) + Environment.NewLine + output;
             // 全部命中都被噪声过滤掉时不得报 no_match：磁盘上确实有匹配，只是被排除策略挡住了。
-            var noMatch = coverage.IsComplete && results.Count == 0 && noise.Dropped == 0;
+            var noMatch = coverage.IsComplete && results.Count == 0
+                && noise.Dropped == 0 && primaryResult.NoiseDirectoriesSkipped == 0;
             if (noMatch)
                 output += Environment.NewLine + Environment.NewLine + BuildNoResultsGuidance(providerId, directory, pattern, recursive);
             return ToolExecutionResult.Ok(output, status: BuildResultStatus(coverage, results.Count));
@@ -186,7 +188,8 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             try
             {
                 // 降级到基线枚举时其覆盖状态已自定案（Complete/Truncated），无需再差分。
-                var fallbackResult = await builtInFallback.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, false, ct);
+                var fallbackResult = await builtInFallback.SearchWithCoverageAsync(
+                    directory, pattern, recursive, maxResults, args.IncludeNoiseDirs != true, ct);
                 var results = NormalizeAbsolutePaths(fallbackResult.Paths, directory);
                 var noise = ApplyNoiseFilter(results, directory, args.IncludeNoiseDirs == true);
                 results = noise.Kept;
@@ -199,7 +202,8 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
                     output = BuildNoiseNote(noise.Dropped) + Environment.NewLine + output;
                 if (!fallbackResult.Coverage.IsComplete)
                     output = BuildCoverageNote(fallbackResult.Coverage) + Environment.NewLine + output;
-                var noMatch = fallbackResult.Coverage.IsComplete && results.Count == 0 && noise.Dropped == 0;
+                var noMatch = fallbackResult.Coverage.IsComplete && results.Count == 0
+                    && noise.Dropped == 0 && fallbackResult.NoiseDirectoriesSkipped == 0;
                 if (noMatch)
                 {
                     output += Environment.NewLine + Environment.NewLine +
@@ -517,7 +521,14 @@ public interface IFileSearchProvider
 }
 
 /// <summary>ADR-089 U0-S3：provider 搜索结果与覆盖报告。复用 U0 覆盖合同（RetrievalCoverage），不新增第二套契约 DTO。</summary>
-public sealed record FileSearchProviderResult(IReadOnlyList<string> Paths, RetrievalCoverage Coverage);
+/// <param name="NoiseDirectoriesSkipped">
+/// 枚举阶段因「默认排除噪声目录」而整棵跳过的目录数（仅在 <c>excludeNoiseDirectories=true</c> 时非零）。
+/// 上层必须把它当成「磁盘上确实有、只是被策略挡住」的证据：没有它，剪枝后全命中都在 bin/obj 的搜索会谎报 no_match。
+/// </param>
+public sealed record FileSearchProviderResult(
+    IReadOnlyList<string> Paths,
+    RetrievalCoverage Coverage,
+    int NoiseDirectoriesSkipped = 0);
 
 internal sealed class BuiltInRecursiveFileSearchProvider : IFileSearchProvider
 {
@@ -581,8 +592,12 @@ internal sealed class BuiltInRecursiveFileSearchProvider : IFileSearchProvider
         pending.Enqueue(root);
         var errors = new List<string>();
         var visited = 0;
+        // 与 NoiseFilter 的承诺一致：默认排除噪声目录时就在枚举阶段跳过并记账。
+        // 不记账的话，上层拿不到「因排除策略而没看到」的证据，会把磁盘上确实存在的内容误报成 no_match。
+        var skippedNoiseDirectories = 0;
         var started = _timeProvider.GetTimestamp();
-        FileSearchProviderResult Finish(RetrievalCoverage coverage) => new(results.ToArray(), coverage);
+        FileSearchProviderResult Finish(RetrievalCoverage coverage) =>
+            new(results.ToArray(), coverage, skippedNoiseDirectories);
 
         // Breadth-first, one directory at a time: both directories and non-matches
         // consume the scan budget. Recursive EnumerateFiles hides empty-directory
@@ -617,7 +632,10 @@ internal sealed class BuiltInRecursiveFileSearchProvider : IFileSearchProvider
                         // 差分基线的职责是「验证可见 scope 是否看全」，而可见 scope 本就排除了噪声目录，
                         // 因此这里跳过它们与上层 NoiseFilter 的承诺一致。
                         if (excludeNoiseDirectories && FileNoisePathFilter.IsNoiseDirectory(entry.FullName, root))
+                        {
+                            skippedNoiseDirectories++;
                             continue;
+                        }
                         pending.Enqueue(entry.FullName);
                         continue;
                     }

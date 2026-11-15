@@ -446,6 +446,51 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
+    public async Task FileSearchTool_DoesNotClaimNoMatch_WhenProviderSkippedNoiseDirectories()
+    {
+        // 枚举阶段剪枝后工具拿不到任何 path。若不用剪枝数兑回来，它会把这个空结果当 no_match，
+        // 而磁盘上其实有匹配，只是被默认排除策略挡住了。
+        var directory = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "temp",
+            "file-search-pruned-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var provider = new FakeFileSearchProvider("BuiltInRecursiveFileSearch").WithSkippedNoise(3);
+            var tool = new FileSearchTool([provider]);
+
+            var withSkip = await ExecuteFileSearchAsync(tool, $$"""
+            {
+              "pattern": "*.cs",
+              "directory": "{{JsonEscape(directory)}}",
+              "recursive": true
+            }
+            """);
+
+            var baseline = new FileSearchTool([new FakeFileSearchProvider("BuiltInRecursiveFileSearch")]);
+            var withoutSkip = await ExecuteFileSearchAsync(baseline, $$"""
+            {
+              "pattern": "*.cs",
+              "directory": "{{JsonEscape(directory)}}",
+              "recursive": true
+            }
+            """);
+
+            // 差分断言：只改「是否声明了剪枝」一个变量，输出必须不同。
+            // 不断言具体文案，避免把断言绑在一句话上；但删掉守卫时两边会相等，测试就会红。
+            Assert.IsTrue(withSkip.Success, withSkip.Error);
+            Assert.IsTrue(withoutSkip.Success, withoutSkip.Error);
+            Assert.AreNotEqual(withoutSkip.Output, withSkip.Output, "剪枝数必须影响输出，否则无结果的引导会误导模型");
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task FileSearchTool_Lists_Available_Providers()
     {
         var tool = new FileSearchTool(
@@ -4506,6 +4551,28 @@ public sealed partial class PuddingToolInfrastructureTests
     {
         private readonly List<string> _items = [];
         private Exception? _searchException;
+        private int _skippedNoiseDirectories;
+
+        public FakeFileSearchProvider WithSkippedNoise(int count)
+        {
+            _skippedNoiseDirectories = count;
+            return this;
+        }
+
+        public Task<FileSearchProviderResult> SearchWithCoverageAsync(
+            string directory,
+            string pattern,
+            bool recursive,
+            int maxResults,
+            bool excludeNoiseDirectories,
+            CancellationToken ct)
+            => SearchAsync(directory, pattern, recursive, maxResults, ct)
+                .ContinueWith(
+                    t => new FileSearchProviderResult(
+                        t.Result,
+                        PuddingCode.Tools.Retrieval.RetrievalCoverage.Complete(),
+                        _skippedNoiseDirectories),
+                    ct);
 
         public string ProviderId { get; } = providerId;
         public string DisplayName => providerId;

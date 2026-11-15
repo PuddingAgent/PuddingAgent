@@ -26,6 +26,31 @@ public sealed class FileSearchBudgetTests
     }
 
     [TestMethod]
+    public async Task PrunedNoiseDirectories_AreReportedAsSkipped()
+    {
+        // 枚举阶段剪枝必须记账：上层要用这个数证明「磁盘上确实有、只是被策略挡住了」，
+        // 否则剪枝后会拿不到证据，把有匹配的目录谎报成 no_match。
+        var root = Path.Combine(Path.GetTempPath(), $"file-search-noiseskip-{Guid.NewGuid():N}");
+        var bin = Path.Combine(root, "bin");
+        Directory.CreateDirectory(bin);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(bin, "match.cs"), "");
+            var provider = new BuiltInRecursiveFileSearchProvider(
+                TimeProvider.System, TimeSpan.FromSeconds(10), 100);
+
+            var pruned = await provider.SearchWithCoverageAsync(root, "*.cs", true, 30, true, CancellationToken.None);
+            Assert.AreEqual(0, pruned.Paths.Count);
+            Assert.AreEqual(1, pruned.NoiseDirectoriesSkipped);
+
+            var kept = await provider.SearchWithCoverageAsync(root, "*.cs", true, 30, false, CancellationToken.None);
+            Assert.AreEqual(1, kept.Paths.Count);
+            Assert.AreEqual(0, kept.NoiseDirectoriesSkipped);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [TestMethod]
     public async Task TimeBudgetReturnsTimeout_AndPreservesMatches()
     {
         var root = Path.Combine(Path.GetTempPath(), $"file-search-deadline-{Guid.NewGuid():N}");
