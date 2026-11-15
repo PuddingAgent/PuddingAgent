@@ -12,6 +12,19 @@ namespace PuddingRuntimeTests.Tools;
 [TestClass]
 public sealed class SearchGrepToolTests
 {
+    // 描述是模型选参数时唯一可见的信息：max_results 的默认值与硬顶不写进描述，
+    // 模型就只能靠「撞上上限」才学得到（2026-11-16 夹取族审计）。
+    [TestMethod]
+    public void Descriptor_Documents_MaxResults_Default_And_Ceiling()
+    {
+        var tool = new SearchGrepTool(
+            NullLogger<SearchGrepTool>.Instance,
+            new StubFullTextSearchEngine(false, new FullTextSearchResult(false, [], null, 0, 0)));
+
+        StringAssert.Contains(tool.Descriptor.Description, "max_results 默认 20");
+        StringAssert.Contains(tool.Descriptor.Description, "上限 200");
+    }
+
     [TestMethod]
     public async Task ExecuteAsync_Uses_Lucene_Index_When_Available()
     {
