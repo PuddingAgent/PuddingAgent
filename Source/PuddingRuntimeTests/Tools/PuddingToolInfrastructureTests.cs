@@ -1184,6 +1184,27 @@ public sealed partial class PuddingToolInfrastructureTests
         Assert.IsNotNull(registry.GetTool("receive_messages"));
     }
 
+    // 回信额度按 run 记账，账本随 SendMessageTool 实例存在。注册若是 Transient/Scoped，
+    // 每次调用（或每个 scope）都会拿到新账本，额度永远从 8 起算 ⇒ 护栏静默失效，
+    // 而调用方从回执上看不出任何区别。这里用「两个独立 scope 解析同一个实例」来守这条不变量。
+    [TestMethod]
+    public void SendMessageTool_Is_A_Singleton_So_The_Per_Run_Reply_Budget_Accumulates()
+    {
+        var services = new ServiceCollection();
+        services.AddPuddingAgentTool<SendMessageTool>();
+        services.AddPuddingToolRegistry();
+
+        using var provider = services.BuildServiceProvider();
+        using var scopeA = provider.CreateScope();
+        using var scopeB = provider.CreateScope();
+
+        var first = scopeA.ServiceProvider.GetRequiredService<SendMessageTool>();
+        var second = scopeB.ServiceProvider.GetRequiredService<SendMessageTool>();
+
+        Assert.AreSame(first, second,
+            "a transient or scoped tool would give every call a fresh reply budget");
+    }
+
     [TestMethod]
     public void ServiceCollectionExtension_Registers_MemoryToolHandlers_For_ManageMemoryTool()
     {
