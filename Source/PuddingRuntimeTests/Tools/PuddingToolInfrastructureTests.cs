@@ -1132,6 +1132,66 @@ public sealed partial class PuddingToolInfrastructureTests
         }
     }
 
+    // 递归模式下同样只用「多探一条」判截断：子目录里多出来的那一条不得泄到输出，
+    // 也不得把恰好 N 条的递归结果误判成截断。
+    [TestMethod]
+    public async Task ListDirectoryTool_Recursive_Truncation_Uses_The_Same_PlusOne_Probe()
+    {
+        var root = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "temp",
+            "list-dir-recursive-cap-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "a.txt"), "a");
+            await File.WriteAllTextAsync(Path.Combine(root, "b.txt"), "b");
+            var sub = Path.Combine(root, "sub");
+            Directory.CreateDirectory(sub);
+            await File.WriteAllTextAsync(Path.Combine(sub, "c.txt"), "c");
+            await File.WriteAllTextAsync(Path.Combine(sub, "d.txt"), "d");
+
+            // 递归共 5 条：a.txt / b.txt / sub / sub\c.txt / sub\d.txt。
+            var tool = new ListDirectoryTool();
+            var context = new ToolExecutionContext
+            {
+                WorkspaceId = "workspace",
+                SessionId = "session",
+                AgentInstanceId = "agent",
+                WorkingDirectory = root,
+            };
+
+            var exact = await tool.ExecuteAsync(new ToolExecutionRequest
+            {
+                ToolCallId = "list-recursive-exact",
+                ArgumentsJson = """{"path":".","recursive":true,"max_entries":5}""",
+                Context = context,
+            });
+
+            Assert.IsTrue(exact.Success, exact.Error);
+            StringAssert.Contains(exact.Output, "\"Count\":5", "递归 5 条应全部返回");
+            StringAssert.Contains(
+                exact.Output,
+                "\"Truncated\":false",
+                "递归结果恰好等于上限时没有任何条目被丢，不得报截断");
+
+            var over = await tool.ExecuteAsync(new ToolExecutionRequest
+            {
+                ToolCallId = "list-recursive-over",
+                ArgumentsJson = """{"path":".","recursive":true,"max_entries":4}""",
+                Context = context,
+            });
+
+            Assert.IsTrue(over.Success, over.Error);
+            StringAssert.Contains(over.Output, "\"Count\":4", "超出上限时只返回前 4 条");
+            StringAssert.Contains(over.Output, "\"Truncated\":true", "递归下确实还有第 5 条时必须报截断");
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
     // 通道必须被文档化，否则模型无从得知。
     [TestMethod]
     public void ListDirectoryTool_Descriptor_Documents_Noise_Opt_In_And_MaxEntries()
