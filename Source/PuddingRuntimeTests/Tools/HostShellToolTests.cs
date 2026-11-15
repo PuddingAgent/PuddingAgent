@@ -202,13 +202,13 @@ public sealed class HostShellToolTests
             descriptor.Parameters.Properties.Select(p => p.Name).ToArray());
     }
 
-    // 2026-11-14 不变量：提示里只能点名子代理一定已加载的工具。
-    // 子代理预加载集 = SubAgentTool.PreloadToolIds（file_read / file_search / search_grep）；
-    // CoreToolIds 不含 list_dir，所以旧版对 dir 推荐 list_dir 的提示是拿不到的。
+    // 2026-11-15 更正：子代理默认工具面 = PuddingCode.Platform.ToolProfileConfig.SubAgent
+    // （含 list_dir / code_outline / shell 等），只有调用方显式传 tools 时才收窄。
+    // 因此提示只要落在该集合内就可执行；集合从单一真源取，避免硬编码副本腐烂。
     [TestMethod]
-    public void ShellTip_OnlyNamesToolsTheSubAgentAlwaysHas()
+    public void ShellTip_OnlyNamesToolsInTheSubAgentProfile()
     {
-        var alwaysLoaded = new[] { "file_read", "file_search", "search_grep" };
+        var subAgentTools = PuddingCode.Platform.ToolProfileConfig.SubAgent;
         var triggers = new[]
         {
             "select-string foo", "grep -n foo", "findstr foo", "rg foo",
@@ -226,23 +226,24 @@ public sealed class HostShellToolTests
             Assert.IsTrue(named.Length > 0, $"'{command}' 的提示未点名任何工具：{tip}");
             foreach (var name in named)
             {
-                CollectionAssert.Contains(
-                    alwaysLoaded,
-                    name,
-                    $"'{command}' 的提示点名了子代理可能未加载的工具 '{name}'（提示无法执行）：{tip}");
+                Assert.IsTrue(
+                    subAgentTools.Contains(name),
+                    $"'{command}' 的提示点名了不在子代理工具面内的工具 '{name}'（提示无法执行）：{tip}");
             }
         }
     }
 
-    // 反证：旧实现在 dir 上点名 list_dir。这条专门锁住那次回归。
+    // 2026-11-15 反转：2026-11-14 那条「不得点名 list_dir」建立在错误前提上
+    // （list_dir 本就可达，实跑里子代理直接调用成功并拿到 152 KB 结果）。
+    // 现改为要求 dir 推荐 list_dir，同时保留 file_search 作为「目录 + 模式」建议。
     [TestMethod]
-    public void ShellTip_Dir_DoesNotRecommendListDir()
+    public void ShellTip_Dir_RecommendsListDir_AndFileSearch()
     {
         var tip = HostShellTool.BuildSpecializedToolTip("dir /s /b Source\\*.csproj");
 
         Assert.IsNotNull(tip);
+        StringAssert.Contains(tip, "list_dir");
         StringAssert.Contains(tip, "file_search");
-        Assert.IsFalse(tip.Contains("list_dir"), $"list_dir 不在子代理预加载集，不得点名：{tip}");
     }
 
     // 正向对照：不匹配任何专用工具的命令不发提示（不能为了覆盖率一律加）。

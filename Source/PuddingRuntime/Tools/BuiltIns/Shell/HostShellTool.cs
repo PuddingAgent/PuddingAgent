@@ -115,11 +115,14 @@ public sealed class HostShellTool : PuddingToolBase<HostShellToolArgs>
     /// <summary>
     /// 根据命令首词追加「下次用专用工具」提示。
     /// <para>
-    /// 2026-11-14 不变量：提示里只能点名「子代理一定已加载」的工具，
-    /// 即 <c>SubAgentTool</c> 的 <c>PreloadToolIds</c> 三元集（file_read / file_search / search_grep）。
-    /// 旧版对 <c>dir</c> 推荐 <c>list_dir</c>，而 list_dir 既不在 CoreToolIds、也不在子代理预加载集，
-    /// 于是那句提示指向一个当时拿不到的工具（要先用 search_tools 装载才能用）——提示等于无效。
-    /// 改成 file_search：它在预加载集里，且 (directory + pattern) 同样能列目录。
+    /// 2026-11-15 更正（推翻 2026-11-14 的旧说明）：
+    /// 子代理的默认工具面不是「PreloadToolIds 三元集」，而是 <c>ToolProfileConfig.SubAgent</c>
+    /// （含 list_dir / code_outline / shell 等）；只有调用方显式传 tools 时才收窄。
+    /// 旧注释称「list_dir 既不在 CoreToolIds、也不在子代理预加载集」是错的——实跑里子代理
+    /// 直接调到了 list_dir 并拿到 152 KB 结果（run_20261115_020749 之前的 ace9d229 那次）。
+    /// 因此 dir → list_dir 的提示本就可执行，本方法恢复该映射，并同时点名 file_search
+    /// 供「目录 + 模式」列举使用。回归测试改为从 <c>ToolProfileConfig.SubAgent</c> 这个单一真源
+    /// 取集合，不再维护一份会腐烂的硬编码三元集。
     /// internal 以便单测直接验证（沿用本仓 InternalsVisibleTo 约定）。
     /// </para>
     /// </summary>
@@ -131,7 +134,7 @@ public sealed class HostShellTool : PuddingToolBase<HostShellToolArgs>
             "select-string" or "sls" or "grep" or "findstr" or "rg" =>
                 "Tip: use `search_grep` next time — regex content search with clean output and no quoting pitfalls.",
             "get-childitem" or "gci" or "dir" or "ls" =>
-                "Tip: use `file_search` next time (directory + pattern) — structured, pageable results without table-format noise.",
+                "Tip: use `list_dir` next time (single directory) or `file_search` (directory + pattern) — structured, noise-filtered results without table-format noise.",
             "get-content" or "gc" or "cat" or "type" =>
                 "Tip: use `file_read` next time — line-windowed reads with offset/limit and stable metadata.",
             "test-path" =>
