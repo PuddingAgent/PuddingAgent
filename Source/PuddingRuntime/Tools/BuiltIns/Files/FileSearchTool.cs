@@ -163,6 +163,11 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             var output = BuildSearchOutput(results, fallbackFrom, providerId, fallbackReason);
             if (noise.Dropped > 0)
                 output = BuildNoiseNote(noise.Dropped) + Environment.NewLine + output;
+            // provider 清单滞后不是覆盖缺口（差分已补齐 ⇒ Complete），但滞后本身必须披露：
+            // 不披露会让 Everything 索引过期变得不可见。仍前置，避免 spill 吃尾。
+            var lagNote = BuildProviderLagNote(coverage);
+            if (lagNote is not null)
+                output = lagNote + Environment.NewLine + output;
             // ADR-089 U0-S3：覆盖声明单点产出，且仅非 Complete 时出现（对齐 U0-S2 SearchGrepTool
             // 惯例：Complete = 无声明行 + status ok/no_match）；同一声明恰好一次（U0-S2 教训见 ff79f3b）。
             // 覆盖声明必须出现在结果首行：结果超过内联上限被 spill 时模型只看到前缀，
@@ -280,6 +285,20 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
         $"(noise: dropped {dropped} path(s) under build/dependency directories such as bin, obj, node_modules, .git; " +
         "pass include_noise_dirs=true to include them)";
 
+    /// <summary>
+    /// provider 清单滞后声明：差分枚举已按磁盘补齐，覆盖状态是 Complete（所以不是覆盖声明），
+    /// 但“主 provider 漏了子文件”这个事实不披露就不可见。返回 null 表示无滞后。
+    /// </summary>
+    private static string? BuildProviderLagNote(RetrievalCoverage coverage)
+    {
+        if (!coverage.IsComplete)
+            return null;
+
+        var gap = coverage.Reasons.FirstOrDefault(
+            r => r.StartsWith("everything manifest missed", StringComparison.Ordinal));
+        return gap is null ? null : "(provider lag: " + gap + ")";
+    }
+
     private static readonly JsonSerializerOptions IndentedPathsJson = new() { WriteIndented = true };
 
     private static string BuildSearchOutput(
@@ -394,9 +413,13 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
         var missedCount = mergedPaths
             .Except(primary.Paths, StringComparer.OrdinalIgnoreCase)
             .Count();
+        // 2026-11-15：provider 清单滞后不是「覆盖缺口」。差分枚举已自然完成并按磁盘补齐，并集即该 scope
+        // 的事实全集；此处报 Partial 会让 BuildResultStatus 输出 truncated，模型据此以为结果不全而重复
+        // 搜索（实跑：pattern=FileSearch*.cs 命中 3 条却报 partial）。滞后事实保留在结构化
+        // Coverage.Reasons 里供诊断读取，但不再作为覆盖缺口上报。
         return missedCount > 0
-            ? (mergedPaths, RetrievalCoverage.Partial(
-                $"everything manifest missed {missedCount} file(s) present on disk; differential enumeration added them"))
+            ? (mergedPaths, RetrievalCoverage.Complete(
+                [$"everything manifest missed {missedCount} file(s) present on disk; differential enumeration added them"]))
             : (mergedPaths, RetrievalCoverage.Complete(
                 ["everything manifest verified against on-disk enumeration"]));
     }

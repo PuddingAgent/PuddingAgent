@@ -17,7 +17,8 @@ namespace PuddingRuntimeTests.Tools;
 public sealed class FileSearchToolTests
 {
     // T1（设计 L128 核心门禁）：Everything 清单故意漏掉磁盘上真实存在的新文件时，
-    // 差分补足必须找回该文件，且不得误报 no_match，覆盖状态非 Complete。
+    // 差分补足必须找回该文件，且不得误报 no_match。补足后并集即该 scope 的事实全集，
+    // 所以覆盖状态是 Complete；但滞后本身必须单独披露（它不是覆盖缺口）。
     [TestMethod]
     public async Task Everything_Manifest_Missing_NewFile_Is_Recovered_By_Differential_Enumeration()
     {
@@ -44,8 +45,12 @@ public sealed class FileSearchToolTests
             StringAssert.Contains(result.Output, "brand-new-file.txt", "differential enumeration must recover the missed file");
             StringAssert.Contains(result.Output, "indexed-file.txt");
             Assert.AreNotEqual(ToolResultStatuses.NoMatch, result.Status, "missing new file must NOT be reported as no_match");
-            StringAssert.Contains(result.Output, "missed 1 file", "coverage note must disclose the detected manifest gap");
-            Assert.AreEqual(1, CountOccurrences(result.Output, "(coverage: partial"), "coverage note must appear exactly once");
+            StringAssert.Contains(result.Output, "missed 1 file", "the provider gap must still be disclosed");
+            Assert.AreEqual(1, CountOccurrences(result.Output, "(provider lag:"), "provider lag note must appear exactly once");
+            Assert.AreEqual(0, CountOccurrences(result.Output, "(coverage:"),
+                "a gap the differential enumeration completed is not a coverage deficit");
+            Assert.AreEqual(ToolResultStatuses.Ok, result.Status,
+                "completed coverage reports ok, not truncated");
             Assert.AreEqual(1, builtIn.SearchCallCount, "differential enumeration must run for unverifiable manifest");
         }
         finally
