@@ -157,19 +157,25 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         // 与 cancel / logs 同样放在 task 解析之前：按 sub_agent_id 定位，不依赖 task，也不依赖 pool_name。
         if (string.Equals(args.PoolAction?.Trim(), "steer", StringComparison.OrdinalIgnoreCase))
         {
-            var steerManager = _services.GetService<ISubAgentManager>();
-            if (steerManager is null)
-                return Fail("? ISubAgentManager 服务未注册。");
-
+            // 2026-11-15：参数校验前置到服务解析之前。
+            // 校验不需要服务实例，而先解析会让测试容器里的“服务未注册”提前返回，
+            // 把后面的参数错误全部遮住（旧的 reachability 用例就是这样碰巧通过的）。
             var steerTarget = args.SubAgentId?.Trim();
             if (string.IsNullOrWhiteSpace(steerTarget))
                 return Fail("给子代理发消息需要 sub_agent_id。先用 query_sub_agents 列出运行中的子代理及其 id。");
 
-            var steerText = GetStringProp(json, "message")
-                         ?? GetStringProp(json, "steer_message")
+            var steerText = GetStringProp(json, "steer_message")
+                         ?? GetStringProp(json, "message")
                          ?? args.SteerMessage;
             if (string.IsNullOrWhiteSpace(steerText))
-                return Fail("给子代理发消息需要 message（要注入的正文）。");
+                // 错误必须点名**工具 schema 里真实存在**的参数名：
+                // spawn_sub_agent 只声明 steer_message，写成 message 会让模型照提示传一个被丢弃的参数，
+                // 于是看到同一条错误再来一次，形成死循环（2026-11-15 实测踩到）。
+                return Fail("给子代理发消息需要 steer_message（要注入的正文）。");
+
+            var steerManager = _services.GetService<ISubAgentManager>();
+            if (steerManager is null)
+                return Fail("? ISubAgentManager 服务未注册。");
 
             var steered = await steerManager.SteerAsync(
                 steerTarget, steerText!.Trim(), context.AgentInstanceId, ct);
@@ -1593,7 +1599,7 @@ public sealed record SubAgentToolArgs
     /// list(列出池状态), cleanup, cleanup-bulk, cancel(取消一个运行中的子代理)。
     /// cancel 不需要 pool_name，按 sub_agent_id 定位。
     /// </summary>
-    [ToolParam("池操作: create, execute(默认), destroy, sleep, list, cleanup, cleanup-bulk, cancel(取消运行中的子代理，需 sub_agent_id), logs(查看子代理事件与工具调用尾部，需 sub_agent_id), steer(给运行中的子代理发一条消息，需 sub_agent_id 与 message)")]
+    [ToolParam("池操作: create, execute(默认), destroy, sleep, list, cleanup, cleanup-bulk, cancel(取消运行中的子代理，需 sub_agent_id), logs(查看子代理事件与工具调用尾部，需 sub_agent_id), steer(给运行中的子代理发一条消息，需 sub_agent_id 与 steer_message)")]
     public string? PoolAction { get; init; }
 
     /// <summary>logs 动作返回的尾部条数（事件与工具调用各自取最后 N 条）。</summary>

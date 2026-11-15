@@ -235,6 +235,35 @@ public sealed class SubAgentToolTaskPlanningTests
             $"steer must be reachable before task validation; got: {result.Error}");
     }
 
+    // 2026-11-15：steer 缺正文时，错误必须点名工具 schema 里**真实声明过**的参数名。
+    // 旧提示写 message，而 spawn_sub_agent 只声明 steer_message ⇒ 模型照提示传一个被参数绑定丢弃的值，
+    // 只能看到同一条错误再来一次，永远修不好（本轮一次真实调用失败暴露）。
+    [TestMethod]
+    public async Task ExecuteAsync_SteerWithoutMessage_NamesTheDeclaredParameter()
+    {
+        var invocation = new RecordingSubAgentInvocationService { NextStatus = "completed" };
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2));
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+
+        var result = await tool.ExecuteAsync(CreateRequest(
+            """{"pool_action":"steer","sub_agent_id":"sub-x"}"""));
+
+        Assert.IsFalse(result.Success);
+        // 先断言顺序：参数校验必须先于服务解析，否则测试容器里“服务未注册”会提前返回，
+        // 把参数错误全部遮住（旧的 reachability 用例就是这样碰巧通过的）。
+        // 两条断言刻意分守两件事且顺序固定：变异“错误文案写错”只能打红第二条，
+        // 变异“校验放在解析之后”只能打红第一条，两者不会互相代偿。
+        Assert.IsFalse(
+            result.Error?.Contains("服务未注册", StringComparison.Ordinal) ?? false,
+            $"argument validation must run before service resolution; got: {result.Error}");
+        Assert.IsTrue(
+            result.Error?.Contains("steer_message", StringComparison.Ordinal) ?? false,
+            $"steer must name the declared parameter steer_message; got: {result.Error}");
+    }
+
     // 2026-11-14：未显式指定时继承父代理 cwd。
     // 旧行为回落到工作区根，子代理的相对路径全部失效（§九实测）。
     [TestMethod]
