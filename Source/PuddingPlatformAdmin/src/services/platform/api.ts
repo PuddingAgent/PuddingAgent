@@ -1048,6 +1048,10 @@ export async function synthesizeTts(params: {
 
 // ─── ASR Voice Recognition API ────────────────────────────────────
 
+export async function requestAsrTicket(signal?: AbortSignal): Promise<{ ticket: string }> {
+  return (await requestVoice('/api/voice/asr/ticket', '{}', signal)).json();
+}
+
 export async function recognizeAsr(audioBlob: Blob, signal?: AbortSignal): Promise<{ text: string; emotion?: string }> {
   const form = new FormData();
   form.append('audio', audioBlob, 'recording.wav');

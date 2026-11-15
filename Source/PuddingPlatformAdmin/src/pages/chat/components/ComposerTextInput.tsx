@@ -50,6 +50,7 @@ export interface ComposerTextInputProps {
   /** 非面板/非组合按键透传（Enter 发送等归 ChatPage）。 */
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onFocusChange?: (focused: boolean) => void;
+  onCompositionBegin?: () => void;
   /** 空↔非空翻转时回调（仅翻转，不逐键）。 */
   onHasTextChange?: (hasText: boolean) => void;
   /** Enter（无 shift）且存在待发图片时消费按键（图片上传发送流）。 */
@@ -97,6 +98,7 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
       onInputChange,
       onKeyDown,
       onFocusChange,
+      onCompositionBegin,
       onHasTextChange,
       onEnterWithImages,
       hasPendingImages,
@@ -131,6 +133,7 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
         setValue: (v: string) => {
           isTextComposingRef.current = false;
           lastLiftedRef.current = v;
+          draftValueRef.current = v;
           setDraftValue(v);
           onInputChange(v);
           if (!v.trim()) {
@@ -233,7 +236,8 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
 
     const handleCompositionStart = useCallback(() => {
       isTextComposingRef.current = true;
-    }, []);
+      onCompositionBegin?.();
+    }, [onCompositionBegin]);
 
     const handleCompositionEnd = useCallback(
       (e: React.CompositionEvent<HTMLTextAreaElement>) => {
@@ -388,7 +392,7 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
     return (
       <>
         <Input.TextArea
-          ref={textareaRef as never}
+          ref={(instance) => { textareaRef.current = instance?.resizableTextArea?.textArea ?? null; }}
           value={draftValue}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}

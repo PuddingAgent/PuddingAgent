@@ -5,15 +5,23 @@ using PuddingSpeech;
 namespace PuddingRuntime.Services;
 
 /// <summary>Maps the independently tested protocol into the existing neutral transcription port.</summary>
-public sealed class QwenMessageAsrProvider(PuddingVoiceProviderConfig config) : IAsrHttpRecognizer
+public sealed class QwenMessageAsrProvider(PuddingVoiceProviderConfig config) : IAsrHttpRecognizer, IStreamingSpeechRecognizer
 {
+    public IAsyncEnumerable<TranscriptSegment> RecognizePcmAsync(IAsyncEnumerable<ReadOnlyMemory<byte>> audio,
+        string? language = null, CancellationToken ct = default) => CreateClient().RecognizePcmAsync(audio, language, ct);
+
+    private QwenAsr CreateClient()
+    {
+        var endpoint = new UriBuilder(new Uri(config.Endpoint))
+        { Scheme = "wss", Port = -1, Path = "/api-ws/v1/inference", Query = "" }.Uri;
+        return new(token => ClientSpeechSocket.ConnectAsync(endpoint, config.ApiKey, token));
+    }
+
     public async Task<AsrRecognizeResult> RecognizeAsync(byte[] audioData, string format, string? language, CancellationToken ct)
     {
         if (!string.Equals(format, "wav", StringComparison.OrdinalIgnoreCase))
             throw new SpeechFailure("voice_unsupported_audio", "请使用 PCM WAV 格式录音。", 415);
-        var origin = new Uri(config.Endpoint);
-        var endpoint = new UriBuilder(origin) { Scheme = "wss", Port = -1, Path = "/api-ws/v1/inference", Query = "" }.Uri;
-        var client = new QwenAsr(token => ClientSpeechSocket.ConnectAsync(endpoint, config.ApiKey, token));
+        var client = CreateClient();
         var sentences = new SortedDictionary<int, string>();
         try
         {

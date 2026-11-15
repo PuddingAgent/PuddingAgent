@@ -307,6 +307,9 @@ per-key 连续 deferred 计数与退避档属 Agent 侧诊断（`classifier_stat
 | `Services/AudioTranscriptionService.cs` | 音频转录 | `AudioTranscriptionService` | `Services/AudioArtifactStorageService.cs` | — |
 | `Services/VoiceSynthesisService.cs` | 语音合成 | `VoiceSynthesisService` | `Services/AudioArtifactStorageService.cs` | — |
 | `Controllers/Api/VoiceController.cs` | 统一录音识别、完整/流式合成与能力查询 | `VoiceController` | `Services/AudioTranscriptionService.cs`、`Services/VoiceSynthesisService.cs` | 不从业务请求选 Provider；识别前校验真实 PCM WAV；流式音频与终态独立 |
+| `Controllers/Api/RealtimeVoiceController.cs` | 实时录音的授权与 WS 入口 | `RealtimeVoiceController` | `Services/VoiceStreamTicketStore.cs`、`Services/WebSocketSpeechPeer.cs` | JWT POST 发 30 秒一次性凭证；首帧消费、同源检查；凭证不进 URL；停止排空与取消分离 |
+| `Services/RealtimeAudioTranscriptionService.cs` | 冻结默认语音路由并解析实时能力 | `IStreamingSpeechRecognizer` | `../PuddingSpeech/RealtimeAsrSession.cs` | 不按供应商名称分支；无流式能力明确失败；[接入测试](../PuddingPlatformTests/Services/RealtimeVoiceTests.cs) |
+| `Services/WebSocketSpeechPeer.cs` | 浏览器中立实时协议的分帧与事件投影 | `IRealtimeSpeechPeer` | `Services/VoiceStreamTicketStore.cs` | 有界消息、PCM 二进制、finish/cancel；发送串行；只记录安全 code/errorId |
 | `Controllers/Api/VoiceFailureAttribute.cs` | 语音错误的 HTTP 边界 | `VoiceFailureAttribute` | `../PuddingSpeech/SpeechFailure.cs` | 上游额度/凭据错误不冒充 Pudding 登录失败；脱敏 code/message/errorId |
 
 ## 提供商配置

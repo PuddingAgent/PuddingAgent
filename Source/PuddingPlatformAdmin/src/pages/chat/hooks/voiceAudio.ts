@@ -1,6 +1,16 @@
 export const RECORDING_SAMPLE_RATE = 16000;
 export const MAX_RECORDING_SECONDS = 120;
 
+export function encodePcm16(samples: Float32Array): ArrayBuffer {
+  const bytes = new ArrayBuffer(samples.length * 2);
+  const view = new DataView(bytes);
+  for (let i = 0; i < samples.length; i++) {
+    const sample = Math.min(1, Math.max(-1, samples[i]));
+    view.setInt16(i * 2, sample < 0 ? sample * 32768 : sample * 32767, true);
+  }
+  return bytes;
+}
+
 export function encodeWave(chunks: Float32Array[]): Blob {
   const count = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const buffer = new ArrayBuffer(44 + count * 2);

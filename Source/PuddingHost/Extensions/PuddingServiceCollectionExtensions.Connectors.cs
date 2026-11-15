@@ -256,6 +256,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<PuddingCode.Abstractions.IVoiceProviderFactory, PuddingRuntime.Services.VoiceProviderFactory>();
         builder.Services.AddSingleton<PuddingCode.Abstractions.IVoiceSynthesisService, PuddingPlatform.Services.VoiceSynthesisService>();
         builder.Services.AddSingleton<PuddingCode.Abstractions.IAudioTranscriptionService, PuddingPlatform.Services.AudioTranscriptionService>();
+        builder.Services.AddSingleton<PuddingPlatform.Services.RealtimeAudioTranscriptionService>();
+        builder.Services.AddSingleton<PuddingPlatform.Services.VoiceStreamTicketStore>();
         builder.Services.AddSingleton<PuddingCode.Abstractions.IAudioTranscoder, PuddingRuntime.Services.ManagedOggOpusTranscoder>();
 
     }

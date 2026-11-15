@@ -67,14 +67,16 @@ public sealed class VoiceController : ControllerBase
     }
 
     [HttpGet("capabilities")]
-    public async Task<IActionResult> Capabilities([FromServices] VoiceProviderFileService voiceService, CancellationToken ct)
+    public async Task<IActionResult> Capabilities([FromServices] VoiceProviderFileService voiceService,
+        [FromServices] RealtimeAudioTranscriptionService realtime, CancellationToken ct)
     {
         var config = await voiceService.LoadAsync(ct);
         var asr = config.Providers.FirstOrDefault(p => p.IsEnabled && p.ProviderId == config.DefaultAsrProviderId);
         var tts = config.Providers.FirstOrDefault(p => p.IsEnabled && p.ProviderId == config.DefaultTtsProviderId);
         return Ok(new { canRecognize = asr?.AsrModels.Any(m => m.ModelId == config.DefaultAsrModelId) == true,
             canSynthesize = tts?.TtsModels.Any(m => m.ModelId == config.DefaultTtsModelId) == true,
-            maxRecordingSeconds = 120, recordingFormat = "wav", sampleRate = 16000 });
+            canStreamRecognize = await realtime.IsAvailableAsync(ct),
+            maxRecordingSeconds = 120, recordingFormat = "wav", streamingFormat = "pcm", sampleRate = 16000 });
     }
 
     [HttpPost("tts/stream")]

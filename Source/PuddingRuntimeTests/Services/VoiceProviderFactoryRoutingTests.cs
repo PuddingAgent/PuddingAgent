@@ -19,5 +19,6 @@ public sealed class VoiceProviderFactoryRoutingTests
                 AsrModels = [new PuddingAsrModelConfig { ModelId = "qwen-audio-3.1-asr-flash-message", IsDefault = true }] }],
         };
         Assert.IsInstanceOfType<QwenMessageAsrProvider>(factory.CreateAsrProvider(config));
+        Assert.IsInstanceOfType<PuddingSpeech.IStreamingSpeechRecognizer>(factory.CreateAsrProvider(config));
     }
 }

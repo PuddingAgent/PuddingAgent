@@ -98,7 +98,6 @@ describe('VoiceConversationPanel', () => {
         '整理今天的会议记录，并列出行动项。',
         expect.objectContaining({
           inputMode: 'voice',
-          asrProvider: 'browser',
           language: 'zh-CN',
         }),
       );
@@ -111,7 +110,7 @@ describe('VoiceConversationPanel', () => {
       'completed',
       expect.any(Object),
     );
-    expect(voice.handle.stop).toHaveBeenCalledTimes(1);
+    expect(voice.handle.stop).not.toHaveBeenCalled(); // A completed provider callback must not send another finish.
   });
 
   it('speaks the latest assistant answer and can stop playback', async () => {

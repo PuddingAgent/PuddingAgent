@@ -1,11 +1,10 @@
-import { recognizeAsr } from '@/services/platform/api';
+import { connectRealtimeAsr } from '@/services/platform/realtimeAsr';
 import { createVoiceInputAdapter } from './cloudVoiceInput';
 
-jest.mock('@/services/platform/api', () => ({ recognizeAsr: jest.fn() }));
+jest.mock('@/services/platform/realtimeAsr', () => ({ connectRealtimeAsr: jest.fn() }));
 
-describe('cloud voice capture completion and cancellation', () => {
-  let port: any;
-  let track: any;
+describe('live capture, completion and cancellation', () => {
+  let port: any; let track: any; let callbacks: any; let connection: any;
   const previousContext = globalThis.AudioContext;
   const previousNode = globalThis.AudioWorkletNode;
   const previousMedia = navigator.mediaDevices;
@@ -22,32 +21,42 @@ describe('cloud voice capture completion and cancellation', () => {
     };
     (globalThis as any).AudioWorkletNode = class {
       port = { onmessage: null as any, postMessage: () => queueMicrotask(() => this.port.onmessage({ data: 'finished' })) };
-      connect = jest.fn(); disconnect = jest.fn();
-      constructor() { port = this.port; }
+      connect = jest.fn(); disconnect = jest.fn(); constructor() { port = this.port; }
     };
-    (recognizeAsr as jest.Mock).mockReset();
+    connection = { sendAudio: jest.fn(), finish: jest.fn(), cancel: jest.fn() };
+    (connectRealtimeAsr as jest.Mock).mockImplementation(async (handlers: any) => { callbacks = handlers; return connection; });
   });
   afterEach(() => {
     (globalThis as any).AudioContext = previousContext; (globalThis as any).AudioWorkletNode = previousNode;
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: previousMedia });
   });
-  it('cancel releases the microphone and never submits recognition', async () => {
-    const final = jest.fn();
-    const handle = await createVoiceInputAdapter().start({ onFinalTranscript: final });
-    port.onmessage({ data: new Float32Array(200) });
-    handle.cancel(); handle.stop(); await Promise.resolve();
-    expect(track.stop).toHaveBeenCalled(); expect(recognizeAsr).not.toHaveBeenCalled(); expect(final).not.toHaveBeenCalled();
+  it('uploads PCM while recording and delivers intermediate text before stop', async () => {
+    const transcript = jest.fn(); const final = jest.fn();
+    const handle = await createVoiceInputAdapter().start({ onTranscript: transcript, onFinalTranscript: final });
+    port.onmessage({ data: new Float32Array([0.5, -0.5]) });
+    expect(connection.sendAudio).toHaveBeenCalledTimes(1); expect(connection.finish).not.toHaveBeenCalled();
+    expect(Array.from(new Int16Array(connection.sendAudio.mock.calls[0][0]))).toEqual([16383, -16384]);
+    callbacks.onTranscript('临时', ''); expect(transcript).toHaveBeenCalledWith('临时', '');
+    handle.stop(); await Promise.resolve(); await Promise.resolve();
+    expect(track.stop).toHaveBeenCalled(); expect(connection.finish).toHaveBeenCalledTimes(1);
+    expect(final).not.toHaveBeenCalled(); callbacks.onCompleted('确认。'); expect(final).toHaveBeenCalledWith('确认。');
   });
-  it('waits for the actual HTTP completion and ignores a late result after cancellation', async () => {
-    let resolve!: (value: any) => void;
-    (recognizeAsr as jest.Mock).mockReturnValue(new Promise((done) => { resolve = done; }));
-    const final = jest.fn();
-    const handle = await createVoiceInputAdapter().start({ onFinalTranscript: final });
-    port.onmessage({ data: new Float32Array(200) }); handle.stop();
-    await Promise.resolve(); await Promise.resolve();
-    expect(recognizeAsr).toHaveBeenCalled(); expect(final).not.toHaveBeenCalled();
-    const signal = (recognizeAsr as jest.Mock).mock.calls[0][1] as AbortSignal;
-    handle.cancel(); resolve({ text: 'late transcript' }); await Promise.resolve(); await Promise.resolve();
-    expect(signal.aborted).toBe(true); expect(final).not.toHaveBeenCalled();
+  it('cancel during drain closes the connection and ignores late text', async () => {
+    const final = jest.fn(); const transcript = jest.fn();
+    const handle = await createVoiceInputAdapter().start({ onFinalTranscript: final, onTranscript: transcript });
+    handle.stop(); await Promise.resolve(); handle.cancel(); callbacks.onCompleted('迟到'); callbacks.onTranscript('迟到', '');
+    expect(connection.cancel).toHaveBeenCalled(); expect(track.stop).toHaveBeenCalled();
+    expect(final).not.toHaveBeenCalled(); expect(transcript).not.toHaveBeenCalled();
+  });
+  it('cancels a microphone permission request even when the device arrives later', async () => {
+    let grant!: (stream: unknown) => void;
+    (navigator.mediaDevices.getUserMedia as jest.Mock).mockReturnValue(new Promise(resolve => { grant = resolve; }));
+    const controller = new AbortController(); const pending = createVoiceInputAdapter().start({}, controller.signal);
+    controller.abort(); grant({ getTracks: () => [track] }); await expect(pending).rejects.toThrow('录音已取消');
+    expect(track.stop).toHaveBeenCalled(); expect(connection.sendAudio).not.toHaveBeenCalled();
+  });
+  it('microphone disconnect releases the session and reports an actionable error', async () => {
+    const error = jest.fn(); await createVoiceInputAdapter().start({ onError: error }); track.onended();
+    expect(connection.cancel).toHaveBeenCalled(); expect(error).toHaveBeenCalledWith(expect.stringContaining('麦克风已断开'), undefined);
   });
 });

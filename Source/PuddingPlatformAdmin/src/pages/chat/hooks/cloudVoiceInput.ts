@@ -1,72 +1,83 @@
-import { recognizeAsr } from '@/services/platform/api';
+import { connectRealtimeAsr, type RealtimeAsrConnection } from '@/services/platform/realtimeAsr';
 import type { BrowserVoiceInputAdapter } from './browserVoiceInput';
-import { encodeWave, MAX_RECORDING_SECONDS, RECORDING_SAMPLE_RATE } from './voiceAudio';
+import { encodePcm16, MAX_RECORDING_SECONDS, RECORDING_SAMPLE_RATE } from './voiceAudio';
 
-/** Provider-neutral capture. Only Core knows which recognition model receives the audio. */
+/** Capture and live transcription share one cancellable lifetime. No full recording is retained. */
 export function createVoiceInputAdapter(): BrowserVoiceInputAdapter {
   return {
     isSupported: () => typeof globalThis.navigator?.mediaDevices?.getUserMedia === 'function'
       && typeof globalThis.AudioContext === 'function' && typeof globalThis.AudioWorkletNode === 'function',
-    async start(handlers) {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    async start(handlers, signal) {
       const controller = new AbortController();
-      const chunks: Float32Array[] = [];
+      let stream: MediaStream | undefined;
       let context: AudioContext | undefined;
       let source: MediaStreamAudioSourceNode | undefined;
       let node: AudioWorkletNode | undefined;
-      let cancelled = false;
+      let connection: RealtimeAsrConnection | undefined;
+      let ended = false;
       let finishing = false;
       let samples = 0;
       let finishResolve: (() => void) | undefined;
+      let flushTimer: ReturnType<typeof setTimeout> | undefined;
       const release = () => {
-        stream.getTracks().forEach((track) => track.stop());
+        stream?.getTracks().forEach((track) => track.stop());
         source?.disconnect(); node?.disconnect();
         if (context && context.state !== 'closed') void context.close().catch(() => {});
       };
-      const cancel = () => {
-        cancelled = true; controller.abort(); finishResolve?.(); chunks.length = 0; release();
-      };
+      const cleanup = () => { clearTimeout(flushTimer); finishResolve?.(); signal?.removeEventListener('abort', cancel); release(); };
+      const cancel = () => { if (ended) return; ended = true; connection?.cancel(); controller.abort(); cleanup(); };
+      const fail = (message: string, confirmed?: string) => { if (ended) return; cancel(); handlers.onError?.(message, confirmed); };
       const stop = () => {
-        if (finishing || cancelled) return;
-        finishing = true;
-        handlers.onTranscribing?.();
+        if (finishing || ended) return;
+        finishing = true; handlers.onTranscribing?.();
         void (async () => {
-          try {
-            await new Promise<void>((resolve) => { finishResolve = resolve; node!.port.postMessage('finish'); });
-            release();
-            if (cancelled) return;
-            if (!samples) throw new Error('没有录到声音，请靠近麦克风再试。');
-            const result = await recognizeAsr(encodeWave(chunks), controller.signal);
-            if (!cancelled) handlers.onFinalTranscript?.(result.text);
-          } catch (error) {
-            if (!cancelled) handlers.onError?.(error instanceof Error ? error.message : '语音识别失败，请重试。');
-          } finally { chunks.length = 0; release(); }
+          await new Promise<void>((resolve) => {
+            finishResolve = resolve;
+            flushTimer = setTimeout(() => fail('录音设备未能完成收尾，请重新录音。'), 2000);
+            node!.port.postMessage('finish');
+          });
+          clearTimeout(flushTimer); release();
+          if (!ended) connection!.finish();
         })();
       };
+      signal?.addEventListener('abort', cancel, { once: true });
       try {
+        if (signal?.aborted) throw new DOMException('录音已取消', 'AbortError');
+        stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+        if (ended) { release(); throw new DOMException('录音已取消', 'AbortError'); }
         context = new AudioContext({ sampleRate: RECORDING_SAMPLE_RATE });
         if (context.sampleRate !== RECORDING_SAMPLE_RATE) throw new Error('当前设备不支持 16 kHz 录音，请更换麦克风。');
         await context.resume();
         const base = window.location.pathname.startsWith('/admin') ? '/admin/' : '/';
         await context.audioWorklet.addModule(`${base}audio/pcm-capture.js`);
+        if (controller.signal.aborted) throw new DOMException('录音已取消', 'AbortError');
         source = context.createMediaStreamSource(stream);
         node = new AudioWorkletNode(context, 'pudding-pcm-capture');
+        connection = await connectRealtimeAsr({
+          onTranscript: (text, confirmed) => {
+            if (ended) return;
+            if (handlers.onTranscript) handlers.onTranscript(text, confirmed);
+            else handlers.onInterimTranscript?.(text);
+          },
+          onCompleted: (text) => { if (ended) return; ended = true; cleanup(); handlers.onFinalTranscript?.(text); },
+          onError: fail,
+        }, controller.signal);
+        if (ended) { connection.cancel(); throw new DOMException('录音已取消', 'AbortError'); }
         node.port.onmessage = ({ data }) => {
-          if (cancelled) return;
+          if (ended) return;
           if (data === 'finished') { finishResolve?.(); return; }
           const chunk = data as Float32Array;
-          const allowed = MAX_RECORDING_SECONDS * RECORDING_SAMPLE_RATE - samples;
-          const bounded = chunk.subarray(0, Math.max(0, allowed));
-          chunks.push(bounded); samples += bounded.length;
+          const bounded = chunk.subarray(0, Math.max(0, MAX_RECORDING_SECONDS * RECORDING_SAMPLE_RATE - samples));
+          if (!bounded.length) return;
+          samples += bounded.length;
+          connection!.sendAudio(encodePcm16(bounded));
           let energy = 0;
           for (const sample of bounded) energy += sample * sample;
-          handlers.onLevel?.(Math.min(1, Math.sqrt(energy / Math.max(1, bounded.length)) * 4), samples / RECORDING_SAMPLE_RATE);
+          handlers.onLevel?.(Math.min(1, Math.sqrt(energy / bounded.length) * 4), samples / RECORDING_SAMPLE_RATE);
           if (samples >= MAX_RECORDING_SECONDS * RECORDING_SAMPLE_RATE) stop();
         };
-        source.connect(node);
-        // The processor emits silence; connection keeps capture active in WebView2.
-        node.connect(context.destination);
-        stream.getAudioTracks().forEach((track) => { track.onended = () => { if (!finishing && !cancelled) { cancel(); handlers.onError?.('麦克风已断开，请重新录音。'); } }; });
+        source.connect(node); node.connect(context.destination);
+        stream.getAudioTracks().forEach((track) => { track.onended = () => { if (!finishing && !ended) fail('麦克风已断开，请重新录音。'); }; });
         handlers.onPermissionGranted?.(stream.getAudioTracks()[0]?.label);
         return { stop, cancel };
       } catch (error) {

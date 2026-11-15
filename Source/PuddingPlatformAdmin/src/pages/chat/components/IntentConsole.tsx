@@ -36,7 +36,7 @@ import {
   defaultBrowserVoiceOutputAdapter,
 } from '../hooks/browserVoiceOutput';
 import { createVoiceInputAdapter } from '../hooks/cloudVoiceInput';
-import { insertTranscript } from '../hooks/voiceAudio';
+import { createVoiceDraft } from '../hooks/voiceDraft';
 import type { ChatInteractionQueueItem } from '../hooks/useChatState';
 
 import { useChatStyles } from '../styles';
@@ -435,6 +435,11 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const [voiceMeter, setVoiceMeter] = useState({ level: 0, seconds: 0 });
   const voiceGeneration = useRef(0);
   const voiceHandleRef = useRef<BrowserVoiceInputHandle | null>(null);
+  const voiceAbortRef = useRef<AbortController | null>(null);
+  const voiceDraftRef = useRef<ReturnType<typeof createVoiceDraft> | null>(null);
+  const voiceConfirmedRef = useRef('');
+  const [voicePreview, setVoicePreview] = useState({ text: '', confirmed: '' });
+  const [voiceNotice, setVoiceNotice] = useState<string>();
   /** 图片上传隐藏文件选择器 */
   const imageFileInputRef = useRef<HTMLInputElement>(null);
   /** 图片上传进行中 */
@@ -666,6 +671,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   }, []);
 
   const handleComposerSend = useCallback(async () => {
+    if (voiceDraftRef.current) return;
     // 运行中鼠标与键盘语义一致：有草稿即走同一提交链（Agent 忙碌时由服务端排队）。
     // “停止”由独立的停止按钮承担，不再挪用发送按钮。
     if (pendingImages.length === 0) {
@@ -744,6 +750,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
 
   /** 运行中把当前草稿补充给正在执行的 Turn；受理与否的草稿处理由上层完成。 */
   const handleSteerFromDraft = useCallback(() => {
+    if (voiceDraftRef.current) return;
     const draft = (textInputRef.current?.getValue() ?? '').trim();
     if (!draft || !onSteerCurrent) return;
     void Promise.resolve(onSteerCurrent(draft));
@@ -808,28 +815,44 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     [stageImageFiles],
   );
 
-  const cancelVoice = useCallback(() => {
+  const cancelVoice = useCallback((restore = true) => {
     voiceGeneration.current++;
+    voiceAbortRef.current?.abort(); voiceAbortRef.current = null;
     voiceHandleRef.current?.cancel();
     voiceHandleRef.current = null;
+    const draft = voiceDraftRef.current; voiceDraftRef.current = null;
+    if (restore && draft) textInputRef.current?.setValue(draft.rollback(textInputRef.current?.getValue() ?? ''));
+    setVoicePreview({ text: '', confirmed: '' });
     setRecording(false); setRecognizing(false); setVoiceStarting(false);
   }, []);
-  useEffect(() => () => cancelVoice(), [sessionId, cancelVoice]);
+  useEffect(() => () => cancelVoice(false), [sessionId, cancelVoice]);
+
+  const handleVoiceDraftInput = useCallback((value: string) => {
+    onInputChange(value);
+    if (voiceDraftRef.current?.observe(value)) {
+      // Editing the live voice range takes ownership: keep the edit and stop automatic replacement.
+      cancelVoice(false); setVoiceNotice('已保留手动编辑并停止录音。');
+    }
+  }, [onInputChange, cancelVoice]);
 
   // Completion is driven by the recognizer, never by a guessed delay.
   const handleToggleVoiceInput = useCallback(async () => {
     if (voiceStarting || recognizing) { cancelVoice(); return; }
     if (recording) {
-      voiceHandleRef.current?.stop();
       setRecording(false);
       setRecognizing(true);
+      voiceHandleRef.current?.stop();
       return;
     }
     const generation = ++voiceGeneration.current;
     const original = textInputRef.current?.getValue() ?? '';
     const caret = textAreaRef.current?.selectionStart ?? original.length;
+    voiceDraftRef.current = createVoiceDraft(original, caret);
+    voiceConfirmedRef.current = '';
+    const abort = new AbortController(); voiceAbortRef.current = abort;
     const current = () => voiceGeneration.current === generation;
-    setVoiceStarting(true); setVoiceError(undefined); setVoiceMeter({ level: 0, seconds: 0 });
+    setVoiceStarting(true); setVoiceError(undefined); setVoiceNotice(undefined);
+    setVoicePreview({ text: '', confirmed: '' }); setVoiceMeter({ level: 0, seconds: 0 });
     try {
       const adapter = voiceAdapterRef.current;
       if (!adapter.isSupported()) {
@@ -838,19 +861,36 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       const handle = await adapter.start({
         onLevel: (level, seconds) => { if (current()) setVoiceMeter({ level, seconds }); },
         onTranscribing: () => { if (current()) { setRecording(false); setRecognizing(true); } },
+        onTranscript: (text, confirmed) => {
+          if (!current()) return;
+          voiceConfirmedRef.current = confirmed;
+          setVoicePreview({ text, confirmed });
+          const value = textInputRef.current?.getValue() ?? '';
+          const next = voiceDraftRef.current?.replace(value, text);
+          if (next !== undefined) textInputRef.current?.setValue(next);
+        },
         onFinalTranscript: (text: string) => {
           if (!current()) return;
           const value = textInputRef.current?.getValue() ?? '';
-          textInputRef.current?.setValue(insertTranscript(value, original, caret, text));
+          const next = voiceDraftRef.current?.replace(value, text);
+          voiceDraftRef.current = null;
+          if (next !== undefined) textInputRef.current?.setValue(next);
+          voiceGeneration.current++;
+          voiceAbortRef.current = null;
           voiceHandleRef.current = null;
           setRecording(false); setRecognizing(false); setVoiceStarting(false);
+          setVoicePreview({ text: '', confirmed: '' });
           if (!text.trim()) setVoiceError('没有识别到声音，请重新录音。');
         },
-        onError: (msg: string) => {
+        onError: (msg: string, confirmed?: string) => {
           if (!current()) return;
-          setVoiceError(msg); cancelVoice();
+          const value = textInputRef.current?.getValue() ?? '';
+          const next = voiceDraftRef.current?.replace(value, confirmed ?? voiceConfirmedRef.current);
+          voiceDraftRef.current = null;
+          if (next !== undefined) textInputRef.current?.setValue(next);
+          setVoiceError(msg); cancelVoice(false);
         },
-      });
+      }, abort.signal);
       if (!current()) { handle.cancel(); return; }
       voiceHandleRef.current = handle;
       setVoiceStarting(false);
@@ -1076,23 +1116,36 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
             ))}
           </div>
         )}
-        {(recording || recognizing || voiceStarting || voiceError) && (
+        {(recording || recognizing || voiceStarting || voiceError || voiceNotice) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginBottom: 6, borderRadius: 10, background: 'var(--pudding-bg-secondary, rgba(120,120,150,.06))', fontSize: 12 }}>
             {voiceError ? <><span role="alert" style={{ color: '#cf1322', flex: 1 }}>{voiceError}</span><button type="button" onClick={handleToggleVoiceInput}>重试录音</button></> : <>
-              <span role="status" style={{ flex: 1 }}>{recording ? `正在录音 · ${Math.floor(voiceMeter.seconds)} / 120 秒` : recognizing ? '正在识别，完成后文字会进入草稿' : '正在启动麦克风'}</span>
+              <span role="status" style={{ flex: 1 }}>{voiceNotice || (recording ? `边录边转写 · ${Math.floor(voiceMeter.seconds)} / 120 秒` : recognizing ? '录音已停止，正在确认最后文字…' : '正在连接麦克风与实时识别')}</span>
               {recording && <meter min={0} max={1} value={voiceMeter.level} aria-label="麦克风音量" style={{ width: 70 }} />}
-              <button type="button" onClick={cancelVoice} aria-label="取消录音">取消</button>
+              {recording && <button type="button" onClick={handleToggleVoiceInput} aria-label="停止录音并保留文字">停止并保留</button>}
+              {!voiceNotice && <button type="button" onClick={() => cancelVoice()} aria-label="取消录音">取消本次</button>}
             </>}
           </div>
         )}
+        {voicePreview.text && <div data-testid="voice-live-preview" aria-live="polite" style={{ padding: '0 20px 10px', fontSize: 12, color: '#52647d', overflowWrap: 'anywhere', maxHeight: 80, overflowY: 'auto' }}>
+          <span>{voicePreview.confirmed.length} 字已确认{voicePreview.text !== voicePreview.confirmed ? ' · 当前句仍在识别' : ''}： </span>{voicePreview.text}
+        </div>}
         <ComposerTextInput
           ref={textInputRef}
           inputValue={inputValue}
-          onInputChange={onInputChange}
-          onKeyDown={onKeyDown}
+          onInputChange={handleVoiceDraftInput}
+          onKeyDown={(event) => {
+            if (recording || recognizing || voiceStarting) {
+              if (event.key === 'Escape') { event.preventDefault(); cancelVoice(); return; }
+              if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if (recording) void handleToggleVoiceInput(); return; }
+            }
+            onKeyDown(event);
+          }}
           onFocusChange={handleTextAreaFocusChange}
+          onCompositionBegin={() => {
+            if (voiceDraftRef.current) { cancelVoice(false); setVoiceNotice('已保留草稿并停止录音，可继续输入。'); }
+          }}
           onHasTextChange={handleHasTextChange}
-          onEnterWithImages={handleEnterWithImages}
+          onEnterWithImages={recording || recognizing || voiceStarting ? () => { if (recording) void handleToggleVoiceInput(); } : handleEnterWithImages}
           hasPendingImages={pendingImages.length > 0}
           placeholder={
             loading
@@ -1295,7 +1348,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
 
             <Tooltip
               title={
-                recording ? '完成录音并识别' : recognizing || voiceStarting ? '取消语音输入' : '语音输入'
+                recording ? '停止录音并保留转写文字' : recognizing || voiceStarting ? '取消语音输入' : '语音输入'
               }
             >
               <button
@@ -1380,7 +1433,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 data-queued={loading && hasComposerDraft ? 'true' : undefined}
                 onClick={() => void handleComposerSend()}
                 disabled={
-                  !hasComposerDraft || disabled || imageUploading
+                  !hasComposerDraft || disabled || imageUploading || recording || recognizing || voiceStarting
                 }
                 data-testid="chat-send"
                 aria-label={

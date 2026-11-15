@@ -39,10 +39,11 @@
 
 | 语音入口 | 用途 |
 |---|---|
-| `src/pages/chat/hooks/cloudVoiceInput.ts` · `public/audio/pcm-capture.js` | 服务商无关的 AudioWorklet 录音、PCM WAV 编码、完成/取消分离和 120 秒本地上限 |
-| `src/pages/chat/hooks/voiceAudio.ts` | WAV 编码及保留键入草稿的转写插入 |
+| `src/pages/chat/hooks/cloudVoiceInput.ts` · `public/audio/pcm-capture.js` | AudioWorklet 实时 PCM 上传；120 秒上限、停止 flush/最终排空、取消整个生命周期与设备释放 |
+| `src/pages/chat/hooks/voiceAudio.ts` · `voiceDraft.ts` | PCM/WAV 编码；按光标维护语音区间、实时替换、取消回滚、保护手动编辑 |
+| `src/services/platform/realtimeAsr.ts` | 服务商无关的本机 WS：首帧一次性凭证、实时句子投影、背压、停止/取消与终态围栏 |
 | `src/pages/chat/hooks/ttsPlaybackController.ts` · `useTtsPlayer.ts` · `cloudVoiceOutput.ts` | 共享单一播放任务、PCM SSE 排程、网络取消、切会话清理和可见错误 |
-| `src/pages/chat/components/IntentConsole.tsx` | 原输入框中的录音音量/时长/取消/重试状态；真实回调回填草稿，迟到结果按 generation 丢弃 |
+| `src/pages/chat/components/IntentConsole.tsx` · `ComposerTextInput.tsx` | 原输入框实时回填、确认字数、停止保留/取消回滚、错误重试；真实光标与同步 ref、IME 编辑保护、generation 丢弃迟到结果 |
 
 | 文件 | 用途 |
 |------|------|

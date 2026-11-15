@@ -38,6 +38,8 @@ public sealed class PuddingApplicationHostCompositionTests
             Assert.IsType<AudioTranscriptionService>(app.Services.GetRequiredService<PuddingCode.Abstractions.IAudioTranscriptionService>());
             Assert.IsType<VoiceSynthesisService>(app.Services.GetRequiredService<PuddingCode.Abstractions.IVoiceSynthesisService>());
             Assert.IsType<VoiceProviderFactory>(app.Services.GetRequiredService<PuddingCode.Abstractions.IVoiceProviderFactory>());
+            Assert.IsType<RealtimeAudioTranscriptionService>(app.Services.GetRequiredService<RealtimeAudioTranscriptionService>());
+            Assert.IsType<VoiceStreamTicketStore>(app.Services.GetRequiredService<VoiceStreamTicketStore>());
 
             Assert.Same(app.Services.GetRequiredService<WorkspaceAgentFileService>(),
                 app.Services.GetRequiredService<PuddingAgentConfiguration.Contracts.IAgentConfigurationStore>());

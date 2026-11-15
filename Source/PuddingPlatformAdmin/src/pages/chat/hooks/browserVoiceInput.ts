@@ -3,8 +3,9 @@ export interface BrowserVoiceInputHandlers {
   onLevel?: (level: number, seconds: number) => void;
   onPermissionGranted?: (deviceLabel?: string) => void;
   onInterimTranscript?: (text: string) => void;
+  onTranscript?: (text: string, confirmedText: string) => void;
   onFinalTranscript?: (text: string) => void;
-  onError?: (message: string) => void;
+  onError?: (message: string, confirmedText?: string) => void;
 }
 
 export interface BrowserVoiceInputHandle {
@@ -16,6 +17,7 @@ export interface BrowserVoiceInputAdapter {
   isSupported: () => boolean;
   start: (
     handlers: BrowserVoiceInputHandlers,
+    signal?: AbortSignal,
   ) => Promise<BrowserVoiceInputHandle>;
 }
 

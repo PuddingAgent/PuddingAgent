@@ -22,6 +22,8 @@ draft: false
 
 ## 组合根
 
+实时语音：`Extensions/PuddingServiceCollectionExtensions.Connectors.cs` 装配 `RealtimeAudioTranscriptionService` 与单例 `VoiceStreamTicketStore`，业务路由不进入 Shell；宿主组合测试解析这两个服务。
+
 Agent 配置公共 API：`Extensions/PuddingServiceCollectionExtensions.Platform.cs` 将独立配置 Store 端口绑定到既有 `WorkspaceAgentFileService` 单例，并装配 `AgentConfigurationApiFactory`；不创建第二个 manifest writer。
 
 Agent 单轮执行 API：`Extensions/PuddingServiceCollectionExtensions.cs` 调用平台 `AddAgentWorkApi` 装配单例 canonical adapter、身份工厂及 scoped 主会话解析器；组合边界由 `Tests/PuddingHost.Tests/Hosting/AgentWorkCompositionTests.cs` 验证。

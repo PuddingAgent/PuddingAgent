@@ -117,8 +117,7 @@ const voiceAdapter = {
   isSupported: () => true,
   start: jest.fn(async (callbacks: any) => {
     callbacks.onPermissionGranted?.('Built-in Microphone');
-    callbacks.onFinalTranscript?.('请总结今天的工作');
-    return { stop: jest.fn(), cancel: jest.fn() };
+    return { stop: jest.fn(() => callbacks.onFinalTranscript?.('请总结今天的工作')), cancel: jest.fn() };
   }),
 };
 
@@ -180,6 +179,105 @@ describe('IntentConsole', () => {
     expect(handle.cancel).toHaveBeenCalledTimes(1);
     act(() => handlers.onFinalTranscript('迟到文字'));
     expect((screen.getByTestId('chat-input') as HTMLTextAreaElement).value).toBe('原稿');
+  });
+
+  it('fills live words by replacement, preserves outside edits, and commits final text once', async () => {
+    let callbacks: any;
+    const handle = { stop: jest.fn(), cancel: jest.fn() };
+    const adapter = { isSupported: () => true, start: async (value: any) => { callbacks = value; return handle; } };
+    render(<IntentConsole {...baseProps} inputValue="前后" voiceInputAdapter={adapter} />);
+    const input = screen.getByTestId('chat-input') as HTMLTextAreaElement; input.setSelectionRange(1, 1);
+    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' }));
+    await screen.findByRole('button', { name: '完成录音' });
+    act(() => { callbacks.onTranscript('你', ''); callbacks.onTranscript('你好', ''); });
+    expect(input.value).toBe('前你好后');
+    expect((screen.getByTestId('chat-send') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(input, { target: { value: '前你好后补充' } });
+    fireEvent.click(screen.getByRole('button', { name: '停止录音并保留文字' }));
+    expect(handle.stop).toHaveBeenCalledTimes(1);
+    act(() => callbacks.onFinalTranscript('你好。'));
+    expect(input.value).toBe('前你好。后补充');
+    expect((screen.getByTestId('chat-send') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('cancel removes this capture, preserves typed text, and fences late events', async () => {
+    let callbacks: any;
+    const handle = { stop: jest.fn(), cancel: jest.fn() };
+    const adapter = { isSupported: () => true, start: async (value: any) => { callbacks = value; return handle; } };
+    render(<IntentConsole {...baseProps} inputValue="前后" voiceInputAdapter={adapter} />);
+    const input = screen.getByTestId('chat-input') as HTMLTextAreaElement; input.setSelectionRange(1, 1);
+    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' })); await screen.findByRole('button', { name: '完成录音' });
+    act(() => callbacks.onTranscript('语音', '语音'));
+    fireEvent.change(input, { target: { value: '前语音后键入' } });
+    fireEvent.click(screen.getByRole('button', { name: '完成录音' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消录音' }));
+    expect(input.value).toBe('前后键入'); expect(handle.cancel).toHaveBeenCalledTimes(1);
+    act(() => { callbacks.onTranscript('迟到', '迟到'); callbacks.onFinalTranscript('迟到'); });
+    expect(input.value).toBe('前后键入');
+  });
+
+  it('network failure removes provisional words and keeps confirmed draft text', async () => {
+    let callbacks: any;
+    const adapter = { isSupported: () => true, start: async (value: any) => { callbacks = value; return { stop: jest.fn(), cancel: jest.fn() }; } };
+    render(<IntentConsole {...baseProps} voiceInputAdapter={adapter} />);
+    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' })); await screen.findByRole('button', { name: '完成录音' });
+    act(() => callbacks.onTranscript('确认。临时', '确认。'));
+    act(() => callbacks.onError('连接中断', '确认。'));
+    expect((screen.getByTestId('chat-input') as HTMLTextAreaElement).value).toBe('确认。');
+    expect(screen.getByRole('alert').textContent).toBe('连接中断');
+    expect(screen.getByRole('button', { name: '重试录音' })).toBeTruthy();
+  });
+
+  it('preserves IME editing and stops live replacement when composition begins', async () => {
+    let callbacks: any;
+    const handle = { stop: jest.fn(), cancel: jest.fn() };
+    const adapter = { isSupported: () => true, start: async (value: any) => { callbacks = value; return handle; } };
+    render(<IntentConsole {...baseProps} voiceInputAdapter={adapter} />);
+    const input = screen.getByTestId('chat-input') as HTMLTextAreaElement;
+    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' })); await screen.findByRole('button', { name: '完成录音' });
+    act(() => callbacks.onTranscript('你好', ''));
+    fireEvent.compositionStart(input); fireEvent.change(input, { target: { value: '你好拼音' } });
+    act(() => callbacks.onTranscript('迟到', ''));
+    fireEvent.compositionEnd(input, { data: '拼音' });
+    expect(input.value).toBe('你好拼音'); expect(handle.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts startup immediately and releases a late capture handle', async () => {
+    let signal: AbortSignal | undefined; let grant: any;
+    const handle = { stop: jest.fn(), cancel: jest.fn() };
+    const adapter = { isSupported: () => true, start: (_: any, value?: AbortSignal): Promise<any> => { signal = value; return new Promise(resolve => { grant = resolve; }); } };
+    render(<IntentConsole {...baseProps} voiceInputAdapter={adapter} />);
+    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消录音' }));
+    expect(signal?.aborted).toBe(true);
+    await act(async () => { grant(handle); });
+    expect(handle.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps manual edits inside the voice range and stops replacing them', async () => {
+    let callbacks: any;
+    const handle = { stop: jest.fn(), cancel: jest.fn() };
+    const adapter = { isSupported: () => true, start: async (value: any) => { callbacks = value; return handle; } };
+    render(<IntentConsole {...baseProps} voiceInputAdapter={adapter} />);
+    const input = screen.getByTestId('chat-input') as HTMLTextAreaElement;
+    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' })); await screen.findByRole('button', { name: '完成录音' });
+    act(() => callbacks.onTranscript('你好', ''));
+    fireEvent.change(input, { target: { value: '你棒' } });
+    act(() => callbacks.onTranscript('你好啊', ''));
+    expect(input.value).toBe('你棒'); expect(handle.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels on session switch without rolling the old draft into the new session', async () => {
+    let callbacks: any;
+    const handle = { stop: jest.fn(), cancel: jest.fn() };
+    const adapter = { isSupported: () => true, start: async (value: any) => { callbacks = value; return handle; } };
+    const view = render(<IntentConsole {...baseProps} sessionId="old" inputValue="旧稿" voiceInputAdapter={adapter} />);
+    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' })); await screen.findByRole('button', { name: '完成录音' });
+    act(() => callbacks.onTranscript('旧语音', ''));
+    view.rerender(<IntentConsole {...baseProps} sessionId="new" inputValue="新稿" voiceInputAdapter={adapter} />);
+    act(() => { callbacks.onTranscript('迟到', ''); callbacks.onFinalTranscript('迟到'); });
+    expect((screen.getByTestId('chat-input') as HTMLTextAreaElement).value).toBe('新稿');
+    expect(handle.cancel).toHaveBeenCalledTimes(1);
   });
 
   it('exposes a URL-gated browser test greeting filler', () => {

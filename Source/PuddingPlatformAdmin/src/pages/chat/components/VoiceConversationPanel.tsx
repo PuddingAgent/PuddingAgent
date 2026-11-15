@@ -96,6 +96,7 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
   const [playbackActive, setPlaybackActive] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | undefined>();
   const captureHandleRef = useRef<BrowserVoiceInputHandle | null>(null);
+  const captureAbortRef = useRef<AbortController | null>(null);
   const playbackHandleRef = useRef<BrowserVoiceOutputHandle | null>(null);
   const voiceSessionIdRef = useRef<string | undefined>(undefined);
   const deliveryIdRef = useRef<string | undefined>(undefined);
@@ -111,6 +112,7 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
     Boolean(draftText.trim()) &&
     !disabled &&
     !loading &&
+    !isListening &&
     panelState !== 'sending';
   const canSpeak =
     Boolean(latestAssistantText.trim()) && outputSupported && !disabled;
@@ -133,11 +135,9 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
 
   const stopCapture = useCallback(
     (status: 'cancelled' | 'completed' = 'cancelled') => {
-      if (status === 'completed') captureHandleRef.current?.stop();
-      else captureHandleRef.current?.cancel();
-      captureHandleRef.current = null;
-      setInterimTranscript('');
       setPanelState(status === 'completed' ? 'transcribing' : 'idle');
+      if (status === 'completed') captureHandleRef.current?.stop();
+      else { captureAbortRef.current?.abort(); captureHandleRef.current?.cancel(); captureHandleRef.current = null; setInterimTranscript(''); }
       if (status === 'cancelled') voiceSessionIdRef.current = '';
       onVoiceCaptureStatus?.(status === 'completed' ? 'transcribing' : status, { sessionId: voiceSessionIdRef.current });
     },
@@ -150,6 +150,7 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
     stopPlayback('cancelled');
     const voiceSessionId = createVoiceId('voice');
     voiceSessionIdRef.current = voiceSessionId;
+    const abort = new AbortController(); captureAbortRef.current = abort;
     setErrorText(undefined);
     setInterimTranscript('');
     setPanelState('requesting_permission');
@@ -160,14 +161,18 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
     try {
       const handle = await voiceInputAdapter.start({
         onPermissionGranted: () => {
+          if (voiceSessionIdRef.current !== voiceSessionId) return;
           setPanelState('recording');
           onVoiceCaptureStatus?.('recording', { sessionId: voiceSessionId });
         },
         onInterimTranscript: (text) => {
-          setPanelState('transcribing');
+          if (voiceSessionIdRef.current !== voiceSessionId) return;
+          setPanelState('recording');
           setInterimTranscript(text);
-          onVoiceCaptureStatus?.('transcribing', { sessionId: voiceSessionId });
+          onVoiceCaptureStatus?.('recording', { sessionId: voiceSessionId });
         },
+        onTranscript: (text) => { if (voiceSessionIdRef.current === voiceSessionId) setInterimTranscript(text); },
+        onTranscribing: () => { if (voiceSessionIdRef.current === voiceSessionId) setPanelState('transcribing'); },
         onFinalTranscript: (text) => {
           if (voiceSessionIdRef.current !== voiceSessionId) return;
           const nextText = text.trim();
@@ -177,10 +182,10 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
           setInterimTranscript('');
           setPanelState('awaiting_confirmation');
           onVoiceCaptureStatus?.('completed', { sessionId: voiceSessionId });
-          captureHandleRef.current?.stop();
+          captureAbortRef.current = null;
           captureHandleRef.current = null;
         },
-        onError: (message) => {
+        onError: (message, confirmed) => {
           if (voiceSessionIdRef.current !== voiceSessionId) return;
           setPanelState('failed');
           setErrorText(message);
@@ -188,16 +193,20 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
             sessionId: voiceSessionId,
             error: message,
           });
-          captureHandleRef.current?.stop();
+          if (confirmed) onDraftChange(confirmed);
+          captureAbortRef.current?.abort(); captureAbortRef.current = null;
+          captureHandleRef.current?.cancel();
           captureHandleRef.current = null;
+          voiceSessionIdRef.current = '';
         },
-      });
+      }, abort.signal);
       if (voiceSessionIdRef.current !== voiceSessionId) { handle.cancel(); return; }
       captureHandleRef.current = handle;
       setPanelState((current) =>
         current === 'requesting_permission' ? 'recording' : current,
       );
     } catch (err) {
+      if (voiceSessionIdRef.current !== voiceSessionId) return;
       const message = err instanceof Error ? err.message : '语音输入启动失败';
       setPanelState('failed');
       setErrorText(message);
@@ -228,8 +237,6 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
     const metadata = {
       inputMode: 'voice',
       voiceSessionId,
-      asrProvider: 'browser',
-      asrModel: 'web-speech',
       language: VOICE_LANG,
     };
 
@@ -295,6 +302,8 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
 
   useEffect(
     () => () => {
+      voiceSessionIdRef.current = '';
+      captureAbortRef.current?.abort();
       captureHandleRef.current?.cancel();
       playbackHandleRef.current?.stop();
     },
@@ -372,7 +381,7 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
                 disabled={!voiceSupported || disabled || loading}
                 aria-label={isListening ? '停止收音' : '开始语音会话'}
                 onClick={
-                  isListening ? () => stopCapture('completed') : startCapture
+                  isListening ? () => stopCapture(panelState === 'recording' ? 'completed' : 'cancelled') : startCapture
                 }
               >
                 {isListening ? <PauseOutlined /> : <AudioOutlined />}
@@ -460,7 +469,7 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
             disabled={!voiceSupported || disabled || loading}
             aria-label={isListening ? '停止收音' : '开始语音会话'}
             onClick={
-              isListening ? () => stopCapture('completed') : startCapture
+              isListening ? () => stopCapture(panelState === 'recording' ? 'completed' : 'cancelled') : startCapture
             }
           >
             {isListening ? <PauseOutlined /> : <AudioOutlined />}
