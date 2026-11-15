@@ -25,6 +25,11 @@ public sealed record RuntimeExecutionIdentity
     public string? MessageId { get; init; }
     public string? ToolCallId { get; init; }
     public string? ParentRunId { get; init; }
+    /// <summary>
+    /// 派生本次运行的 Agent 身份。子代理回信给父代理时以它为唯一去向来源。
+    /// 只由编排层在创建子运行时写入；Runtime 与工具只能读取，不得从 SessionId 推断。
+    /// </summary>
+    public string? ParentAgentId { get; init; }
     public string? InvocationId { get; init; }
     public string? BatchId { get; init; }
     public string? OriginToolId { get; init; }

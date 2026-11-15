@@ -1365,6 +1365,7 @@ public sealed class SubAgentManager : ISubAgentManager
             MessageId = parent?.MessageId,
             ToolCallId = parent?.ToolCallId,
             ParentRunId = parent?.RunId,
+            ParentAgentId = request.ParentAgentId,
             InvocationId = request.InvocationId,
             BatchId = request.BatchId,
             OriginToolId = request.OriginToolId,

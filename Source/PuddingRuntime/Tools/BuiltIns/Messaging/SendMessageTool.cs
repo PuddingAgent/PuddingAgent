@@ -37,7 +37,15 @@ public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
         if (string.IsNullOrWhiteSpace(content))
             return ToolExecutionResult.Fail("content is required.");
 
-        var targets = ParseTargets(rawTo, context.WorkspaceId, roomId);
+        // 子代理回信：只识别 agent:parent 别名，由系统解析成具体父代理地址。
+        // 不让模型自己填 agent id——幻觉出来的合法地址会把消息发给错的对端，
+        // 而调用方从回执上看不出异常。父地址缺失时如实失败，不回退到任意 agent。
+        var parentResolution = PuddingCode.SubAgents.SubAgentAddressResolver.Resolve(
+            rawTo, context.ExecutionIdentity?.ParentAgentId);
+        if (parentResolution.Error is { } parentAliasError)
+            return ToolExecutionResult.Fail(parentAliasError);
+
+        var targets = ParseTargets(parentResolution.Address ?? rawTo, context.WorkspaceId, roomId);
         if (targets.Count == 0)
             return ToolExecutionResult.Fail("to is required. Use an address like user:owner, agent:assistant, room:default, or @all.");
 

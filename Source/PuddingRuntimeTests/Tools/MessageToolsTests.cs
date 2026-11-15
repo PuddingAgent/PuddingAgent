@@ -46,6 +46,73 @@ public sealed class MessageToolsTests
     }
 
     [TestMethod]
+    public async Task SendMessageTool_Resolves_Parent_Alias_Using_ExecutionIdentity()
+    {
+        // 子代理回信：to=agent:parent 由系统解析成父代理地址，模型永远不需要知道具体 id。
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric));
+
+        var result = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "call-parent-alias",
+            ArgumentsJson = JsonSerializer.Serialize(new Dictionary<string, string>
+            {
+                ["to"] = "agent:parent",
+                ["content"] = "blocked: need your decision",
+            }),
+            Context = new ToolExecutionContext
+            {
+                AgentInstanceId = "sub-session-1",
+                WorkspaceId = "default",
+                SessionId = "sub-session-1",
+                ExecutionIdentity = new RuntimeExecutionIdentity
+                {
+                    Kind = RuntimeExecutionKind.SubAgent,
+                    ConversationId = "parent-session",
+                    RunId = "run-child",
+                    TraceId = null,
+                    ParentRunId = "run-parent",
+                    ParentAgentId = "parent-agent-7",
+                },
+            },
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(1, fabric.Sent.Count);
+        Assert.AreEqual(MessageEndpointKinds.Agent, fabric.Sent[0].To[0].Kind);
+        Assert.AreEqual("parent-agent-7", fabric.Sent[0].To[0].Id);
+    }
+
+    [TestMethod]
+    public async Task SendMessageTool_Rejects_Parent_Alias_Without_Parent_Address()
+    {
+        // 父地址未知时如实失败，不回退到“发给任意 agent”或“发给父会话”：
+        // 投错主体的消息没人能发现，报错至少能被上层看到。
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric));
+
+        var result = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "call-parent-alias-missing",
+            ArgumentsJson = JsonSerializer.Serialize(new Dictionary<string, string>
+            {
+                ["to"] = "agent:parent",
+                ["content"] = "hello",
+            }),
+            Context = new ToolExecutionContext
+            {
+                AgentInstanceId = "agent-a",
+                WorkspaceId = "default",
+                SessionId = "session-1",
+            },
+        });
+
+        Assert.IsFalse(result.Success);
+        Assert.IsEmpty(fabric.Sent);
+        StringAssert.Contains(result.Error, "父代理地址");
+    }
+
+    [TestMethod]
     public async Task SendMessageTool_Ask_RequestsOneExecutableResponse()
     {
         var fabric = new RecordingMessageSystem();
