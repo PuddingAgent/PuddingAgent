@@ -1,5 +1,6 @@
 using System.Net.WebSockets;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 
@@ -53,6 +54,7 @@ public sealed class QwenAsr(Func<CancellationToken, Task<ISpeechSocket>> connect
             },
         });
         await socket.SendTextAsync(runTask, lifetime.Token);
+        Exception? sendFailure = null;
         var sender = SendAudioAsync();
         var completed = false;
         try
@@ -111,14 +113,14 @@ public sealed class QwenAsr(Func<CancellationToken, Task<ISpeechSocket>> connect
                     payload = new { input = new { } },
                 }), lifetime.Token);
             }
-            catch { await lifetime.CancelAsync(); throw; }
+            catch (Exception error) { sendFailure = error; await lifetime.CancelAsync(); throw; }
         }
 
         async Task<string?> ReceiveNextAsync()
         {
             try { return await socket.ReceiveAsync(lifetime.Token); }
-            catch (OperationCanceledException) when (sender.IsFaulted)
-            { await sender; throw; }
+            catch (OperationCanceledException) when (sendFailure is not null)
+            { ExceptionDispatchInfo.Capture(sendFailure).Throw(); throw; }
         }
     }
 }
@@ -132,6 +134,7 @@ public sealed class ClientSpeechSocket : ISpeechSocket
         connection.socket.Options.SetRequestHeader("Authorization", $"Bearer {apiKey}");
         try { await connection.socket.ConnectAsync(endpoint, ct); return connection; }
         catch (WebSocketException) { await connection.DisposeAsync(); throw new SpeechFailure("voice_connection_failed", "无法连接语音服务，请检查网络、凭据和区域设置。", 503, true); }
+        catch { await connection.DisposeAsync(); throw; }
     }
     public Task SendTextAsync(string text, CancellationToken ct) => socket.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, true, ct);
     public Task SendAudioAsync(ReadOnlyMemory<byte> audio, CancellationToken ct) => socket.SendAsync(audio, WebSocketMessageType.Binary, true, ct).AsTask();

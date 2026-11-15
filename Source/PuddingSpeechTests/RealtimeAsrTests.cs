@@ -84,6 +84,39 @@ public sealed class RealtimeAsrTests
     }
 
     [TestMethod]
+    public async Task Qwen_AsyncInputFailureRetainsItsErrorInsteadOfBecomingCancellation()
+    {
+        var socket = new LiveSocket();
+        var error = await Assert.ThrowsAsync<SpeechFailure>(async () =>
+        { await foreach (var _ in new QwenAsr(_ => Task.FromResult<ISpeechSocket>(socket)).RecognizePcmAsync(Input())) { } });
+        Assert.AreEqual("voice_invalid_frame", error.Code); Assert.IsTrue(socket.Disposed);
+        async IAsyncEnumerable<ReadOnlyMemory<byte>> Input()
+        {
+            await Task.Yield();
+            if (!socket.Finished) throw new SpeechFailure("voice_invalid_frame", "test input failed", 400);
+            yield return new byte[2];
+        }
+    }
+
+    [TestMethod]
+    public async Task Socket_CancelDuringHandshake_ClosesItsConnection()
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); listener.Start();
+        try
+        {
+            using var cancellation = new CancellationTokenSource();
+            var connection = ClientSpeechSocket.ConnectAsync(new Uri($"ws://127.0.0.1:{((System.Net.IPEndPoint)listener.LocalEndpoint).Port}/"), "synthetic-test", cancellation.Token);
+            using var accepted = await listener.AcceptTcpClientAsync().WaitAsync(TimeSpan.FromSeconds(2));
+            var buffer = new byte[4096];
+            await accepted.GetStream().ReadAsync(buffer).AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+            await cancellation.CancelAsync();
+            await Assert.ThrowsAsync<OperationCanceledException>(() => connection);
+            Assert.AreEqual(0, await accepted.GetStream().ReadAsync(buffer).AsTask().WaitAsync(TimeSpan.FromSeconds(2)));
+        }
+        finally { listener.Stop(); }
+    }
+
+    [TestMethod]
     public async Task Session_CancelDuringDrain_DoesNotCommitOrComplete()
     {
         var peer = new Peer();
