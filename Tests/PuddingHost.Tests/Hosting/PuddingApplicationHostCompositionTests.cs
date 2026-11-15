@@ -35,6 +35,9 @@ public sealed class PuddingApplicationHostCompositionTests
 
             var builder = PuddingApplicationHost.CreateBuilder([], options);
             await using var app = PuddingApplicationHost.Build(builder);
+            Assert.IsType<AudioTranscriptionService>(app.Services.GetRequiredService<PuddingCode.Abstractions.IAudioTranscriptionService>());
+            Assert.IsType<VoiceSynthesisService>(app.Services.GetRequiredService<PuddingCode.Abstractions.IVoiceSynthesisService>());
+            Assert.IsType<VoiceProviderFactory>(app.Services.GetRequiredService<PuddingCode.Abstractions.IVoiceProviderFactory>());
 
             Assert.Same(app.Services.GetRequiredService<WorkspaceAgentFileService>(),
                 app.Services.GetRequiredService<PuddingAgentConfiguration.Contracts.IAgentConfigurationStore>());

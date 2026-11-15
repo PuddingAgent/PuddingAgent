@@ -137,7 +137,8 @@
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `Services/DashScopeAsrProvider.cs` | 百炼 DashScope 语音识别 Provider | `IAsrHttpRecognizer` | `Services/VoiceProviderFactory.cs` | — |
-| `Services/DashScopeTtsProvider.cs` | 百炼 DashScope 语音合成 Provider | `ITtsProvider` | `Services/VoiceProviderFactory.cs` | — |
+| `Services/QwenMessageAsrProvider.cs` | Qwen Message 模型的完整录音到 WebSocket 协议适配 | `IAsrHttpRecognizer` | `../PuddingSpeech/QwenAsr.cs` | 真实 PCM WAV；最终句子按 ID 去重，finish 后排空；不向业务层暴露模型协议 |
+| `Services/DashScopeTtsProvider.cs` | 百炼语音合成与增量 SSE | `ITtsProvider` | `Services/VoiceProviderFactory.cs`、`../PuddingSpeech/QwenTts.cs` | ResponseHeadersRead；逐帧解码；结束标记缺失报错；供应商错误映射为脱敏语音错误 |
 | `Services/DeepSeekWeb/DeepSeekWebSettingsProvider.cs` | DeepSeek 凭据解析：`deepseek_search` 节优先，回退 `providerId=deepseek` | `DeepSeekWebSettingsProvider` | `Tools/BuiltIns/Search/DeepSeekSearchTool.cs` | 错误含两处配置路径且不回显 Key；disabled 终态不回退 |
 | `Services/DeepSeekWeb/DeepSeekWebServiceCollectionExtensions.cs` | DeepSeek Search/Fetch 组件在工具组合根的装配入口 | `AddPuddingDeepSeekWeb` | `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` | 只注册配置解析/传输/协议服务；两个工具由 `[Tool]` assembly scan 纳入，不单独登记 |
 | `Services/DeepSeekWeb/WebClientDeepSeekTransport.cs` | 组件传输端口到既有 `IWebClient` 的原样适配 | `WebClientDeepSeekTransport` | `../PuddingDeepSeekWeb/DeepSeekWebTransport.cs` | 不分类、不重试、不吞异常；错误语义归组件所有 |

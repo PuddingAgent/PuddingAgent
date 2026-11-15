@@ -38,7 +38,8 @@ public static class QwenTts
             if (json == "[DONE]") { completed = true; break; }
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            if (root.TryGetProperty("code", out _)) throw SpeechFailure.FromProvider(502, json);
+            if (root.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(code.GetString()))
+                throw SpeechFailure.FromProvider(502, json);
             if (!root.TryGetProperty("output", out var output)) continue;
             if (output.TryGetProperty("audio", out var audio) && audio.TryGetProperty("data", out var audioData) && !string.IsNullOrEmpty(audioData.GetString()))
                 yield return Convert.FromBase64String(audioData.GetString()!);

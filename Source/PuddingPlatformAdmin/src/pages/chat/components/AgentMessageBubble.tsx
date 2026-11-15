@@ -336,7 +336,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   const [actionsMounted, setActionsMounted] = React.useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false);
 
-  const tts = useTtsPlayer();
+  const tts = useTtsPlayer(sessionId ?? undefined);
   const hasAnswerContent = content.trim().length > 0;
   const isError = status === 'error' || status === 'cancelled';
 
@@ -839,12 +839,14 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
             {actionsMounted && (
               <MessageActions
                 content={content}
-                visible={showActions}
+                visible={showActions || tts.playing || tts.loading || Boolean(tts.error)}
                 onRerun={onRerun}
                 onPin={onPin}
                 onDelete={onDelete}
                 voiceOutputAdapter={defaultBrowserVoiceOutputAdapter}
                 onTtsSpeak={() => tts.speak(content)}
+                onTtsStop={tts.stop}
+                ttsError={tts.error}
                 ttsPlaying={tts.playing}
                 ttsLoading={tts.loading}
               />

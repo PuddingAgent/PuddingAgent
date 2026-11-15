@@ -289,7 +289,7 @@ const ChatPageContent: React.FC = () => {
     role: 'user',
     content: '',
   });
-  const tts = useTtsPlayer();
+  const tts = useTtsPlayer(chat.selectedSessionId ?? undefined);
 
   const handleContextMenu = useCallback(
     (

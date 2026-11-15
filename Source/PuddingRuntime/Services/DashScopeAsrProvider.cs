@@ -57,8 +57,7 @@ public sealed class DashScopeAsrProvider : IAsrHttpRecognizer
         if (submitRoot.TryGetProperty("code", out var codeEl))
         {
             var errMsg = submitRoot.TryGetProperty("message", out var msgEl) ? msgEl.GetString() : "Unknown";
-            throw new InvalidOperationException(
-                $"DashScope ASR submit error: {codeEl.GetString()} — {errMsg}");
+            throw PuddingSpeech.SpeechFailure.FromProvider(502, submitJson);
         }
 
         // 尝试同步返回（极少情况）
@@ -76,8 +75,7 @@ public sealed class DashScopeAsrProvider : IAsrHttpRecognizer
 
         if (string.IsNullOrEmpty(taskId))
         {
-            throw new InvalidOperationException(
-                $"DashScope ASR: no task_id in response: {submitJson[..Math.Min(300, submitJson.Length)]}");
+            throw PuddingSpeech.SpeechFailure.Protocol();
         }
 
         _logger.LogInformation("[DashScopeAsr] Task submitted task_id={TaskId}, polling...", taskId);
@@ -104,7 +102,7 @@ public sealed class DashScopeAsrProvider : IAsrHttpRecognizer
                         return ParseSyncResponse(taskJson);
                     case "FAILED":
                         var failMsg = taskOutput.TryGetProperty("message", out var fm) ? fm.GetString() : "Unknown";
-                        throw new InvalidOperationException($"DashScope ASR task failed: {failMsg}");
+                        throw PuddingSpeech.SpeechFailure.FromProvider(502, taskJson);
                     case "PENDING":
                     case "RUNNING":
                         continue;
@@ -186,16 +184,15 @@ public sealed class DashScopeAsrProvider : IAsrHttpRecognizer
             msg, HttpCompletionOption.ResponseContentRead, ct);
 
         var responseText = await response.Content.ReadAsStringAsync(ct);
-        _logger.LogDebug("[DashScopeAsr] Response {Status} {Len} chars: {Preview}",
-            (int)response.StatusCode, responseText.Length,
-            responseText[..Math.Min(200, responseText.Length)]);
+        _logger.LogDebug("[DashScopeAsr] Response {Status} {Len} chars",
+            (int)response.StatusCode, responseText.Length);
 
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogWarning("[DashScopeAsr] API error {Status}: {Body}",
-                (int)response.StatusCode, responseText[..Math.Min(500, responseText.Length)]);
+            _logger.LogWarning("[DashScopeAsr] API error {Status}", (int)response.StatusCode);
         }
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+            throw PuddingSpeech.SpeechFailure.FromProvider((int)response.StatusCode, responseText);
         return responseText;
     }
 
@@ -209,7 +206,8 @@ public sealed class DashScopeAsrProvider : IAsrHttpRecognizer
             msg, HttpCompletionOption.ResponseContentRead, ct);
 
         var responseText = await response.Content.ReadAsStringAsync(ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+            throw PuddingSpeech.SpeechFailure.FromProvider((int)response.StatusCode, responseText);
         return responseText;
     }
 

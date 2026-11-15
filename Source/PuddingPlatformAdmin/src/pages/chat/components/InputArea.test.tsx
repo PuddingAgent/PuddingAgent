@@ -73,7 +73,7 @@ const baseProps = {
 
 const createVoiceAdapter = () => {
   let handlers: any;
-  const handle = { stop: jest.fn() };
+  const handle = { stop: jest.fn(), cancel: jest.fn() };
   return {
     adapter: {
       isSupported: () => true,

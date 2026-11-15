@@ -111,7 +111,8 @@ public sealed class VoiceSynthesisService(
             Provider = provider.Provider,
             Model = modelId,
             Voice = string.IsNullOrWhiteSpace(request.Voice)
-                ? "Cherry"
+                ? providerConfig.TtsModels.First(m => m.ModelId == modelId).Voices.FirstOrDefault()
+                  ?? throw new InvalidOperationException("No default voice configured.")
                 : request.Voice,
             AudioFormat = string.IsNullOrWhiteSpace(request.AudioFormat)
                 ? VoiceAudioFormats.Wav

@@ -13,23 +13,23 @@ namespace PuddingPlatform.Controllers.Api;
 [Authorize]
 [ApiController]
 [Route("api/voice")]
+[VoiceFailure]
 public sealed class VoiceController : ControllerBase
 {
     [HttpPost("tts/synthesize")]
     [Produces("audio/wav", "audio/mpeg")]
     public async Task<IActionResult> Synthesize(
-        [FromBody] TtsSynthesizeRequest request,
+        [FromBody] VoiceSynthesizeInput request,
         [FromServices] IVoiceSynthesisService synthesisService,
         CancellationToken ct)
     {
         var result = await synthesisService.SynthesizeAsync(new VoiceSynthesisRequest
         {
-            WorkspaceId = "default",
+            WorkspaceId = request.WorkspaceId ?? string.Empty,
             MessageId = Guid.NewGuid().ToString("N"),
             Text = request.Text,
-            Provider = request.ProviderId ?? VoiceSynthesisProviders.Unknown,
-            Model = request.ModelId ?? "",
-            Voice = request.Voice ?? "Cherry",
+            Model = "",
+            Voice = request.Voice ?? "",
             AudioFormat = request.Format ?? "wav",
             SampleRate = request.SampleRate > 0 ? request.SampleRate : 24000,
             Instructions = request.Instructions,
@@ -48,29 +48,67 @@ public sealed class VoiceController : ControllerBase
     }
 
     /// <summary>语音识别。接收原始音频二进制（multipart/form-data 或 raw body），返回文本。</summary>
-        [HttpPost("asr/recognize")]
+    [HttpPost("asr/recognize")]
     [RequestSizeLimit(10_485_760)]
     public async Task<IActionResult> Recognize(
-        [FromServices] IVoiceProviderFactory factory,
-        [FromServices] VoiceProviderFileService voiceService,
+        [FromServices] IAudioTranscriptionService transcription,
         CancellationToken ct)
     {
         // ① 读取原始字节
         var audioBytes = await ReadRequestBodyAsync(Request, ct);
         if (audioBytes is null or { Length: 0 })
-            return BadRequest("No audio data provided.");
+            throw new PuddingSpeech.SpeechFailure("voice_no_speech", "没有录到声音，请重新录音。", 400);
 
-        // ② 加载语音配置
-        var voiceConfig = await voiceService.LoadAsync(ct);
-        if (voiceConfig is null || voiceConfig.Providers.Count == 0)
-            return Problem("Voice providers not configured.", statusCode: 503);
-
-        // ③ 通过标准 DI 创建 ASR Provider（与 TTS 对称）
-        var provider = factory.CreateAsrProvider(voiceConfig);
-        var format = Request.Headers.ContentType.ToString().Contains("webm") ? "webm" : "wav";
-        var result = await provider.RecognizeAsync(audioBytes, format, null, ct);
+        // The unified service selects the provider; multipart labels cannot establish encoding.
+        PuddingSpeech.PcmWave.ReadPcm16KhzMono(audioBytes);
+        var result = await transcription.TranscribeAsync(new AudioTranscriptionRequest { Content = audioBytes, Format = "wav" }, ct);
 
         return Ok(new { text = result.Text, emotion = result.Emotion });
+    }
+
+    [HttpGet("capabilities")]
+    public async Task<IActionResult> Capabilities([FromServices] VoiceProviderFileService voiceService, CancellationToken ct)
+    {
+        var config = await voiceService.LoadAsync(ct);
+        var asr = config.Providers.FirstOrDefault(p => p.IsEnabled && p.ProviderId == config.DefaultAsrProviderId);
+        var tts = config.Providers.FirstOrDefault(p => p.IsEnabled && p.ProviderId == config.DefaultTtsProviderId);
+        return Ok(new { canRecognize = asr?.AsrModels.Any(m => m.ModelId == config.DefaultAsrModelId) == true,
+            canSynthesize = tts?.TtsModels.Any(m => m.ModelId == config.DefaultTtsModelId) == true,
+            maxRecordingSeconds = 120, recordingFormat = "wav", sampleRate = 16000 });
+    }
+
+    [HttpPost("tts/stream")]
+    public async Task Stream([FromBody] VoiceSynthesizeInput request, [FromServices] IVoiceSynthesisService synthesis, CancellationToken ct)
+    {
+        Response.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache";
+        try
+        {
+            await foreach (var frame in synthesis.StreamAsync(new VoiceSynthesisRequest
+            {
+                WorkspaceId = request.WorkspaceId ?? "", MessageId = Guid.NewGuid().ToString("N"),
+                Text = request.Text, Model = "", Voice = request.Voice ?? "", AudioFormat = "pcm", SampleRate = 24000,
+            }, ct))
+            {
+                await WriteEvent(new { type = "audio", data = Convert.ToBase64String(frame.AudioBytes ?? []), sampleRate = frame.SampleRate ?? 24000 }, ct);
+            }
+            await WriteEvent(new { type = "completed" }, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            var failure = ex as PuddingSpeech.SpeechFailure
+                ?? new PuddingSpeech.SpeechFailure("voice_provider_failed", "语音生成失败，请检查语音设置后重试。");
+            var errorId = Guid.NewGuid().ToString("N")[..12];
+            HttpContext.RequestServices.GetService<ILogger<VoiceController>>()?
+                .LogWarning("[VoiceStream] errorId={ErrorId} code={Code}", errorId, failure.Code);
+            await WriteEvent(new { type = "failed", code = failure.Code, message = failure.Message, errorId }, ct);
+        }
+    }
+
+    private async Task WriteEvent(object data, CancellationToken ct)
+    {
+        await Response.WriteAsync($"data: {System.Text.Json.JsonSerializer.Serialize(data)}\n\n", ct);
+        await Response.Body.FlushAsync(ct);
     }
 
     private static async Task<byte[]?> ReadRequestBodyAsync(HttpRequest request, CancellationToken ct)
@@ -88,4 +126,15 @@ public sealed class VoiceController : ControllerBase
         await request.Body.CopyToAsync(bodyMs, ct);
         return bodyMs.Length > 0 ? bodyMs.ToArray() : null;
     }
+}
+
+/// <summary>Business request: routing and credentials are always resolved by Core.</summary>
+public sealed record VoiceSynthesizeInput
+{
+    public required string Text { get; init; }
+    public string? WorkspaceId { get; init; }
+    public string? Voice { get; init; }
+    public string? Format { get; init; }
+    public int SampleRate { get; init; }
+    public string? Instructions { get; init; }
 }

@@ -53,10 +53,10 @@ public sealed class VoiceProviderFactory : IVoiceProviderFactory
             ?? throw new InvalidOperationException(
                 $"TTS model '{modelId}' not found in provider '{providerId}'.");
 
-        // Phase 1：仅 DashScope
-        if (!string.Equals(provider.ProviderId, "dashscope", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(provider.ProviderId, "dashscope", StringComparison.OrdinalIgnoreCase)
+            && model.ModelId is not ("qwen3-tts-flash" or "qwen3-tts-instruct-flash"))
             throw new NotSupportedException(
-                $"TTS provider '{provider.ProviderId}' is not yet supported. Phase 1 only supports DashScope.");
+                "The configured TTS protocol is not supported.");
 
         return new DashScopeTtsProvider(
             _httpFactory.CreateClient("DashScopeTts"),
@@ -91,6 +91,12 @@ public sealed class VoiceProviderFactory : IVoiceProviderFactory
             string.Equals(m.ModelId, modelId, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException(
                 $"ASR model '{modelId}' not found in provider '{providerId}'.");
+
+        if (model.ModelId == PuddingSpeech.QwenAsr.Model)
+            return new QwenMessageAsrProvider(provider);
+
+        if (!string.Equals(provider.ProviderId, "dashscope", StringComparison.OrdinalIgnoreCase))
+            throw new PuddingSpeech.SpeechFailure("voice_model_unavailable", "当前语音模型协议尚未接入。", 503);
 
         return new DashScopeAsrProvider(
             _httpFactory.CreateClient("DashScopeAsr"),

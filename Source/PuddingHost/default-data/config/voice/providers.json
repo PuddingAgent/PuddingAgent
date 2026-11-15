@@ -17,7 +17,7 @@
           "sampleRates": [24000, 48000],
           "supportsStreaming": true,
           "supportsInstructions": true,
-          "isDefault": true,
+          "isDefault": false,
           "sortOrder": 1
         },
         {
@@ -28,17 +28,18 @@
           "audioFormats": ["wav", "mp3"],
           "sampleRates": [24000],
           "supportsStreaming": true,
+          "isDefault": true,
           "sortOrder": 2
         }
       ],
       "asrModels": [
         {
-          "modelId": "qwen3-asr-flash-realtime",
-          "name": "Qwen3 ASR Flash Realtime",
-          "path": "/api/v1/services/aigc/multimodal-generation/generation",
-          "languages": ["zh-CN", "en-US"],
+          "modelId": "qwen-audio-3.1-asr-flash-message",
+          "name": "Qwen Audio 3.1 ASR Flash Message",
+          "path": "/api-ws/v1/inference",
+          "languages": ["zh", "en"],
           "sampleRates": [16000],
-          "supportsEmotion": true,
+          "supportsEmotion": false,
           "supportsTimestamps": true,
           "isDefault": true,
           "sortOrder": 1
@@ -68,7 +69,7 @@
     }
   ],
   "defaultTtsProviderId": "dashscope",
-  "defaultTtsModelId": "cosyvoice-v3-flash",
+  "defaultTtsModelId": "qwen3-tts-flash",
   "defaultAsrProviderId": "dashscope",
-  "defaultAsrModelId": "qwen3-asr-flash"
+  "defaultAsrModelId": "qwen-audio-3.1-asr-flash-message"
 }

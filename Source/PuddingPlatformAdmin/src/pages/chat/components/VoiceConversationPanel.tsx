@@ -21,9 +21,9 @@ import type {
 import {
   type BrowserVoiceOutputAdapter,
   type BrowserVoiceOutputHandle,
-  defaultBrowserVoiceOutputAdapter,
 } from '../hooks/browserVoiceOutput';
-import { createDashScopeVoiceInputAdapter } from '../hooks/dashScopeVoiceInput';
+import { createVoiceInputAdapter } from '../hooks/cloudVoiceInput';
+import { defaultCloudVoiceOutputAdapter } from '../hooks/cloudVoiceOutput';
 import { useChatStyles } from '../styles';
 
 type VoicePanelState =
@@ -81,7 +81,7 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
   loading = false,
   latestAssistantText = '',
   voiceInputAdapter,
-  voiceOutputAdapter = defaultBrowserVoiceOutputAdapter,
+  voiceOutputAdapter = defaultCloudVoiceOutputAdapter,
   variant = 'panel',
   onExit,
   onDraftChange,
@@ -133,11 +133,13 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
 
   const stopCapture = useCallback(
     (status: 'cancelled' | 'completed' = 'cancelled') => {
-      captureHandleRef.current?.stop();
+      if (status === 'completed') captureHandleRef.current?.stop();
+      else captureHandleRef.current?.cancel();
       captureHandleRef.current = null;
       setInterimTranscript('');
-      setPanelState(status === 'completed' ? 'awaiting_confirmation' : 'idle');
-      onVoiceCaptureStatus?.(status, { sessionId: voiceSessionIdRef.current });
+      setPanelState(status === 'completed' ? 'transcribing' : 'idle');
+      if (status === 'cancelled') voiceSessionIdRef.current = '';
+      onVoiceCaptureStatus?.(status === 'completed' ? 'transcribing' : status, { sessionId: voiceSessionIdRef.current });
     },
     [onVoiceCaptureStatus],
   );
@@ -167,6 +169,7 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
           onVoiceCaptureStatus?.('transcribing', { sessionId: voiceSessionId });
         },
         onFinalTranscript: (text) => {
+          if (voiceSessionIdRef.current !== voiceSessionId) return;
           const nextText = text.trim();
           if (nextText) {
             onDraftChange(nextText);
@@ -178,6 +181,7 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
           captureHandleRef.current = null;
         },
         onError: (message) => {
+          if (voiceSessionIdRef.current !== voiceSessionId) return;
           setPanelState('failed');
           setErrorText(message);
           onVoiceCaptureStatus?.('failed', {
@@ -188,6 +192,7 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
           captureHandleRef.current = null;
         },
       });
+      if (voiceSessionIdRef.current !== voiceSessionId) { handle.cancel(); return; }
       captureHandleRef.current = handle;
       setPanelState((current) =>
         current === 'requesting_permission' ? 'recording' : current,
@@ -290,7 +295,7 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
 
   useEffect(
     () => () => {
-      captureHandleRef.current?.stop();
+      captureHandleRef.current?.cancel();
       playbackHandleRef.current?.stop();
     },
     [],
@@ -367,7 +372,7 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
                 disabled={!voiceSupported || disabled || loading}
                 aria-label={isListening ? '停止收音' : '开始语音会话'}
                 onClick={
-                  isListening ? () => stopCapture('cancelled') : startCapture
+                  isListening ? () => stopCapture('completed') : startCapture
                 }
               >
                 {isListening ? <PauseOutlined /> : <AudioOutlined />}
@@ -455,7 +460,7 @@ const VoiceConversationPanel: React.FC<VoiceConversationPanelProps> = ({
             disabled={!voiceSupported || disabled || loading}
             aria-label={isListening ? '停止收音' : '开始语音会话'}
             onClick={
-              isListening ? () => stopCapture('cancelled') : startCapture
+              isListening ? () => stopCapture('completed') : startCapture
             }
           >
             {isListening ? <PauseOutlined /> : <AudioOutlined />}

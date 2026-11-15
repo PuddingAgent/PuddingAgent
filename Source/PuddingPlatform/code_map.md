@@ -306,6 +306,8 @@ per-key 连续 deferred 计数与退避档属 Agent 侧诊断（`classifier_stat
 | `Services/AudioArtifactStorageService.cs` | 音频存储 | `AudioArtifactStorageService` | `Services/AudioTranscriptionService.cs` | — |
 | `Services/AudioTranscriptionService.cs` | 音频转录 | `AudioTranscriptionService` | `Services/AudioArtifactStorageService.cs` | — |
 | `Services/VoiceSynthesisService.cs` | 语音合成 | `VoiceSynthesisService` | `Services/AudioArtifactStorageService.cs` | — |
+| `Controllers/Api/VoiceController.cs` | 统一录音识别、完整/流式合成与能力查询 | `VoiceController` | `Services/AudioTranscriptionService.cs`、`Services/VoiceSynthesisService.cs` | 不从业务请求选 Provider；识别前校验真实 PCM WAV；流式音频与终态独立 |
+| `Controllers/Api/VoiceFailureAttribute.cs` | 语音错误的 HTTP 边界 | `VoiceFailureAttribute` | `../PuddingSpeech/SpeechFailure.cs` | 上游额度/凭据错误不冒充 Pudding 登录失败；脱敏 code/message/errorId |
 
 ## 提供商配置
 

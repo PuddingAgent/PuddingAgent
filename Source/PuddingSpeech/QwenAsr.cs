@@ -78,14 +78,18 @@ public sealed class QwenAsr(Func<CancellationToken, Task<ISpeechSocket>> connect
 
         async Task SendAudioAsync()
         {
-            await started.Task.WaitAsync(lifetime.Token);
-            for (var offset = 0; offset < pcm.Length; offset += 3200)
-                await socket.SendAudioAsync(pcm.AsMemory(offset, Math.Min(3200, pcm.Length - offset)), lifetime.Token);
-            await socket.SendTextAsync(JsonSerializer.Serialize(new
+            try
             {
-                header = new { action = "finish-task", task_id = taskId, streaming = "duplex" },
-                payload = new { input = new { } },
-            }), lifetime.Token);
+                await started.Task.WaitAsync(lifetime.Token);
+                for (var offset = 0; offset < pcm.Length; offset += 3200)
+                    await socket.SendAudioAsync(pcm.AsMemory(offset, Math.Min(3200, pcm.Length - offset)), lifetime.Token);
+                await socket.SendTextAsync(JsonSerializer.Serialize(new
+                {
+                    header = new { action = "finish-task", task_id = taskId, streaming = "duplex" },
+                    payload = new { input = new { } },
+                }), lifetime.Token);
+            }
+            catch { await lifetime.CancelAsync(); throw; }
         }
     }
 }

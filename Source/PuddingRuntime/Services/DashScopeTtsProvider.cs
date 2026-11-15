@@ -76,34 +76,17 @@ public sealed class DashScopeTtsProvider : ITtsProvider
         var body = BuildRequestBody(request, stream: true);
         using var response = await PostStreamAsync(body, ct);
 
-        var fullText = await response.Content.ReadAsStringAsync(ct);
-        _logger.LogDebug("[DashScopeTts] SSE raw response ({Len} chars): {Text}",
-            fullText.Length, fullText[..Math.Min(200, fullText.Length)]);
-
-        var lines = fullText.Split('\n', StringSplitOptions.None);
+        await using var audioStream = await response.Content.ReadAsStreamAsync(ct);
         var sequence = 0;
-
-        foreach (var raw in lines)
+        await foreach (var audio in PuddingSpeech.QwenTts.ReadAudioAsync(audioStream, ct))
         {
-            if (ct.IsCancellationRequested) break;
-            var line = raw.TrimEnd('\r');
-            if (string.IsNullOrEmpty(line)) continue;
-            if (!line.StartsWith("data:")) continue;
-
-            var json = line[5..].Trim();
-            if (json == "[DONE]") break;
-
-            var chunk = JsonSerializer.Deserialize<DashScopeSseChunk>(json);
-            if (chunk?.Output?.Audio?.Data is not null)
-            {
-                yield return VoiceSynthesisStreamEvent.AudioDelta(
+            yield return VoiceSynthesisStreamEvent.AudioDelta(
                     messageId: request.MessageId,
                     deliveryId: request.DeliveryId,
-                    audioBytes: Convert.FromBase64String(chunk.Output.Audio.Data),
+                    audioBytes: audio,
                     format: request.AudioFormat,
                     sampleRate: request.SampleRate,
                     sequence: ++sequence);
-            }
         }
     }
 
@@ -123,18 +106,11 @@ public sealed class DashScopeTtsProvider : ITtsProvider
         var modelId = _modelConfig.ModelId;
 
         // Qwen-TTS family: different body format (language_type instead of format/sample_rate)
-        if (modelId.StartsWith("qwen", StringComparison.OrdinalIgnoreCase))
+        if (modelId is "qwen3-tts-flash" or "qwen3-tts-instruct-flash")
         {
-            return new
-            {
-                model = modelId,
-                input = new
-                {
-                    text = request.Text,
-                    voice = request.Voice,
-                    language_type = "Chinese",
-                }
-            };
+            return JsonSerializer.Deserialize<JsonElement>(PuddingSpeech.QwenTts.BuildRequest(
+                PuddingSpeech.QwenTts.Qwen3Protocol, modelId, request.Text, request.Voice,
+                request.AudioFormat, request.SampleRate, request.LanguageType, request.Instructions));
         }
 
         // CosyVoice / default
@@ -155,7 +131,7 @@ public sealed class DashScopeTtsProvider : ITtsProvider
 
     private async Task<string> PostAsync(object body, bool stream, CancellationToken ct)
     {
-        var msg = new HttpRequestMessage(HttpMethod.Post, BuildEndpoint())
+        using var msg = new HttpRequestMessage(HttpMethod.Post, BuildEndpoint())
         {
             Content = new StringContent(
                 JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
@@ -164,14 +140,15 @@ public sealed class DashScopeTtsProvider : ITtsProvider
         if (stream)
             msg.Headers.Add("X-DashScope-SSE", "enable");
 
-        var response = await _httpClient.SendAsync(msg, ct);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync(ct);
+        using var response = await _httpClient.SendAsync(msg, ct);
+        var text = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode) throw PuddingSpeech.SpeechFailure.FromProvider((int)response.StatusCode, text);
+        return text;
     }
 
     private async Task<HttpResponseMessage> PostStreamAsync(object body, CancellationToken ct)
     {
-        var msg = new HttpRequestMessage(HttpMethod.Post, BuildEndpoint())
+        using var msg = new HttpRequestMessage(HttpMethod.Post, BuildEndpoint())
         {
             Content = new StringContent(
                 JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
@@ -179,8 +156,13 @@ public sealed class DashScopeTtsProvider : ITtsProvider
         msg.Headers.Add("Authorization", $"Bearer {_providerConfig.ApiKey}");
         msg.Headers.Add("X-DashScope-SSE", "enable");
 
-        var response = await _httpClient.SendAsync(msg, ct);
-        response.EnsureSuccessStatusCode();
+        var response = await _httpClient.SendAsync(msg, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var failure = PuddingSpeech.SpeechFailure.FromProvider((int)response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+            response.Dispose();
+            throw failure;
+        }
         return response;
     }
 

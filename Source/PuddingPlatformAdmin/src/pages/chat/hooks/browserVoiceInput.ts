@@ -1,4 +1,6 @@
 export interface BrowserVoiceInputHandlers {
+  onTranscribing?: () => void;
+  onLevel?: (level: number, seconds: number) => void;
   onPermissionGranted?: (deviceLabel?: string) => void;
   onInterimTranscript?: (text: string) => void;
   onFinalTranscript?: (text: string) => void;
@@ -7,6 +9,7 @@ export interface BrowserVoiceInputHandlers {
 
 export interface BrowserVoiceInputHandle {
   stop: () => void;
+  cancel: () => void;
 }
 
 export interface BrowserVoiceInputAdapter {
@@ -89,6 +92,7 @@ export const defaultBrowserVoiceInputAdapter: BrowserVoiceInputAdapter = {
     recognition.start();
 
     return {
+      cancel: () => { stopped = true; recognition.abort(); stopStream(stream); },
       stop: () => {
         stopped = true;
         try {

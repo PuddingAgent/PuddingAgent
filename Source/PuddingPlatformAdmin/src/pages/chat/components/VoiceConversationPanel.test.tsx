@@ -24,7 +24,7 @@ jest.mock('../styles', () => {
 
 const createVoiceInputAdapter = () => {
   let handlers: any;
-  const handle = { stop: jest.fn() };
+  const handle = { stop: jest.fn(), cancel: jest.fn() };
   return {
     adapter: {
       isSupported: () => true,
@@ -115,7 +115,7 @@ describe('VoiceConversationPanel', () => {
   });
 
   it('speaks the latest assistant answer and can stop playback', async () => {
-    const handle = { stop: jest.fn() };
+    const handle = { stop: jest.fn(), cancel: jest.fn() };
     let handlers: any;
     const voiceOutputAdapter = {
       isSupported: () => true,

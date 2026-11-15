@@ -169,6 +169,7 @@ HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 St
 | `Hosting/PuddingApplicationHost.cs` | 组合根与 Kestrel 地址绑定（见下「关键语义」） |
 | `Hosting/PuddingDataRootBootstrapper.cs` | DataRoot 解析与引导（见下「关键语义」） |
 | `Config/` | 默认配置 |
+| `default-data/config/voice/providers.json` | 语音默认目录：Qwen Message ASR 与 Qwen3 TTS；不含真实凭据 |
 | `Prompts/` | 系统提示模板 |
 | `P2P/` | P2P 通信 |
 

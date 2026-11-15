@@ -27,6 +27,8 @@ interface MessageActionsProps {
   voiceOutputAdapter?: BrowserVoiceOutputAdapter;
   /** 后端 TTS 朗读（DashScope API），优先级高于浏览器语音。 */
   onTtsSpeak?: () => void;
+  onTtsStop?: () => void;
+  ttsError?: string;
   ttsPlaying?: boolean;
   ttsLoading?: boolean;
 }
@@ -40,6 +42,8 @@ const MessageActions: React.FC<MessageActionsProps> = ({
   onDelete,
   voiceOutputAdapter,
   onTtsSpeak,
+  onTtsStop,
+  ttsError,
   ttsPlaying,
   ttsLoading,
 }) => {
@@ -166,9 +170,9 @@ const MessageActions: React.FC<MessageActionsProps> = ({
           <button
             type="button"
             className={styles.messageActionBtn}
-            onClick={ttsPlaying ? undefined : onTtsSpeak}
+            onClick={ttsPlaying || ttsLoading ? onTtsStop : onTtsSpeak}
             aria-label={
-              ttsLoading ? '合成中' : ttsPlaying ? '停止朗读' : 'AI 朗读'
+              ttsLoading ? '取消语音生成' : ttsPlaying ? '停止朗读' : 'AI 朗读'
             }
           >
             {ttsLoading ? (
@@ -209,6 +213,7 @@ const MessageActions: React.FC<MessageActionsProps> = ({
           </button>
         </Tooltip>
       )}
+      {ttsError && <span role="alert" style={{ color: '#cf1322', fontSize: 12 }}>{ttsError}</span>}
       {onDelete && (
         <Tooltip title="删除">
           <button

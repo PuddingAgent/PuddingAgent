@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
 import { getIndexStatus } from '@/pages/index-status/api';
 import {
@@ -9,10 +9,10 @@ import {
   uploadVisionArtifact,
 } from '@/services/platform/api';
 import IntentConsole from './IntentConsole';
-import { createDashScopeVoiceInputAdapter } from '../hooks/dashScopeVoiceInput';
+import { createVoiceInputAdapter } from '../hooks/cloudVoiceInput';
 
-jest.mock('../hooks/dashScopeVoiceInput', () => ({
-  createDashScopeVoiceInputAdapter: jest.fn(),
+jest.mock('../hooks/cloudVoiceInput', () => ({
+  createVoiceInputAdapter: jest.fn(),
 }));
 
 jest.mock('@/services/platform/api', () => ({
@@ -118,7 +118,7 @@ const voiceAdapter = {
   start: jest.fn(async (callbacks: any) => {
     callbacks.onPermissionGranted?.('Built-in Microphone');
     callbacks.onFinalTranscript?.('请总结今天的工作');
-    return { stop: jest.fn() };
+    return { stop: jest.fn(), cancel: jest.fn() };
   }),
 };
 
@@ -140,7 +140,7 @@ const baseProps = {
 describe('IntentConsole', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (createDashScopeVoiceInputAdapter as jest.Mock).mockReturnValue(voiceAdapter);
+    (createVoiceInputAdapter as jest.Mock).mockReturnValue(voiceAdapter);
     (URL.createObjectURL as jest.Mock).mockImplementation(
       (file: File) => `blob:${file.name}`,
     );
@@ -165,6 +165,21 @@ describe('IntentConsole', () => {
 
     expect(screen.getByTestId('chat-input')).toBeTruthy();
     expect(screen.getByRole('button', { name: '开始语音输入' })).toBeTruthy();
+  });
+
+  it('waits for the real transcript and ignores results from a cancelled capture', async () => {
+    let handlers: any;
+    const handle = { stop: jest.fn(), cancel: jest.fn() };
+    const adapter = { isSupported: () => true, start: jest.fn(async (callbacks: any) => { handlers = callbacks; return handle; }) };
+    render(<IntentConsole {...baseProps} inputValue="原稿" voiceInputAdapter={adapter} />);
+    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' }));
+    fireEvent.click(await screen.findByRole('button', { name: '完成录音' }));
+    expect(handle.stop).toHaveBeenCalledTimes(1);
+    expect((screen.getByTestId('chat-input') as HTMLTextAreaElement).value).toBe('原稿');
+    fireEvent.click(screen.getByRole('button', { name: '取消录音' }));
+    expect(handle.cancel).toHaveBeenCalledTimes(1);
+    act(() => handlers.onFinalTranscript('迟到文字'));
+    expect((screen.getByTestId('chat-input') as HTMLTextAreaElement).value).toBe('原稿');
   });
 
   it('exposes a URL-gated browser test greeting filler', () => {
@@ -207,7 +222,7 @@ describe('IntentConsole', () => {
     render(<ControlledIntentConsole />);
 
     fireEvent.click(screen.getByRole('button', { name: '开始语音输入' }));
-    fireEvent.click(await screen.findByRole('button', { name: '停止录音' }));
+    fireEvent.click(await screen.findByRole('button', { name: '完成录音' }));
 
     await waitFor(() => {
       expect((screen.getByTestId('chat-input') as HTMLTextAreaElement).value).toBe('请总结今天的工作');

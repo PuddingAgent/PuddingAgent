@@ -10,6 +10,8 @@
     <Project Path="Samples/Plugins/ReviewAudit/ReviewAudit.csproj" />
   </Folder>
   <Folder Name="/Source/">
+    <Project Path="Source/PuddingSpeech/PuddingSpeech.csproj" />
+    <Project Path="Source/PuddingSpeechTests/PuddingSpeechTests.csproj" />
     <Project Path="Source/Pudding.Api.Contracts/Pudding.Api.Contracts.csproj" />
     <Project Path="Source/Pudding.Api.Sdk/Pudding.Api.Sdk.csproj" />
     <Project Path="Source/Pudding.Api.SdkTests/Pudding.Api.SdkTests.csproj" />

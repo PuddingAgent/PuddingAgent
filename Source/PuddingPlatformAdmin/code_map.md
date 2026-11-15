@@ -37,6 +37,13 @@
 
 ## 关键文件
 
+| 语音入口 | 用途 |
+|---|---|
+| `src/pages/chat/hooks/cloudVoiceInput.ts` · `public/audio/pcm-capture.js` | 服务商无关的 AudioWorklet 录音、PCM WAV 编码、完成/取消分离和 120 秒本地上限 |
+| `src/pages/chat/hooks/voiceAudio.ts` | WAV 编码及保留键入草稿的转写插入 |
+| `src/pages/chat/hooks/ttsPlaybackController.ts` · `useTtsPlayer.ts` · `cloudVoiceOutput.ts` | 共享单一播放任务、PCM SSE 排程、网络取消、切会话清理和可见错误 |
+| `src/pages/chat/components/IntentConsole.tsx` | 原输入框中的录音音量/时长/取消/重试状态；真实回调回填草稿，迟到结果按 generation 丢弃 |
+
 | 文件 | 用途 |
 |------|------|
 | `package.json` | 依赖（3KB） |

@@ -35,7 +35,8 @@ import {
   type BrowserVoiceOutputAdapter,
   defaultBrowserVoiceOutputAdapter,
 } from '../hooks/browserVoiceOutput';
-import { createDashScopeVoiceInputAdapter } from '../hooks/dashScopeVoiceInput';
+import { createVoiceInputAdapter } from '../hooks/cloudVoiceInput';
+import { insertTranscript } from '../hooks/voiceAudio';
 import type { ChatInteractionQueueItem } from '../hooks/useChatState';
 
 import { useChatStyles } from '../styles';
@@ -328,7 +329,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   reasoningEffort,
   onReasoningEffortChange,
   onOpenSubAgentInspector,
-  voiceInputAdapter = createDashScopeVoiceInputAdapter(),
+  voiceInputAdapter = createVoiceInputAdapter(),
   voiceOutputAdapter = defaultBrowserVoiceOutputAdapter,
   latestAssistantText,
   onVoiceCaptureStatus,
@@ -429,6 +430,10 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   /** 容器是否处于 active（focus 或 非空输入 或 正在录音） */
   const [recording, setRecording] = useState(false);
   const [recognizing, setRecognizing] = useState(false);
+  const [voiceStarting, setVoiceStarting] = useState(false);
+  const [voiceError, setVoiceError] = useState<string>();
+  const [voiceMeter, setVoiceMeter] = useState({ level: 0, seconds: 0 });
+  const voiceGeneration = useRef(0);
   const voiceHandleRef = useRef<BrowserVoiceInputHandle | null>(null);
   /** 图片上传隐藏文件选择器 */
   const imageFileInputRef = useRef<HTMLInputElement>(null);
@@ -538,7 +543,8 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     if (compactionStatus === COMPACTION_RUNNING_LABEL) return;
     void refreshContextHealth();
   }, [compactionStatus, refreshContextHealth]);
-  const voiceAdapterRef = useRef(createDashScopeVoiceInputAdapter());
+  const voiceAdapterRef = useRef(voiceInputAdapter);
+  voiceAdapterRef.current = voiceInputAdapter;
   const composerActive =
     composerFocused ||
     composerHasText ||
@@ -802,57 +808,57 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     [stageImageFiles],
   );
 
-  // ── Inline 语音录音 ──
+  const cancelVoice = useCallback(() => {
+    voiceGeneration.current++;
+    voiceHandleRef.current?.cancel();
+    voiceHandleRef.current = null;
+    setRecording(false); setRecognizing(false); setVoiceStarting(false);
+  }, []);
+  useEffect(() => () => cancelVoice(), [sessionId, cancelVoice]);
+
+  // Completion is driven by the recognizer, never by a guessed delay.
   const handleToggleVoiceInput = useCallback(async () => {
+    if (voiceStarting || recognizing) { cancelVoice(); return; }
     if (recording) {
-      // 停止录音 → 识别
       voiceHandleRef.current?.stop();
-      voiceHandleRef.current = null;
       setRecording(false);
       setRecognizing(true);
       return;
     }
-
-    // 开始录音
+    const generation = ++voiceGeneration.current;
+    const original = textInputRef.current?.getValue() ?? '';
+    const caret = textAreaRef.current?.selectionStart ?? original.length;
+    const current = () => voiceGeneration.current === generation;
+    setVoiceStarting(true); setVoiceError(undefined); setVoiceMeter({ level: 0, seconds: 0 });
     try {
       const adapter = voiceAdapterRef.current;
       if (!adapter.isSupported()) {
-        alert('当前浏览器不支持语音输入');
-        return;
+        throw new Error('当前环境不支持录音，请检查麦克风权限或使用键盘输入。');
       }
-
-      let finalText = '';
       const handle = await adapter.start({
-        onPermissionGranted: () => {
-          setRecording(true);
-        },
+        onLevel: (level, seconds) => { if (current()) setVoiceMeter({ level, seconds }); },
+        onTranscribing: () => { if (current()) { setRecording(false); setRecognizing(true); } },
         onFinalTranscript: (text: string) => {
-          finalText = text;
+          if (!current()) return;
+          const value = textInputRef.current?.getValue() ?? '';
+          textInputRef.current?.setValue(insertTranscript(value, original, caret, text));
+          voiceHandleRef.current = null;
+          setRecording(false); setRecognizing(false); setVoiceStarting(false);
+          if (!text.trim()) setVoiceError('没有识别到声音，请重新录音。');
         },
         onError: (msg: string) => {
-          console.error('Voice error:', msg);
+          if (!current()) return;
+          setVoiceError(msg); cancelVoice();
         },
       });
+      if (!current()) { handle.cancel(); return; }
       voiceHandleRef.current = handle;
+      setVoiceStarting(false);
       setRecording(true);
-
-      // 监听 handle 的 stop — adapter 的 stop 是 async 的，但我们这里用同步 flag
-      const origStop = handle.stop;
-      handle.stop = () => {
-        origStop.call(handle);
-        // 延迟等待 finalText 被填充
-        setTimeout(() => {
-          setRecognizing(false);
-          if (finalText.trim()) {
-            textInputRef.current?.setValue(finalText);
-          }
-        }, 200);
-      };
     } catch (err) {
-      console.error('Voice start failed:', err);
-      setRecording(false);
+      if (current()) { setVoiceError(err instanceof Error ? err.message : '无法启动录音。'); cancelVoice(); }
     }
-  }, [recording, onInputChange]);
+  }, [recording, recognizing, voiceStarting, cancelVoice]);
 
   /** 轻反馈带状态 */
   const refreshedContextPct = React.useMemo(() => {
@@ -1070,6 +1076,15 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
             ))}
           </div>
         )}
+        {(recording || recognizing || voiceStarting || voiceError) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginBottom: 6, borderRadius: 10, background: 'var(--pudding-bg-secondary, rgba(120,120,150,.06))', fontSize: 12 }}>
+            {voiceError ? <><span role="alert" style={{ color: '#cf1322', flex: 1 }}>{voiceError}</span><button type="button" onClick={handleToggleVoiceInput}>重试录音</button></> : <>
+              <span role="status" style={{ flex: 1 }}>{recording ? `正在录音 · ${Math.floor(voiceMeter.seconds)} / 120 秒` : recognizing ? '正在识别，完成后文字会进入草稿' : '正在启动麦克风'}</span>
+              {recording && <meter min={0} max={1} value={voiceMeter.level} aria-label="麦克风音量" style={{ width: 70 }} />}
+              <button type="button" onClick={cancelVoice} aria-label="取消录音">取消</button>
+            </>}
+          </div>
+        )}
         <ComposerTextInput
           ref={textInputRef}
           inputValue={inputValue}
@@ -1280,15 +1295,15 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
 
             <Tooltip
               title={
-                recording ? '停止录音' : recognizing ? '识别中...' : '语音输入'
+                recording ? '完成录音并识别' : recognizing || voiceStarting ? '取消语音输入' : '语音输入'
               }
             >
               <button
                 type="button"
                 className={styles.composerToolbarButton}
-                aria-label={recording ? '停止录音' : '开始语音输入'}
+                aria-label={recording ? '完成录音' : recognizing || voiceStarting ? '取消语音输入' : '开始语音输入'}
                 onClick={handleToggleVoiceInput}
-                disabled={disabled || loading || recognizing}
+                disabled={disabled}
                 style={
                   recording
                     ? { color: '#8b5cf6', animation: 'pulse 1s infinite' }
@@ -1297,7 +1312,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               >
                 {recording ? (
                   <StopOutlined />
-                ) : recognizing ? (
+                ) : recognizing || voiceStarting ? (
                   <LoadingOutlined spin />
                 ) : (
                   <AudioOutlined />

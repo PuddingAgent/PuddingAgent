@@ -1042,25 +1042,62 @@ export async function synthesizeTts(params: {
   text: string;
   voice?: string;
   format?: string;
-}): Promise<Blob> {
-  const response = await request<Blob>('/api/voice/tts/synthesize', {
-    method: 'POST',
-    data: params,
-    responseType: 'blob',
-  });
-  return response;
+}, signal?: AbortSignal): Promise<Blob> {
+  return (await requestVoice('/api/voice/tts/synthesize', JSON.stringify(params), signal)).blob();
 }
 
 // ─── ASR Voice Recognition API ────────────────────────────────────
 
-export async function recognizeAsr(audioBlob: Blob): Promise<{ text: string; emotion?: string }> {
+export async function recognizeAsr(audioBlob: Blob, signal?: AbortSignal): Promise<{ text: string; emotion?: string }> {
   const form = new FormData();
-  form.append('audio', audioBlob, 'recording.webm');
-  return request('/api/voice/asr/recognize', {
-    method: 'POST',
-    data: form,
-    headers: { 'Content-Type': 'multipart/form-data' },
+  form.append('audio', audioBlob, 'recording.wav');
+  return (await requestVoice('/api/voice/asr/recognize', form, signal)).json();
+}
+
+async function requestVoice(url: string, body: string | FormData, signal?: AbortSignal): Promise<Response> {
+  const token = localStorage.getItem('pudding_token');
+  const response = await fetch(url, { method: 'POST', body, signal,
+    headers: { ...(typeof body === 'string' ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
   });
+  if (!response.ok) {
+    const failure = await response.json().catch(() => ({}));
+    throw new Error(failure.message || failure.Message || '语音服务请求失败，请检查语音设置。');
+  }
+  return response;
+}
+
+export async function* streamSpeech(text: string, signal: AbortSignal): AsyncGenerator<{ data: string; sampleRate: number }> {
+  const token = localStorage.getItem('pudding_token');
+  const response = await fetch('/api/voice/tts/stream', {
+    method: 'POST', signal,
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ text }),
+  });
+  if (!response.ok || !response.body) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || '语音服务无法连接，请检查语音设置。');
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) throw new Error('语音连接提前中断，请重试。');
+      buffer += decoder.decode(value, { stream: true });
+      let end: number;
+      while ((end = buffer.indexOf('\n\n')) >= 0) {
+        const block = buffer.slice(0, end); buffer = buffer.slice(end + 2);
+        const payload = block.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n');
+        if (!payload) continue;
+        const event = JSON.parse(payload);
+        if (event.type === 'failed') throw new Error(event.message || '语音生成失败。');
+        if (event.type === 'completed') return;
+        if (event.type === 'audio') yield { data: event.data, sampleRate: event.sampleRate };
+      }
+      if (buffer.length > 2 * 1024 * 1024) throw new Error('语音响应过大，请重试。');
+    }
+  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
 // ─── Skill Package API ────────────────────────────────────────────
