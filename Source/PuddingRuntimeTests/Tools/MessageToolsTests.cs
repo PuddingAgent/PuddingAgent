@@ -184,6 +184,24 @@ public sealed class MessageToolsTests
         Assert.IsEmpty(fabric.Sent);
     }
 
+    [TestMethod]
+    public async Task SendMessageTool_Enforces_Default_Reply_Interval_Without_Injected_Ledger()
+    {
+        // 生产里 DI 不给账本（`new SendMessageTool(scopeFactory)`），所以护栏必须靠工具
+        // 自建的那份默认账本 + 默认参数（8 条 / 20 秒）生效。
+        // 已有用例要么显式注入账本、要么显式给参数，这条专测默认路径。
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric));
+
+        var first = await ExecuteParentReplyAsync(tool, "run-default", "a");
+        var second = await ExecuteParentReplyAsync(tool, "run-default", "b");
+
+        Assert.IsTrue(first.Success, first.Error);
+        Assert.IsFalse(second.Success, "the default interval must refuse an immediate second reply");
+        StringAssert.Contains(second.Error, "minimum is 20s");
+        Assert.AreEqual(1, fabric.Sent.Count);
+    }
+
     private static Task<ToolExecutionResult> ExecuteParentReplyAsync(
         SendMessageTool tool,
         string runId,
