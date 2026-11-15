@@ -537,6 +537,9 @@ if (effectiveLlmConfig is not null)
         var  totalSw          = System.Diagnostics.Stopwatch.StartNew();
         int  totalToolCalls   = 0;
         int  roundsStarted    = 0;
+        // 子→主汇报的判定游标（本 run 内有效）。判定规则是纯函数 SubAgentProgressReportPolicy，
+        // 这里只保存「已判定应投递到哪一步」；投递通道属宿主消息系统，尚未接入。
+        var  progressReportState = SubAgentProgressReportState.Empty;
         int  noProgressCount  = 0;   // 连续无工具调用进展的轮次计数
         var  toolRepeatMap    = new Dictionary<string, int>(StringComparer.Ordinal);
         var  failedToolCallTracker = new FailedToolCallTracker();
@@ -1672,6 +1675,8 @@ if (effectiveLlmConfig is not null)
                         status = "continue",
                         tool_calls = totalToolCalls,
                     });
+                    progressReportState = await TryPlanSubAgentProgressReportAsync(
+                        subAgentRunId, request.SessionId, round + 1, totalToolCalls, progressReportState);
                     continue;
                 }
 
@@ -1748,6 +1753,8 @@ if (effectiveLlmConfig is not null)
                     status = loopResp.Status,
                     tool_calls = totalToolCalls,
                 });
+                progressReportState = await TryPlanSubAgentProgressReportAsync(
+                    subAgentRunId, request.SessionId, round + 1, totalToolCalls, progressReportState);
 
                 // ── CompletionPolicy 裁决 ─────────────────────────────
                 var verdict = _completionPolicy.Evaluate(
