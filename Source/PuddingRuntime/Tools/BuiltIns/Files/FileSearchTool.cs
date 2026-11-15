@@ -352,11 +352,27 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        if (baseline.Coverage.Status == RetrievalCoverageStatus.Truncated || mergedPaths.Count > maxResults)
+        // 结果集真的满额 → 截断声明；此时「调大 max_results」是有效药方。
+        if (mergedPaths.Count > maxResults)
         {
             return (mergedPaths.Take(maxResults).ToArray(),
                 RetrievalCoverage.Of(RetrievalCoverageStatus.Truncated,
                     $"scope may contain more matches than the result limit {maxResults}"));
+        }
+
+        // 2026-11-15：结果集未满额、但基线枚举自己撞了内部预算（条目上限 / 超时）⇒ 这不是「结果被截断」，
+        // 而是「无法证实完整」。原实现把两种成因合并成一条 "result limit {maxResults}" 声明：
+        // 既指错成因，也给错药方（调大 max_results 无效，应缩小 scope）。实跑证据：196 条结果 / 上限 500 仍报 truncated。
+        if (baseline.Coverage.Status == RetrievalCoverageStatus.Truncated)
+        {
+            return (mergedPaths,
+                RetrievalCoverage.Partial(
+                    "differential enumeration stopped early; the result set did not fill "
+                    + "(narrowing the directory scope helps, raising max_results does not)"
+                    + (baseline.Coverage.Reasons.Count > 0
+                        ? $" — {string.Join("; ", baseline.Coverage.Reasons)}"
+                        : string.Empty),
+                    primary.Coverage.Reasons));
         }
 
         if (baseline.Coverage.Status != RetrievalCoverageStatus.Complete)

@@ -5,6 +5,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Tools;
+using PuddingCode.Tools.Retrieval;
 using PuddingFullTextIndex.Contracts;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.Search;
@@ -866,6 +867,65 @@ public sealed class FileSearchToolTests
         StringAssert.Contains(tool.Descriptor.Description, "ls -a");
     }
 
+    // 2026-11-15 实跑缺陷：Source 下 196 个 .csproj、max_results=500，却报
+    //   "(coverage: truncated — scope may contain more matches than the result limit 500)"
+    // 真实成因是差分基线枚举撞了内部条目上限（结果集远未满额）。声明既指错成因、也给错药方
+    // （调大 max_results 无效，应缩小 scope）。同一代码路径只有「结果集真满额」时才允许说 result limit。
+    [TestMethod]
+    public async Task Baseline_Entry_Cap_Is_Reported_As_Partial_With_Its_Own_Reason_Not_As_Result_Limit()
+    {
+        var root = CreateTempDir("baseline-cap-");
+        try
+        {
+            var a = await WriteFileAsync(root, "a.csproj");
+            var b = await WriteFileAsync(root, "b.csproj");
+            var c = await WriteFileAsync(root, "c.csproj");
+
+            // 主清单不可自证完整 → 触发差分；基线撞内部条目上限。
+            var sdk = new StubEverythingSdk([new EverythingQueryItem(a), new EverythingQueryItem(b)]);
+            var tool = new FileSearchTool([new EverythingSearchProvider(sdk), new TruncatedBuiltInProvider([a, b, c])]);
+
+            var result = await ExecuteAsync(tool, $$"""
+            {
+              "directory": "{{JsonEscape(root)}}",
+              "pattern": "*.csproj",
+              "recursive": true,
+              "max_results": 50
+            }
+            """);
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Truncated, result.Status, "无法证实完整时不得报 ok / no_match");
+            StringAssert.Contains(result.Output, "(coverage: partial", "撞基线内部上限必须报 partial（结果集未满额）");
+            Assert.IsFalse(
+                result.Output.Contains("result limit", StringComparison.Ordinal),
+                "结果集只有 3 条、上限 50，不得出现 result limit 字样——那会诱导模型去调大 max_results");
+            StringAssert.Contains(result.Output, "raising max_results does not", "声明必须点明错药方无效");
+            StringAssert.Contains(result.Output, "2000 entries", "声明必须带真实成因");
+
+            // 正向对照：同一代码路径，结果集真满额时必须恢复 result limit 声明（证明前者不是把话删掉）。
+            var sdkSingle = new StubEverythingSdk([new EverythingQueryItem(a)]);
+            var cappedTool = new FileSearchTool([new EverythingSearchProvider(sdkSingle), new TruncatedBuiltInProvider([a, b, c])]);
+            var capped = await ExecuteAsync(cappedTool, $$"""
+            {
+              "directory": "{{JsonEscape(root)}}",
+              "pattern": "*.csproj",
+              "recursive": true,
+              "max_results": 2
+            }
+            """);
+
+            Assert.IsTrue(capped.Success, capped.Error);
+            Assert.AreEqual(ToolResultStatuses.Truncated, capped.Status);
+            StringAssert.Contains(capped.Output, "(coverage: truncated");
+            StringAssert.Contains(capped.Output, "result limit 2", "结果集真满额时必须点名 max_results");
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
     /// <summary>内置基线计数器：委托真实枚举实现，只为断言"差分是否发生/未发生"。</summary>
     private sealed class CountingBuiltInProvider : IFileSearchProvider
     {
@@ -898,5 +958,23 @@ public sealed class FileSearchToolTests
 
         public Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct) =>
             throw new IOException("stub enumeration failure");
+    }
+
+    /// <summary>基线撞内部条目上限桩：结果集远未满额，但无法证实完整。</summary>
+    private sealed class TruncatedBuiltInProvider(IReadOnlyList<string> paths) : IFileSearchProvider
+    {
+        public string ProviderId => "BuiltInRecursiveFileSearch";
+        public string DisplayName => "truncated builtin";
+        public bool IsAvailable => true;
+
+        public Task<IReadOnlyList<string>> SearchAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct) =>
+            Task.FromResult(paths);
+
+        public Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct) =>
+            Task.FromResult(new FileSearchProviderResult(
+                paths,
+                RetrievalCoverage.Of(
+                    RetrievalCoverageStatus.Truncated,
+                    "builtin enumeration reached 2000 entries; narrow directory scope")));
     }
 }
