@@ -1,4 +1,4 @@
-﻿using System.Net.Http.Json;
+using System.Net.Http.Json;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -245,27 +245,36 @@ public class FeishuClient : IDisposable
         return result ?? new SendMessageResponse { Code = -1, Msg = "empty response" };
     }
 
-    /// <summary>Uploads an Ogg/Opus audio file and returns its Feishu file_key.</summary>
-    public async Task<UploadFileResponse> UploadAudioAsync(
+    /// <summary>
+    /// 上传任意文件并返回 Feishu file_key。
+    /// <para>
+    /// 飞书 im/v1/files 的 file_type 只接受 opus / mp4 / pdf / doc / xls / ppt / stream；
+    /// 不在这组里的扩展名一律用 stream（飞书按未知二进制处理）。
+    /// </para>
+    /// </summary>
+    public async Task<UploadFileResponse> UploadFileAsync(
         byte[] content,
         string fileName,
-        long? durationMs = null,
+        string fileType,
+        long? durationMs,
+        string? contentType,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(content);
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileType);
         if (content.Length == 0)
-            throw new ArgumentException("Audio file is empty.", nameof(content));
+            throw new ArgumentException("File is empty.", nameof(content));
         if (content.Length > MaxUploadFileBytes)
         {
             throw new ArgumentException(
-                $"Audio file exceeds {MaxUploadFileBytes} bytes.",
+                $"File exceeds {MaxUploadFileBytes} bytes.",
                 nameof(content));
         }
 
         var token = await GetAccessTokenAsync(ct);
         using var multipart = new MultipartFormDataContent();
-        multipart.Add(new StringContent("opus"), "file_type");
+        multipart.Add(new StringContent(fileType), "file_type");
         multipart.Add(new StringContent(fileName), "file_name");
         if (durationMs is > 0)
         {
@@ -275,9 +284,9 @@ public class FeishuClient : IDisposable
                         System.Globalization.CultureInfo.InvariantCulture)),
                 "duration");
         }
-        var audio = new ByteArrayContent(content);
-        audio.Headers.ContentType = new("audio/ogg");
-        multipart.Add(audio, "file", fileName);
+        var payload = new ByteArrayContent(content);
+        payload.Headers.ContentType = new(contentType ?? "application/octet-stream");
+        multipart.Add(payload, "file", fileName);
 
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
@@ -298,6 +307,14 @@ public class FeishuClient : IDisposable
         };
     }
 
+    /// <summary>Uploads an Ogg/Opus audio file and returns its Feishu file_key.</summary>
+    public Task<UploadFileResponse> UploadAudioAsync(
+        byte[] content,
+        string fileName,
+        long? durationMs = null,
+        CancellationToken ct = default)
+        => UploadFileAsync(content, fileName, "opus", durationMs, "audio/ogg", ct);
+
     /// <summary>Replies to a Feishu message with an uploaded audio file.</summary>
     public async Task<SendMessageResponse> ReplyAudioAsync(
         string messageId,
@@ -317,6 +334,41 @@ public class FeishuClient : IDisposable
             {
                 content,
                 msg_type = "audio",
+                uuid,
+            }, options: _json),
+        };
+        request.Headers.Authorization = new("Bearer", token);
+        using var response = await _http.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<SendMessageResponse>(
+            _json,
+            ct);
+        return result ?? new SendMessageResponse
+        {
+            Code = -1,
+            Msg = "empty response",
+        };
+    }
+
+    /// <summary>Replies to a Feishu message with an uploaded file (msg_type=file).</summary>
+    public async Task<SendMessageResponse> ReplyFileAsync(
+        string messageId,
+        string fileKey,
+        string? uuid = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileKey);
+        var token = await GetAccessTokenAsync(ct);
+        var content = JsonSerializer.Serialize(new { file_key = fileKey }, _json);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{BaseUrl}/im/v1/messages/{Uri.EscapeDataString(messageId)}/reply")
+        {
+            Content = JsonContent.Create(new
+            {
+                content,
+                msg_type = "file",
                 uuid,
             }, options: _json),
         };
