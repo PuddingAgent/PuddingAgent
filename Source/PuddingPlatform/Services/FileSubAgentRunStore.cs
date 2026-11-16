@@ -332,6 +332,16 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             TotalToolCalls = completion.TotalToolCalls,
             TotalDurationMs = completion.TotalDurationMs,
             ErrorMessage = completion.ErrorMessage,
+            LlmCallCount = completion.LlmCallCount,
+            LlmMaxMs = completion.LlmMaxMs,
+            LlmP50Ms = completion.LlmP50Ms,
+            LlmP95Ms = completion.LlmP95Ms,
+            PromptTokens = completion.PromptTokens,
+            CompletionTokens = completion.CompletionTokens,
+            TotalTokens = completion.TotalTokens,
+            CacheHitTokens = completion.CacheHitTokens,
+            CacheMissTokens = completion.CacheMissTokens,
+            CacheHitPct = completion.CacheHitPct,
         };
 
         var updatedJson = JsonSerializer.Serialize(updated, PuddingJsonContracts.PrettyJson);
@@ -692,6 +702,8 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         long archivedToolOutputChars = 0;
         var firstToolFailureSummary = completion.ToolFailureSummary;
         var countedToolCalls = new HashSet<string>(StringComparer.Ordinal);
+        // usage 与 LLM 分位复用 Core 的聚合器：读侧不得再实现第二套口径（§52.1）。
+        var usageAggregator = new SubAgentLatencyAggregator();
         var eventsPath = Path.Combine(runDir, "events.jsonl");
         if (File.Exists(eventsPath))
         {
@@ -699,6 +711,8 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             {
                 if (string.IsNullOrWhiteSpace(line))
                     continue;
+
+                usageAggregator.AddEventLine(line);
 
                 try
                 {
@@ -764,6 +778,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         var elapsedMs = Math.Max(
             0,
             (long)(completedAtUtc - manifest.StartedAt).TotalMilliseconds);
+        var usage = usageAggregator.Build(manifest.RunId);
         return completion with
         {
             TotalRounds = totalRounds,
@@ -777,6 +792,16 @@ public class FileSubAgentRunStore : ISubAgentRunStore
                 archivedToolOutputTruncatedCount),
             ToolOutputChars = Math.Max(completion.ToolOutputChars, archivedToolOutputChars),
             ToolFailureSummary = firstToolFailureSummary,
+            LlmCallCount = usage.LlmCallCount,
+            LlmMaxMs = usage.LlmMaxMs,
+            LlmP50Ms = usage.LlmP50Ms,
+            LlmP95Ms = usage.LlmP95Ms,
+            PromptTokens = usage.PromptTokens,
+            CompletionTokens = usage.CompletionTokens,
+            TotalTokens = usage.TotalTokens,
+            CacheHitTokens = usage.CacheHitTokens,
+            CacheMissTokens = usage.CacheMissTokens,
+            CacheHitPct = usage.CacheHitPct,
         };
     }
 

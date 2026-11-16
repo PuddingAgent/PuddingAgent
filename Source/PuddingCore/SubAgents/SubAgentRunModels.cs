@@ -50,6 +50,18 @@ public sealed record SubAgentRunManifest
     public int? TotalToolCalls { get; init; }
     public long? TotalDurationMs { get; init; }
     public string? ErrorMessage { get; init; }
+
+    // 2026-11-16：可空，旧 run.json 不含这些键时仍能反序列化。
+    public int? LlmCallCount { get; init; }
+    public long? LlmMaxMs { get; init; }
+    public long? LlmP50Ms { get; init; }
+    public long? LlmP95Ms { get; init; }
+    public long? PromptTokens { get; init; }
+    public long? CompletionTokens { get; init; }
+    public long? TotalTokens { get; init; }
+    public long? CacheHitTokens { get; init; }
+    public long? CacheMissTokens { get; init; }
+    public double? CacheHitPct { get; init; }
 }
 
 // 创建请求
@@ -100,6 +112,20 @@ public sealed record SubAgentRunCompletion
     public int ToolOutputTruncatedCount { get; init; }
     public long ToolOutputChars { get; init; }
     public string? ToolFailureSummary { get; init; }
+
+    // 2026-11-16：usage 与 LLM 延迟分位。由 EnrichCompletionFromArchivedEventsAsync
+    // 从 events.jsonl 用 SubAgentLatencyAggregator 回算，避免读侧再实现第二套口径。
+    public int LlmCallCount { get; init; }
+    public long LlmMaxMs { get; init; }
+    public long LlmP50Ms { get; init; }
+    public long LlmP95Ms { get; init; }
+    public long PromptTokens { get; init; }
+    public long CompletionTokens { get; init; }
+    public long TotalTokens { get; init; }
+    public long CacheHitTokens { get; init; }
+    public long CacheMissTokens { get; init; }
+    /// <summary>命中率按 hit/(hit+miss) 计；total 含 completion，用它作分母会系统性偏低。</summary>
+    public double CacheHitPct { get; init; }
 }
 
 // 工具审计条目
