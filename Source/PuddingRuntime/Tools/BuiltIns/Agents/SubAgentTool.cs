@@ -37,7 +37,7 @@ namespace PuddingRuntime.Services.Skills;
                  "参数：task（任务描述）、agent_template（可选，默认 workspace-task-agent）、" +
                  "model（可选，必须是 providerId/modelId 完整路由，如 deepseek/deepseek-v3；" +
                  "多 provider 注册的裸 modelId 会报错，先用 list_llm_providers 查 route，不指定则用平台默认模型）、" +
-                 "fallback_model（可选，模型路由解析失败时自动回退一次并在结果中告警，默认 bigmodel/glm-5.3-flash；与 model 相同则禁用回退）、" +
+                 "fallback_model（可选，模型路由解析失败时自动回退一次并在结果中告警，默认 deepseek/deepseek-flash；与 model 相同则禁用回退）、" +
                  "sync（可选，true=同步阻塞等待结果 / false=异步立即返回，默认 true）。" +
                  "同步模式返回结构化结果合同：SUMMARY、CHANGES、EVIDENCE、RISKS、BLOCKERS。" +
                  "异步模式下立即返回 agentId，稍后通过 subagent_result 消息通道通知结果。" +
@@ -60,7 +60,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
     private const string DelegationProtocolVersion = "SUBAGENTS.md/v1";
     private const string DefaultSubAgentOutputContract = "SUMMARY, CHANGES, EVIDENCE, RISKS, BLOCKERS";
     private static readonly string[] ResultSectionNames = ["SUMMARY", "CHANGES", "EVIDENCE", "RISKS", "BLOCKERS"];
-    private const string DefaultFallbackModelRoute = "bigmodel/glm-5.3-flash";
+    private const string DefaultFallbackModelRoute = "deepseek/deepseek-flash";
 
     public SubAgentTool(
         IServiceProvider services,
@@ -1530,7 +1530,7 @@ public sealed record SubAgentToolArgs
     [ToolParam("Optional model route. Prefer the full 'providerId/modelId' form (look it up with list_llm_providers); a bare modelId registered under multiple providers fails resolution.")]
     public string? Model { get; init; }
 
-    [ToolParam("Optional fallback model route tried once when the requested model route fails to resolve (route-resolution failure only). Default 'bigmodel/glm-5.3-flash'. Set equal to model to disable the fallback.")]
+    [ToolParam("Optional fallback model route tried once when the requested model route fails to resolve (route-resolution failure only). Default 'deepseek/deepseek-flash'. Set equal to model to disable the fallback.")]
     public string? FallbackModel { get; init; }
 
     [ToolParam("复用父代理的上下文环境（Fork + 分支 + 注入到子代理上下文），默认 false")]

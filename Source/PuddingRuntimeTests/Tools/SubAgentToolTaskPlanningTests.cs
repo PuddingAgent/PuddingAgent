@@ -437,10 +437,10 @@ public sealed class SubAgentToolTaskPlanningTests
         Assert.IsTrue(result.Success, result.Error);
         StringAssert.Contains(result.Output, "模型路由回退告警");
         StringAssert.Contains(result.Output, "bad/model-x");
-        StringAssert.Contains(result.Output, "bigmodel/glm-5.3-flash");
+        StringAssert.Contains(result.Output, "deepseek/deepseek-flash");
         Assert.IsNotNull(invocation.LastRequest);
-        Assert.AreEqual("bigmodel", invocation.LastRequest!.LlmProfile.ProviderId);
-        Assert.AreEqual("glm-5.3-flash", invocation.LastRequest.LlmProfile.ModelId);
+        Assert.AreEqual("deepseek", invocation.LastRequest!.LlmProfile.ProviderId);
+        Assert.AreEqual("deepseek-flash", invocation.LastRequest.LlmProfile.ModelId);
         Assert.AreEqual(2, resolver.Calls);
     }
 
@@ -448,7 +448,7 @@ public sealed class SubAgentToolTaskPlanningTests
     public async Task ExecuteAsync_RouteResolutionFailure_FallbackAlsoFails_ReportsOriginalErrorWithAttempt()
     {
         var invocation = new RecordingSubAgentInvocationService();
-        var resolver = new SelectiveLlmResolver("bad/model-x", "bigmodel/glm-5.3-flash");
+        var resolver = new SelectiveLlmResolver("bad/model-x", "deepseek/deepseek-flash");
         var services = CreateServices(
             invocation,
             new AllowingDelegationPolicy(),
@@ -461,7 +461,7 @@ public sealed class SubAgentToolTaskPlanningTests
 
         Assert.IsFalse(result.Success);
         StringAssert.Contains(result.Error, "bad/model-x");
-        StringAssert.Contains(result.Error, "bigmodel/glm-5.3-flash");
+        StringAssert.Contains(result.Error, "deepseek/deepseek-flash");
         Assert.IsNull(invocation.LastRequest);
         Assert.AreEqual(2, resolver.Calls);
     }
@@ -470,7 +470,7 @@ public sealed class SubAgentToolTaskPlanningTests
     public async Task ExecuteAsync_ModelEqualsFallback_DoesNotRetryFallback()
     {
         var invocation = new RecordingSubAgentInvocationService();
-        var resolver = new SelectiveLlmResolver("bigmodel/glm-5.3-flash");
+        var resolver = new SelectiveLlmResolver("deepseek/deepseek-flash");
         var services = CreateServices(
             invocation,
             new AllowingDelegationPolicy(),
@@ -479,7 +479,7 @@ public sealed class SubAgentToolTaskPlanningTests
         var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
 
         var result = await tool.ExecuteAsync(CreateRequest(
-            """{"task":"Route fallback probe","sync":true,"model":"bigmodel/glm-5.3-flash"}"""));
+            """{"task":"Route fallback probe","sync":true,"model":"deepseek/deepseek-flash"}"""));
 
         Assert.IsFalse(result.Success);
         StringAssert.Contains(result.Error, "not registered");
@@ -592,10 +592,10 @@ public sealed class SubAgentToolTaskPlanningTests
             }
 
             var route = string.IsNullOrWhiteSpace(modelRoute)
-                ? "bigmodel/glm-5.3-flash"
+                ? "deepseek/deepseek-flash"
                 : modelRoute;
             var parts = route.Split('/', 2, StringSplitOptions.TrimEntries);
-            var providerId = parts.Length == 2 ? parts[0] : "bigmodel";
+            var providerId = parts.Length == 2 ? parts[0] : "deepseek";
             var modelId = parts.Length == 2 ? parts[1] : parts[0];
             return Task.FromResult(new ResolvedLlmRoute
             {
