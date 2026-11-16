@@ -2234,6 +2234,27 @@ if (effectiveLlmConfig is not null)
                             tool_call_index = totalToolCalls,
                         });
 
+                    // 与批量块对齐：单工具分支同样写工具审计，否则这条路径上 tools.jsonl 恒空。
+                    // AgentLoopToolCall 无 provider 侧 id，用 auto- 前缀的确定性 id，避免被误认为调用方给的 id。
+                    if (subAgentRunId is not null && _subAgentRunStore is not null)
+                    {
+                        await _subAgentRunStore.AppendToolAuditAsync(
+                            subAgentRunId,
+                            new SubAgentToolAuditEntry
+                            {
+                                ToolCallId = $"auto-{totalToolCalls}",
+                                ToolName = toolName,
+                                ArgsHash = ComputeSha256Hash(injectedArgsJson ?? ""),
+                                Success = skillResult.Success,
+                                DurationMs = toolSw2.ElapsedMilliseconds,
+                                OutputLength = skillResult.Output?.Length ?? 0,
+                                ErrorMessage = string.IsNullOrWhiteSpace(skillResult.Error)
+                                    ? null
+                                    : Truncate(skillResult.Error, 500),
+                            },
+                            CancellationToken.None);
+                    }
+
                     await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, toolName, skillResult, ct));
                         // 变换链：Hook 可以改写结果（如追加用法提示）。只在此处生效，不改核心或工具实现。
                         skillResult = await FireToolResultTransformersAsync(loopCtx, round, toolName, toolArgs, skillResult, ct);
