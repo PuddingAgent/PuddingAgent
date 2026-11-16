@@ -19,6 +19,7 @@
     "cap-image-reader",
     "cap-generate-image",
     "cap-send-image",
+    "cap-send-file",
     "cap-import-image",
     "cap-doubao-search",
     "cap-deepseek-search",
