@@ -1948,6 +1948,20 @@ if (effectiveLlmConfig is not null)
                     await FireHooksAsync(h => h.OnToolCallAsync(loopCtx, round, toolName, toolArgs, ct));
                     ReportLiveness(request, $"tool.started:{toolName}");
                     totalToolCalls++;
+                    // 单工具（loopResp.Tool）分支与批量分支（llmResp.ToolCalls）是两条独立执行块；
+                    // 这里补上与批量分支等价的观测事件，否则走这条分支的 run 在事件流里看不到任何工具。
+                    await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.tool.started", new
+                    {
+                        sub_agent_id = request.SessionId,
+                        round = round + 1,
+                        // 同上：单工具分支无 provider 侧调用 id，靠 tool_call_index 配对。
+                        tool_call_id = (string?)null,
+                        tool_name = toolName,
+                        args_hash = ComputeSha256Hash(injectedArgsJson ?? ""),
+                        arguments_preview = Truncate(toolArgs ?? "", 1024),
+                        arguments_truncated = (toolArgs?.Length ?? 0) > 1024,
+                        tool_call_index = totalToolCalls,
+                    });
 
                     // 检查点 E：工具执行前再次检查取消
                     ct.ThrowIfCancellationRequested();
@@ -2113,6 +2127,20 @@ if (effectiveLlmConfig is not null)
                     {
                         toolSw2.Stop();
                         var toolArgsHash2 = ComputeSha256Hash(injectedArgsJson ?? "");
+                        // 异常也必须留下终态事件：否则事件流里只有 started，
+                        // 下游会把这次调用当成“仍在进行”。
+                        await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.tool.failed", new
+                        {
+                            sub_agent_id = request.SessionId,
+                            round = round + 1,
+                            tool_call_id = (string?)null,
+                            tool_name = toolName,
+                            success = false,
+                            duration_ms = toolSw2.ElapsedMilliseconds,
+                            args_hash = toolArgsHash2,
+                            error = Truncate(ex.Message, 500),
+                            tool_call_index = totalToolCalls,
+                        });
                         await RecordActivityAsync(
                             execTrace,
                             component: RuntimeActivityComponents.ToolRunner,
@@ -2179,6 +2207,32 @@ if (effectiveLlmConfig is not null)
 
                     toolSuccess = skillResult.Success;
                     toolError = skillResult.Error;
+
+                    var safeSingleToolOutput = skillResult.Output is null
+                        ? ""
+                        : await _keyVaultService.StripAsync(skillResult.Output, ct);
+                    await TryAppendSubAgentEventAsync(
+                        subAgentRunId,
+                        skillResult.Success ? "subagent.tool.completed" : "subagent.tool.failed",
+                        new
+                        {
+                            sub_agent_id = request.SessionId,
+                            round = round + 1,
+                            // 这条分支的 AgentLoopToolCall 只有 Name/Args，没有 provider 侧调用 id；
+                            // 显式置 null 而不伪造 id，成对关系靠 tool_call_index（run 内唯一）建立。
+                            tool_call_id = (string?)null,
+                            tool_name = toolName,
+                            success = skillResult.Success,
+                            duration_ms = toolSw2.ElapsedMilliseconds,
+                            args_hash = ComputeSha256Hash(injectedArgsJson ?? ""),
+                            output_length = skillResult.Output?.Length ?? 0,
+                            output_preview = Truncate(safeSingleToolOutput, 2048),
+                            output_truncated = safeSingleToolOutput.Length > 2048,
+                            error = string.IsNullOrWhiteSpace(skillResult.Error)
+                                ? null
+                                : Truncate(skillResult.Error, 500),
+                            tool_call_index = totalToolCalls,
+                        });
 
                     await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, toolName, skillResult, ct));
                         // 变换链：Hook 可以改写结果（如追加用法提示）。只在此处生效，不改核心或工具实现。
