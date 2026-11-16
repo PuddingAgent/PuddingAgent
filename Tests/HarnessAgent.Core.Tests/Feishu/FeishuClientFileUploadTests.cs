@@ -2,7 +2,7 @@ using System.Net;
 using System.Text;
 using HarnessAgent.Core.Connectors.Feishu;
 
-namespace HarnessAgent.Core.Tests.Connectors.Feishu;
+namespace HarnessAgent.Core.Tests.Feishu;
 
 /// <summary>
 /// 2026-11-16：飞书文件上传通道。
