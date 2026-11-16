@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
@@ -16,6 +16,9 @@ namespace PuddingPlatform.Controllers.Api;
 [VoiceFailure]
 public sealed class VoiceController : ControllerBase
 {
+    /// <summary>待朗读文本上限，与 QwenTts.BuildRequest 保持一致。</summary>
+    public const int MaxTextLength = 10_000;
+
     [HttpPost("tts/synthesize")]
     [Produces("audio/wav", "audio/mpeg")]
     public async Task<IActionResult> Synthesize(
@@ -23,14 +26,26 @@ public sealed class VoiceController : ControllerBase
         [FromServices] IVoiceSynthesisService synthesisService,
         CancellationToken ct)
     {
+        // 输入校验必须在这里：错误映射统一交给 [VoiceFailure]，不另写一套 try/catch。
+        var text = request.Text?.Trim() ?? string.Empty;
+        if (text.Length == 0)
+            throw new PuddingSpeech.SpeechFailure("voice_invalid_text", "朗读内容不能为空。", 400);
+        if (text.Length > MaxTextLength)
+            throw new PuddingSpeech.SpeechFailure("voice_text_too_long", $"朗读内容不能超过 {MaxTextLength} 个字符。", 400);
+        var format = string.IsNullOrWhiteSpace(request.Format)
+            ? VoiceAudioFormats.Wav
+            : request.Format.Trim().ToLowerInvariant();
+        if (format != VoiceAudioFormats.Wav && format != VoiceAudioFormats.Mp3)
+            throw new PuddingSpeech.SpeechFailure("voice_unsupported_format", "仅支持 wav 或 mp3 音频格式。", 400);
+
         var result = await synthesisService.SynthesizeAsync(new VoiceSynthesisRequest
         {
             WorkspaceId = request.WorkspaceId ?? string.Empty,
             MessageId = Guid.NewGuid().ToString("N"),
-            Text = request.Text,
+            Text = text,
             Model = "",
             Voice = request.Voice ?? "",
-            AudioFormat = request.Format ?? "wav",
+            AudioFormat = format,
             SampleRate = request.SampleRate > 0 ? request.SampleRate : 24000,
             Instructions = request.Instructions,
         }, ct);
