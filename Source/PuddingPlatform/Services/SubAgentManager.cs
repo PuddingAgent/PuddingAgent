@@ -907,6 +907,21 @@ public sealed class SubAgentManager : ISubAgentManager
             metadata["run_id"] = runId ?? "";
             metadata["child_run_id"] = runId ?? "";
             metadata["result_id"] = resultId;
+
+            // 回包是否符合派发时声明的 output_contract。
+            // 只做披露，不参与 success/status 判定：任务书允许覆盖默认格式（实测两个模型
+            // 都会服从“只回一行”这类指令），把“没按五段式回”判成失败会误杀正确遵从的执行。
+            var contract = string.IsNullOrWhiteSpace(request.ExpectedOutputContract)
+                ? SubAgentOutputContractInspector.DefaultContract
+                : request.ExpectedOutputContract!;
+            var contractCheck = SubAgentOutputContractInspector.Inspect(reply, contract);
+            metadata["contract"] = contract;
+            metadata["contract_applicable"] = contractCheck.Applicable ? "true" : "false";
+            metadata["contract_satisfied"] = contractCheck.Satisfied ? "true" : "false";
+            if (!contractCheck.Satisfied)
+            {
+                metadata["contract_missing"] = string.Join(",", contractCheck.MissingKeys);
+            }
             metadata["tool_failure_count"] = toolFailureCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
             metadata["tool_output_truncated_count"] = toolOutputTruncatedCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
             metadata["tool_output_chars"] = toolOutputChars.ToString(System.Globalization.CultureInfo.InvariantCulture);
