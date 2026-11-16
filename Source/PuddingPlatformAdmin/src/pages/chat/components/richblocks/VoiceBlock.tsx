@@ -1,10 +1,15 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RichBlockProps } from './RichBlockRegistry';
-import {
-  defaultBrowserVoiceOutputAdapter,
-  type BrowserVoiceOutputAdapter,
-  type BrowserVoiceOutputHandle,
+import type {
+  BrowserVoiceOutputAdapter,
+  BrowserVoiceOutputHandle,
 } from '../../hooks/browserVoiceOutput';
+import {
+  createHttpVoiceOutputAdapter,
+  readStoredVoiceName,
+  voiceOptions,
+  writeStoredVoiceName,
+} from '../../hooks/httpVoiceOutput';
 
 /**
  * ```voice 围栏渲染器 —— 让回复在**对话里**可以出声。
@@ -13,31 +18,45 @@ import {
  * 网页/桌面聊天里它退化成一个普通代码块：模型“说了话”，用户只看到一段代码。
  * 这个组件补的就是网页侧的出口。
  *
- * ## 三条约束
+ * ## 四条约束
  *
- * 1. **复用已有适配器**：`browserVoiceOutput` 已封装 speechSynthesis 的
- *    speak/stop/onError，这里不再写第二套。
- * 2. **适配器可注入**：默认用浏览器实现，测试传假适配器——
- *    否则断言只能证明“浏览器支持朗读”，证明不了本组件的逻辑。
+ * 1. **默认走后端 Qwen3-TTS**：`speechSynthesis` 的音色由操作系统决定，
+ *    Windows 中文机械得不能听。改用 `httpVoiceOutput`，音色来自
+ *    `D:\Data\config\voice\providers.json` 注册的 Cherry / Stella / Vera。
+ * 2. **适配器可注入**：测试传假适配器——否则断言只能证明“浏览器支持朗读”，
+ *    证明不了本组件的逻辑。
  * 3. **卸载即停**：切换消息或会话时不能继续念上一段。
+ * 4. **失败不回退**：合成失败就显式报错。静默换回系统音色会让人误以为
+ *    “音色变了”，实际是把失败藏起来。
  */
 export interface VoiceBlockProps extends RichBlockProps {
   adapter?: BrowserVoiceOutputAdapter;
   /** 围栏是模型的显式意图，默认直接朗读；用户仍可点按钮停止/重播。 */
   autoPlay?: boolean;
   lang?: string;
+  /** 是否显示音色下拉；调成 false 可只保留播放按钮。 */
+  showVoicePicker?: boolean;
 }
 
 export const VoiceBlock: React.FC<VoiceBlockProps> = ({
   code,
-  adapter = defaultBrowserVoiceOutputAdapter,
+  adapter,
   autoPlay = true,
   lang = 'zh-CN',
+  showVoicePicker = true,
 }) => {
   const text = (code ?? '').trim();
   const handleRef = useRef<BrowserVoiceOutputHandle | null>(null);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string>();
+  const [voiceName, setVoiceName] = useState<string>(() => readStoredVoiceName());
+
+  // 音色变化时重建适配器：adapter 换了，下面 effect 会重播，正好用来试听。
+  const builtAdapter = useMemo(
+    () => createHttpVoiceOutputAdapter({ voice: voiceName }),
+    [voiceName],
+  );
+  const activeAdapter = adapter ?? builtAdapter;
 
   const stop = useCallback(() => {
     handleRef.current?.stop();
@@ -47,7 +66,7 @@ export const VoiceBlock: React.FC<VoiceBlockProps> = ({
 
   const speak = useCallback(() => {
     if (!text) return;
-    if (!adapter.isSupported()) {
+    if (!activeAdapter.isSupported()) {
       setError('当前浏览器不支持语音朗读');
       setPlaying(false);
       return;
@@ -55,7 +74,7 @@ export const VoiceBlock: React.FC<VoiceBlockProps> = ({
     stop();
     setError(undefined);
     try {
-      handleRef.current = adapter.speak(text, {
+      handleRef.current = activeAdapter.speak(text, {
         lang,
         onStart: () => setPlaying(true),
         onComplete: () => {
@@ -72,7 +91,7 @@ export const VoiceBlock: React.FC<VoiceBlockProps> = ({
       setError((reason as Error).message);
       setPlaying(false);
     }
-  }, [adapter, lang, stop, text]);
+  }, [activeAdapter, lang, stop, text]);
 
   useEffect(() => {
     if (autoPlay) speak();
@@ -81,6 +100,15 @@ export const VoiceBlock: React.FC<VoiceBlockProps> = ({
       handleRef.current = null;
     };
   }, [autoPlay, speak]);
+
+  const handleVoiceChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      const next = event.target.value;
+      writeStoredVoiceName(next);
+      setVoiceName(next);
+    },
+    [],
+  );
 
   if (!text) return null;
 
@@ -119,6 +147,7 @@ export const VoiceBlock: React.FC<VoiceBlockProps> = ({
       </button>
       <span
         style={{
+          flex: '1 1 auto',
           fontSize: 12,
           color: error ? '#f53f3f' : '#4e5969',
           whiteSpace: 'pre-wrap',
@@ -127,6 +156,30 @@ export const VoiceBlock: React.FC<VoiceBlockProps> = ({
       >
         {error ?? text}
       </span>
+      {showVoicePicker ? (
+        <select
+          data-testid="voice-block-voice"
+          aria-label="音色"
+          value={voiceName}
+          onChange={handleVoiceChange}
+          style={{
+            flex: '0 0 auto',
+            fontSize: 12,
+            color: '#4e5969',
+            border: '1px solid #e5e6eb',
+            borderRadius: 6,
+            background: '#fff',
+            padding: '2px 4px',
+            cursor: 'pointer',
+          }}
+        >
+          {voiceOptions.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      ) : null}
     </div>
   );
 };

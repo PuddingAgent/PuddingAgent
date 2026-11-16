@@ -60,4 +60,29 @@ describe('VoiceBlock', () => {
     const view = render(<VoiceBlock code="   " adapter={adapter} />);
     expect(view.container.firstChild).toBeNull();
   });
+
+  it('显示音色下拉，默认读 localStorage 里的选择', () => {
+    localStorage.setItem('pudding_voice_name', 'Vera');
+    const { adapter } = createAdapter();
+    render(<VoiceBlock code="换个声音" adapter={adapter} />);
+    const select = screen.getByTestId('voice-block-voice') as HTMLSelectElement;
+    expect(select.value).toBe('Vera');
+    // 三个音色都要可选，否则用户只能听一个。
+    expect(select.options.length).toBe(3);
+  });
+
+  it('切换音色会记住选择', () => {
+    const { adapter } = createAdapter();
+    render(<VoiceBlock code="记住我选的" adapter={adapter} />);
+    const select = screen.getByTestId('voice-block-voice') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'Stella' } });
+    expect(select.value).toBe('Stella');
+    expect(localStorage.getItem('pudding_voice_name')).toBe('Stella');
+  });
+
+  it('showVoicePicker=false 时只保留播放按钮', () => {
+    const { adapter } = createAdapter();
+    render(<VoiceBlock code="只要按钮" adapter={adapter} showVoicePicker={false} />);
+    expect(screen.queryByTestId('voice-block-voice')).toBeNull();
+  });
 });
