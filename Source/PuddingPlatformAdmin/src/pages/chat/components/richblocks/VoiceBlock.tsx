@@ -1,5 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { RichBlockProps } from './RichBlockRegistry';
+import { VoiceAutoplayContext } from './VoiceAutoplayContext';
 import type {
   BrowserVoiceOutputAdapter,
   BrowserVoiceOutputHandle,
@@ -31,7 +39,7 @@ import {
  */
 export interface VoiceBlockProps extends RichBlockProps {
   adapter?: BrowserVoiceOutputAdapter;
-  /** 围栏是模型的显式意图，默认直接朗读；用户仍可点按钮停止/重播。 */
+  /** 默认自动朗读一次；聊天消息还受生成完成/历史消息策略约束。 */
   autoPlay?: boolean;
   lang?: string;
   /** 是否显示音色下拉；调成 false 可只保留播放按钮。 */
@@ -47,11 +55,15 @@ export const VoiceBlock: React.FC<VoiceBlockProps> = ({
 }) => {
   const text = (code ?? '').trim();
   const handleRef = useRef<BrowserVoiceOutputHandle | null>(null);
+  const autoPlayedRef = useRef(false);
+  const autoplayPolicy = useContext(VoiceAutoplayContext);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string>();
-  const [voiceName, setVoiceName] = useState<string>(() => readStoredVoiceName());
+  const [voiceName, setVoiceName] = useState<string>(() =>
+    readStoredVoiceName(),
+  );
 
-  // 音色变化时重建适配器：adapter 换了，下面 effect 会重播，正好用来试听。
+  // 音色变化只影响下一次手动播放，不触发重播。
   const builtAdapter = useMemo(
     () => createHttpVoiceOutputAdapter({ voice: voiceName }),
     [voiceName],
@@ -94,12 +106,29 @@ export const VoiceBlock: React.FC<VoiceBlockProps> = ({
   }, [activeAdapter, lang, stop, text]);
 
   useEffect(() => {
-    if (autoPlay) speak();
+    if (!autoPlay || !text || (autoplayPolicy && !autoplayPolicy.allowAutoPlay))
+      return;
+    let cancelled = false;
+    // StrictMode 的首次 effect 清理可以取消启动，避免先播放又立刻被清理停止。
+    queueMicrotask(() => {
+      if (cancelled) return;
+      if (autoPlayedRef.current) return;
+      if (autoplayPolicy && !autoplayPolicy.claim(text)) return;
+      // 自动机会在调用适配器前消耗；合成失败也只允许手动重试。
+      autoPlayedRef.current = true;
+      speak();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [autoPlay, autoplayPolicy, speak, text]);
+
+  useEffect(() => {
     return () => {
       handleRef.current?.stop();
       handleRef.current = null;
     };
-  }, [autoPlay, speak]);
+  }, []);
 
   const handleVoiceChange = useCallback(
     (event: React.ChangeEvent<HTMLSelectElement>) => {
@@ -129,7 +158,13 @@ export const VoiceBlock: React.FC<VoiceBlockProps> = ({
         type="button"
         data-testid="voice-block-toggle"
         aria-label={playing ? '停止朗读' : '朗读这段'}
-        onClick={() => (playing ? stop() : speak())}
+        onClick={() => {
+          // 手动操作取消待执行的自动机会，但手动重播不受自动守卫限制。
+          autoPlayedRef.current = true;
+          autoplayPolicy?.onManualControl();
+          if (playing) stop();
+          else speak();
+        }}
         style={{
           flex: '0 0 auto',
           width: 28,

@@ -49,6 +49,7 @@ import { TurnStatsLine } from './execution-flow/TurnStatsLine';
 import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 import StateDot from './StateDot';
 import type { TranscriptMode } from './TranscriptModeSwitch';
+import { VoiceAutoplayScope } from './richblocks/VoiceAutoplayContext';
 
 const SessionBenchmarkDrawer =
   process.env.NODE_ENV === 'test'
@@ -274,11 +275,13 @@ const QuotedMessageBlock: React.FC<{ quotedMessage: ChatQuotedMessage }> = ({
               <span className={styles.inboundAgentCardLabel}>发来的消息</span>
             </div>
             <div className={styles.inboundAgentCardBody}>
-              <MessageItem
-                markdownText={quotedMessage.content}
-                isStreaming={false}
-                stableMarkdown={quotedMessage.content}
-              />
+              <VoiceAutoplayScope generating={false}>
+                <MessageItem
+                  markdownText={quotedMessage.content}
+                  isStreaming={false}
+                  stableMarkdown={quotedMessage.content}
+                />
+              </VoiceAutoplayScope>
             </div>
           </div>
         </div>
@@ -292,11 +295,13 @@ const QuotedMessageBlock: React.FC<{ quotedMessage: ChatQuotedMessage }> = ({
         引用自 {quotedMessage.sourceName}
       </div>
       <div className={styles.agentQuotedMessageBody}>
-        <MessageItem
-          markdownText={quotedMessage.content}
-          isStreaming={false}
-          stableMarkdown={quotedMessage.content}
-        />
+        <VoiceAutoplayScope generating={false}>
+          <MessageItem
+            markdownText={quotedMessage.content}
+            isStreaming={false}
+            stableMarkdown={quotedMessage.content}
+          />
+        </VoiceAutoplayScope>
       </div>
     </div>
   );
@@ -612,7 +617,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
     return <CompactionCard activity={processActivity} />;
   }
 
-  return (
+  const messageBody = (
     <div
       style={{ display: 'flex', flexDirection: 'column', width: '100%' }}
       onMouseEnter={revealActions}
@@ -901,6 +906,16 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
         </>
       )}
     </div>
+  );
+
+  return (
+    <VoiceAutoplayScope
+      key={JSON.stringify([workspaceId, sessionId, turnId, _id])}
+      generating={isRunActive}
+      completed={status === 'success'}
+    >
+      {messageBody}
+    </VoiceAutoplayScope>
   );
 };
 

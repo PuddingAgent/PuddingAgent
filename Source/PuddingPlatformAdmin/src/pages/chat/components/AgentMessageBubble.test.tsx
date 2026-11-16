@@ -1,19 +1,25 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 import AgentMessageBubble from './AgentMessageBubble';
+import { VoiceAutoplayContext } from './richblocks/VoiceAutoplayContext';
 
 const mockUseTypewriterStreaming = jest.fn();
 const mockMessageActions = jest.fn((_props: Record<string, unknown>) => (
   <div data-testid="message-actions" />
 ));
 const mockMessageItem = jest.fn((props: Record<string, unknown>) => (
-  <div
-    data-testid="message-item"
-    data-markdown={String(props.markdownText ?? '')}
-    data-stable={String(props.stableMarkdown ?? '')}
-    data-live={String(props.liveText ?? '')}
-    data-visible={String(props.visibleLiveText ?? '')}
-  />
+  <VoiceAutoplayContext.Consumer>
+    {(policy) => (
+      <div
+        data-testid="message-item"
+        data-voice-autoplay={String(policy?.allowAutoPlay ?? 'unscoped')}
+        data-markdown={String(props.markdownText ?? '')}
+        data-stable={String(props.stableMarkdown ?? '')}
+        data-live={String(props.liveText ?? '')}
+        data-visible={String(props.visibleLiveText ?? '')}
+      />
+    )}
+  </VoiceAutoplayContext.Consumer>
 ));
 const mockModelRetryRow = jest.fn((props: Record<string, unknown>) => (
   <div
@@ -201,6 +207,29 @@ describe('AgentMessageBubble streaming presentation', () => {
       isTyping: false,
       isSettling: false,
     });
+  });
+
+  it('历史回复默认禁止 voice 自动朗读', () => {
+    render(<AgentMessageBubble {...baseProps} content="历史回复" status="success" isStreaming={false} />);
+    expect(screen.getByTestId('message-item').getAttribute('data-voice-autoplay')).toBe('false');
+  });
+
+  it('新回复只在生成完成后开放自动朗读，切换消息身份后关闭', () => {
+    const view = render(<AgentMessageBubble {...baseProps} content="正在生成" />);
+    expect(screen.getByTestId('message-item').getAttribute('data-voice-autoplay')).toBe('false');
+    view.rerender(<AgentMessageBubble {...baseProps} content="完整回复" status="success" isStreaming={false} />);
+    expect(screen.getByTestId('message-item').getAttribute('data-voice-autoplay')).toBe('true');
+    view.rerender(<AgentMessageBubble {...baseProps} id="older-message" content="历史回复" status="success" isStreaming={false} />);
+    expect(screen.getByTestId('message-item').getAttribute('data-voice-autoplay')).toBe('false');
+  });
+
+  it.each(['user', 'agent'] as const)('引用的 %s 消息不继承新回复的自动朗读权限', (sourceKind) => {
+    const props = { ...baseProps, content: '当前回复', quotedMessage: { sourceKind, sourceId: 'old', sourceName: '旧消息', content: '引用内容', createdAt: 1 } };
+    const view = render(<AgentMessageBubble {...props} />);
+    view.rerender(<AgentMessageBubble {...props} status="success" isStreaming={false} />);
+    const items = screen.getAllByTestId('message-item');
+    expect(items.find((item) => item.getAttribute('data-markdown') === '引用内容')?.getAttribute('data-voice-autoplay')).toBe('false');
+    expect(items.find((item) => item.getAttribute('data-markdown') === '当前回复')?.getAttribute('data-voice-autoplay')).toBe('true');
   });
 
   it('does not instantiate message actions until the row is interacted with', () => {
