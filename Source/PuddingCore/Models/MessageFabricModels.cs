@@ -49,6 +49,8 @@ public static class MessageContentTypes
     public const string Text = "text";
     public const string Audio = "audio";
     public const string Image = "image";
+    /// <summary>本地文件（PDF/文档/压缩包）出站消息；载荷细则由 connector 元数据描述。</summary>
+    public const string File = "file";
     /// <summary>System heartbeat / proactive check-in messages.</summary>
     public const string Heartbeat = "heartbeat";
 }
