@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 
 namespace PuddingCode.SubAgents;
@@ -26,6 +27,15 @@ public sealed class SubAgentLatencyAggregator
     private long? _firstTimestampMs;
     private long? _lastTimestampMs;
     private long? _currentLlmStartMs;
+
+    /// <summary>每次 LLM 调用的耗时，用于分位统计（不参与总额，总额仍由 _llmMs 单点累加）。</summary>
+    private readonly List<long> _llmDurations = new();
+
+    private long _promptTokens;
+    private long _completionTokens;
+    private long _cacheHitTokens;
+    private long _cacheMissTokens;
+    private long _totalTokens;
 
     /// <summary>折叠一行事件。行畸形或缺少必要字段时静默跳过。</summary>
     public void AddEventLine(string? line)
@@ -59,9 +69,12 @@ public sealed class SubAgentLatencyAggregator
                     // 只做 LLM 耗时累加；轮次由 round.completed 单点计数，避免两处定义漂移。
                     if (_currentLlmStartMs is { } started)
                     {
-                        _llmMs += Math.Max(0, epoch - started);
+                        var llmElapsed = Math.Max(0, epoch - started);
+                        _llmMs += llmElapsed;
+                        _llmDurations.Add(llmElapsed);
                         _currentLlmStartMs = null;
                     }
+                    AccumulateTokens(root);
                     break;
                 case "subagent.round.completed":
                     _rounds++;
@@ -99,6 +112,16 @@ public sealed class SubAgentLatencyAggregator
             LlmPct = Percent(_llmMs, totalMs),
             ToolPct = Percent(_toolMs, totalMs),
             OverheadPct = Percent(overheadMs, totalMs),
+            LlmCallCount = _llmDurations.Count,
+            LlmMaxMs = _llmDurations.Count == 0 ? 0 : _llmDurations.Max(),
+            LlmP50Ms = Percentile(_llmDurations, 50),
+            LlmP95Ms = Percentile(_llmDurations, 95),
+            PromptTokens = _promptTokens,
+            CompletionTokens = _completionTokens,
+            CacheHitTokens = _cacheHitTokens,
+            CacheMissTokens = _cacheMissTokens,
+            TotalTokens = _totalTokens,
+            CacheHitPct = Percent(_cacheHitTokens, _cacheHitTokens + _cacheMissTokens),
         };
     }
 
@@ -115,6 +138,40 @@ public sealed class SubAgentLatencyAggregator
         return root.TryGetProperty("duration_ms", out var flat) && flat.TryGetInt64(out var flatValue)
             ? flatValue
             : 0L;
+    }
+
+    /// <summary>从 llm.completed 的 payload 累加 token 与缓存命中。字段缺失按 0 计。</summary>
+    private void AccumulateTokens(JsonElement root)
+    {
+        if (!root.TryGetProperty("payload", out var payload))
+            return;
+
+        _promptTokens += ReadLong(payload, "prompt_tokens");
+        _completionTokens += ReadLong(payload, "completion_tokens");
+        _cacheHitTokens += ReadLong(payload, "cache_hit_tokens");
+        _cacheMissTokens += ReadLong(payload, "cache_miss_tokens");
+        _totalTokens += ReadLong(payload, "total_tokens");
+    }
+
+    private static long ReadLong(JsonElement payload, string name) =>
+        payload.TryGetProperty(name, out var value) && value.TryGetInt64(out var parsed) ? parsed : 0L;
+
+    /// <summary>
+    /// 最近秩分位（nearest-rank）：排序后取 ceil(p/100 × n) 位（1 基）。
+    /// 样本为空返回 0；样本量小时 P95 会等于最大值，这是预期行为，不做插值。
+    /// </summary>
+    private static long Percentile(List<long> samples, int p)
+    {
+        if (samples.Count == 0)
+            return 0L;
+
+        var sorted = samples.OrderBy(v => v).ToList();
+        var rank = (int)Math.Ceiling(p / 100.0 * sorted.Count);
+        if (rank < 1)
+            rank = 1;
+        if (rank > sorted.Count)
+            rank = sorted.Count;
+        return sorted[rank - 1];
     }
 
     private static double Percent(long part, long total) =>

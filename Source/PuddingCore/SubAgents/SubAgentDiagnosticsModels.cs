@@ -1,4 +1,4 @@
-﻿namespace PuddingCode.SubAgents;
+namespace PuddingCode.SubAgents;
 
 /// <summary>
 /// 子代理诊断请求参数。
@@ -113,4 +113,21 @@ public sealed record SubAgentLatencyBreakdown
     public double LlmPct { get; init; }
     public double ToolPct { get; init; }
     public double OverheadPct { get; init; }
+
+    // ── LLM 调用级观测（2026-11-16）────────────────────────────────────────────
+    // 总额只回答“慢在哪一类”，回答不了“单次最慢多少 / 是否长尾”，
+    // 而 P95 才能把“卡死”与“整体偏慢”区分开（§46.3 的 610 s 单轮就是这么漏掉的）。
+    public int LlmCallCount { get; init; }
+    public long LlmMaxMs { get; init; }
+    public long LlmP50Ms { get; init; }
+    public long LlmP95Ms { get; init; }
+
+    // ── token / 缓存（来自 llm.completed 的 payload）─────────────────────────
+    // 跨模型比较成本时，命中率比 token 总量更能预测账单（§48.7）。
+    public long PromptTokens { get; init; }
+    public long CompletionTokens { get; init; }
+    public long CacheHitTokens { get; init; }
+    public long CacheMissTokens { get; init; }
+    public long TotalTokens { get; init; }
+    public double CacheHitPct { get; init; }
 }
