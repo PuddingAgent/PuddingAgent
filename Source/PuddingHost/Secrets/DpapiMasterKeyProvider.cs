@@ -1,5 +1,5 @@
 using System.Security.Cryptography;
-using HarnessAgent.Core.Secrets;
+using PuddingCode.Abstractions;
 
 namespace PuddingHost.Secrets;
 

@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
-using HarnessAgent.Core.Secrets;
+using PuddingCode.Abstractions;
 
 namespace PuddingHost.Secrets;
 

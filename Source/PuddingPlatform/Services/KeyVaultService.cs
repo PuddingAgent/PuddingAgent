@@ -18,7 +18,8 @@ namespace PuddingPlatform.Services;
 public sealed class KeyVaultService(
     IDbContextFactory<PlatformDbContext> dbFactory,
     IConfiguration configuration,
-    ILogger<KeyVaultService> logger) : IKeyVaultService
+    ILogger<KeyVaultService> logger,
+    IMasterKeyProvider? masterKeyProvider = null) : IKeyVaultService
 {
     private const string MasterKeyEnvName = "PUDDING_KEYVAULT_MASTER_KEY";
     private const string PreferredAlgorithmConfigKey = "Crypto:PreferredAlgorithm";
@@ -35,7 +36,7 @@ public sealed class KeyVaultService(
     private static readonly Regex SecretNameRegex =
         new(@"^[a-zA-Z0-9._-]+$", RegexOptions.Compiled);
 
-    private readonly byte[] _masterKey = ResolveMasterKey(logger);
+    private readonly byte[] _masterKey = ResolveMasterKey(logger, masterKeyProvider);
     private readonly string _preferredAlgorithm = ResolvePreferredAlgorithm(configuration, logger);
 
     public Task<string> EncryptAsync(string plainText, CancellationToken ct = default)
@@ -346,7 +347,7 @@ public sealed class KeyVaultService(
         Value = value,
     };
 
-    private static byte[] ResolveMasterKey(ILogger logger)
+    private static byte[] ResolveMasterKey(ILogger logger, IMasterKeyProvider? masterKeyProvider)
     {
         var raw = Environment.GetEnvironmentVariable(MasterKeyEnvName);
         if (!string.IsNullOrWhiteSpace(raw))
@@ -365,7 +366,30 @@ public sealed class KeyVaultService(
             }
         }
 
+        // 环境变量没给主密钥：优先用持久化的那份，否则生成并落盘。
+        // 顺序很重要——先 TryResolve，否则每次启动都会生成新主密钥，历史密文即失联。
+        var persisted = masterKeyProvider?.TryResolve();
+        if (persisted is { Length: KeySizeBytes })
+        {
+            logger.LogInformation("[KeyVault] 已从持久化来源加载主密钥。");
+            return persisted;
+        }
+
         var generated = RandomNumberGenerator.GetBytes(KeySizeBytes);
+        if (masterKeyProvider is not null)
+        {
+            try
+            {
+                masterKeyProvider.Persist(generated);
+                logger.LogInformation("[KeyVault] 已生成主密钥并持久化；后续启动将复用它。");
+                return generated;
+            }
+            catch (Exception ex)
+            {
+                // 持久化失败不阻止启动，但必须留痕：这意味着本次的密文重启后解不开。
+                logger.LogError(ex, "[KeyVault] 主密钥持久化失败；本次运行仍可用，但重启后将无法解密。");
+            }
+        }
         var generatedBase64 = Convert.ToBase64String(generated);
         Environment.SetEnvironmentVariable(MasterKeyEnvName, generatedBase64, EnvironmentVariableTarget.Process);
 

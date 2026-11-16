@@ -94,6 +94,7 @@ using System.Threading.Channels;
 using PuddingCodeIndex.Contracts;
 using PuddingCodeIndex.Services.CodeIndex;
 using PuddingCodeIndex.Storage;
+using PuddingHost.Secrets;
 
 namespace PuddingAgent.Services;
 
@@ -645,6 +646,18 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddScoped<ITaskPlanStore>(sp => sp.GetRequiredService<TaskPlanStore>());
 
         builder.Services.AddSingleton<Sm2JwtSigner>();
+        // 主密钥来源：环境变量 → DPAPI 封装的文件（{DataRoot}/secrets/keyvault.master）→ 生成并落盘。
+        // 顺序不能颠倒：不注册 provider 时会退回"每进程随机生成"，已存密钥重启即失联。
+        builder.Services.AddSingleton<ISecretProtector, DpapiSecretProtector>();
+        builder.Services.AddSingleton<IMasterKeyProvider>(sp =>
+        {
+            var dataPaths = sp.GetRequiredService<PuddingDataPaths>();
+            var keyVaultLogger = sp.GetRequiredService<ILogger<KeyVaultService>>();
+            return new DpapiMasterKeyProvider(
+                Path.Combine(dataPaths.DataRoot, "secrets", "keyvault.master"),
+                sp.GetRequiredService<ISecretProtector>(),
+                message => keyVaultLogger.LogWarning("{Message}", message));
+        });
         builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
         // ── DB 种子服务（启动时从 default-data/ 导入配置到 DB）──
         builder.Services.AddSingleton<DataSeedService>();

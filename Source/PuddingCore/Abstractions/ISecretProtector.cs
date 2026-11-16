@@ -1,4 +1,4 @@
-namespace HarnessAgent.Core.Secrets;
+namespace PuddingCode.Abstractions;
 
 /// <summary>
 /// 密钥保护器：把明文变成只能由本机本用户解开的字节。

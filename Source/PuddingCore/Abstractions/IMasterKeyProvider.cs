@@ -1,4 +1,4 @@
-namespace HarnessAgent.Core.Secrets;
+namespace PuddingCode.Abstractions;
 
 /// <summary>
 /// KeyVault 主密钥的来源。
