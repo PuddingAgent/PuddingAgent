@@ -204,6 +204,34 @@ public sealed class VoiceControllerTests
         StringAssert.Contains(json, "voice_quota_exhausted");
         Assert.DoesNotContain("secret", json);
     }
+    [TestMethod]
+    public async Task Stream_EmptyText_Throws400_BeforeWritingResponseHeaders()
+    {
+        var service = new Mock<IVoiceSynthesisService>(MockBehavior.Strict);
+        var http = new DefaultHttpContext();
+        var controller = new VoiceController { ControllerContext = new ControllerContext { HttpContext = http } };
+
+        var failure = await CaptureFailure(() => controller.Stream(
+            new VoiceSynthesizeInput { Text = "  " },
+            service.Object,
+            default));
+
+        Assert.AreEqual(400, failure.Status);
+        Assert.AreEqual("voice_invalid_text", failure.Code);
+        Assert.IsNull(http.Response.ContentType); // SSE 头未写出，状态码仍可改为 400
+        service.VerifyNoOtherCalls();
+    }
+
+    [TestMethod]
+    public void NormalizeFormat_DefaultsToWav_AndRejectsUnknown()
+    {
+        Assert.AreEqual(VoiceAudioFormats.Wav, TtsInputValidator.NormalizeFormat(null));
+        Assert.AreEqual(VoiceAudioFormats.Mp3, TtsInputValidator.NormalizeFormat(" MP3 "));
+        var failure = Assert.Throws<SpeechFailure>(() => TtsInputValidator.NormalizeFormat("ogg"));
+        Assert.AreEqual(400, failure.Status);
+        Assert.AreEqual("voice_unsupported_format", failure.Code);
+    }
+
     private static ExceptionContext CreateExceptionContext(Exception exception)
     {
         var http = new DefaultHttpContext

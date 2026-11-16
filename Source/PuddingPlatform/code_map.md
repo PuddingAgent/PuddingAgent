@@ -306,7 +306,8 @@ per-key 连续 deferred 计数与退避档属 Agent 侧诊断（`classifier_stat
 | `Services/AudioArtifactStorageService.cs` | 音频存储 | `AudioArtifactStorageService` | `Services/AudioTranscriptionService.cs` | — |
 | `Services/AudioTranscriptionService.cs` | 音频转录 | `AudioTranscriptionService` | `Services/AudioArtifactStorageService.cs` | — |
 | `Services/VoiceSynthesisService.cs` | 语音合成 | `VoiceSynthesisService` | `Services/AudioArtifactStorageService.cs` | — |
-| `Controllers/Api/VoiceController.cs` | 统一录音识别、完整/流式合成与能力查询 | `VoiceController` | `Services/AudioTranscriptionService.cs`、`Services/VoiceSynthesisService.cs` | 不从业务请求选 Provider；识别前校验真实 PCM WAV；合成前校验文本长度与音频格式（违者 400）；流式音频与终态独立 |
+| `Controllers/Api/VoiceController.cs` | 统一录音识别、完整/流式合成与能力查询 | `VoiceController` | `Services/AudioTranscriptionService.cs`、`Services/VoiceSynthesisService.cs`、`Controllers/Api/TtsInputValidator.cs` | 不从业务请求选 Provider；识别前校验真实 PCM WAV；合成前校验文本长度与音频格式（违者 400）；流式音频与终态独立 |
+| `Controllers/Api/TtsInputValidator.cs` | TTS 输入校验唯一真源 | `TtsInputValidator` | — | 完整/流式两个端点共用；抛 SpeechFailure(400) 由 [VoiceFailure] 映射；流式端点必须在写 SSE 头之前调用 |
 | `Controllers/Api/RealtimeVoiceController.cs` | 实时录音的授权与 WS 入口 | `RealtimeVoiceController` | `Services/VoiceStreamTicketStore.cs`、`Services/WebSocketSpeechPeer.cs` | JWT POST 发 30 秒一次性凭证；首帧消费、同源检查；凭证不进 URL；停止排空与取消分离 |
 | `Services/RealtimeAudioTranscriptionService.cs` | 冻结默认语音路由并解析实时能力 | `IStreamingSpeechRecognizer` | `../PuddingSpeech/RealtimeAsrSession.cs` | 不按供应商名称分支；无流式能力明确失败；[接入测试](../PuddingPlatformTests/Services/RealtimeVoiceTests.cs) |
 | `Services/WebSocketSpeechPeer.cs` | 浏览器中立实时协议的分帧与事件投影 | `IRealtimeSpeechPeer` | `Services/VoiceStreamTicketStore.cs` | 有界消息、PCM 二进制、finish/cancel；发送串行；只记录安全 code/errorId |

@@ -16,8 +16,8 @@ namespace PuddingPlatform.Controllers.Api;
 [VoiceFailure]
 public sealed class VoiceController : ControllerBase
 {
-    /// <summary>待朗读文本上限，与 QwenTts.BuildRequest 保持一致。</summary>
-    public const int MaxTextLength = 10_000;
+    /// <summary>待朗读文本上限，转发到唯一真源。</summary>
+    public const int MaxTextLength = TtsInputValidator.MaxTextLength;
 
     [HttpPost("tts/synthesize")]
     [Produces("audio/wav", "audio/mpeg")]
@@ -26,17 +26,9 @@ public sealed class VoiceController : ControllerBase
         [FromServices] IVoiceSynthesisService synthesisService,
         CancellationToken ct)
     {
-        // 输入校验必须在这里：错误映射统一交给 [VoiceFailure]，不另写一套 try/catch。
-        var text = request.Text?.Trim() ?? string.Empty;
-        if (text.Length == 0)
-            throw new PuddingSpeech.SpeechFailure("voice_invalid_text", "朗读内容不能为空。", 400);
-        if (text.Length > MaxTextLength)
-            throw new PuddingSpeech.SpeechFailure("voice_text_too_long", $"朗读内容不能超过 {MaxTextLength} 个字符。", 400);
-        var format = string.IsNullOrWhiteSpace(request.Format)
-            ? VoiceAudioFormats.Wav
-            : request.Format.Trim().ToLowerInvariant();
-        if (format != VoiceAudioFormats.Wav && format != VoiceAudioFormats.Mp3)
-            throw new PuddingSpeech.SpeechFailure("voice_unsupported_format", "仅支持 wav 或 mp3 音频格式。", 400);
+        // 校验交给唯一真源；错误映射仍由 [VoiceFailure] 负责，不另写 try/catch。
+        var text = TtsInputValidator.ValidateText(request.Text);
+        var format = TtsInputValidator.NormalizeFormat(request.Format);
 
         var result = await synthesisService.SynthesizeAsync(new VoiceSynthesisRequest
         {
@@ -97,6 +89,8 @@ public sealed class VoiceController : ControllerBase
     [HttpPost("tts/stream")]
     public async Task Stream([FromBody] VoiceSynthesizeInput request, [FromServices] IVoiceSynthesisService synthesis, CancellationToken ct)
     {
+        // 必须先校验再写 SSE 头：响应头一旦发出，状态码就无法再改成 400。
+        var text = TtsInputValidator.ValidateText(request.Text);
         Response.ContentType = "text/event-stream";
         Response.Headers.CacheControl = "no-cache";
         try
@@ -104,7 +98,7 @@ public sealed class VoiceController : ControllerBase
             await foreach (var frame in synthesis.StreamAsync(new VoiceSynthesisRequest
             {
                 WorkspaceId = request.WorkspaceId ?? "", MessageId = Guid.NewGuid().ToString("N"),
-                Text = request.Text, Model = "", Voice = request.Voice ?? "", AudioFormat = "pcm", SampleRate = 24000,
+                Text = text, Model = "", Voice = request.Voice ?? "", AudioFormat = "pcm", SampleRate = 24000,
             }, ct))
             {
                 await WriteEvent(new { type = "audio", data = Convert.ToBase64String(frame.AudioBytes ?? []), sampleRate = frame.SampleRate ?? 24000 }, ct);
