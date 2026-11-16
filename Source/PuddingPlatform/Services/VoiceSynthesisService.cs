@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingSpeech;
 
 namespace PuddingPlatform.Services;
 
@@ -101,6 +102,23 @@ public sealed class VoiceSynthesisService(
             ?? throw new InvalidOperationException(
                 $"No default TTS model configured for provider '{providerId}'.");
 
+        var modelConfig = providerConfig.TtsModels.First(m => m.ModelId == modelId);
+
+        // 音色必须先对配置校验：providers.json 的 voices 是唯一真源。
+        // 不校验就会把「配置写错」一路送到上游，用户只看到「服务不可用」，
+        // 还白白付一次上游往返——历史音色 Vera 正是这样潜伏很久才被发现。
+        if (!string.IsNullOrWhiteSpace(request.Voice)
+            && modelConfig.Voices.Count > 0
+            && !modelConfig.Voices.Contains(request.Voice, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new SpeechFailure(
+                "voice_not_registered",
+                $"音色 '{request.Voice}' 未在语音配置中注册，可选："
+                + string.Join(" / ", modelConfig.Voices)
+                + "。",
+                400);
+        }
+
         var provider = providerFactory.CreateTtsProvider(
             config,
             providerConfig.ProviderId,
@@ -111,7 +129,7 @@ public sealed class VoiceSynthesisService(
             Provider = provider.Provider,
             Model = modelId,
             Voice = string.IsNullOrWhiteSpace(request.Voice)
-                ? providerConfig.TtsModels.First(m => m.ModelId == modelId).Voices.FirstOrDefault()
+                ? modelConfig.Voices.FirstOrDefault()
                   ?? throw new InvalidOperationException("No default voice configured.")
                 : request.Voice,
             AudioFormat = string.IsNullOrWhiteSpace(request.AudioFormat)

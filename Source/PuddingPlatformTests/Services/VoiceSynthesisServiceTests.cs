@@ -4,6 +4,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingPlatform.Services;
+using PuddingSpeech;
 
 namespace PuddingPlatformTests.Services;
 
@@ -77,9 +78,81 @@ public sealed class VoiceSynthesisServiceTests
         }
     }
 
+    [TestMethod]
+    public async Task SynthesizeAsync_UnregisteredVoice_RejectedBeforeCallingUpstream()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "pudding-voice-service-tests",
+            Guid.NewGuid().ToString("N"));
+        try
+        {
+            var paths = PuddingDataPaths.FromRoot(root);
+            Directory.CreateDirectory(paths.ConfigRoot);
+            var config = new PuddingVoiceProvidersConfig
+            {
+                DefaultTtsProviderId = "provider-a",
+                DefaultTtsModelId = "model-a",
+                Providers =
+                [
+                    Provider("provider-a", "model-a", ["Cherry", "Serena"]),
+                ],
+            };
+            Directory.CreateDirectory(
+                Path.GetDirectoryName(
+                    paths.SystemConfigFile("voice/providers.json"))!);
+            await File.WriteAllTextAsync(
+                paths.SystemConfigFile("voice/providers.json"),
+                JsonSerializer.Serialize(
+                    config,
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+
+            var factory = new RecordingVoiceProviderFactory();
+            var service = new VoiceSynthesisService(
+                new VoiceProviderFileService(
+                    paths,
+                    NullLogger<VoiceProviderFileService>.Instance),
+                factory,
+                new UnusedHttpClientFactory(),
+                NullLogger<VoiceSynthesisService>.Instance);
+
+            try
+            {
+                await service.SynthesizeAsync(
+                    new VoiceSynthesisRequest
+                    {
+                        WorkspaceId = "default",
+                        MessageId = "message-2",
+                        Model = "",
+                        Text = "你好",
+                        Voice = "Vera",
+                        AudioFormat = VoiceAudioFormats.Wav,
+                    });
+                Assert.Fail("未注册音色应当被拒绝。");
+            }
+            catch (SpeechFailure failure)
+            {
+                Assert.AreEqual("voice_not_registered", failure.Code);
+                Assert.AreEqual(400, failure.Status);
+                StringAssert.Contains(failure.Message, "Cherry");
+                StringAssert.Contains(failure.Message, "Serena");
+            }
+
+            Assert.IsNull(
+                factory.ProviderId,
+                "未注册音色不应创建 provider，更不能打上游。");
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static PuddingVoiceProviderConfig Provider(
         string providerId,
-        string modelId) => new()
+        string modelId,
+        string[]? voices = null) => new()
         {
             ProviderId = providerId,
             Name = providerId,
@@ -92,6 +165,7 @@ public sealed class VoiceSynthesisServiceTests
                     ModelId = modelId,
                     Name = modelId,
                     IsDefault = true,
+                    Voices = voices?.ToList() ?? [],
                     AudioFormats = [VoiceAudioFormats.Wav],
                     SampleRates = [24_000],
                 },
