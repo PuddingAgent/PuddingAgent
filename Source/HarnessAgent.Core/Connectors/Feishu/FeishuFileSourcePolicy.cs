@@ -86,7 +86,7 @@ public sealed class FeishuFileSourcePolicy
         if (!IsUnderAnyRoot(full))
             return FeishuFileSourceDecision.Deny("path is outside the allowed roots");
 
-        if (HitsCredentialGuard(full))
+        if (IsCredentialLike(full))
             return FeishuFileSourceDecision.Deny("path looks like a credential file and will not be sent");
 
         return FeishuFileSourceDecision.Allow(full);
@@ -110,7 +110,11 @@ public sealed class FeishuFileSourcePolicy
         return false;
     }
 
-    private static bool HitsCredentialGuard(string fullPath)
+    /// <summary>
+    /// 判断路径看起来是否凭据类文件。取材判定用它，投递前的复核也用它——
+    /// 这样「什么算凭据」只有一份定义。
+    /// </summary>
+    public static bool IsCredentialLike(string fullPath)
     {
         var name = Path.GetFileName(fullPath).ToLowerInvariant();
         if (DeniedFileNames.Contains(name))

@@ -339,6 +339,13 @@ public sealed class FeishuConnector : IPuddingConnector
             throw new InvalidOperationException(
                 $"Feishu file delivery source was not found: {Path.GetFileName(full)}");
 
+        // 排队到投递之间，路径可能已被替换成凭据文件；取材合法性不能只在工具层判一次。
+        if (FeishuFileSourcePolicy.IsCredentialLike(full))
+        {
+            throw new InvalidOperationException(
+                "Feishu file delivery refused: the source looks like a credential file.");
+        }
+
         var info = new FileInfo(full);
         if (info.Length > FeishuFileSplitPlanner.MaxSingleFileBytes)
         {
