@@ -30,8 +30,11 @@ export function createVoiceInputAdapter(): BrowserVoiceInputAdapter {
           while (!ended && connection && queued.length) {
             const frame = queued.shift()!; queuedBytes -= frame.byteLength;
             connection.sendAudio(frame);
-            // Drain initialization audio in bounded steps instead of flooding the server queue.
-            await new Promise(resolve => setTimeout(resolve, 20));
+            // 让出事件循环，但**不能用 20ms/帧**：一帧只有 128 样本（≈8ms 音频），
+            // 实测 20ms 节流把上行吞吐锁在 ~6.2k 样本/秒，而采集是 16k 样本/秒，
+            // 积压以 ~9.7k 样本/秒 增长 ⇒ 约 49 秒就撞上 15s 背压线，用户听到的是
+            // “说着说着就断了”。改成 setTimeout(0)（浏览器 clamp 4ms）后队列不再积压。
+            await new Promise(resolve => setTimeout(resolve, 0));
           }
         })().catch(() => { fail('音频传输失败，请重试录音。'); }).finally(() => { pumping = undefined; });
         return pumping;
@@ -81,7 +84,8 @@ export function createVoiceInputAdapter(): BrowserVoiceInputAdapter {
           samples += bounded.length;
           const pcm = encodePcm16(bounded);
           queued.push(pcm); queuedBytes += pcm.byteLength;
-          if (queuedBytes > RECORDING_SAMPLE_RATE * 2 * 15) { fail('语音连接过慢，请重试录音。'); return; }
+          // 背压安全网：真积压到 45 秒音频才判定连接过慢（原先 15 秒会在正常说话时误杀）。
+          if (queuedBytes > RECORDING_SAMPLE_RATE * 2 * 45) { fail('语音连接过慢，请重试录音。'); return; }
           if (connection) void pump();
           let energy = 0;
           for (const sample of bounded) energy += sample * sample;
