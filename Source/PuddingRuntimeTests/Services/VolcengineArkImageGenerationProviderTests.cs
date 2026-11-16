@@ -96,6 +96,60 @@ public sealed class VolcengineArkImageGenerationProviderTests
                 StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    public async Task GenerateAsync_UsesCapabilityTagsNotModelNameForSequentialParameter()
+    {
+        var handler = new ArkHandler();
+        var provider = new VolcengineArkImageGenerationProvider(
+            new StaticHttpClientFactory(new HttpClient(handler)),
+            NullLogger<VolcengineArkImageGenerationProvider>.Instance);
+
+        await provider.GenerateAsync(
+            new ImageGenerationProviderRequest
+            {
+                Endpoint = "https://ark.cn-beijing.volces.com/api/v3",
+                ApiKey = "test-key",
+                ModelId = "doubao-seedream-5-5-261028",
+                Prompt = "四格图标",
+                Size = "2K",
+                ModelCapabilityTags = ["image-generation", "text-to-image"],
+            });
+
+        // 模型名不含 seedream-5-0-pro，但它没有声明 sequential-image-generation，
+        // 因此绝不能发送该参数（5.5 收到会返回 HTTP 400）。
+        Assert.IsFalse(
+            handler.Requests[0].Body.Contains(
+                "\"sequential_image_generation\"",
+                StringComparison.Ordinal),
+            "declared capabilities must decide, not the model name");
+    }
+
+    [TestMethod]
+    public async Task GenerateAsync_DeclaredSequentialCapability_EmitsParameter()
+    {
+        var handler = new ArkHandler();
+        var provider = new VolcengineArkImageGenerationProvider(
+            new StaticHttpClientFactory(new HttpClient(handler)),
+            NullLogger<VolcengineArkImageGenerationProvider>.Instance);
+
+        await provider.GenerateAsync(
+            new ImageGenerationProviderRequest
+            {
+                Endpoint = "https://ark.cn-beijing.volces.com/api/v3",
+                ApiKey = "test-key",
+                ModelId = "doubao-seedream-5-0-260128",
+                Prompt = "四格图标",
+                Size = "2K",
+                ImageCount = 2,
+                ModelCapabilityTags =
+                    ["image-generation", "sequential-image-generation"],
+            });
+
+        var body = handler.Requests[0].Body;
+        StringAssert.Contains(body, "\"sequential_image_generation\":\"auto\"");
+        StringAssert.Contains(body, "sequential_image_generation_options");
+    }
+
     private sealed class StaticHttpClientFactory(HttpClient client)
         : IHttpClientFactory
     {

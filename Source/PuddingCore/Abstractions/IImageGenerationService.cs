@@ -59,6 +59,12 @@ public sealed record ImageGenerationProviderRequest
     public bool EnableWebSearch { get; init; }
     public int ImageCount { get; init; } = 1;
     public IReadOnlyList<string> InputImages { get; init; } = [];
+
+    /// <summary>
+    /// 该模型在资源池中声明的能力标签。provider 据此决定是否发送可选请求参数，
+    /// 不再用模型名字符串猜测能力（单一真源）。
+    /// </summary>
+    public IReadOnlyList<string> ModelCapabilityTags { get; init; } = [];
 }
 
 public sealed record ImageGenerationProviderImage

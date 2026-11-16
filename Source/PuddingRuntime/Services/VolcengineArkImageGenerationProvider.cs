@@ -52,10 +52,12 @@ public sealed class VolcengineArkImageGenerationProvider(
                 mode = request.OptimizePromptMode,
             },
         };
+        // 能力取自资源池声明的标签，不再用模型名子串判断：
+        // doubao-seedream-5-5 不接受 sequential_image_generation，发出去直接 400。
         var supportsSequentialImageGeneration =
-            !request.ModelId.Contains(
-                "seedream-5-0-pro",
-                StringComparison.OrdinalIgnoreCase);
+            request.ModelCapabilityTags.Contains(
+                "sequential-image-generation",
+                StringComparer.OrdinalIgnoreCase);
         if (supportsSequentialImageGeneration)
         {
             payload["sequential_image_generation"] =
