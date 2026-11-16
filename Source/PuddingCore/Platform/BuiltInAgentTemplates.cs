@@ -25,7 +25,7 @@ public static class BuiltInAgentTemplates
                 "spawn_sub_agent", "event_subscribe", "sleep", "goal_read", "goal_update",
                 "browser_context", "browser_tabs", "browser_navigate", "browser_snapshot",
                 "browser_locate", "browser_interact", "browser_wait_for",
-                "send_image", "generate_image", "image_reader", "import_image", "send_voice", "asr"],
+                "send_image", "generate_image", "image_reader", "import_image", "send_voice", "asr", "send_file"],
             RequiresGrantToolNames = [],
         },
         Runtime = new RuntimeProfile { MaxContextTokens = 1048576 }, // Mimo v2.5 has 1M context
@@ -56,7 +56,7 @@ public static class BuiltInAgentTemplates
                 "spawn_sub_agent", "event_subscribe", "sleep", "goal_read", "goal_update",
                 "browser_context", "browser_tabs", "browser_navigate", "browser_snapshot",
                 "browser_locate", "browser_interact", "browser_wait_for",
-                "send_image", "generate_image", "image_reader", "import_image", "send_voice", "asr"],
+                "send_image", "generate_image", "image_reader", "import_image", "send_voice", "asr", "send_file"],
             RequiresGrantToolNames =
             [
                 "file_patch",
@@ -99,7 +99,7 @@ public static class BuiltInAgentTemplates
                 "spawn_sub_agent", "event_subscribe", "sleep", "goal_read", "goal_update",
                 "browser_context", "browser_tabs", "browser_navigate", "browser_snapshot",
                 "browser_locate", "browser_interact", "browser_wait_for",
-                "send_image", "generate_image", "image_reader", "import_image", "send_voice", "asr"],
+                "send_image", "generate_image", "image_reader", "import_image", "send_voice", "asr", "send_file"],
             RequiresGrantToolNames =
             [
                 "file_patch",
