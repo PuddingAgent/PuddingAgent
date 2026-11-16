@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using HarnessAgent.Core.Connectors.Feishu;
@@ -50,7 +50,8 @@ public sealed class FeishuConnector : IPuddingConnector
         FeishuInboundMessageMapper inboundMessageMapper,
         FeishuTtsDeliveryService ttsDeliveryService,
         FeishuImageUploadPreparationService imageUploadPreparation,
-        VisionArtifactStorageService visionArtifacts)
+        VisionArtifactStorageService visionArtifacts,
+        Func<FeishuConfig, FeishuClient>? clientFactory = null)
     {
         _binding = binding;
         _logger = logger;
@@ -64,6 +65,9 @@ public sealed class FeishuConnector : IPuddingConnector
             AppSecret = binding.AppSecret,
             Description = binding.Description,
         };
+        // 测试缝：生产不传，内部照旧在 StartAsync 现造；测试可注入带假 handler 的 client，
+        // 从而能在不连网的前提下断言分发与元数据。
+        _client = clientFactory?.Invoke(_config);
         Descriptor = new ConnectorDescriptor
         {
             ConnectorId = FeishuConnectorIdentity.ForChannel(
@@ -81,7 +85,7 @@ public sealed class FeishuConnector : IPuddingConnector
         CancellationToken ct = default)
     {
         _context = context;
-        _client = new FeishuClient(_config);
+            _client ??= new FeishuClient(_config);
         context.Log("[Feishu] Connector starting WebSocket long connection...");
 
         try
@@ -164,6 +168,13 @@ public sealed class FeishuConnector : IPuddingConnector
                          StringComparison.Ordinal))
             {
                 await SendVisionImageAsync(message, uuid, ct);
+            }
+            else if (string.Equals(
+                         Get(message.Metadata, ConnectorPayloadMetadata.Kind),
+                         ConnectorPayloadKinds.WorkspaceFile,
+                         StringComparison.Ordinal))
+            {
+                await SendWorkspaceFileAsync(message, uuid, ct);
             }
             else if (string.Equals(
                     Get(message.Metadata, ConnectorStreamMetadata.ReplyMode),
@@ -301,6 +312,79 @@ public sealed class FeishuConnector : IPuddingConnector
         {
             throw new InvalidOperationException(
                 $"Feishu audio send failed: code={sendResult.Code}, msg={sendResult.Msg}");
+        }
+    }
+
+    /// <summary>
+    /// 投递本地文件：读字节 → 按扩展名取 file_type → 上传拿 file_key → 有源消息 reply，否则 chat_id。
+    /// 取材合法性（允许根、凭据类拦截）在工具层用 FeishuFileSourcePolicy 判定，这里只守大小与存在性。
+    /// </summary>
+    private async Task SendWorkspaceFileAsync(
+        ConnectorMessage message,
+        string? uuid,
+        CancellationToken ct)
+    {
+        if (_client is null)
+            throw new InvalidOperationException("Feishu connector not started");
+
+        var sourcePath = Get(message.Metadata, ConnectorPayloadMetadata.SourcePath);
+        if (string.IsNullOrWhiteSpace(sourcePath))
+            throw new InvalidOperationException(
+                "Feishu file delivery requires a source path.");
+
+        var full = Path.GetFullPath(sourcePath!);
+        if (Directory.Exists(full))
+            throw new InvalidOperationException("Feishu file delivery source is a directory.");
+        if (!File.Exists(full))
+            throw new InvalidOperationException(
+                $"Feishu file delivery source was not found: {Path.GetFileName(full)}");
+
+        var info = new FileInfo(full);
+        if (info.Length > FeishuFileSplitPlanner.MaxSingleFileBytes)
+        {
+            throw new InvalidOperationException(
+                $"Feishu caps one file at {FeishuFileSplitPlanner.MaxSingleFileBytes} bytes; "
+                + "split it before delivery.");
+        }
+
+        var descriptor = FeishuFileTypes.Resolve(info.Name);
+        var bytes = await File.ReadAllBytesAsync(full, ct);
+        var upload = await _client.UploadFileAsync(
+            bytes,
+            info.Name,
+            descriptor.FileType,
+            null,
+            descriptor.ContentType,
+            ct);
+        var fileKey = upload.Data?.FileKey;
+        if (upload.Code != 0 || string.IsNullOrWhiteSpace(fileKey))
+        {
+            throw new InvalidOperationException(
+                $"Feishu file upload failed: code={upload.Code}, msg={upload.Msg}");
+        }
+
+        SendMessageResponse sendResult;
+        if (message.Metadata.TryGetValue("message_id", out var messageId)
+            && !string.IsNullOrWhiteSpace(messageId))
+        {
+            sendResult = await _client.ReplyFileAsync(messageId, fileKey, uuid, ct);
+        }
+        else
+        {
+            var contentJson = JsonSerializer.Serialize(new { file_key = fileKey });
+            sendResult = await _client.SendMessageAsync(
+                message.Target,
+                "file",
+                contentJson,
+                uuid,
+                ct,
+                receiveIdType: "chat_id");
+        }
+
+        if (sendResult.Code != 0)
+        {
+            throw new InvalidOperationException(
+                $"Feishu file send failed: code={sendResult.Code}, msg={sendResult.Msg}");
         }
     }
 

@@ -77,6 +77,8 @@ public static class ConnectorPayloadMetadata
 {
     public const string Kind = "connector_payload_kind";
     public const string ArtifactId = "connector_artifact_id";
+    /// <summary>本地文件投递的素材路径（工作区外亦可，由工具层的取材策略决定）。</summary>
+    public const string SourcePath = "connector_source_path";
 }
 
 /// <summary>Typed Connector delivery payloads supported by the channel layer.</summary>
@@ -84,6 +86,8 @@ public static class ConnectorPayloadKinds
 {
     public const string TtsAudio = "tts_audio";
     public const string VisionImage = "vision_image";
+    /// <summary>本地文件（PDF/文档/压缩包等），以 msg_type=file 投递。</summary>
+    public const string WorkspaceFile = "workspace_file";
 }
 
 /// <summary>连接器操作结果。</summary>
