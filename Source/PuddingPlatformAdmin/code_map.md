@@ -40,7 +40,7 @@
 | 语音入口 | 用途 |
 |---|---|
 | `src/pages/chat/hooks/cloudVoiceInput.ts` · `public/audio/pcm-capture.js` | 授权后立即采集，连接期间有界暂存开头音频；分批排空、停止 flush/最终排空、取消整个生命周期与设备释放 |
-| `src/pages/chat/hooks/useHoldToTalk.ts` | 聊天页按住说话手势：Ctrl+Shift+Space、麦克风/输入区中键；短按保护、松开提交、Esc/右键/失焦取消。**焦点在输入框/可编辑区时不接管 Space**（Ctrl+Shift 是输入法切换键，否则草稿会被误发） |
+| `src/pages/chat/hooks/useHoldToTalk.ts` | 聊天页按住说话手势：Ctrl+Shift+Space、麦克风/输入区中键；短按保护、松开提交、Esc/右键/失焦取消。**焦点在输入框/可编辑区时不接管 Space**（Ctrl+Shift 是输入法切换键，否则草稿会被误发）；**pointerup 校验 button**（鼠标各键共享 pointerId）；**鼠标 pointercancel 不取消**（中键自动滚动不是用户意图） |
 | `src/pages/chat/hooks/voiceSilenceStop.ts` | 免按键录音的静音收尾判定：预热期、说过话、连续静默达阈后只触发一次 |
 | `src/pages/chat/hooks/voiceAudio.ts` · `voiceDraft.ts` | PCM/WAV 编码；按光标维护语音区间、实时替换、取消回滚、保护手动编辑 |
 | `src/services/platform/realtimeAsr.ts` | 服务商无关的本机 WS：首帧一次性凭证、实时句子投影、背压、停止/取消与终态围栏 |

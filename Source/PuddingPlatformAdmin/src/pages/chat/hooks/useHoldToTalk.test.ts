@@ -70,3 +70,59 @@ it('works again once focus leaves the text field', () => {
   expect(options.finish).toHaveBeenCalledTimes(1);
   input.remove(); view.unmount(); jest.useRealTimers();
 });
+
+/** jsdom 没有 PointerEvent 构造器；手动派发足以覆盖这里的事件处理契约。 */
+const firePointer = (type: string, props: Record<string, unknown>) => {
+  const event = new Event(type, { bubbles: true }) as unknown as Record<string, unknown>;
+  Object.assign(event, props);
+  window.dispatchEvent(event as unknown as Event);
+};
+
+const pointerDown = (button: number, pointerId: number) =>
+  ({
+    button,
+    pointerId,
+    preventDefault: jest.fn(),
+    currentTarget: { setPointerCapture: jest.fn() },
+  }) as never;
+
+it('keeps recording when a different mouse button is released', () => {
+  jest.useFakeTimers();
+  const options = { blocked: false, start: jest.fn(), finish: jest.fn(), cancel: jest.fn(), shortPress: jest.fn() };
+  const view = renderHook(() => useHoldToTalk(options));
+  act(() => { view.result.current.beginPointer(pointerDown(1, 1)); });
+  expect(options.start).toHaveBeenCalledTimes(1);
+  act(() => {
+    jest.advanceTimersByTime(400);
+    firePointer('pointerup', { pointerId: 1, button: 0, pointerType: 'mouse' });
+  });
+  expect(options.finish).not.toHaveBeenCalled();
+  expect(options.cancel).not.toHaveBeenCalled();
+  act(() => { firePointer('pointerup', { pointerId: 1, button: 1, pointerType: 'mouse' }); });
+  expect(options.finish).toHaveBeenCalledTimes(1);
+  view.unmount(); jest.useRealTimers();
+});
+
+it('ignores a mouse pointercancel so an autoscroll does not swallow the recording', () => {
+  jest.useFakeTimers();
+  const options = { blocked: false, start: jest.fn(), finish: jest.fn(), cancel: jest.fn(), shortPress: jest.fn() };
+  const view = renderHook(() => useHoldToTalk(options));
+  act(() => { view.result.current.beginPointer(pointerDown(1, 1)); });
+  act(() => {
+    jest.advanceTimersByTime(400);
+    firePointer('pointercancel', { pointerId: 1, pointerType: 'mouse' });
+  });
+  expect(options.cancel).not.toHaveBeenCalled();
+  act(() => { firePointer('pointerup', { pointerId: 1, button: 1, pointerType: 'mouse' }); });
+  expect(options.finish).toHaveBeenCalledTimes(1);
+  view.unmount(); jest.useRealTimers();
+});
+
+it('still cancels on a touch pointercancel', () => {
+  const options = { blocked: false, start: jest.fn(), finish: jest.fn(), cancel: jest.fn(), shortPress: jest.fn() };
+  const view = renderHook(() => useHoldToTalk(options));
+  act(() => { view.result.current.beginPointer(pointerDown(0, 7)); });
+  act(() => { firePointer('pointercancel', { pointerId: 7, pointerType: 'touch' }); });
+  expect(options.cancel).toHaveBeenCalledTimes(1);
+  view.unmount();
+});

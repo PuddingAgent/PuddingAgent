@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-type Hold = { source: 'keyboard' | 'pointer'; pointerId?: number; started: number };
+type Hold = { source: 'keyboard' | 'pointer'; button?: number; pointerId?: number; started: number };
 
 /**
  * 输入框/可编辑区域里的按键属于文字输入，不能当成语音快捷键。
@@ -30,7 +30,7 @@ export function useHoldToTalk(options: { blocked: boolean; cancellable?: boolean
   const beginPointer = useCallback((event: React.PointerEvent) => {
     if (current.current.blocked || active.current) return;
     event.preventDefault();
-    active.current = { source: 'pointer', pointerId: event.pointerId, started: Date.now() };
+    active.current = { source: 'pointer', button: event.button, pointerId: event.pointerId, started: Date.now() };
     event.currentTarget.setPointerCapture?.(event.pointerId);
     setHeld(true); current.current.start();
   }, []);
@@ -47,8 +47,16 @@ export function useHoldToTalk(options: { blocked: boolean; cancellable?: boolean
       active.current = { source: 'keyboard', started: Date.now() }; setHeld(true); current.current.start();
     };
     const up = (event: KeyboardEvent) => { if (active.current?.source === 'keyboard' && event.code === 'Space') { event.preventDefault(); end(true); } };
-    const pointerUp = (event: PointerEvent) => { if (active.current?.source === 'pointer' && event.pointerId === active.current.pointerId) end(true); };
-    const pointerCancel = (event: PointerEvent) => { if (active.current?.source === 'pointer' && event.pointerId === active.current.pointerId) end(false); };
+    // 只认「同一个指针 + 同一个按键」的抬起。
+    // 鼠标所有按键共享 pointerId，不校验 button 会让左键/右键的抬起提前结束中键录音。
+    const pointerUp = (event: PointerEvent) => {
+      if (active.current?.source === 'pointer' && event.pointerId === active.current.pointerId && event.button === active.current.button) end(true);
+    };
+    // 鼠标的 pointercancel 多数是浏览器自己的动作（中键自动滚动、失去捕获），
+    // 不是用户想取消；跟着取消就会把已说的内容丢掉。触摸/笔的 cancel 才是真取消。
+    const pointerCancel = (event: PointerEvent) => {
+      if (active.current?.source === 'pointer' && event.pointerId === active.current.pointerId && event.pointerType !== 'mouse') end(false);
+    };
     const right = (event: MouseEvent) => { if (event.button === 2 && active.current) { event.preventDefault(); suppressMenu = true; end(false); } };
     const context = (event: MouseEvent) => { if (suppressMenu) { event.preventDefault(); suppressMenu = false; } };
     const blur = () => { if (active.current) end(false); else if (current.current.cancellable) current.current.cancel(); };
