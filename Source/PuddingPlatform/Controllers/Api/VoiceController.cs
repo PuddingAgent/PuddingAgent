@@ -80,8 +80,12 @@ public sealed class VoiceController : ControllerBase
         var config = await voiceService.LoadAsync(ct);
         var asr = config.Providers.FirstOrDefault(p => p.IsEnabled && p.ProviderId == config.DefaultAsrProviderId);
         var tts = config.Providers.FirstOrDefault(p => p.IsEnabled && p.ProviderId == config.DefaultTtsProviderId);
+        // 音色清单的唯一真源是 providers.json：前端下拉不再硬编码，
+        // 否则配置改了 UI 不知道，历史音色 Vera 就是这样两头不一致的。
+        var ttsVoices = VoiceCapabilitiesProjection.TtsVoices(config);
         return Ok(new { canRecognize = asr?.AsrModels.Any(m => m.ModelId == config.DefaultAsrModelId) == true,
             canSynthesize = tts?.TtsModels.Any(m => m.ModelId == config.DefaultTtsModelId) == true,
+            ttsVoices,
             canStreamRecognize = await realtime.IsAvailableAsync(ct),
             maxRecordingSeconds = 120, recordingFormat = "wav", streamingFormat = "pcm", sampleRate = 16000 });
     }

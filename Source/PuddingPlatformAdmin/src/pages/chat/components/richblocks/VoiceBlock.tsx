@@ -14,10 +14,12 @@ import type {
 } from '../../hooks/browserVoiceOutput';
 import {
   createHttpVoiceOutputAdapter,
+  loadVoiceOptions,
   readStoredVoiceName,
   voiceOptions,
   writeStoredVoiceName,
 } from '../../hooks/httpVoiceOutput';
+import type { VoiceOption } from '../../hooks/httpVoiceOutput';
 
 /**
  * ```voice 围栏渲染器 —— 让回复在**对话里**可以出声。
@@ -62,6 +64,31 @@ export const VoiceBlock: React.FC<VoiceBlockProps> = ({
   const [voiceName, setVoiceName] = useState<string>(() =>
     readStoredVoiceName(),
   );
+  // 下拉先用打包兜底清单渲染，拿到配置后再换成服务端清单。
+  const [options, setOptions] = useState<VoiceOption[]>(voiceOptions);
+
+  // 音色清单的唯一真源是 providers.json（经 /api/voice/capabilities 下发）。
+  // 没有 fetch 就没有可用的服务端清单，直接用兜底，不发起注定失败的请求。
+  useEffect(() => {
+    if (!showVoicePicker) return;
+    if (typeof globalThis.fetch !== 'function') return;
+    let cancelled = false;
+    void loadVoiceOptions().then((list) => {
+      if (cancelled || list.length === 0) return;
+      setOptions(list);
+      // 配置里可能已经没有当前选中的音色：回落到第一个并记住，
+      // 否则下拉会显示一个不存在的值（历史上 Vera 就是这样露出 400 的）。
+      setVoiceName((current) => {
+        if (list.some((option) => option.id === current)) return current;
+        const fallback = list[0].id;
+        writeStoredVoiceName(fallback);
+        return fallback;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [showVoicePicker]);
 
   // 音色变化只影响下一次手动播放，不触发重播。
   const builtAdapter = useMemo(
@@ -208,7 +235,7 @@ export const VoiceBlock: React.FC<VoiceBlockProps> = ({
             cursor: 'pointer',
           }}
         >
-          {voiceOptions.map((option) => (
+          {options.map((option) => (
             <option key={option.id} value={option.id}>
               {option.label}
             </option>

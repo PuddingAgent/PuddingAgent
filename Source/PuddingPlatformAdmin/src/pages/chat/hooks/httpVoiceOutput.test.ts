@@ -2,6 +2,7 @@ import {
   createHttpVoiceOutputAdapter,
   describeVoiceFailure,
   defaultVoiceName,
+  loadVoiceOptions,
   readStoredVoiceName,
   VOICE_NAME_STORAGE_KEY,
   voiceOptions,
@@ -240,5 +241,76 @@ describe('音色记忆', () => {
   it('保存脏数据时回落到默认音色，避免把非法值发给后端', () => {
     localStorage.setItem(VOICE_NAME_STORAGE_KEY, 'NotAVoice');
     expect(readStoredVoiceName()).toBe(defaultVoiceName);
+  });
+});
+
+describe('loadVoiceOptions（音色清单以配置为真源）', () => {
+  const okVoices = (voices: unknown) =>
+    ({
+      ok: true,
+      status: 200,
+      json: async () => ({ canSynthesize: true, ttsVoices: voices }),
+    }) as unknown as Response;
+
+  it('采用服务端下发的音色，并给已知音色加上展示名', async () => {
+    const fetchImpl = jest.fn(async () => okVoices(['Cherry', 'Ethan']));
+    const options = await loadVoiceOptions({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      getToken: () => 'tk-1',
+    });
+
+    expect(options.map((option) => option.id)).toEqual(['Cherry', 'Ethan']);
+    expect(options[0].label).toBe('Cherry · 亲切女声');
+    // 未登记展示名的音色用 id 兜底：缺文案不能等于把音色藏起来。
+    expect(options[1].label).toBe('Ethan');
+  });
+
+  it('带上 Authorization 头请求能力端点', async () => {
+    const fetchImpl = jest.fn(async () => okVoices(['Cherry']));
+    await loadVoiceOptions({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      getToken: () => 'tk-9',
+    });
+
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe('/api/voice/capabilities');
+    expect((init.headers as Record<string, string>).authorization).toBe(
+      'Bearer tk-9',
+    );
+  });
+
+  it('能力端点不可用时回落到打包清单——回退的是清单，不是音色本身', async () => {
+    const fetchImpl = jest.fn(
+      async () => ({ ok: false, status: 401 }) as unknown as Response,
+    );
+    const options = await loadVoiceOptions({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      getToken: () => null,
+    });
+
+    expect(options).toEqual(voiceOptions);
+  });
+
+  it('服务端返回空清单时不把下拉清空', async () => {
+    const fetchImpl = jest.fn(async () => okVoices([]));
+    const options = await loadVoiceOptions({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(options).toEqual(voiceOptions);
+  });
+
+  it('网络抛错也回落，不把播放条弄没', async () => {
+    const fetchImpl = jest.fn(async () => {
+      throw new Error('offline');
+    });
+    const options = await loadVoiceOptions({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(options).toEqual(voiceOptions);
   });
 });

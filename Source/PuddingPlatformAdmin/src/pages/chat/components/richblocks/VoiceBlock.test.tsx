@@ -348,3 +348,59 @@ describe('VoiceBlock', () => {
     expect(speak).not.toHaveBeenCalled();
   });
 });
+
+describe('音色下拉以服务端配置为真源', () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    localStorage.clear();
+  });
+
+  const mockCapabilities = (voices: string[]) => {
+    globalThis.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ttsVoices: voices }),
+    })) as unknown as typeof fetch;
+  };
+
+  it('配置里新增的音色会出现在下拉里，未登记文案用 id 兜底', async () => {
+    mockCapabilities(['Cherry', 'Ethan']);
+    const { adapter } = createAdapter();
+    render(<VoiceBlock code="服务端说了算" adapter={adapter} />);
+    await act(async () => {});
+
+    const select = screen.getByTestId('voice-block-voice') as HTMLSelectElement;
+    expect(Array.from(select.options).map((option) => option.value)).toEqual([
+      'Cherry',
+      'Ethan',
+    ]);
+    // 缺展示文案不等于把它藏起来。
+    expect(select.options[1].textContent).toBe('Ethan');
+  });
+
+  it('本地选的音色已不在配置里时回落到第一个并记住', async () => {
+    localStorage.setItem('pudding_voice_name', 'Cherry');
+    mockCapabilities(['Serena', 'Stella']);
+    const { adapter } = createAdapter();
+    render(<VoiceBlock code="回落到第一个" adapter={adapter} />);
+    await act(async () => {});
+
+    const select = screen.getByTestId('voice-block-voice') as HTMLSelectElement;
+    expect(select.value).toBe('Serena');
+    expect(localStorage.getItem('pudding_voice_name')).toBe('Serena');
+  });
+
+  it('取不到配置时仍用打包清单渲染，下拉不会变空', async () => {
+    globalThis.fetch = jest.fn(async () => {
+      throw new Error('offline');
+    }) as unknown as typeof fetch;
+    const { adapter } = createAdapter();
+    render(<VoiceBlock code="离线也得出声" adapter={adapter} />);
+    await act(async () => {});
+
+    const select = screen.getByTestId('voice-block-voice') as HTMLSelectElement;
+    expect(select.options.length).toBe(3);
+  });
+});

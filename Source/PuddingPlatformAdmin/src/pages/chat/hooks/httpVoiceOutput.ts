@@ -51,12 +51,24 @@ export interface VoiceOption {
   label: string;
 }
 
-/** providers.json 中已注册的音色。改动配置时这里要同步。 */
-export const voiceOptions: VoiceOption[] = [
-  { id: 'Cherry', label: 'Cherry · 亲切女声' },
-  { id: 'Stella', label: 'Stella · 沉稳女声' },
-  { id: 'Serena', label: 'Serena · 温柔女声' },
-];
+/**
+ * 音色的展示文案。**音色清单的唯一真源是 `providers.json`**，
+ * 这里只负责给已知音色一个好名字，不再决定“有哪些音色”。
+ * 未登记的 id 直接用 id 当标签（见 `loadVoiceOptions`）。
+ */
+export const voiceLabels: Record<string, string> = {
+  Cherry: 'Cherry · 亲切女声',
+  Stella: 'Stella · 沉稳女声',
+  Serena: 'Serena · 温柔女声',
+};
+
+/**
+ * 打包时的兜底清单。仅在能力端点不可用时使用。
+ * 顺序即 voiceLabels 的声明顺序。
+ */
+export const voiceOptions: VoiceOption[] = Object.entries(voiceLabels).map(
+  ([id, label]) => ({ id, label }),
+);
 
 /** 用户选定音色的存储键。 */
 export const VOICE_NAME_STORAGE_KEY = 'pudding_voice_name';
@@ -89,6 +101,54 @@ const readToken = (): string | null => {
     return globalThis.localStorage?.getItem(VOICE_TOKEN_STORAGE_KEY) ?? null;
   } catch {
     return null;
+  }
+};
+
+/** 能力端点：音色清单的唯一真源在服务端配置，不在前端代码里。 */
+export const VOICE_CAPABILITIES_ENDPOINT = '/api/voice/capabilities';
+
+export interface VoiceOptionsLoadOptions {
+  /** 能力端点，默认 `/api/voice/capabilities`。 */
+  endpoint?: string;
+  /** 供测试注入；默认用全局 fetch。 */
+  fetchImpl?: typeof fetch;
+  /** 供测试注入；默认读 localStorage 的 pudding_token。 */
+  getToken?: () => string | null;
+}
+
+/**
+ * 从能力端点取已注册音色。
+ *
+ * 失败一律回落到打包时的 `voiceOptions`：音色清单不是致命依赖，
+ * 不能因为它取不到就把整个播放条弄没。但注意——**回退的是清单，不是音色本身**：
+ * 真正合成时仍把用户选的音色原样发给后端，由后端对配置校验
+ * （未注册音色 → 400 + 可选值），不会静默换成别的声音。
+ */
+export const loadVoiceOptions = async (
+  options: VoiceOptionsLoadOptions = {},
+): Promise<VoiceOption[]> => {
+  const endpoint = options.endpoint ?? VOICE_CAPABILITIES_ENDPOINT;
+  const doFetch =
+    options.fetchImpl ?? ((input, init) => globalThis.fetch(input, init));
+  const getToken = options.getToken ?? readToken;
+
+  try {
+    const headers: Record<string, string> = {};
+    const token = getToken();
+    if (token) headers.authorization = `Bearer ${token}`;
+
+    const response = await doFetch(endpoint, { headers });
+    if (!response.ok) return voiceOptions;
+
+    const payload = (await response.json()) as { ttsVoices?: unknown };
+    const raw = Array.isArray(payload?.ttsVoices) ? payload.ttsVoices : [];
+    const fromServer: VoiceOption[] = raw
+      .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+      .map((id) => ({ id, label: voiceLabels[id] ?? id }));
+
+    return fromServer.length > 0 ? fromServer : voiceOptions;
+  } catch {
+    return voiceOptions;
   }
 };
 
