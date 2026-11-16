@@ -38,6 +38,7 @@ import {
 import { createVoiceInputAdapter } from '../hooks/cloudVoiceInput';
 import { createVoiceDraft } from '../hooks/voiceDraft';
 import { useHoldToTalk } from '../hooks/useHoldToTalk';
+import { createSilenceStop } from '../hooks/voiceSilenceStop';
 import type { ChatInteractionQueueItem } from '../hooks/useChatState';
 
 import { useChatStyles } from '../styles';
@@ -856,9 +857,14 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   }, [onInputChange, cancelVoice]);
 
   // Completion is driven by the recognizer, never by a guessed delay.
-  const startVoice = useCallback(async (autoSend = false) => {
+  // 免按键模式：说完自动收尾发送（唤醒前的最小可用版本）
+  const voiceSilenceStopRef = useRef(createSilenceStop());
+  const voiceHandsFreeRef = useRef(false);
+
+  const startVoice = useCallback(async (autoSend = false, handsFree = false) => {
     if (disabled || imageUploading || voiceDraftRef.current || voiceSending) return;
     voiceAutoModeRef.current = autoSend; voiceSendOnFinalRef.current = false; voicePendingStopRef.current = false;
+    voiceHandsFreeRef.current = handsFree; voiceSilenceStopRef.current.reset(Date.now());
     const generation = ++voiceGeneration.current;
     const original = textInputRef.current?.getValue() ?? '';
     const caret = textAreaRef.current?.selectionStart ?? original.length;
@@ -874,7 +880,18 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
         throw new Error('当前环境不支持录音，请检查麦克风权限或使用键盘输入。');
       }
       const handle = await adapter.start({
-        onLevel: (level, seconds) => { if (current()) setVoiceMeter({ level, seconds }); },
+        onLevel: (level, seconds) => {
+          if (!current()) return;
+          setVoiceMeter({ level, seconds });
+          if (!voiceHandsFreeRef.current) return;
+          if (!voiceSilenceStopRef.current.push(Date.now(), level, seconds * 1000)) return;
+          // 说完即收尾：与 finishVoice 同义，但此处定义更早，直接改标志避免依赖环。
+          voiceHandsFreeRef.current = false;
+          voiceSendOnFinalRef.current = voiceAutoModeRef.current;
+          voicePendingStopRef.current = true;
+          setRecording(false); setRecognizing(true);
+          voiceHandleRef.current?.stop();
+        },
         onTranscribing: () => { if (current()) { setRecording(false); setRecognizing(true); } },
         onTranscript: (text, confirmed) => {
           if (!current()) return;
@@ -1415,7 +1432,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 <span>{voiceSending ? '发送中' : recognizing ? '确认中' : holdVoice.held ? '松开发送' : '按住说话'}</span>
               </button>
             </Tooltip>
-            <Dropdown trigger={['click']} menu={{ items: [{ key: 'draft', label: '转写到草稿（修改后发送）' }], onClick: () => { void startVoice(false); } }}>
+            <Dropdown trigger={['click']} menu={{ items: [{ key: 'draft', label: '转写到草稿（修改后发送）' }, { key: 'handsFree', label: '免按键（说完自动发送）' }], onClick: ({ key }) => { void startVoice(key === 'handsFree', key === 'handsFree'); } }}>
               <button type="button" className={styles.composerToolbarButton} aria-label="语音输入选项" disabled={disabled || recording || recognizing || voiceStarting || voiceSending}><DownOutlined /></button>
             </Dropdown>
             {loading && (

@@ -41,6 +41,7 @@
 |---|---|
 | `src/pages/chat/hooks/cloudVoiceInput.ts` · `public/audio/pcm-capture.js` | 授权后立即采集，连接期间有界暂存开头音频；分批排空、停止 flush/最终排空、取消整个生命周期与设备释放 |
 | `src/pages/chat/hooks/useHoldToTalk.ts` | 聊天页按住说话手势：Ctrl+Shift+Space、麦克风/输入区中键；短按保护、松开提交、Esc/右键/失焦取消 |
+| `src/pages/chat/hooks/voiceSilenceStop.ts` | 免按键录音的静音收尾判定：预热期、说过话、连续静默达阈后只触发一次 |
 | `src/pages/chat/hooks/voiceAudio.ts` · `voiceDraft.ts` | PCM/WAV 编码；按光标维护语音区间、实时替换、取消回滚、保护手动编辑 |
 | `src/services/platform/realtimeAsr.ts` | 服务商无关的本机 WS：首帧一次性凭证、实时句子投影、背压、停止/取消与终态围栏 |
 | `src/pages/chat/hooks/ttsPlaybackController.ts` · `useTtsPlayer.ts` · `cloudVoiceOutput.ts` | 共享单一播放任务、PCM SSE 排程、网络取消、切会话清理和可见错误 |
