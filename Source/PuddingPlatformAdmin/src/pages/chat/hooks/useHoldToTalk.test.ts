@@ -19,3 +19,54 @@ it('cancels a short tap and blur, never sends them', () => {
   act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', ctrlKey: true, shiftKey: true })); window.dispatchEvent(new Event('blur')); });
   expect(options.finish).not.toHaveBeenCalled(); view.unmount();
 });
+
+it('ignores the shortcut while a text field has focus, so typing is never sent', () => {
+  const options = { blocked: false, start: jest.fn(), finish: jest.fn(), cancel: jest.fn(), shortPress: jest.fn() };
+  const view = renderHook(() => useHoldToTalk(options));
+  const input = document.createElement('textarea');
+  document.body.appendChild(input);
+  input.focus();
+  act(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', ctrlKey: true, shiftKey: true }));
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space' }));
+  });
+  expect(options.start).not.toHaveBeenCalled();
+  expect(options.finish).not.toHaveBeenCalled();
+  input.remove(); view.unmount();
+});
+
+it('also ignores the shortcut inside a contenteditable block', () => {
+  const options = { blocked: false, start: jest.fn(), finish: jest.fn(), cancel: jest.fn(), shortPress: jest.fn() };
+  const view = renderHook(() => useHoldToTalk(options));
+  const editable = document.createElement('div');
+  editable.setAttribute('contenteditable', 'true');
+  Object.defineProperty(editable, 'isContentEditable', { value: true });
+  document.body.appendChild(editable);
+  editable.focus();
+  act(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', ctrlKey: true, shiftKey: true }));
+  });
+  expect(options.start).not.toHaveBeenCalled();
+  editable.remove(); view.unmount();
+});
+
+it('works again once focus leaves the text field', () => {
+  jest.useFakeTimers();
+  const options = { blocked: false, start: jest.fn(), finish: jest.fn(), cancel: jest.fn(), shortPress: jest.fn() };
+  const view = renderHook(() => useHoldToTalk(options));
+  const input = document.createElement('textarea');
+  document.body.appendChild(input);
+  input.focus();
+  act(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', ctrlKey: true, shiftKey: true }));
+  });
+  expect(options.start).not.toHaveBeenCalled();
+  input.blur();
+  act(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', ctrlKey: true, shiftKey: true }));
+  });
+  expect(options.start).toHaveBeenCalledTimes(1);
+  act(() => { jest.advanceTimersByTime(300); window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space' })); });
+  expect(options.finish).toHaveBeenCalledTimes(1);
+  input.remove(); view.unmount(); jest.useRealTimers();
+});
