@@ -32,7 +32,7 @@ const DASHSCOPE_TTS_MODELS: TtsTemplateModel[] = [
     modelId: 'qwen3-tts-flash',
     name: 'Qwen3 TTS Flash',
     path: '/api/v1/services/aigc/multimodal-generation/generation',
-    voices: ['Cherry', 'Stella', 'Vera'],
+    voices: ['Cherry', 'Stella', 'Serena'],
     audioFormats: ['wav', 'mp3'],
     sampleRates: [24000],
     supportsStreaming: true,

@@ -227,8 +227,14 @@ describe('音色记忆', () => {
   });
 
   it('读取已保存的合法音色', () => {
+    localStorage.setItem(VOICE_NAME_STORAGE_KEY, 'Serena');
+    expect(readStoredVoiceName()).toBe('Serena');
+  });
+
+  it('已退役音色（Vera）不再被当成合法值，回落默认——上游对它报 400 InvalidParameter', () => {
     localStorage.setItem(VOICE_NAME_STORAGE_KEY, 'Vera');
-    expect(readStoredVoiceName()).toBe('Vera');
+    expect(voiceOptions.map((option) => option.id)).not.toContain('Vera');
+    expect(readStoredVoiceName()).toBe(defaultVoiceName);
   });
 
   it('保存脏数据时回落到默认音色，避免把非法值发给后端', () => {

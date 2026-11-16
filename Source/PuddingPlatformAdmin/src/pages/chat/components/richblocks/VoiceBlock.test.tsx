@@ -98,12 +98,12 @@ describe('VoiceBlock', () => {
   });
 
   it('显示音色下拉，默认读 localStorage 里的选择', async () => {
-    localStorage.setItem('pudding_voice_name', 'Vera');
+    localStorage.setItem('pudding_voice_name', 'Stella');
     const { adapter } = createAdapter();
     render(<VoiceBlock code="换个声音" adapter={adapter} />);
     await act(async () => {});
     const select = screen.getByTestId('voice-block-voice') as HTMLSelectElement;
-    expect(select.value).toBe('Vera');
+    expect(select.value).toBe('Stella');
     // 三个音色都要可选，否则用户只能听一个。
     expect(select.options.length).toBe(3);
   });

@@ -9,7 +9,7 @@ import type {
  *
  * 为什么不再用 `browserVoiceOutput`：那是 `speechSynthesis`，音色由操作系统
  * 决定（Windows 中文普遍机械）。这里的音色来自 `D:\Data\config\voice\providers.json`
- * 已注册的 Qwen 音色（Cherry / Stella / Vera），24 kHz 自然语音。
+ * 已注册的 Qwen 音色（Cherry / Stella / Serena），24 kHz 自然语音。
  *
  * ## 四条约束
  *
@@ -55,7 +55,7 @@ export interface VoiceOption {
 export const voiceOptions: VoiceOption[] = [
   { id: 'Cherry', label: 'Cherry · 亲切女声' },
   { id: 'Stella', label: 'Stella · 沉稳女声' },
-  { id: 'Vera', label: 'Vera · 细腻女声' },
+  { id: 'Serena', label: 'Serena · 温柔女声' },
 ];
 
 /** 用户选定音色的存储键。 */

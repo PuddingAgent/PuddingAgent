@@ -30,7 +30,7 @@ import {
  *
  * 1. **默认走后端 Qwen3-TTS**：`speechSynthesis` 的音色由操作系统决定，
  *    Windows 中文机械得不能听。改用 `httpVoiceOutput`，音色来自
- *    `D:\Data\config\voice\providers.json` 注册的 Cherry / Stella / Vera。
+ *    `D:\Data\config\voice\providers.json` 注册的 Cherry / Stella / Serena。
  * 2. **适配器可注入**：测试传假适配器——否则断言只能证明“浏览器支持朗读”，
  *    证明不了本组件的逻辑。
  * 3. **卸载即停**：切换消息或会话时不能继续念上一段。

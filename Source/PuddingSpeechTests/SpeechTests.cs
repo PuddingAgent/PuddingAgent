@@ -53,6 +53,44 @@ public sealed class SpeechTests
     }
 
     [TestMethod]
+    public void ProviderRejection_SurfacesUpstreamReasonAs400_InsteadOfMasqueradingAs502()
+    {
+        var failure = SpeechFailure.FromProvider(400, """
+            {"code":"InvalidParameter","message":"Invalid voice specified, the requested voice does not exist or is not licensed for use"}
+            """);
+
+        Assert.AreEqual("voice_request_rejected", failure.Code);
+        Assert.AreEqual(400, failure.Status);
+        Assert.IsFalse(failure.Retryable);
+        StringAssert.Contains(failure.Message, "Invalid voice specified");
+        StringAssert.Contains(failure.Message, "语音服务拒绝了请求");
+    }
+
+    [TestMethod]
+    public void ProviderRejection_WithoutMessage_FallsBackToActionableHint()
+    {
+        var failure = SpeechFailure.FromProvider(400, "{}");
+
+        Assert.AreEqual("voice_request_rejected", failure.Code);
+        Assert.AreEqual(400, failure.Status);
+        Assert.IsTrue(failure.Message.Contains("请检查音色与参数设置"));
+    }
+
+    [TestMethod]
+    public void ProviderRejection_MessageIsFlattenedAndTruncated()
+    {
+        var body = $$"""
+            {"code":"InvalidParameter","message":"{{new string('x', 400)}}"}
+            """;
+
+        var failure = SpeechFailure.FromProvider(400, body);
+
+        Assert.IsFalse(failure.Message.Contains('\n'));
+        // 前缀 + 截断后的正文；不能把上游长篇原文整段塞回调用方。
+        Assert.IsTrue(failure.Message.Length <= "语音服务拒绝了请求：".Length + 200);
+    }
+
+    [TestMethod]
     public async Task Asr_DrainsFinalAfterFinish_AndDisposesSocket()
     {
         var socket = new FakeSocket();
