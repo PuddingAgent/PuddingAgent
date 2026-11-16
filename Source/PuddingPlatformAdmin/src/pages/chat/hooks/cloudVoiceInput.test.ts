@@ -1,5 +1,6 @@
 import { connectRealtimeAsr } from '@/services/platform/realtimeAsr';
 import { createVoiceInputAdapter } from './cloudVoiceInput';
+import { waitFor } from '@testing-library/react';
 
 jest.mock('@/services/platform/realtimeAsr', () => ({ connectRealtimeAsr: jest.fn() }));
 
@@ -34,10 +35,10 @@ describe('live capture, completion and cancellation', () => {
     const transcript = jest.fn(); const final = jest.fn();
     const handle = await createVoiceInputAdapter().start({ onTranscript: transcript, onFinalTranscript: final });
     port.onmessage({ data: new Float32Array([0.5, -0.5]) });
-    expect(connection.sendAudio).toHaveBeenCalledTimes(1); expect(connection.finish).not.toHaveBeenCalled();
+    await waitFor(() => expect(connection.sendAudio).toHaveBeenCalledTimes(1)); expect(connection.finish).not.toHaveBeenCalled();
     expect(Array.from(new Int16Array(connection.sendAudio.mock.calls[0][0]))).toEqual([16383, -16384]);
     callbacks.onTranscript('临时', ''); expect(transcript).toHaveBeenCalledWith('临时', '');
-    handle.stop(); await Promise.resolve(); await Promise.resolve();
+    handle.stop(); await waitFor(() => expect(connection.finish).toHaveBeenCalledTimes(1));
     expect(track.stop).toHaveBeenCalled(); expect(connection.finish).toHaveBeenCalledTimes(1);
     expect(final).not.toHaveBeenCalled(); callbacks.onCompleted('确认。'); expect(final).toHaveBeenCalledWith('确认。');
   });
@@ -58,5 +59,15 @@ describe('live capture, completion and cancellation', () => {
   it('microphone disconnect releases the session and reports an actionable error', async () => {
     const error = jest.fn(); await createVoiceInputAdapter().start({ onError: error }); track.onended();
     expect(connection.cancel).toHaveBeenCalled(); expect(error).toHaveBeenCalledWith(expect.stringContaining('麦克风已断开'), undefined);
+  });
+  it('captures during initialization and drains opening audio before finish after early release', async () => {
+    let ready!: (value: any) => void;
+    (connectRealtimeAsr as jest.Mock).mockReturnValue(new Promise(resolve => { ready = resolve; }));
+    const handle = await createVoiceInputAdapter().start({});
+    port.onmessage({ data: new Float32Array([0.25, 0.5]) }); handle.stop();
+    await waitFor(() => expect(track.stop).toHaveBeenCalled());
+    expect(connection.sendAudio).not.toHaveBeenCalled(); ready(connection);
+    await waitFor(() => expect(connection.finish).toHaveBeenCalledTimes(1));
+    expect(Array.from(new Int16Array(connection.sendAudio.mock.calls[0][0]))).toEqual([8191, 16383]);
   });
 });
