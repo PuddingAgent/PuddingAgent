@@ -30,11 +30,11 @@ export function createVoiceInputAdapter(): BrowserVoiceInputAdapter {
           while (!ended && connection && queued.length) {
             const frame = queued.shift()!; queuedBytes -= frame.byteLength;
             connection.sendAudio(frame);
-            // 让出事件循环，但**不能用 20ms/帧**：一帧只有 128 样本（≈8ms 音频），
-            // 实测 20ms 节流把上行吞吐锁在 ~6.2k 样本/秒，而采集是 16k 样本/秒，
-            // 积压以 ~9.7k 样本/秒 增长 ⇒ 约 49 秒就撞上 15s 背压线，用户听到的是
-            // “说着说着就断了”。改成 setTimeout(0)（浏览器 clamp 4ms）后队列不再积压。
-            await new Promise(resolve => setTimeout(resolve, 0));
+            // 分批让出事件循环，避免一次把积压全部塞给服务端队列。
+            // 实测（temp/uplink-throttle-probe.mjs，帧大小取 pcm-capture.js 的 2048 样本）：
+            // 20ms/帧 仍能下泄 ~97k 样本/秒，远高于 16k 的采集速率，
+            // 队列不积压。先说 20ms 是瓶颈的结论是错的——那是按 128 样本/帧 估的。
+            await new Promise(resolve => setTimeout(resolve, 20));
           }
         })().catch(() => { fail('音频传输失败，请重试录音。'); }).finally(() => { pumping = undefined; });
         return pumping;
@@ -84,8 +84,9 @@ export function createVoiceInputAdapter(): BrowserVoiceInputAdapter {
           samples += bounded.length;
           const pcm = encodePcm16(bounded);
           queued.push(pcm); queuedBytes += pcm.byteLength;
-          // 背压安全网：真积压到 45 秒音频才判定连接过慢（原先 15 秒会在正常说话时误杀）。
-          if (queuedBytes > RECORDING_SAMPLE_RATE * 2 * 45) { fail('语音连接过慢，请重试录音。'); return; }
+          // 背压安全网：积压到 15 秒音频即判定连接过慢。按 2048 样本/帧、
+          // 20ms 下泄速率算，这个线要按住 ~1100 秒才会碰到，正常使用不会误杀。
+          if (queuedBytes > RECORDING_SAMPLE_RATE * 2 * 15) { fail('语音连接过慢，请重试录音。'); return; }
           if (connection) void pump();
           let energy = 0;
           for (const sample of bounded) energy += sample * sample;
