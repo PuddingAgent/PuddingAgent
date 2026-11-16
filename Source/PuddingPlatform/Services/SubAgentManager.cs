@@ -928,10 +928,15 @@ public sealed class SubAgentManager : ISubAgentManager
             if (!string.IsNullOrWhiteSpace(toolFailureSummary))
                 metadata["tool_failure_summary"] = toolFailureSummary!;
 
+            // 这些键必须回灌进 contextEnvelope 才能到达父代理：FlattenMetadata 返回的是副本，
+            // 而 fabric 落库的是下面 RenderForAgent 产出的 JSON 字符串。只写 MessageEnvelope.Metadata
+            // 会让 parent_session / run_id / contract_* 全部静默丢失（实测父代理一条都收不到）。
+            contextEnvelope = contextEnvelope with { Metadata = metadata };
+
             var envelope = baseEnvelope with
             {
                 Content = AgentContextEnvelopeRenderer.RenderForAgent(contextEnvelope),
-                Metadata = metadata,
+                Metadata = AgentContextEnvelopeRenderer.FlattenMetadata(contextEnvelope),
             };
 
             var sendResult = await messageSystem.SendAsync(envelope, ct);

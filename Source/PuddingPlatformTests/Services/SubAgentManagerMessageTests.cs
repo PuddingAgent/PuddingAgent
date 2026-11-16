@@ -299,6 +299,12 @@ public sealed class SubAgentManagerMessageTests
         Assert.IsNotNull(rendered);
         Assert.AreEqual("failed", rendered!.Metadata["subagent_status"]);
         Assert.AreEqual("1", rendered.Metadata["tool_failure_count"]);
+        // 回归：这些键只在增强阶段产生，必须出现在渲染后的 JSON 里。
+        // 只写 MessageEnvelope.Metadata 时它们会被 fabric 静默丢弃（父代理一条都收不到）。
+        Assert.AreEqual("parent-session", rendered.Metadata["parent_session"]);
+        Assert.IsTrue(
+            rendered.Metadata.ContainsKey("contract_applicable"),
+            "metadata keys=" + string.Join(",", rendered.Metadata.Keys));
         StringAssert.Contains(rendered.Context.Text, "Command timed out after 30 seconds.");
     }
 
