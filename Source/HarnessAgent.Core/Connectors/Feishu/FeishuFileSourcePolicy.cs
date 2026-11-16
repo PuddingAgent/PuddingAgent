@@ -30,11 +30,19 @@ public sealed class FeishuFileSourcePolicy
 
     /// <summary>绝不允许发出的扩展名（小写比较）。</summary>
     public static IReadOnlyList<string> DeniedExtensions { get; } =
-        [".pem", ".pfx", ".p12", ".key", ".kdbx", ".ppk"];
+        [".pem", ".pfx", ".p12", ".key", ".kdbx", ".ppk", ".env"];
 
     /// <summary>绝不允许发出的文件名（小写比较，含无扩展名的凭据文件）。</summary>
     public static IReadOnlyList<string> DeniedFileNames { get; } =
         ["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "credentials", ".env", "cookies"];
+
+    /// <summary>
+    /// 绝不允许发出的文件名前缀（小写比较）。
+    /// 精确匹配挡不住变体：<c>.env.local</c>、<c>prod.env</c>、<c>credentials.json</c>
+    /// 在精确名单下全部放行，而它们恰恰是最常见的凭据落盘形式。
+    /// </summary>
+    public static IReadOnlyList<string> DeniedFileNamePrefixes { get; } =
+        [".env", "credential", "secret", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"];
 
     public FeishuFileSourcePolicy(IEnumerable<string> allowedRoots)
     {
@@ -107,6 +115,12 @@ public sealed class FeishuFileSourcePolicy
         var name = Path.GetFileName(fullPath).ToLowerInvariant();
         if (DeniedFileNames.Contains(name))
             return true;
+
+        foreach (var prefix in DeniedFileNamePrefixes)
+        {
+            if (name.StartsWith(prefix, StringComparison.Ordinal))
+                return true;
+        }
 
         var extension = Path.GetExtension(fullPath).ToLowerInvariant();
         if (DeniedExtensions.Contains(extension))

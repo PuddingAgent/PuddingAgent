@@ -150,6 +150,41 @@ public sealed class VolcengineArkImageGenerationProviderTests
         StringAssert.Contains(body, "sequential_image_generation_options");
     }
 
+    [TestMethod]
+    public async Task GenerateAsync_MultipleImagesWithoutSequentialCapability_ThrowsBeforeCallingApi()
+    {
+        var handler = new ArkHandler();
+        var provider = new VolcengineArkImageGenerationProvider(
+            new StaticHttpClientFactory(new HttpClient(handler)),
+            NullLogger<VolcengineArkImageGenerationProvider>.Instance);
+
+        var request = new ImageGenerationProviderRequest
+        {
+            Endpoint = "https://ark.cn-beijing.volces.com/api/v3",
+            ApiKey = "test-key",
+            ModelId = "doubao-seedream-5-5-261028",
+            Prompt = "四格图标",
+            Size = "2K",
+            ImageCount = 2,
+            ModelCapabilityTags = ["image-generation", "text-to-image"],
+        };
+
+        // 没有声明 sequential-image-generation 却要 2 张，必须显式失败；
+        // 静默降级成 1 张会让调用方以为拿到了 2 张。
+        var threw = false;
+        try
+        {
+            await provider.GenerateAsync(request);
+        }
+        catch (InvalidOperationException)
+        {
+            threw = true;
+        }
+
+        Assert.IsTrue(threw, "必须抛出 InvalidOperationException");
+        Assert.AreEqual(0, handler.Requests.Count, "拒绝必须发生在发起请求之前");
+    }
+
     private sealed class StaticHttpClientFactory(HttpClient client)
         : IHttpClientFactory
     {

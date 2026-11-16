@@ -192,12 +192,18 @@ public sealed class ImageGenerationService(
     /// 取模型在资源池中声明的能力标签。provider 用它决定是否发送可选请求参数，
     /// 避免第二套「按模型名猜能力」的口径。
     /// </summary>
-    private IReadOnlyList<string> ResolveModelCapabilityTags(string modelId)
+    private IReadOnlyList<string> ResolveModelCapabilityTags(
+        string providerId,
+        string modelId)
         => llmConfig.GetAllModels()
                .FirstOrDefault(item => string.Equals(
-                   item.ModelId,
-                   modelId,
-                   StringComparison.OrdinalIgnoreCase))
+                       item.ProviderId,
+                       providerId,
+                       StringComparison.OrdinalIgnoreCase)
+                   && string.Equals(
+                       item.ModelId,
+                       modelId,
+                       StringComparison.OrdinalIgnoreCase))
                ?.CapabilityTags
            ?? [];
 
@@ -231,7 +237,7 @@ public sealed class ImageGenerationService(
                 EnableWebSearch = request.EnableWebSearch,
                 ImageCount = request.ImageCount,
                 InputImages = inputImages,
-                ModelCapabilityTags = ResolveModelCapabilityTags(modelId),
+                ModelCapabilityTags = ResolveModelCapabilityTags(providerId, modelId),
             },
             ct);
 

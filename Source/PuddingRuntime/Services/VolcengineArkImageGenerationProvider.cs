@@ -179,18 +179,28 @@ public sealed class VolcengineArkImageGenerationProvider(
             StringComparison.Ordinal)
             && !isPro;
 
+        // 能力开关一律读资源池声明的标签。按模型名猜会与标签形成两套口径：
+        // 名字含 pro 但声明了标签时，payload 允许多图而这里抛错；无标签的 5-5 在
+        // ImageCount > 1 时反而不被拦住，最后只能靠服务端 400 兜底。
+        if (request.ImageCount > 1
+            && !request.ModelCapabilityTags.Contains(
+                "sequential-image-generation",
+                StringComparer.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Model '{request.ModelId}' does not declare 'sequential-image-generation', so it cannot return {request.ImageCount} images in one request.");
+        }
+        if (request.EnableWebSearch
+            && !request.ModelCapabilityTags.Contains(
+                "web-search",
+                StringComparer.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Model '{request.ModelId}' does not declare 'web-search', so image web search is unavailable.");
+        }
+
         if (isPro)
         {
-            if (request.ImageCount != 1)
-            {
-                throw new InvalidOperationException(
-                    "Seedream 5.0 Pro does not support sequential multi-image output.");
-            }
-            if (request.EnableWebSearch)
-            {
-                throw new InvalidOperationException(
-                    "Seedream 5.0 Pro does not support image web search.");
-            }
             ValidateSize(
                 request.Size,
                 ["1K", "2K"],
