@@ -347,7 +347,7 @@ public sealed class KeyVaultService(
         Value = value,
     };
 
-    private static byte[] ResolveMasterKey(ILogger logger, IMasterKeyProvider? masterKeyProvider)
+    internal static byte[] ResolveMasterKey(ILogger logger, IMasterKeyProvider? masterKeyProvider)
     {
         var raw = Environment.GetEnvironmentVariable(MasterKeyEnvName);
         if (!string.IsNullOrWhiteSpace(raw))
