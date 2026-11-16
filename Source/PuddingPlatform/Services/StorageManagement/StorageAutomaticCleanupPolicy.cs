@@ -5,9 +5,19 @@ namespace PuddingPlatform.Services.StorageManagement;
 /// <summary>
 /// 自动清理的**纯决策**逻辑（2026-10-27，S1 第一部分）。
 ///
-/// 背景缺陷：<see cref="StorageMaintenanceCoordinator"/> 的 automatic 队列没有周期性生产者，
-/// 只有重启恢复会写入，因此自动清理自上线起从未触发（27 天积累 1017 万行，见
-/// Docs/14_reports/2026-10-27-存储自动清理空转诊断.md）。
+/// 历史背景（2026-10-27 诊断）：当时 <see cref="StorageMaintenanceCoordinator"/> 的 automatic 队列
+/// 没有周期性生产者，只有重启恢复会写入，自动清理自上线起从未触发
+/// （27 天积累 1017 万行，见 Docs/14_reports/2026-10-27-存储自动清理空转诊断.md）。
+///
+/// <para>该缺陷已修复，上段仅作历史说明：<c>RetentionPruningService</c> 是 BackgroundService，
+/// 周期性调用 <c>coordinator.SubmitAutomaticAsync</c>，并已注册到宿主
+/// （<c>PuddingServiceCollectionExtensions.Platform</c>）。2026-11-16 运行日志实测出现
+/// "[RetentionPruning] cancelled by host shutdown"，证明它确实在运行——
+/// 不要再据上段得出"自动清理没接线"的结论。</para>
+///
+/// <para>自动清理仍受数据类目录约束，与"有没有生产者"是两件事：
+/// telemetry-raw / context-layer-raw 因 <c>RequiresRollupBeforeAutomatic</c> 而有意识地
+/// 保持关闭，直到长期聚合落地；conversation_events 属 Evidence，走归档后裁剪路径。</para>
 ///
 /// 本类型只回答「**本轮应当评估哪些数据类、保留多少天、跳过原因是什么**」，
 /// 不接触数据库、不创建作业、不删除任何东西。把它独立成纯函数的目的：
