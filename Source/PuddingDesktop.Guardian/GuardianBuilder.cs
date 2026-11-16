@@ -17,7 +17,10 @@ public sealed class GuardianBuilder(GuardianSettings settings)
         SafeFiles.NoLinks(repo);
         var project = Path.Combine(repo, "Source", command.Target == "core" ? "PuddingAgent/PuddingAgent.csproj" : "PuddingDesktop/PuddingDesktop.csproj");
         if (!File.Exists(project)) throw new FileNotFoundException("Product project not found.");
-        var workspace = Path.Combine(repo, "temp", "build", "guardian", Guid.NewGuid().ToString("N"));
+        // 回收旧的隔离工作区：每次构建新建一个约 1.6 GB 的目录，不回收会无限累积。
+        var workspaceRoot = Path.Combine(repo, "temp", "build", "guardian");
+        GuardianWorkspaceRetention.Prune(workspaceRoot);
+        var workspace = Path.Combine(workspaceRoot, Guid.NewGuid().ToString("N"));
         var candidate = Path.Combine(workspace, "candidate");
         Directory.CreateDirectory(workspace);
         var frontend = Path.Combine(Path.GetDirectoryName(settings.CoreExecutablePath)!, "wwwroot", "admin");
