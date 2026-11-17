@@ -90,8 +90,83 @@ public sealed class FeishuConnectorOutboundRecipientTests
         }
     }
 
+    [Fact]
+    public async Task WorkspaceFile_OverTheLimit_IsSplitIntoPartsWithDistinctIdempotencyKeys()
+    {
+        var (connector, handler, file) = CreateConnector(openId: "ou_explicit", sizeBytes: 31 * 1024 * 1024);
+
+        try
+        {
+            await connector.SendAsync(WorkspaceFileMessage(file, openId: "ou_explicit", target: "ou_explicit"));
+
+            var uploads = handler.Requests.Where(r => r.Uri.Contains("/im/v1/files", StringComparison.Ordinal)).ToList();
+            Assert.Equal(2, uploads.Count);
+            Assert.Contains("part01of02", uploads[0].Body, StringComparison.Ordinal);
+            Assert.Contains("part02of02", uploads[1].Body, StringComparison.Ordinal);
+
+            var sends = handler.Requests.Where(r => r.Uri.Contains("/im/v1/messages", StringComparison.Ordinal)).ToList();
+            // 两段文件 + 一条重组提示
+            Assert.Equal(3, sends.Count);
+
+            // 三份幂等键必须互不相同，否则飞书会把后两段当重复请求丢掉。
+            var uuids = sends.Select(r => ReadUuid(r.Body)).ToList();
+            Assert.All(uuids, u => Assert.False(string.IsNullOrWhiteSpace(u)));
+            Assert.Equal(3, uuids.Distinct().Count());
+
+            var hintText = sends
+                .Select(r => ReadTextContent(r.Body))
+                .SingleOrDefault(t => t is not null && t.Contains("part*of02", StringComparison.Ordinal));
+            Assert.NotNull(hintText);
+            Assert.Contains("part01of02", uploads[0].Body, StringComparison.Ordinal);
+            Assert.Contains("part02of02", uploads[1].Body, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public async Task WorkspaceFile_UnderTheLimit_StaysASingleUploadWithoutHint()
+    {
+        var (connector, handler, file) = CreateConnector(openId: "ou_explicit");
+
+        try
+        {
+            await connector.SendAsync(WorkspaceFileMessage(file, openId: "ou_explicit", target: "ou_explicit"));
+
+            Assert.Single(handler.Requests.Where(r => r.Uri.Contains("/im/v1/files", StringComparison.Ordinal)));
+            var send = Single(handler, "/im/v1/messages");
+            Assert.DoesNotContain("part01of", send.Body, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    private static string? ReadUuid(string body)
+    {
+        using var doc = JsonDocument.Parse(body);
+        return doc.RootElement.TryGetProperty("uuid", out var uuid) ? uuid.GetString() : null;
+    }
+
+    /// <summary>把 msg_type=text 的 content 内层 JSON 取出去（外层是字符串，内层才是 {text}）。</summary>
+    private static string? ReadTextContent(string body)
+    {
+        using var doc = JsonDocument.Parse(body);
+        if (!doc.RootElement.TryGetProperty("content", out var content))
+            return null;
+        var raw = content.GetString();
+        if (string.IsNullOrWhiteSpace(raw) || !raw.StartsWith('{'))
+            return null;
+        using var inner = JsonDocument.Parse(raw);
+        return inner.RootElement.TryGetProperty("text", out var text) ? text.GetString() : null;
+    }
+
     private static (FeishuConnector Connector, OutboundRecordingHandler Handler, string File) CreateConnector(
-        string? openId)
+        string? openId,
+        int sizeBytes = 8)
     {
         _ = openId;
         var handler = new OutboundRecordingHandler();
@@ -114,7 +189,7 @@ public sealed class FeishuConnectorOutboundRecipientTests
             imageUploadPreparation: null!,
             visionArtifacts: null!,
             clientFactory: config => new FeishuClient(config, http));
-        return (connector, handler, CreateTempPdf());
+        return (connector, handler, CreateTempPdf(sizeBytes));
     }
 
     private static ConnectorMessage WorkspaceFileMessage(string path, string? openId, string target)
@@ -135,12 +210,14 @@ public sealed class FeishuConnectorOutboundRecipientTests
         };
     }
 
-    private static string CreateTempPdf()
+    private static string CreateTempPdf(int sizeBytes = 8)
     {
         var path = Path.Combine(
             Path.GetTempPath(),
             $"pudding-feishu-outbound-{Guid.NewGuid():N}.pdf");
-        File.WriteAllBytes(path, [0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34]);
+        var payload = new byte[Math.Max(sizeBytes, 8)];
+        new byte[] { 0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34 }.CopyTo(payload, 0);
+        File.WriteAllBytes(path, payload);
         return path;
     }
 

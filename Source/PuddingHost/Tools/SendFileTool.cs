@@ -35,7 +35,8 @@ namespace PuddingAgent.Tools;
     name: "Send file",
     description:
         "Send a local file from an allowed root as a file reply in the current Feishu turn. " +
-        "Pass an absolute path; never provide a recipient. One file is capped at 30 MB. " +
+        "Pass an absolute path; never provide a recipient. Files over 30 MB are delivered in parts " +
+        "with a reassembly hint. " +
         "Credential-like paths (SSH keys, .env, cookies, .pfx) are refused.",
     category: ToolCategory.Messaging,
     permission: ToolPermissionLevel.Low,
@@ -71,12 +72,6 @@ public sealed class SendFileTool(
 
         var fullPath = decision.FullPath!;
         var info = new FileInfo(fullPath);
-        if (info.Length > FeishuFileSplitPlanner.MaxSingleFileBytes)
-        {
-            return ToolExecutionResult.Fail(
-                $"The file is {info.Length} bytes; Feishu caps one file at "
-                + $"{FeishuFileSplitPlanner.MaxSingleFileBytes} bytes. Split it first.");
-        }
 
         var identity = context.ExecutionIdentity;
         if (identity is not

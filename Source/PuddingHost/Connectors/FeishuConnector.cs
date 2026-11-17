@@ -330,55 +330,120 @@ public sealed class FeishuConnector : IPuddingConnector
         }
 
         var info = new FileInfo(full);
-        if (info.Length > FeishuFileSplitPlanner.MaxSingleFileBytes)
-        {
-            throw new InvalidOperationException(
-                $"Feishu caps one file at {FeishuFileSplitPlanner.MaxSingleFileBytes} bytes; "
-                + "split it before delivery.");
-        }
-
         var descriptor = FeishuFileTypes.Resolve(info.Name);
         var bytes = await File.ReadAllBytesAsync(full, ct);
-        var upload = await _client.UploadFileAsync(
-            bytes,
-            info.Name,
-            descriptor.FileType,
-            null,
-            descriptor.ContentType,
-            ct);
-        var fileKey = upload.Data?.FileKey;
-        if (upload.Code != 0 || string.IsNullOrWhiteSpace(fileKey))
+        var parts = FeishuFileSplitPlanner.Plan(bytes.LongLength);
+        if (parts.Count == 0)
+            throw new InvalidOperationException("Feishu file delivery source is empty.");
+
+        // 超过飞书 30 MB 硬上限时按段发（FeishuFileSplitPlanner 的设计意图）。
+        // 每段的幂等键必须不同，否则飞书会把后续段当作重复请求丢掉。
+        foreach (var part in parts)
         {
-            throw new InvalidOperationException(
-                $"Feishu file upload failed: code={upload.Code}, msg={upload.Msg}");
+            var content = part.Length == bytes.LongLength
+                ? bytes
+                : bytes.AsSpan((int)part.Offset, (int)part.Length).ToArray();
+            var partName = info.Name + part.Suffix;
+            var partUuid = string.IsNullOrWhiteSpace(uuid)
+                ? uuid
+                : $"{uuid}-p{part.Index:D2}";
+
+            var upload = await _client.UploadFileAsync(
+                content,
+                partName,
+                descriptor.FileType,
+                null,
+                descriptor.ContentType,
+                ct);
+            var fileKey = upload.Data?.FileKey;
+            if (upload.Code != 0 || string.IsNullOrWhiteSpace(fileKey))
+            {
+                throw new InvalidOperationException(
+                    $"Feishu file upload failed: code={upload.Code}, msg={upload.Msg} "
+                    + $"(part {part.Index}/{parts.Count})");
+            }
+
+            SendMessageResponse sendResult;
+            if (message.Metadata.TryGetValue("message_id", out var messageId)
+                && !string.IsNullOrWhiteSpace(messageId))
+            {
+                sendResult = await _client.ReplyFileAsync(messageId, fileKey, partUuid, ct);
+            }
+            else
+            {
+                var contentJson = JsonSerializer.Serialize(new { file_key = fileKey });
+                // 无源消息可回复时走兜底收件人：显式 open_id 优先，否则 chat_id。
+                var (target, receiveIdType) = FeishuRecipientResolver.Resolve(
+                    message.Metadata,
+                    message.Target);
+                sendResult = await _client.SendMessageAsync(
+                    target,
+                    "file",
+                    contentJson,
+                    partUuid,
+                    ct,
+                    receiveIdType: receiveIdType);
+            }
+
+            if (sendResult.Code != 0)
+            {
+                throw new InvalidOperationException(
+                    $"Feishu file send failed: code={sendResult.Code}, msg={sendResult.Msg} "
+                    + $"(part {part.Index}/{parts.Count})");
+            }
         }
 
-        SendMessageResponse sendResult;
+        if (parts.Count > 1)
+        {
+            await SendReassemblyHintAsync(message, info.Name, parts.Count, uuid, ct);
+        }
+    }
+
+    /// <summary>
+    /// 分段投递后补一条重组提示：不说清楚怎么拼回去，收件人拿到的是 N 个碎片。
+    /// 段号零填充且固定宽度，因此 <c>cat 文件.part*of03 &gt; 文件</c> 能按顺序拼回。
+    /// </summary>
+    private async Task SendReassemblyHintAsync(
+        ConnectorMessage message,
+        string fileName,
+        int partCount,
+        string? uuid,
+        CancellationToken ct)
+    {
+        if (_client is null)
+            throw new InvalidOperationException("Feishu connector not started");
+
+        var text =
+            $"「{fileName}」超过飞书单文件上限，已切成 {partCount} 段发送（后缀 .partNNofMM）。"
+            + $"合并：在保存目录执行 cat \"{fileName}.part*of{partCount:D2}\" > \"{fileName}\""
+            + "（Windows 可用 type，顺序按段号从小到大）。";
+        var content = JsonSerializer.Serialize(new { text });
+        var hintUuid = string.IsNullOrWhiteSpace(uuid) ? uuid : $"{uuid}-hint";
+
+        SendMessageResponse result;
         if (message.Metadata.TryGetValue("message_id", out var messageId)
             && !string.IsNullOrWhiteSpace(messageId))
         {
-            sendResult = await _client.ReplyFileAsync(messageId, fileKey, uuid, ct);
+            result = await _client.ReplyTextAsync(messageId, text, hintUuid, ct);
         }
         else
         {
-            var contentJson = JsonSerializer.Serialize(new { file_key = fileKey });
-            // 无源消息可回复时走兜底收件人：显式 open_id 优先，否则 chat_id。
             var (target, receiveIdType) = FeishuRecipientResolver.Resolve(
                 message.Metadata,
                 message.Target);
-            sendResult = await _client.SendMessageAsync(
+            result = await _client.SendMessageAsync(
                 target,
-                "file",
-                contentJson,
-                uuid,
+                "text",
+                content,
+                hintUuid,
                 ct,
                 receiveIdType: receiveIdType);
         }
 
-        if (sendResult.Code != 0)
+        if (result.Code != 0)
         {
             throw new InvalidOperationException(
-                $"Feishu file send failed: code={sendResult.Code}, msg={sendResult.Msg}");
+                $"Feishu reassembly hint failed: code={result.Code}, msg={result.Msg}");
         }
     }
 
