@@ -83,3 +83,41 @@ related_files: [Source/PuddingCore/Goals/GoalStateMachine.cs, Source/PuddingGoal
 ## 六、下一步
 
 先做 P1（重启 disarm）：改动小、可实测（重启前后各取一次 `GoalRun` 状态即能取红/取绿），并且能立刻消除"重启后继续烧预算"的隐患。P0 需要动模型侧工具契约，应单独出一份设计再动。
+
+## 七、复核更正（同日 19:45）
+
+**P1 不需要新建——它已经存在，而且默认就是 disarm。**
+
+| 证据 | 位置 |
+|---|---|
+| 重启分流逻辑 | `Source/PuddingPlatform/Services/Goals/GoalRestartReconciler.cs`（ADR-074 §12 + ADR-092） |
+| 实体默认值 | `GoalRunEntity.cs:64` `ResumePolicy = GoalResumePolicies.Paused` |
+| 接线点 | `Source/PuddingHost/Hosting/PuddingApplicationInitializer.cs:124`（schema bootstrap 之后、workers 之前） |
+| 测试 | `Tests/.../GoalRestartReconcilerTests.cs`（含幂等重放、quota 退化、同 boot 重放） |
+
+实际行为：
+
+- `paused`（默认）：Active → Paused，原因码 `core_restart_disarm`；
+- `auto_resume_on_restart`：保持 Active，但 `ActivationEpoch++` 且 `ActivationBootId=bootId`（换发 fence 让旧 writer 失效），并受 `MaxAutoResumesPerBoot` 配额约束，超额自动退回 paused。
+
+### 误判原因
+
+我只读了 `GoalStateMachine` 与 `GoalContinuationPolicy`，没搜 reconciler，就把"对方有 disarm、我们未验证"写成了待办。**又一次把"我没搜到"当成了"没有"**——这是当日第三次同类错误。
+
+### 未证实 #2 结案
+
+`goal_runs` 表 27 行，status 分布：
+
+```
+4 = BudgetExhausted   7
+5 = Completed         2
+6 = Cancelled         1
+7 = Failed           17
+1/2/3 = Active/Paused/Blocked   0
+```
+
+当日 18:54 重启时没有 Active 目标，所以日志里没有 `[GoalRestart]` 行——**这是空集，不是失效**。
+
+### 结论修正
+
+P1 划掉。**P0（单一权威 + 模型侧投影）仍是唯一真实差距**，但它的前提要先由用户裁定：`goal.md` 是降级为"人类可读附注"，还是整体废弃。这一步决定模型日常读写行为，不该由实现方单方面决定。
