@@ -33,6 +33,12 @@ public sealed record PuddingJwtSettings(string Key, string Issuer, string Audien
     /// <summary>HS256 要求密钥 ≥128 bit。</summary>
     public const int MinimumKeyLength = 16;
 
+    /// <summary>
+    /// 凭据引用前缀。配置链（<see cref="IConfiguration"/>）不展开 vault 引用，
+    /// 因此这个前缀出现在签名密钥里就说明拿到的是引用本身而不是密钥。
+    /// </summary>
+    public const string VaultReferenceMarker = "{{vault:";
+
     /// <summary>登录态 JWT 签名密钥的配置文件位置提示（错误信息与文档共用同一措辞）。</summary>
     public const string KeyFileHint = "<DataRoot>/config/security.json 的 jwt.key";
 
@@ -45,6 +51,19 @@ public sealed record PuddingJwtSettings(string Key, string Issuer, string Audien
         ArgumentNullException.ThrowIfNull(configuration);
 
         var key = configuration[KeyPath];
+
+        // 引用本身通常长于 MinimumKeyLength（例如 42 字符），仅靠长度校验拦不住；
+        // 而配置链不展开 vault 引用，继续跑就等于用一段公开可见的固定字符串做 HMAC 密钥，
+        // 任何人都能据此伪造登录态。这里必须显式失败，不能静默退化。
+        if (key is not null && key.Contains(VaultReferenceMarker, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"登录态 JWT 签名密钥是一个未展开的凭据引用（配置键 {KeyPath}，形如 "
+                + VaultReferenceMarker + "...）。配置链不展开 vault 引用，若继续使用，"
+                + "HS256 签名密钥将等于这个公开可见的字符串，任何人都能伪造登录态。"
+                + $"请把 {KeyFileHint} 写成真实密钥后重启 Core。");
+        }
+
         if (string.IsNullOrWhiteSpace(key) || key.Length < MinimumKeyLength)
         {
             var detail = string.IsNullOrWhiteSpace(key)

@@ -38,6 +38,22 @@ public sealed class JwtTokenFactoryTests
     }
 
     [TestMethod]
+    public void FromConfiguration_UnresolvedVaultReference_FailsClosed()
+    {
+        // 42 字符的引用长于 MinimumKeyLength，旧逻辑会当成合法密钥静默接受，
+        // 于是 HS256 密钥 == 这段公开可见的字符串（缺陷：JWT 签名密钥退化为公开占位符）。
+        var reference = PuddingJwtSettings.VaultReferenceMarker
+            + "cfg.config.security.json.jwt.key}}";
+        Assert.IsTrue(reference.Length >= PuddingJwtSettings.MinimumKeyLength);
+
+        var error = Assert.ThrowsExactly<InvalidOperationException>(
+            () => PuddingJwtSettings.FromConfiguration(Config(("Jwt:Key", reference))));
+
+        StringAssert.Contains(error.Message, "未展开");
+        StringAssert.Contains(error.Message, "security.json");
+    }
+
+    [TestMethod]
     public void FromConfiguration_TooShortKey_FailsClosed()
     {
         var error = Assert.ThrowsExactly<InvalidOperationException>(
