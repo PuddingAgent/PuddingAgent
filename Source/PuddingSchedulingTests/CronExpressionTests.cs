@@ -109,7 +109,7 @@ public sealed class CronExpressionTests
         Assert.AreEqual(30, local.Minute);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("")]
     [DataRow("   ")]
     [DataRow("* * * *")]
