@@ -142,8 +142,8 @@ public sealed class OpenAiEmbeddingService : IEmbeddingService
             }
         }
         // 直接明文 key 或环境变量
-        return config.ApiKey
-            ?? Environment.GetEnvironmentVariable("EMBEDDING_API_KEY")
-            ?? "";
+        return await PuddingSecretReferences.CredentialReference.ResolveAsync(config.ApiKey
+            ?? Environment.GetEnvironmentVariable("EMBEDDING_API_KEY"),
+            _keyVaultService is null ? null : _keyVaultService.InjectAsync, ct);
     }
 }

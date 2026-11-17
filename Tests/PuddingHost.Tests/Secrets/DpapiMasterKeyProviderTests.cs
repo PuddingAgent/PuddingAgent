@@ -72,7 +72,7 @@ public sealed class DpapiMasterKeyProviderTests
     }
 
     [Fact]
-    public void CorruptFileDegradesToNullAndWarns()
+    public void CorruptFileFailsClosedWithoutOverwritingAndWarns()
     {
         if (SkipIfNotWindows()) return;
         Directory.CreateDirectory(_directory);
@@ -80,9 +80,8 @@ public sealed class DpapiMasterKeyProviderTests
         var warnings = new List<string>();
         var provider = new DpapiMasterKeyProvider(KeyPath, new DpapiSecretProtector(), warnings.Add);
 
-        var resolved = provider.TryResolve();
-
-        Assert.Null(resolved);
+        Assert.Throws<InvalidOperationException>(() => provider.TryResolve());
+        Assert.Equal(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 }, File.ReadAllBytes(KeyPath));
         Assert.Single(warnings);
     }
 

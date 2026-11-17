@@ -10,8 +10,7 @@ namespace PuddingHost.Secrets;
 /// 经 <see cref="ISecretProtector"/> 封装后，只有<b>同一 Windows 用户</b>能解开——
 /// 换机、换用户都失效，而这正是想要的性质。</para>
 ///
-/// <para>文件损坏、长度不对、解不开，一律返回 null 让上层走降级路径，不要抛异常——
-/// 启动期不该因为一个坏文件直接崩掉；但这时必须告警，否则就成了静默失联。</para>
+/// <para>只有文件不存在才返回 null。已有文件损坏必须拒绝启动，避免生成新密钥覆盖恢复证据。</para>
 /// </summary>
 public sealed class DpapiMasterKeyProvider : IMasterKeyProvider
 {
@@ -54,15 +53,14 @@ public sealed class DpapiMasterKeyProvider : IMasterKeyProvider
                 return key;
 
             _warn?.Invoke(
-                $"[KeyVault] master key file has {key.Length} bytes, expected {MasterKeySizeBytes}; ignoring it.");
-            return null;
+                $"[KeyVault] master key file has {key.Length} bytes, expected {MasterKeySizeBytes}.");
+            throw new InvalidOperationException("Persisted KeyVault master key has an invalid length. Restore the original protected key file.");
         }
         catch (Exception ex) when (ex is CryptographicException or IOException or UnauthorizedAccessException)
         {
-            // 换机、换用户、文件损坏都会到这里。降级而不是崩溃，但要留下痕迹。
             _warn?.Invoke(
                 $"[KeyVault] master key file could not be read ({ex.GetType().Name}); existing secrets will be unreadable.");
-            return null;
+            throw new InvalidOperationException("Persisted KeyVault master key cannot be decrypted. Restore it for the original Windows account.");
         }
     }
 

@@ -17,7 +17,8 @@ public sealed class FeishuConnectorFactory(
     FeishuImageUploadPreparationService imageUploadPreparation,
     VisionArtifactStorageService visionArtifacts,
     ILoggerFactory loggerFactory,
-    ILogger<FeishuConnectorFactory> logger)
+    ILogger<FeishuConnectorFactory> logger,
+    PuddingCode.Abstractions.IKeyVaultService? vault = null)
 {
     public async Task<IReadOnlyList<IPuddingConnector>> CreateAsync(
         CancellationToken ct = default)
@@ -106,7 +107,9 @@ public sealed class FeishuConnectorFactory(
                 channel.ChannelId,
                 boundAgents[0].AgentInstanceId,
                 settings.AppId);
-            bindings.Add((boundAgents[0], channel));
+            var resolvedSecret = await PuddingSecretReferences.CredentialReference.ResolveAsync(settings.AppSecret,
+                vault is null ? null : vault.InjectAsync, ct);
+            bindings.Add((boundAgents[0], channel with { Feishu = settings with { AppSecret = resolvedSecret } }));
         }
 
         var duplicatedAppIds = bindings

@@ -772,8 +772,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
     private async Task<string> NormalizeKeyVaultInjectAsync(string text, CancellationToken ct)
     {
         if (_keyVaultService is null) return text;
-        var injected = await _keyVaultService.InjectAsync(text, ct);
-        return string.IsNullOrWhiteSpace(injected) ? text : injected;
+        return await PuddingSecretReferences.CredentialReference.ResolveAsync(text, _keyVaultService.InjectAsync, ct);
     }
 
     /// <summary>ApiKeyRef 转换为 KeyVaultId：去掉可选的 "vault:" 前缀。</summary>

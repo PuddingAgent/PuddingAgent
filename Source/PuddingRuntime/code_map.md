@@ -7,6 +7,8 @@
 
 ## 入口与配置
 
+凭据执行边界统一调用 `../PuddingSecretReferences/CredentialReference.cs`：LLM、Embedding、搜索、余额探针及 CalDAV 在发送前解析引用，未解析引用不发往上游；`DeepSeekWebServiceCollectionExtensions` 与 `LlmUsageSamplingServiceCollectionExtensions` 将 KeyVault 委托装配给读取器。`Tools/BuiltIns/Management/BootstrapRebootTool.cs` 从 DPAPI 启动缓存解析控制令牌，不依赖 KeyVault HTTP 服务。
+
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `DependencyInjection.cs` | Runtime 全部服务的注册入口 | `RuntimeServiceExtensions` | `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` | 阈值策略对象须由版本化实现提供，组合根不得凭空编造 |

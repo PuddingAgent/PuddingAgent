@@ -139,6 +139,7 @@ public static class PuddingDataRootBootstrapper
         }
 
         var currentKey = (jwt["key"]?.GetValue<string>() ?? string.Empty).Trim();
+        currentKey = PuddingSecretReferences.BootstrapSecretFile.Resolve(paths.DataRoot, currentKey);
         var isUsable = currentKey.Length >= MinimumPersistedJwtKeyLength
                        && !KnownPlaceholderJwtKeys.Contains(currentKey, StringComparer.Ordinal);
         if (isUsable)

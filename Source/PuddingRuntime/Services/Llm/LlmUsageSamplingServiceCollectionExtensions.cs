@@ -48,7 +48,8 @@ public static class LlmUsageSamplingServiceCollectionExtensions
         services.TryAddSingleton<ILlmBalanceProbe>(sp =>
             new LlmProviderBalanceProbe(
                 sp.GetRequiredService<PuddingDataPaths>(),
-                ProviderBalanceTool.SharedHttp));
+                ProviderBalanceTool.SharedHttp,
+                sp.GetService<PuddingCode.Abstractions.IKeyVaultService>()));
 
         services.TryAddSingleton<LlmBalanceSampler>();
         services.AddHostedService<LlmBalanceSamplingService>();

@@ -8,4 +8,8 @@
   <Target Name="EnforceGuardianBoundary" BeforeTargets="ResolveReferences">
     <Error Condition="'@(ProjectReference)' != ''" Text="Guardian is an independent process and must not reference product assemblies." />
   </Target>
+  <ItemGroup>
+    <Compile Include="../PuddingSecretReferences/BootstrapSecretFile.cs" Link="Secrets/BootstrapSecretFile.cs" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="11.0.0" />
+  </ItemGroup>
 </Project>

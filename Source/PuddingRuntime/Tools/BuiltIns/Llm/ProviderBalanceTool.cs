@@ -19,7 +19,7 @@ namespace PuddingRuntime.Services.Tools;
     id: "provider_balance",
     name: "模型余额",
     description: "查询 LLM 服务商的账户余额与可用状态。【何时用】长任务前估预算、怀疑余额不足导致调用失败时对账、需要报当前余额时。【怎么用】providerId 可选，缺省 deepseek；目前只实现 DeepSeek 的 /user/balance。【坑】余额是时点快照、不等于本轮花费；赠送余额与充值余额分开计，只报总额会掩盖「赠送额度已用完」；apiKey 永不出现在回执里，只给 providerId 与 host。")]
-public sealed class ProviderBalanceTool(PuddingDataPaths paths) : PuddingToolBase<ProviderBalanceArgs>
+public sealed class ProviderBalanceTool(PuddingDataPaths paths, PuddingCode.Abstractions.IKeyVaultService? vault = null) : PuddingToolBase<ProviderBalanceArgs>
 {
     private const string DefaultProviderId = "deepseek";
 
@@ -65,6 +65,8 @@ public sealed class ProviderBalanceTool(PuddingDataPaths paths) : PuddingToolBas
 
         try
         {
+            endpoint = endpoint with { ApiKey = await PuddingSecretReferences.CredentialReference.ResolveAsync(
+                endpoint.ApiKey, vault is null ? null : vault.InjectAsync, ct) };
             var snapshot = await QueryAsync(SharedHttp, endpoint, ct).ConfigureAwait(false);
             return ToolExecutionResult.Ok(ToJson(snapshot));
         }

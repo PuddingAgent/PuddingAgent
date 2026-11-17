@@ -30,7 +30,7 @@ public sealed class DesktopControlTokenService : IDesktopControlTokenService
 
         var existing = result.Config.Desktop.Core.ControlToken;
         if (!string.IsNullOrWhiteSpace(existing))
-            return existing;
+            return PuddingSecretReferences.BootstrapSecretFile.Resolve(dataRoot, existing);
 
         var token = GenerateToken();
         await _configService.UpdateDesktopCoreSettingsAsync(

@@ -29,6 +29,7 @@ public sealed class AnySearchSearchTool : PuddingToolBase<AnySearchSearchArgs>
     private readonly IWebClient _webClient;
     private readonly PuddingDataPaths _paths;
     private readonly ILogger<AnySearchSearchTool> _logger;
+    private readonly PuddingCode.Abstractions.IKeyVaultService? _vault;
 
     public AnySearchSearchTool(
         IWebClient webClient,
@@ -40,11 +41,13 @@ public sealed class AnySearchSearchTool : PuddingToolBase<AnySearchSearchArgs>
     public AnySearchSearchTool(
         IWebClient webClient,
         PuddingDataPaths paths,
-        ILogger<AnySearchSearchTool> logger)
+        ILogger<AnySearchSearchTool> logger,
+        PuddingCode.Abstractions.IKeyVaultService? vault = null)
     {
         _webClient = webClient;
         _paths = paths;
         _logger = logger;
+        _vault = vault;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -61,6 +64,9 @@ public sealed class AnySearchSearchTool : PuddingToolBase<AnySearchSearchArgs>
             return ToolExecutionResult.Fail(configResult.Error ?? "AnySearch configuration is invalid.");
 
         var config = configResult.Config!;
+        if (config.Enabled)
+            config = config with { ApiKey = await PuddingSecretReferences.CredentialReference.ResolveAsync(config.ApiKey,
+                _vault is null ? null : _vault.InjectAsync, ct) };
         if (!config.Enabled)
             return ToolExecutionResult.Fail("AnySearch provider is disabled in search.providers.json.");
         if (string.IsNullOrWhiteSpace(config.ApiKey))

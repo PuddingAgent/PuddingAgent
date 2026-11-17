@@ -659,6 +659,7 @@ public static partial class PuddingServiceCollectionExtensions
                 message => keyVaultLogger.LogWarning("{Message}", message));
         });
         builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
+        builder.Services.AddHostedService<PuddingAgent.Services.KeyVaultStartupValidationService>();
         // ── DB 种子服务（启动时从 default-data/ 导入配置到 DB）──
         builder.Services.AddSingleton<DataSeedService>();
         // ── Agent 模板文件服务（模板 manifest 读写 + 头像解析）──

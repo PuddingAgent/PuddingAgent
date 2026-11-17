@@ -31,7 +31,7 @@ namespace PuddingRuntime.Services.Tools;
         "要判断某个时间段是否被占用时。【怎么用】days 取从现在起的天数（默认 7）；也可用 from/to 指定日期（yyyy-MM-dd，本地时区）。" +
         "【坑】空列表是正常结果（没有日程），不要当成失败；事件时区常带 TZID（如 Asia/Shanghai），返回的 start/end 是该时区的墙上时间，" +
         "不要当成 UTC 再换算一次；凭据从 data/config/caldav.json 读取，缺失时明确报错而不是猜。")]
-public sealed class CalendarListTool(PuddingDataPaths paths) : PuddingToolBase<CalendarListArgs>
+public sealed class CalendarListTool(PuddingDataPaths paths, PuddingCode.Abstractions.IKeyVaultService? vault = null) : PuddingToolBase<CalendarListArgs>
 {
     private const string ConfigFileName = "caldav.json";
     private const int DefaultDays = 7;
@@ -80,6 +80,8 @@ public sealed class CalendarListTool(PuddingDataPaths paths) : PuddingToolBase<C
 
         try
         {
+            endpoint = endpoint with { Password = await PuddingSecretReferences.CredentialReference.ResolveAsync(
+                endpoint.Password, vault is null ? null : vault.InjectAsync, ct) };
             var discovery = await DiscoverAsync(endpoint, ct).ConfigureAwait(false);
             if (discovery.Error is not null)
             {

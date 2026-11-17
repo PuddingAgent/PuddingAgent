@@ -318,6 +318,7 @@ per-key 连续 deferred 计数与退避档属 Agent 侧诊断（`classifier_stat
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
+| `Services/VoiceProviderFileService.cs` | 原始引用读写与执行副本分离 | `LoadAsync` / `LoadForUseAsync` | `../PuddingSecretReferences/CredentialReference.cs` | TTS、HTTP ASR、实时 ASR 使用解析副本；不回写明文；回归见 `../PuddingPlatformTests/Services/VoiceCredentialReferenceTests.cs` |
 | `Services/LlmProviderFileService.cs` | LLM Provider/模型文件配置与余额查询 | `LlmProviderFileService` | `Services/ILlmBalanceProvider.cs` | 协议只在模型 DTO 与写入请求；GetBalanceAsync 解析 apiKey（ApiKey/${ENV}/{{vault:NAME}}/ApiKeyRef→KeyVault）后按注册表 CanHandle 分发；未注册返回「暂不支持」DTO；apiKey 不进日志 |
 | `Services/ILlmBalanceProvider.cs` | 余额查询适配器契约 | `ILlmBalanceProvider` | `Services/DeepSeekLlmBalanceProvider.cs` | CanHandle(provider) + QueryAsync(provider, apiKey, ct)；网络错误抛 HttpRequestException（控制器映射 502）；上游业务错误返回 IsAvailable=false DTO |
 | `Services/DeepSeekLlmBalanceProvider.cs` | DeepSeek 余额适配器 | `DeepSeekLlmBalanceProvider`、`LlmBalanceQuery` | `Services/ILlmBalanceProvider.cs` | GET {baseUrl 剥尾 /v1}/user/balance + Bearer；解析 is_available/balance_infos 与 error.message；CanHandle：providerId 含 deepseek 或 baseUrl 指向 deepseek.com |

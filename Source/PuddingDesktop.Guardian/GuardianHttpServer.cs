@@ -11,7 +11,8 @@ public static class GuardianToken
     {
         var document = JsonSerializer.Deserialize<TokenRoot>(File.ReadAllText(Path.Combine(settings.DataRoot, "config", "system.json")), GuardianJson.Options);
         var token = document?.Desktop?.Core?.ControlToken;
-        return string.IsNullOrWhiteSpace(token) ? throw new InvalidDataException("Desktop control token is not initialized.") : token;
+        return string.IsNullOrWhiteSpace(token) ? throw new InvalidDataException("Desktop control token is not initialized.")
+            : PuddingSecretReferences.BootstrapSecretFile.Resolve(settings.DataRoot, token);
     }
 
     public static bool Matches(string? actual, string expected) => actual is not null && actual.Length <= 1024

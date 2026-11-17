@@ -8,7 +8,7 @@ public sealed class RealtimeAudioTranscriptionService(VoiceProviderFileService c
 {
     public async Task<IStreamingSpeechRecognizer> CreateAsync(CancellationToken ct)
     {
-        var config = await configs.LoadAsync(ct);
+        var config = await configs.LoadForUseAsync(ct);
         try
         {
             return factory.CreateAsrProvider(config) as IStreamingSpeechRecognizer

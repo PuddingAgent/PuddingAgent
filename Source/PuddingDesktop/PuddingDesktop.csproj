@@ -105,4 +105,5 @@
     </ItemGroup>
   </Target>
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+  <ItemGroup><Compile Include="../PuddingSecretReferences/BootstrapSecretFile.cs" Link="Secrets/BootstrapSecretFile.cs" /><PackageReference Include="System.Security.Cryptography.ProtectedData" Version="11.0.0" /></ItemGroup>
 </Project>

@@ -1,6 +1,8 @@
 using System.Text.Json;
 using PuddingCode.Configuration;
 using PuddingPlatform.Data.Dtos;
+using PuddingCode.Abstractions;
+using PuddingSecretReferences;
 
 namespace PuddingPlatform.Services;
 
@@ -20,11 +22,13 @@ public sealed class VoiceProviderFileService
     private readonly PuddingDataPaths _paths;
     private readonly ILogger<VoiceProviderFileService> _logger;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private readonly IKeyVaultService? _vault;
 
-    public VoiceProviderFileService(PuddingDataPaths paths, ILogger<VoiceProviderFileService> logger)
+    public VoiceProviderFileService(PuddingDataPaths paths, ILogger<VoiceProviderFileService> logger, IKeyVaultService? vault = null)
     {
         _paths = paths;
         _logger = logger;
+        _vault = vault;
     }
 
     private string ConfigPath => _paths.SystemConfigFile("voice/providers.json");
@@ -33,6 +37,17 @@ public sealed class VoiceProviderFileService
     {
         var config = await AtomicFileWriter.ReadJsonAsync<PuddingVoiceProvidersConfig>(ConfigPath, JsonOptions, ct);
         return config ?? new PuddingVoiceProvidersConfig();
+    }
+
+    /// <summary>Execution-only copy. CRUD must keep references intact on disk.</summary>
+    public async Task<PuddingVoiceProvidersConfig> LoadForUseAsync(CancellationToken ct = default)
+    {
+        var config = await LoadAsync(ct);
+        var providers = new List<PuddingVoiceProviderConfig>();
+        foreach (var provider in config.Providers)
+            providers.Add(provider with { ApiKey = await CredentialReference.ResolveAsync(provider.ApiKey,
+                _vault is null ? null : _vault.InjectAsync, ct) });
+        return config with { Providers = providers };
     }
 
     private async Task SaveConfigAsync(PuddingVoiceProvidersConfig config, CancellationToken ct)

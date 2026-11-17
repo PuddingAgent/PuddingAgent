@@ -26,7 +26,7 @@ public sealed class AudioTranscriptionService(
                 $"ASR input format '{request.Format}' is not provider-safe. Use WAV or MP3.");
         }
 
-        var config = await voiceProviders.LoadAsync(ct);
+        var config = await voiceProviders.LoadForUseAsync(ct);
         var providerId = string.IsNullOrWhiteSpace(request.Provider)
             ? config.DefaultAsrProviderId
             : request.Provider;

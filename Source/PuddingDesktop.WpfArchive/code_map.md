@@ -133,6 +133,7 @@
 | `Storage/DataRootSafetyValidator.cs` | 安全校验（拒绝越界、链接） |
 | `ViewModels/StorageViewModel.cs` | 文件分类与 Core 数据库明细合并展示；7/14/30/90 天保留期、预览确认、清理后重扫 |
 | `Configuration/SystemConfigurationService.cs` | system.json 原子写入 |
+| `Configuration/DesktopControlTokenService.cs` | 保留控制令牌引用，返回当前 Windows 用户 DPAPI 启动缓存解密值；共用启动器文件由 WinUI 链接编译 |
 | `ViewModels/SettingsViewModel.cs` | Desktop Core 固定监听端口（默认 8080）、恢复与关闭策略、调试模式（仓库根/前端端口/代理端口/超时）配置 |
 
 **关键语义**

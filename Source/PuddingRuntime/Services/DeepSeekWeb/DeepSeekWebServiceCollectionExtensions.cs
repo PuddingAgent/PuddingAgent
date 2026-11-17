@@ -33,7 +33,8 @@ public static class DeepSeekWebServiceCollectionExtensions
             new DeepSeekWebSettingsProvider(
                 sp.GetService<PuddingDataPaths>() ?? DeepSeekWebSettingsProvider.ResolveDefaultDataPaths(),
                 sp.GetService<ILogger<DeepSeekWebSettingsProvider>>()
-                    ?? NullLogger<DeepSeekWebSettingsProvider>.Instance));
+                    ?? NullLogger<DeepSeekWebSettingsProvider>.Instance,
+                sp.GetService<PuddingCode.Abstractions.IKeyVaultService>()));
 
         services.TryAddSingleton<IDeepSeekWebTransport, WebClientDeepSeekTransport>();
 

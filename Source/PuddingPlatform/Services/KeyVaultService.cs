@@ -274,9 +274,10 @@ public sealed class KeyVaultService(
                 if (!string.IsNullOrEmpty(value))
                     map[item.Name] = value;
             }
-            catch (Exception ex)
+            catch (OperationCanceledException) { throw; }
+            catch (Exception)
             {
-                logger.LogWarning(ex, "[KeyVault] 解密条目失败，name={Name}，已跳过。", item.Name);
+                throw new InvalidOperationException("KeyVault credential decryption failed. Restore the persisted master key for this Windows account.");
             }
         }
 
@@ -386,8 +387,8 @@ public sealed class KeyVaultService(
             }
             catch (Exception ex)
             {
-                // 持久化失败不阻止启动，但必须留痕：这意味着本次的密文重启后解不开。
-                logger.LogError(ex, "[KeyVault] 主密钥持久化失败；本次运行仍可用，但重启后将无法解密。");
+                logger.LogError("[KeyVault] 主密钥持久化失败，拒绝使用临时主密钥。");
+                throw new InvalidOperationException("KeyVault master key persistence failed. Startup is refused to protect existing credentials.");
             }
         }
         var generatedBase64 = Convert.ToBase64String(generated);

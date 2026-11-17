@@ -104,6 +104,8 @@
     <Project Path="Source/Pudding.Rpc.IpcProbe/Pudding.Rpc.IpcProbe.csproj" />
     <Project Path="Source/PuddingRetrievalTests/PuddingRetrievalTests.csproj" />
     <Project Path="Source/PuddingRuntime/PuddingRuntime.csproj" Id="bf7b7efd-1c2a-4e06-9efa-f0e4af746f49" />
+    <Project Path="Source/PuddingSecretReferences/PuddingSecretReferences.csproj" />
+    <Project Path="Source/PuddingSecretReferencesTests/PuddingSecretReferencesTests.csproj" />
     <Project Path="Source/PuddingSlack/PuddingSlack.csproj" />
     <Project Path="Source/PuddingDingTalk/PuddingDingTalk.csproj" />
     <Project Path="Source/PuddingDingTalkTests/PuddingDingTalkTests.csproj" />

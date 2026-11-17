@@ -65,4 +65,5 @@
     <ProjectReference Include="..\PuddingHomeAssistant\PuddingHomeAssistant.csproj" />
   </ItemGroup>
 
+  <ItemGroup><ProjectReference Include="../PuddingSecretReferences/PuddingSecretReferences.csproj" /></ItemGroup>
 </Project>

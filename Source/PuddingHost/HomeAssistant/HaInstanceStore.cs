@@ -54,7 +54,7 @@ public sealed class HaClientFactory : IDisposable
 /// <item>按文件 mtime + 长度做缓存失效，Admin 改配置后下一次调用即生效。</item>
 /// </list>
 /// </summary>
-public sealed class HaInstanceStore(PuddingDataPaths paths, ILogger<HaInstanceStore> logger)
+public sealed class HaInstanceStore(PuddingDataPaths paths, ILogger<HaInstanceStore> logger, PuddingCode.Abstractions.IKeyVaultService? vault = null)
 {
     private const string FileName = "home-assistant.json";
     private static readonly JsonSerializerOptions s_json = new(JsonSerializerDefaults.Web)
@@ -127,11 +127,18 @@ public sealed class HaInstanceStore(PuddingDataPaths paths, ILogger<HaInstanceSt
 
         if (string.IsNullOrWhiteSpace(alias))
         {
-            return all.Count == 1 ? all[0] : null;
+            return all.Count == 1 ? ResolveForUse(all[0]) : null;
         }
 
-        return all.FirstOrDefault(i => string.Equals(i.Alias, alias.Trim(), StringComparison.Ordinal));
+        return ResolveForUse(all.FirstOrDefault(i => string.Equals(i.Alias, alias.Trim(), StringComparison.Ordinal)));
     }
+
+    private HaInstance? ResolveForUse(HaInstance? instance) => instance is null ? null : new HaInstance
+    {
+        Alias = instance.Alias, BaseUrl = instance.BaseUrl, OptInDomains = instance.OptInDomains,
+        Token = PuddingSecretReferences.CredentialReference.ResolveAsync(instance.Token,
+            vault is null ? null : vault.InjectAsync).GetAwaiter().GetResult(),
+    };
 
     /// <summary>供工具回执展示的实例描述（永不含 token）。</summary>
     public static IReadOnlyList<HaInstanceDescriptor> Describe(IEnumerable<HaInstance> instances) =>

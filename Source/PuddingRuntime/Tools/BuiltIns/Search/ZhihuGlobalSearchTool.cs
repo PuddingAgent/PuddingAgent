@@ -34,6 +34,7 @@ public sealed class ZhihuGlobalSearchTool : PuddingToolBase<ZhihuGlobalSearchArg
     private readonly IWebClient _webClient;
     private readonly PuddingDataPaths _paths;
     private readonly ILogger<ZhihuGlobalSearchTool> _logger;
+    private readonly PuddingCode.Abstractions.IKeyVaultService? _vault;
 
     public ZhihuGlobalSearchTool(
         IWebClient webClient,
@@ -45,11 +46,13 @@ public sealed class ZhihuGlobalSearchTool : PuddingToolBase<ZhihuGlobalSearchArg
     public ZhihuGlobalSearchTool(
         IWebClient webClient,
         PuddingDataPaths paths,
-        ILogger<ZhihuGlobalSearchTool> logger)
+        ILogger<ZhihuGlobalSearchTool> logger,
+        PuddingCode.Abstractions.IKeyVaultService? vault = null)
     {
         _webClient = webClient;
         _paths = paths;
         _logger = logger;
+        _vault = vault;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -74,6 +77,9 @@ public sealed class ZhihuGlobalSearchTool : PuddingToolBase<ZhihuGlobalSearchArg
             return ToolExecutionResult.Fail(configResult.Error ?? "Zhihu configuration is invalid.");
 
         var config = configResult.Config!;
+        if (config.Enabled)
+            config = config with { ApiKey = await PuddingSecretReferences.CredentialReference.ResolveAsync(config.ApiKey,
+                _vault is null ? null : _vault.InjectAsync, ct) };
         if (!config.Enabled)
             return ToolExecutionResult.Fail("Zhihu Search provider is disabled in search.providers.json.");
         if (string.IsNullOrWhiteSpace(config.ApiKey))

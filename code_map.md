@@ -35,6 +35,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingDingTalk/` · `Source/PuddingDingTalkTests/` | 企业群来源校验、群会话图文消息、公开问答与本机反馈登记 | [组件](Source/PuddingDingTalk/code_map.md) · [Core 接入](Source/PuddingHost/Services/DingTalkConversationIngress.cs) · [独立测试](Source/PuddingDingTalkTests/code_map.md) |
 | `Source/PuddingRuntime/` | Agent Loop · LLM 网关调用 · 工具系统 · 上下文管线 · 子代理 · 后台学习 | [code_map](Source/PuddingRuntime/code_map.md) |
 | `Source/PuddingSpeech/` · `Source/PuddingSpeechTests/` | 实时 PCM 会话、Qwen Message ASR、增量 TTS、音频校验与统一错误的独立语音协议叶子 | [组件](Source/PuddingSpeech/code_map.md) · [独立测试](Source/PuddingSpeechTests/code_map.md) |
+| `Source/PuddingSecretReferences/` · `Source/PuddingSecretReferencesTests/` | 凭据字段的环境变量/vault 严格解析与启动前 DPAPI 缓存；不反向引用宿主 | [组件](Source/PuddingSecretReferences/code_map.md) · [独立测试](Source/PuddingSecretReferencesTests/code_map.md) |
 | `Source/Pudding.Api.Contracts/` | 存储无关的 Agent 配置、单轮执行与确定性评分公共合同（BCL-only） | [code_map](Source/Pudding.Api.Contracts/code_map.md) |
 | `Source/Pudding.Api.Sdk/` · `Source/Pudding.Api.SdkTests/` | 配置/执行门面及 HTTP 适配、确定性评分的有类型门面与独立测试 | [SDK](Source/Pudding.Api.Sdk/code_map.md) · [测试](Source/Pudding.Api.SdkTests/code_map.md) |
 | `Source/PuddingAgentConfiguration.Contracts/` · `Source/PuddingAgentConfiguration/` | 授权/原子存储端口与配置更新领域组件 | [端口](Source/PuddingAgentConfiguration.Contracts/code_map.md) · [组件](Source/PuddingAgentConfiguration/code_map.md) |

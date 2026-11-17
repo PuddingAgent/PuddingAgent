@@ -115,7 +115,7 @@ public sealed class KeyVaultMasterKeyResolutionTests
     }
 
     [TestMethod]
-    public void PersistFailureStillReturnsAUsableKeyButFallsBackToProcessEnvironment()
+    public void PersistFailureRefusesToUseAnEphemeralKey()
     {
         var provider = new FakeProvider
         {
@@ -123,14 +123,9 @@ public sealed class KeyVaultMasterKeyResolutionTests
             PersistFailure = new IOException("disk unavailable"),
         };
 
-        var resolved = KeyVaultService.ResolveMasterKey(NullLogger.Instance, provider);
-
-        Assert.AreEqual(32, resolved.Length);
+        Assert.ThrowsExactly<InvalidOperationException>(() => KeyVaultService.ResolveMasterKey(NullLogger.Instance, provider));
         Assert.AreEqual(1, provider.PersistCalls);
-        // 落盘失败后仍要保证本次运行可用：退回进程级环境变量。
-        var fallback = Environment.GetEnvironmentVariable(EnvName);
-        Assert.IsFalse(string.IsNullOrWhiteSpace(fallback), "落盘失败时必须设置进程级主密钥，否则本次运行无法加解密。");
-        CollectionAssert.AreEqual(resolved, Convert.FromBase64String(fallback!));
+        Assert.IsTrue(string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(EnvName)));
     }
 
     [TestMethod]

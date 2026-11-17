@@ -62,6 +62,7 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
 
         if (string.IsNullOrWhiteSpace(token))
             return Fail("desktop.core.controlToken is empty in system.json; Desktop has not generated the token yet.");
+        token = PuddingSecretReferences.BootstrapSecretFile.Resolve(_paths.DataRoot, token);
 
         if (!httpEnabled)
             return Fail("Desktop bootstrap HTTP endpoint is disabled (desktop.bootstrap.httpEnabled=false).");

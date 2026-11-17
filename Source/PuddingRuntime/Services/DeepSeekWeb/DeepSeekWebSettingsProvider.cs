@@ -66,13 +66,16 @@ public sealed partial class DeepSeekWebSettingsProvider
 
     private readonly PuddingDataPaths _paths;
     private readonly ILogger<DeepSeekWebSettingsProvider>? _logger;
+    private readonly PuddingCode.Abstractions.IKeyVaultService? _vault;
 
     public DeepSeekWebSettingsProvider(
         PuddingDataPaths paths,
-        ILogger<DeepSeekWebSettingsProvider>? logger = null)
+        ILogger<DeepSeekWebSettingsProvider>? logger = null,
+        PuddingCode.Abstractions.IKeyVaultService? vault = null)
     {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _logger = logger;
+        _vault = vault;
     }
 
     /// <summary><c>&lt;DataRoot&gt;/config/search.providers.json</c> 的绝对路径。</summary>
@@ -86,6 +89,17 @@ public sealed partial class DeepSeekWebSettingsProvider
     /// 成功返回 true；失败返回 false 并给出可直接展示给用户的错误（含路径，不含 Key）。
     /// </summary>
     internal bool TryResolve(out DeepSeekWebSettings settings, out string error)
+    {
+        try { return TryResolveCore(out settings, out error); }
+        catch (InvalidOperationException)
+        {
+            settings = null!;
+            error = $"Credential resolution failed. Check deepseek_search.apiKey in {SearchProvidersPath} or providerId=\"deepseek\" in {LlmProvidersPath}; restore the vault or environment credential.";
+            return false;
+        }
+    }
+
+    private bool TryResolveCore(out DeepSeekWebSettings settings, out string error)
     {
         settings = null!;
         error = string.Empty;
@@ -108,7 +122,8 @@ public sealed partial class DeepSeekWebSettingsProvider
                 return false;
             }
 
-            var searchApiKey = searchSection.ApiKey?.Trim() ?? string.Empty;
+            var searchApiKey = PuddingSecretReferences.CredentialReference.ResolveAsync(searchSection.ApiKey,
+                _vault is null ? null : _vault.InjectAsync).GetAwaiter().GetResult().Trim();
             if (searchApiKey.Length > 0)
             {
                 settings = CreateSettings(
@@ -143,7 +158,8 @@ public sealed partial class DeepSeekWebSettingsProvider
             }
 
             // apiKey 允许 ${ENV_VAR} 占位；环境变量缺失 ⇒ 展开为空 ⇒ 视为未配置（继续走合并错误）。
-            var llmApiKey = ExpandEnvironmentPlaceholders(provider.ApiKey ?? string.Empty).Trim();
+            var llmApiKey = PuddingSecretReferences.CredentialReference.ResolveAsync(provider.ApiKey,
+                _vault is null ? null : _vault.InjectAsync).GetAwaiter().GetResult().Trim();
             if (llmApiKey.Length > 0)
             {
                 settings = CreateSettings(

@@ -20,7 +20,8 @@ namespace PuddingRuntime.Services.Llm;
 /// </summary>
 public sealed class LlmProviderBalanceProbe(
     PuddingDataPaths paths,
-    HttpClient http) : ILlmBalanceProbe
+    HttpClient http,
+    PuddingCode.Abstractions.IKeyVaultService? vault = null) : ILlmBalanceProbe
 {
     private readonly PuddingDataPaths _paths = paths ?? throw new ArgumentNullException(nameof(paths));
 
@@ -66,6 +67,8 @@ public sealed class LlmProviderBalanceProbe(
         ProviderBalanceSnapshot snapshot;
         try
         {
+            endpoint = endpoint with { ApiKey = await PuddingSecretReferences.CredentialReference.ResolveAsync(
+                endpoint.ApiKey, vault is null ? null : vault.InjectAsync, cancellationToken) };
             snapshot = await ProviderBalanceTool.QueryAsync(_http, endpoint, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

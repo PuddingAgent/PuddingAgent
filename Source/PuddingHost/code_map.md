@@ -22,6 +22,8 @@ draft: false
 
 ## 组合根
 
+凭据：`Services/KeyVaultStartupValidationService.cs` 在就绪前验证保管箱解密；`Secrets/DpapiMasterKeyProvider.cs` 对已有坏文件拒绝启动而不覆盖。`Hosting/PuddingApplicationHost.cs` 从 DPAPI 启动缓存解析 JWT 引用，`Hosting/DesktopControlTokenValidator.cs` 解析控制令牌引用；飞书与 Home Assistant 在执行边界调用独立 `PuddingSecretReferences`，配置仍保留引用。
+
 实时语音：`Extensions/PuddingServiceCollectionExtensions.Connectors.cs` 装配 `RealtimeAudioTranscriptionService` 与单例 `VoiceStreamTicketStore`，业务路由不进入 Shell；宿主组合测试解析这两个服务。
 
 Agent 配置公共 API：`Extensions/PuddingServiceCollectionExtensions.Platform.cs` 将独立配置 Store 端口绑定到既有 `WorkspaceAgentFileService` 单例，并装配 `AgentConfigurationApiFactory`；不创建第二个 manifest writer。

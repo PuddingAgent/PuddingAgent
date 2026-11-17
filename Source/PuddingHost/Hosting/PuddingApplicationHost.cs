@@ -72,6 +72,12 @@ public static class PuddingApplicationHost
             .AddEnvironmentVariables();
         if (args.Length > 0)
             builder.Configuration.AddCommandLine(args);
+        var configuredJwtKey = builder.Configuration["Jwt:Key"];
+        if (configuredJwtKey?.Contains("{{vault:", StringComparison.OrdinalIgnoreCase) == true)
+            builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Jwt:Key"] = PuddingSecretReferences.BootstrapSecretFile.Resolve(dataPaths.DataRoot, configuredJwtKey),
+            });
         builder.Services.AddSingleton(dataPaths);
         // 日志级别开关（Debug 按钮的出口）：单例，与 bootstrapper 共用同一个 LoggingLevelSwitch。
         builder.Services.AddSingleton(new PuddingLogLevelStore(dataPaths.LoggingConfigFile));

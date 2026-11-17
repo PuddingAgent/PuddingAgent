@@ -59,7 +59,7 @@ public sealed class VoiceSynthesisService(
             VoiceSynthesisRequest request,
             CancellationToken ct)
     {
-        var config = await voiceProviders.LoadAsync(ct);
+        var config = await voiceProviders.LoadForUseAsync(ct);
         if (config.Providers.Count == 0)
             throw new InvalidOperationException("Voice providers are not configured.");
 

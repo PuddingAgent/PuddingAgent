@@ -1316,7 +1316,7 @@ public sealed partial class AgentExecutionService
         if (!string.IsNullOrWhiteSpace(apiKey)
             && apiKey.Contains("{{vault:", StringComparison.OrdinalIgnoreCase))
         {
-            apiKey = await _keyVaultService.InjectAsync(apiKey, ct);
+            apiKey = await PuddingSecretReferences.CredentialReference.ResolveAsync(apiKey, _keyVaultService.InjectAsync, ct);
         }
 
         if (string.Equals(apiKey, config.ApiKey, StringComparison.Ordinal))

@@ -59,8 +59,9 @@ public sealed class DesktopControlTokenValidator
         try
         {
             var json = File.ReadAllText(configPath);
-            return JsonSerializer.Deserialize<PuddingSystemConfig>(json, JsonOptions)
+            var configured = JsonSerializer.Deserialize<PuddingSystemConfig>(json, JsonOptions)
                 ?.Desktop.Core.ControlToken;
+            return configured is null ? null : PuddingSecretReferences.BootstrapSecretFile.Resolve(_dataRoot, configured);
         }
         catch
         {

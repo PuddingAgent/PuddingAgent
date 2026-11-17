@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <!--
     PuddingDesktop — WPF Windows Desktop Launcher
     Phase 1A: Windows 11 Desktop Launcher, Persistent Configuration,
@@ -47,4 +47,5 @@
 
     <Message Importance="high" Text="[DesktopPublish] Publish layout complete. Core at $(CorePublishDir)" />
   </Target>
+  <ItemGroup><ProjectReference Include="../PuddingSecretReferences/PuddingSecretReferences.csproj" /></ItemGroup>
 </Project>
