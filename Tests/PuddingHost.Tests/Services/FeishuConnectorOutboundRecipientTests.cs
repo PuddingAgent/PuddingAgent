@@ -145,6 +145,33 @@ public sealed class FeishuConnectorOutboundRecipientTests
         }
     }
 
+    /// <summary>
+    /// 投递侧唯一能拦住「把机器上的凭据当普通文件发出去」的关卡。
+    /// 它在工具层之外再判一次，因为排队到投递之间路径可能已被替换。
+    /// 这里断言它在**任何网络请求之前**生效——被拦时连 tenant_access_token 都不该取。
+    /// </summary>
+    [Fact]
+    public async Task WorkspaceFile_WithCredentialLikeSource_IsRefusedBeforeAnyRequest()
+    {
+        var (connector, handler, stray) = CreateConnector(openId: "ou_explicit");
+        var secret = Path.Combine(Path.GetTempPath(), $"id_rsa-{Guid.NewGuid():N}");
+        await File.WriteAllTextAsync(secret, "PRIVATE KEY");
+
+        try
+        {
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => connector.SendAsync(WorkspaceFileMessage(secret, "ou_explicit", "ou_explicit")));
+
+            Assert.Contains("credential", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Empty(handler.Requests);
+        }
+        finally
+        {
+            File.Delete(secret);
+            File.Delete(stray);
+        }
+    }
+
     private static string? ReadUuid(string body)
     {
         using var doc = JsonDocument.Parse(body);
