@@ -107,11 +107,19 @@ if (-not $newest) {
 Report 'binaries-newer-than-source-commit' ($newest.LastWriteTime -gt $srcTime) `
        ("newest=" + $newest.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss') + " " + $newest.Name)
 
-# Compare against the newest commit that touched SOURCE, not against HEAD. A later
-# docs-only commit does not require a redeploy, so using HEAD would produce a false
-# red on a perfectly healthy deployment -- and a check that can never pass is as
-# useless as one that can never fail.
-$srcIso = (& git -C $RepoRoot log -1 --format=%cI HEAD -- Source 2>&1 | Out-String).Trim()
+# Compare against the newest commit that touched the projects that actually end up in the
+# live artifact -- not HEAD, and not all of Source. Two false reds taught this:
+#   1) a docs-only commit does not require a redeploy;
+#   2) neither does a frontend (.ts/.tsx) change, nor a leaf component that is not in the
+#      solution yet (PuddingScheduling today). Both made a healthy deployment look stale,
+#      and a check that fires on healthy states gets ignored when it finally matters.
+$corePaths = @(
+    'Source/PuddingHost',
+    'Source/PuddingRuntime',
+    'Source/PuddingPlatform',
+    'Source/PuddingCore'
+)
+$srcIso = (& git -C $RepoRoot log -1 --format=%cI HEAD -- $corePaths 2>&1 | Out-String).Trim()
 $srcTime = if ($srcIso -match '^\d{4}-') { [datetimeoffset]::Parse($srcIso).LocalDateTime } else { $headTime }
 Write-Output ("LAST_SOURCE_COMMIT=" + $srcTime.ToString('yyyy-MM-dd HH:mm:ss') + "  (HEAD=" + $headTime.ToString('yyyy-MM-dd HH:mm:ss') + ")")
 $runtime = Join-Path $liveDir 'PuddingRuntime.dll'
