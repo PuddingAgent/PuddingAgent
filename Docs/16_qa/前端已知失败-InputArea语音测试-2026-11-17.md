@@ -3,7 +3,7 @@ title: 前端已知失败：InputArea.test.tsx 两条语音用例已对不上当
 author: hyfree
 date: 2026-11-17
 last_reviewed: 2026-11-17
-status: accepted
+status: active
 draft: false
 description: 全量 jest 267 套件跑出 2 条失败，均在 InputArea.test.tsx 的语音用例。用「提交前版本 + 阳性对照」证明该失败在我动手之前就存在，属陈旧测试而非回归。记录证据、归因方法与处置建议，避免下次被误判为回归而浪费时间。
 categories: [docs, qa]
