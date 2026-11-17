@@ -104,15 +104,20 @@ if (-not $newest) {
     Write-Output 'RESULT: instrument error'
     exit 3
 }
-Report 'binaries-newer-than-commit' ($newest.LastWriteTime -gt $headTime) `
+Report 'binaries-newer-than-source-commit' ($newest.LastWriteTime -gt $srcTime) `
        ("newest=" + $newest.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss') + " " + $newest.Name)
 
-# A rollback leaves a NEW process running OLD binaries -- exactly the case that
-# produced a false success report before. Surface it explicitly.
+# Compare against the newest commit that touched SOURCE, not against HEAD. A later
+# docs-only commit does not require a redeploy, so using HEAD would produce a false
+# red on a perfectly healthy deployment -- and a check that can never pass is as
+# useless as one that can never fail.
+$srcIso = (& git -C $RepoRoot log -1 --format=%cI HEAD -- Source 2>&1 | Out-String).Trim()
+$srcTime = if ($srcIso -match '^\d{4}-') { [datetimeoffset]::Parse($srcIso).LocalDateTime } else { $headTime }
+Write-Output ("LAST_SOURCE_COMMIT=" + $srcTime.ToString('yyyy-MM-dd HH:mm:ss') + "  (HEAD=" + $headTime.ToString('yyyy-MM-dd HH:mm:ss') + ")")
 $runtime = Join-Path $liveDir 'PuddingRuntime.dll'
 if (Test-Path $runtime) {
     $rtTime = (Get-Item $runtime).LastWriteTime
-    Report 'runtime-dll-newer-than-commit' ($rtTime -gt $headTime) `
+    Report 'runtime-dll-newer-than-source-commit' ($rtTime -gt $srcTime) `
            ("PuddingRuntime.dll=" + $rtTime.ToString('yyyy-MM-dd HH:mm:ss'))
 }
 
@@ -151,26 +156,41 @@ $logRoot = 'D:\Data\logs'
 $systemDir = Join-Path $logRoot 'system'
 $startupOk = $false
 $startupDetail = 'no system log found'
+# Log rotation creates a fresh file that does NOT contain this process's startup
+# lines, so "newest log file" is the wrong target. Find the file whose
+# services-registered line is closest to the process start time instead.
+$chosenFile = $null
+$chosenText = $null
+$bestDelta = [double]::MaxValue
 if (Test-Path $systemDir) {
-    $logFile = Get-ChildItem $systemDir -Filter '*.log' -File |
-               Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if ($logFile) {
-        try {
-            $text = Read-SharedText $logFile.FullName
-            $svc = $text.Contains('services-registered')
-            $kv = $text.Contains('Startup decryption check passed')
-            # A scoped-from-singleton DI fault aborts startup with this exception.
-            $bad = $text.Contains('Cannot consume scoped service')
-            $startupOk = $svc -and $kv -and (-not $bad)
-            $startupDetail = "services-registered=$svc keyvault-check=$kv di-scope-fault=$bad ($($logFile.Name))"
-        }
-        catch {
-            ReportInstrument 'startup-log' "cannot read $($logFile.FullName): $($_.Exception.Message)"
+    $candidates = Get-ChildItem $systemDir -Filter '*.log' -File |
+                  Where-Object { $_.LastWriteTime -gt $procStart.AddMinutes(-10) }
+    foreach ($cand in $candidates) {
+        try { $text = Read-SharedText $cand.FullName } catch { continue }
+        foreach ($m in [regex]::Matches($text, '(?m)^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})[^\r\n]*services-registered')) {
+            $stamp = [datetime]::ParseExact($m.Groups[1].Value, 'yyyy-MM-dd HH:mm:ss', $null)
+            $delta = [math]::Abs(($stamp - $procStart).TotalMinutes)
+            if ($delta -lt $bestDelta) { $bestDelta = $delta; $chosenFile = $cand; $chosenText = $text }
         }
     }
 }
-if ($startupDetail -ne 'no system log found' -or $startupOk) {
-    Report 'startup-log-clean' $startupOk $startupDetail
+if (-not $chosenFile) {
+    ReportInstrument 'startup-log' 'no services-registered line within 10 min of the process start in any log'
+}
+elseif ($bestDelta -gt 15) {
+    ReportInstrument 'startup-log' ("nearest services-registered is " + [math]::Round($bestDelta,1) + " min from process start (" + $chosenFile.Name + ")")
+}
+else {
+    try {
+        $kv = $chosenText.Contains('Startup decryption check passed')
+        $bad = $chosenText.Contains('Cannot consume scoped service')
+        $startupOk = $kv -and (-not $bad)
+        $startupDetail = "keyvault-check=$kv di-scope-fault=$bad delta=$([math]::Round($bestDelta,1))min ($($chosenFile.Name))"
+        Report 'startup-log-clean' $startupOk $startupDetail
+    }
+    catch {
+        ReportInstrument 'startup-log' "cannot evaluate $($chosenFile.Name): $($_.Exception.Message)"
+    }
 }
 
 if (-not $SkipGuardian) {
