@@ -15,7 +15,8 @@ public sealed class ImageGenerationService(
     ILlmConfigService llmConfig,
     IEnumerable<IImageGenerationProvider> providers,
     VisionArtifactStorageService artifactStorage,
-    ILogger<ImageGenerationService> logger)
+    ILogger<ImageGenerationService> logger,
+    IKeyVaultService? keyVaultService = null)
     : IImageGenerationService
 {
     private const int MaxPromptCharacters = 8_000;
@@ -87,7 +88,12 @@ public sealed class ImageGenerationService(
             throw new InvalidOperationException(
                 $"Image generation provider '{providerId}' has no usable endpoint.");
         }
-        var apiKey = resolved.ApiKey;
+        // 配置里的密钥可能是 {{vault:...}} 引用；不过这一道会把字面量当密钥发出去
+        // （2026-11-17 实测：Ark 返回 401 "API key format is incorrect"）。
+        var apiKey = await PuddingSecretReferences.CredentialReference.ResolveAsync(
+            resolved.ApiKey,
+            keyVaultService is null ? null : keyVaultService.InjectAsync,
+            ct);
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
