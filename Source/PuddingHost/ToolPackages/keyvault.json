@@ -1,0 +1,7 @@
+{
+  "id": "pudding.keyvault",
+  "version": "1.0.0",
+  "exports": {
+    "keyvault_list": "PuddingRuntime.Tools.Security.KeyVaultListTool"
+  }
+}

@@ -221,6 +221,8 @@ public static class PuddingToolServiceCollectionExtensions
         services.AddPuddingTool<RequestToolApprovalTool>();
         services.AddPuddingTool<ListToolApprovalsTool>();
         services.AddPuddingTool<ClassifierStatusTool>();
+        // 只读元数据工具：让 agent 能看到“有哪些密钥、各自干什么”，但不碰密钥值。
+        services.AddPuddingTool<PuddingRuntime.Tools.Security.KeyVaultListTool>();
         services.TryAddSingleton<PuddingComputer.Windows.ComputerDesktopSession>();
         services.AddPuddingTool<ComputerInputTool>();
         services.TryAddSingleton<IPuddingToolExecutionService, PuddingToolExecutionService>();
