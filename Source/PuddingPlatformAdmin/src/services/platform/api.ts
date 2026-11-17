@@ -585,6 +585,21 @@ export interface KeyVaultSecretDetailDto extends KeyVaultSecretDto {
   value?: string;
 }
 
+/** 单条密钥的使用情况。没有密钥值，也没有它的哈希。 */
+export interface KeyVaultUsageEntryDto {
+  name: string;
+  referenceCount: number;
+  referencedBy: string[];
+  duplicateGroupId?: string | null;
+}
+
+export interface KeyVaultUsageReportDto {
+  totalEntries: number;
+  orphanCount: number;
+  duplicateGroupCount: number;
+  entries: KeyVaultUsageEntryDto[];
+}
+
 export interface CreateKeyVaultSecretRequest {
   name: string;
   value: string;
@@ -1152,6 +1167,11 @@ export async function getSkillPackageDownloadUrl(skillPackageId: string): Promis
 
 export async function listKeyVaultSecrets(): Promise<KeyVaultSecretDto[]> {
   return request('/api/keyvault/secrets', { method: 'GET' });
+}
+
+/** 每条密钥被哪些配置引用、是不是孤儿、有没有同值重复。不含密钥值。 */
+export async function getKeyVaultUsage(): Promise<KeyVaultUsageReportDto> {
+  return request('/api/keyvault/usage', { method: 'GET' });
 }
 
 export async function createKeyVaultSecret(

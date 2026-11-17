@@ -1,7 +1,8 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Abstractions;
 using PuddingPlatform.Data.Dtos;
+using PuddingPlatform.Services;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -16,6 +17,7 @@ namespace PuddingPlatform.Controllers.Api;
 [Route("api/keyvault")]
 public class KeyVaultController(
     IKeyVaultService keyVaultService,
+    IKeyVaultUsageInspector usageInspector,
     ILogger<KeyVaultController> logger) : ControllerBase
 {
     [HttpPost("secrets")]
@@ -48,6 +50,27 @@ public class KeyVaultController(
     {
         var list = await keyVaultService.ListSecretsAsync(ct);
         return Ok(list.Select(ToDto).ToList());
+    }
+
+    /// <summary>
+    /// 使用情况：每条密钥被哪些配置引用、是不是没人引用的死条目、有没有和别的条目同值。
+    /// 只读，不返回任何密钥值，也不返回它们的哈希。
+    /// </summary>
+    [HttpGet("usage")]
+    public async Task<ActionResult<KeyVaultUsageReportDto>> Usage(CancellationToken ct)
+    {
+        var report = await usageInspector.BuildAsync(ct);
+        return Ok(new KeyVaultUsageReportDto(
+            report.TotalEntries,
+            report.OrphanCount,
+            report.DuplicateGroupCount,
+            report.Entries
+                .Select(static e => new KeyVaultUsageEntryDto(
+                    e.Name,
+                    e.ReferenceCount,
+                    e.ReferencedBy.ToList(),
+                    e.DuplicateGroupId))
+                .ToList()));
     }
 
     /// <summary>

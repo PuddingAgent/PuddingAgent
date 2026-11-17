@@ -31,9 +31,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createKeyVaultSecret,
   deleteKeyVaultSecret,
+  getKeyVaultUsage,
   listKeyVaultSecrets,
   updateKeyVaultSecret,
   type KeyVaultSecretDto,
+  type KeyVaultUsageEntryDto,
 } from '@/services/platform/api';
 import { formatCreatedAt } from './createdAt';
 
@@ -85,12 +87,23 @@ const KeyVaultPage: React.FC = () => {
   // 每敲一个字就往返一次接口既慢又无谓（当前条目量级为几十条）。
   const [keyword, setKeyword] = useState('');
   const [rows, setRows] = useState<KeyVaultSecretDto[]>([]);
+  const [usage, setUsage] = useState<Record<string, KeyVaultUsageEntryDto>>({});
+  const [usageSummary, setUsageSummary] = useState({ orphan: 0, duplicate: 0 });
   const [loading, setLoading] = useState(false);
 
   const reloadRows = useCallback(async () => {
     setLoading(true);
     try {
-      setRows(await listKeyVaultSecrets());
+      const [list, report] = await Promise.all([
+        listKeyVaultSecrets(),
+        // 使用情况是附加信息：拉不到不应该让整个列表变成空白。
+        getKeyVaultUsage().catch(() => null),
+      ]);
+      setRows(list);
+      if (report) {
+        setUsage(Object.fromEntries(report.entries.map((e) => [e.name, e])));
+        setUsageSummary({ orphan: report.orphanCount, duplicate: report.duplicateGroupCount });
+      }
     } finally {
       setLoading(false);
     }
@@ -260,6 +273,32 @@ const KeyVaultPage: React.FC = () => {
     // 「密钥值」整列只是八个圆点（列表接口本就不返回明文，页头已说明），
     // 「占位符」与「名称」是同一段文字套壳 ⇒ 两列都撤掉，复制按钮并入名称列。
     {
+      title: '被引用',
+      width: 140,
+      render: (_, record) => {
+        const u = usage[record.name];
+        if (!u) return <Typography.Text type="secondary">—</Typography.Text>;
+        return (
+          <Space size={4} wrap>
+            {u.referenceCount === 0 ? (
+              <Tooltip title="没有任何配置引用它，改它不会影响任何行为。">
+                <Tag color="red" style={{ fontSize: 10 }}>孤儿</Tag>
+              </Tooltip>
+            ) : (
+              <Tooltip title={u.referencedBy.join('\n')}>
+                <Tag color="green" style={{ fontSize: 10 }}>{u.referenceCount} 处</Tag>
+              </Tooltip>
+            )}
+            {u.duplicateGroupId ? (
+              <Tooltip title="与另一条密钥的值完全相同。它们是两条独立条目，改一条不会同步另一条。">
+                <Tag color="purple" style={{ fontSize: 10 }}>重复</Tag>
+              </Tooltip>
+            ) : null}
+          </Space>
+        );
+      },
+    },
+    {
       title: '标签',
       width: 150,
       ellipsis: true,
@@ -326,6 +365,16 @@ const KeyVaultPage: React.FC = () => {
         dataSource={filteredRows}
         pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: true }}
         toolBarRender={() => [
+          usageSummary.orphan > 0 ? (
+            <Tooltip key="orphan" title="没有任何配置引用的条目：改了也不会生效，可以清理。">
+              <Tag color="red">孤儿 {usageSummary.orphan}</Tag>
+            </Tooltip>
+          ) : null,
+          usageSummary.duplicate > 0 ? (
+            <Tooltip key="dup" title="有两条以上密钥值完全相同，但它们彼此独立，容易漂移。">
+              <Tag color="purple">同值重复 {usageSummary.duplicate} 组</Tag>
+            </Tooltip>
+          ) : null,
           <Input.Search
             key="search"
             allowClear
