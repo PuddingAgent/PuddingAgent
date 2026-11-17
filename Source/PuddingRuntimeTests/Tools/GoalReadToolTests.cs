@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntimeTests.Tools;
@@ -151,5 +151,70 @@ public sealed class GoalReadToolTests
         {
             if (File.Exists(tmpFile)) File.Delete(tmpFile);
         }
+    }
+
+    /// <summary>
+    /// 结构化 GoalRun 必须自报“我是事实来源”，并把 phase / 轮次 / revision / blocker 一次给全；
+    /// 否则模型只能靠 goal.md 里的自由文本推测状态——那正是当日误判的成因。
+    /// </summary>
+    [TestMethod]
+    public void FormatGoalRun_DeclaresAuthorityAndCarriesState()
+    {
+        var snapshot = new PuddingCode.Goals.GoalSnapshot
+        {
+            GoalRunId = "gr-77",
+            WorkspaceId = "default",
+            ConversationId = "conv-1",
+            AgentInstanceId = "agent-1",
+            Objective = "ship it",
+            ObjectiveVersion = 2,
+            Phase = PuddingCode.Goals.GoalPhase.Blocked,
+            BlockedCode = "budget_exhausted",
+            BlockedMessage = "no rounds left",
+            MaxIterations = 12,
+            IterationsStarted = 5,
+            IterationsSettled = 4,
+            ActivationEpoch = 3,
+            AggregateVersion = 7,
+            CreatedAtUtc = DateTimeOffset.UnixEpoch,
+            UpdatedAtUtc = DateTimeOffset.UnixEpoch,
+        };
+
+        var text = GoalReadTool.FormatGoalRun(snapshot);
+
+        StringAssert.Contains(text, "权威");
+        StringAssert.Contains(text, "id=gr-77");
+        StringAssert.Contains(text, "phase=Blocked");
+        StringAssert.Contains(text, "轮次=5/12");
+        StringAssert.Contains(text, "revision=7");
+        StringAssert.Contains(text, "budget_exhausted: no rounds left");
+        StringAssert.Contains(text, "不是事实来源");
+    }
+
+    [TestMethod]
+    public void FormatGoalRun_WithoutBlocker_RendersDashNotEmptySlot()
+    {
+        var snapshot = new PuddingCode.Goals.GoalSnapshot
+        {
+            GoalRunId = "gr-78",
+            WorkspaceId = "default",
+            ConversationId = "conv-1",
+            AgentInstanceId = "agent-1",
+            Objective = "ship it",
+            ObjectiveVersion = 1,
+            Phase = PuddingCode.Goals.GoalPhase.Active,
+            MaxIterations = 8,
+            IterationsStarted = 0,
+            IterationsSettled = 0,
+            ActivationEpoch = 1,
+            AggregateVersion = 1,
+            CreatedAtUtc = DateTimeOffset.UnixEpoch,
+            UpdatedAtUtc = DateTimeOffset.UnixEpoch,
+        };
+
+        var text = GoalReadTool.FormatGoalRun(snapshot);
+
+        StringAssert.Contains(text, "blocker=-");
+        StringAssert.Contains(text, "next=-");
     }
 }

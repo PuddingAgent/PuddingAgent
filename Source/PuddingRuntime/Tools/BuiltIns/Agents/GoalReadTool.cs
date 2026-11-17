@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Serialization;
 using PuddingCode.Configuration;
+using PuddingCode.Goals;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -30,20 +31,72 @@ public sealed class GoalReadTool : PuddingToolBase<GoalReadArgs, GoalReadResult>
 
     private readonly PuddingDataPaths _paths;
     private readonly ILogger<GoalReadTool> _logger;
+    private readonly IGoalQueryService? _goalQuery;
 
-    public GoalReadTool(PuddingDataPaths paths, ILogger<GoalReadTool> logger)
+    public GoalReadTool(
+        PuddingDataPaths paths,
+        ILogger<GoalReadTool> logger,
+        IGoalQueryService? goalQuery = null)
     {
         _paths = paths;
         _logger = logger;
+        _goalQuery = goalQuery;
     }
 
-    protected override Task<GoalReadResult> ExecuteCoreAsync(
+    protected override async Task<GoalReadResult> ExecuteCoreAsync(
         GoalReadArgs args, ToolExecutionContext context, CancellationToken ct)
     {
         var agentInstanceId = context.AgentInstanceId ?? "";
         var workspaceId = context.WorkspaceId ?? "default";
-        var result = ReadGoalFile(agentInstanceId, workspaceId);
-        return Task.FromResult(result);
+        var note = ReadGoalFile(agentInstanceId, workspaceId);
+
+        // 结构化 GoalRun 是状态的事实来源；goal.md 只是附注。
+        // 取不到（未接线 / 无会话身份 / 无活动 Goal）时原样返回附注，不编造状态。
+        var conversationId = context.ExecutionIdentity?.ConversationId;
+        if (_goalQuery is null || string.IsNullOrWhiteSpace(conversationId))
+            return note;
+
+        try
+        {
+            var snapshot = await _goalQuery.GetActiveAsync(workspaceId, conversationId, ct);
+            if (snapshot is null)
+                return note;
+
+            return note with
+            {
+                GoalRun = FormatGoalRun(snapshot),
+                GoalRunId = snapshot.GoalRunId,
+                Phase = snapshot.Phase.ToString(),
+                IterationsStarted = snapshot.IterationsStarted,
+                MaxIterations = snapshot.MaxIterations,
+                AggregateVersion = snapshot.AggregateVersion,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "[GoalRead] Failed to read goal run snapshot workspace={Workspace} conversation={Conversation}",
+                workspaceId,
+                conversationId);
+            return note;
+        }
+    }
+
+    /// <summary>
+    /// 把 GoalRun 快照渲染成一段给模型看的文本。
+    /// 必须把「谁是事实来源」写在第一行：当日已经出现过按 goal.md 里的过期条目做规划的事故。
+    /// </summary>
+    internal static string FormatGoalRun(GoalSnapshot snapshot)
+    {
+        var blocker = string.IsNullOrWhiteSpace(snapshot.BlockedMessage)
+            ? (string.IsNullOrWhiteSpace(snapshot.BlockedCode) ? "-" : snapshot.BlockedCode)
+            : $"{snapshot.BlockedCode}: {snapshot.BlockedMessage}";
+        var next = string.IsNullOrWhiteSpace(snapshot.LastNextAction) ? "-" : snapshot.LastNextAction;
+        return $"[goal_run · 权威] id={snapshot.GoalRunId} phase={snapshot.Phase} "
+            + $"轮次={snapshot.IterationsStarted}/{snapshot.MaxIterations} "
+            + $"revision={snapshot.AggregateVersion} blocker={blocker} next={next}\n"
+            + "（goal.md 内容是人类可读附注，不是事实来源；状态、轮次、阻塞以上一行为准。）\n\n";
     }
 
     private GoalReadResult ReadGoalFile(string agentInstanceId, string workspaceId)
@@ -193,4 +246,29 @@ public sealed record GoalReadResult
     [JsonPropertyName("message")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Message { get; init; }
+
+    /// <summary>结构化 GoalRun 渲染块；无活动 Goal 时为 null。</summary>
+    [JsonPropertyName("goal_run")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? GoalRun { get; init; }
+
+    [JsonPropertyName("goal_run_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? GoalRunId { get; init; }
+
+    [JsonPropertyName("phase")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Phase { get; init; }
+
+    [JsonPropertyName("iterations_started")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? IterationsStarted { get; init; }
+
+    [JsonPropertyName("max_iterations")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MaxIterations { get; init; }
+
+    [JsonPropertyName("aggregate_version")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? AggregateVersion { get; init; }
 }
