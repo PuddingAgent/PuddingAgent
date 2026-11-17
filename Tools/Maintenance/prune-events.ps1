@@ -45,7 +45,8 @@ param(
     [string]$CutoffUtc = '2026-10-18',
     [int]$BatchSize = 20000,
     [int]$MaxBatches = 20000,
-    [switch]$Apply
+    [switch]$Apply,
+    [switch]$ForceUsagePrune
 )
 
 $ErrorActionPreference = 'Stop'
@@ -112,6 +113,34 @@ foreach ($t in $tables) {
 
     $total = Invoke-ScalarLong $conn ("SELECT COUNT(*) FROM ""{0}""" -f $name) $null
     $old = Invoke-ScalarLong $conn ("SELECT COUNT(*) FROM ""{0}"" WHERE ""{1}"" < `$cut" -f $name, $col) $CutoffUtc
+
+    # Cost history guard.
+    # llm_usage_daily_aggregates is filled LAZILY: a finished UTC day is aggregated
+    # only when a report is first queried for it (TokenUsageDailyAggregateService).
+    # Deleting usage detail rows for a day that was never aggregated destroys the
+    # cost history permanently, because the aggregate is computed FROM those rows.
+    if (($name -eq 'llm_gateway_usage_events' -or $name -eq 'TokenUsageEvents') -and $old -gt 0) {
+        $uncoveredSql = "SELECT DISTINCT substr(""$col"",1,10) FROM ""$name"" WHERE ""$col"" < `$cut " +
+                        "EXCEPT SELECT DISTINCT day_utc FROM llm_usage_daily_aggregates ORDER BY 1"
+        $cmdU = $conn.CreateCommand()
+        $cmdU.CommandText = $uncoveredSql
+        [void]$cmdU.Parameters.AddWithValue('$cut', $CutoffUtc)
+        $rdrU = $cmdU.ExecuteReader()
+        $uncovered = @()
+        while ($rdrU.Read()) { $uncovered += $rdrU.GetString(0) }
+        $rdrU.Close()
+
+        if ($uncovered.Count -gt 0) {
+            $preview = ($uncovered | Select-Object -First 5) -join ', '
+            if ($uncovered.Count -gt 5) { $preview += ', ...' }
+            Write-Output ("[GUARD] {0}: {1} day(s) have usage rows but no daily aggregate ({2})" -f $name, $uncovered.Count, $preview)
+            if ($Apply -and -not $ForceUsagePrune) {
+                Write-Output ("[REFUSE] {0}: deleting these rows would make their cost uncomputable forever. " -f $name +
+                              "Open the usage report once so the aggregate is built, or pass -ForceUsagePrune.")
+                continue
+            }
+        }
+    }
 
     $grandTotal += $total
 
