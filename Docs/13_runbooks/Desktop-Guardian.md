@@ -2,7 +2,7 @@
 title: Desktop Guardian 运行手册
 author: hyfree
 date: 2026-10-26
-last_reviewed: 2026-11-03
+last_reviewed: 2026-11-17
 status: active
 description: 独立守护进程通过本地认证 HTTP 编译和重启 Desktop/Core，并在健康检查失败时回滚程序集。
 categories: [docs, runbooks]
@@ -15,7 +15,9 @@ draft: false
 
 # Desktop Guardian 运行手册
 
-Desktop 随包携带 `guardian/PuddingDesktop.Guardian.exe`，启动时自动拉起独立守护进程。Guardian 接收编译/重启命令、检查 Shell 与 Core、管理程序集回滚；Desktop 仍直接启动 `core/PuddingAgent.exe --desktop-child`。进程间只使用本地协议，不共享程序集引用或数据库访问权。
+Desktop 随包携带 `guardian/PuddingDesktop.Guardian.exe`。用户仍从 Desktop 进入：首个窗口建立控制端点并拉起 Guardian，然后通过 `launch` 交接；Guardian 关闭这个临时 Desktop，再创建带 `--guardian-managed` 的正式 Desktop。正式进程树为 **Guardian → Desktop → Core**，仅正式 Desktop 按配置自动启动 `core/PuddingAgent.exe --desktop-child`。Guardian 接收编译/重启命令、检查 Shell 与 Core、管理程序集回滚；进程间只使用本地协议，不共享业务程序集或数据库访问权。
+
+普通关闭窗口按关闭策略隐藏到托盘。托盘菜单或运行中心的“退出 Pudding”、窗口关闭退出策略，向 Guardian 排队提交 `exit`；更新中的请求会等待当前事务完成或回滚。随后依次 **停止 Core → 关闭 Desktop → Guardian 保存退出完成状态并释放租约退出**。等待期间不重复提交，失败保留窗口和运行中心供修复。Guardian 的内部关闭通知不会递归提交新的退出请求。
 
 ## 配置与启动
 
@@ -40,7 +42,7 @@ Desktop 随包携带 `guardian/PuddingDesktop.Guardian.exe`，启动时自动拉
 
 示例仓库路径应替换为实际路径，也可以省略让 Desktop 向上查找。没有源码的安装使用 `prebuilt-artifact`；源码构建需要 .NET SDK，前端构建还需要已安装的 pnpm 依赖。Desktop Debug 模式必须关闭，Core 路径必须位于当前 Desktop 程序包内。Guardian 配置改动在下一次 Guardian 启动时生效。
 
-Desktop 从自身实际路径、DataRoot 和该配置生成 `<DesktopHome>/guardian.json`。可由进程外控制器直接执行 `guardian/PuddingDesktop.Guardian.exe --config <DesktopHome>/guardian.json`；`--adopt-pid <pid>` 只能接管路径匹配的 Desktop。`guardian.lock` 是独占文件句柄租约，不删除锁文件绕过互斥。
+Desktop 从自身实际路径、DataRoot 和该配置生成 `<DesktopHome>/guardian.json`。可由进程外控制器直接执行 `guardian/PuddingDesktop.Guardian.exe --config <DesktopHome>/guardian.json`；`--adopt-pid <pid>` 只能接管路径匹配的 Desktop。用户全新启动时加 `--resume` 清除上一次应用退出意图；恢复、重启和升级接管不加此参数。`guardian.lock` 是独占文件句柄租约，不删除锁文件绕过互斥。
 
 初次安装本功能或更新 Guardian 自身，需要外部部署：先退出 Desktop/Core，停止对应 Guardian，部署完整发布包，再启动 Desktop。后续 Desktop/Core 更新即可由 Guardian 完成。Guardian 目录从更新/回滚清单中排除，不支持运行中的自我替换。
 
@@ -73,11 +75,13 @@ X-Control-Token: <从配置读取，勿输出>
 | `action=build` | 只准备候选包，状态 `built` 的 `preparedDirectory` 可用于后续部署 |
 | `action=build-restart` | 默认构建并部署；`deploymentMode=prebuilt-artifact` 使用 `artifactDirectory`，`restart-only` 只重启 |
 | `action=restart/start/stop` | 不替换程序集的生命周期操作；stop 停止自动恢复 |
+| `action=launch,target=desktop` | 首次窗口交接给 Guardian，创建正式 Desktop；遵守 `core.autoStart=false`，此时仅验收 Shell 就绪并保持 Core 停止 |
+| `action=exit,target=desktop` | 退出整个应用；忙碌时持久排队，完成当前事务后按 Core、Desktop、Guardian 顺序退出；仅停止 Core 仍使用 stop |
 | `action=rollback` | 恢复最近部署的备份；有未完成事务时优先恢复该事务，重启整个 Desktop/Core 对以保证一致性 |
 | `artifactAssemblySha256` | 可选，校验 Core 的 `PuddingAgent.dll` 或 Desktop 的 `PuddingDesktop.dll` |
 | `frontendMode=skip/build/load` | skip 使用当前 Core 的静态前端；build 用 pnpm 构建到隔离目录；load 用 `frontendArtifactDirectory`，可加 `frontendArtifactIndexSha256`；build/load 仅用于源码 build/build-restart |
 
-`GET /guardian/status` 使用同一认证头，返回当前/最近请求的 `requestId`、`phase`、`busy`、`error`、候选目录和备份是否存在。202 是接受，200 可为相同最近请求的幂等重试；不同请求忙碌或同 ID 不同内容返回 409。每次新操作生成 UUID；只重试最近的完全相同请求时复用 ID。服务不保留无限历史账本。
+`GET /guardian/status` 使用同一认证头，返回当前/最近请求的 `requestId`、`phase`、`busy`、`error`、候选目录和备份是否存在。退出排队时另有 `exiting=true` 与 `exitRequestId`，不覆盖正在部署的请求 ID。202 是接受，200 可为相同最近请求的幂等重试；普通请求忙碌、退出期间新操作、同 ID 不同内容返回 409。每次新操作生成 UUID；相同退出请求用原 ID 重试。退出失败最多自动尝试三次，保留 Guardian 与错误状态；修复后可用新的退出请求 ID 重试。服务不保留无限历史账本。
 
 ## 健康检查与回滚
 
@@ -91,7 +95,9 @@ Desktop 内部 `GET /desktop/guardian/health` 必须完成 UI dispatcher 往返�
 
 保留当前回滚快照及最近两份不再引用的快照；未完成事务不清理。备份仅含程序集/资源，**不含 DataRoot，不恢复数据库或用户配置**。若升级改变数据库且旧程序集不能读取，需要另行处理数据；守护进程不擅自重置或覆盖用户数据。
 
-主动停止、托盘退出、窗口关闭退出策略、Windows 注销不自动复活。之后手动启动到健康可重新启用监督。初次 Guardian 可能由 Desktop 启动，因此强制停止 Shell 时只终止已验证的 Shell 本身，再单独停止已验证的 Core；不会杀死包含 Guardian 的整棵 Desktop 进程树。
+主动停止 Core 保留 Shell/Guardian，不自动复活；之后手动启动到健康可重新启用监督。全应用退出持久记录完成意图，不因 Guardian 被误重启而复活产品；用户重新打开 Desktop 才重新启用。Windows 注销及旧 Shell 日志中的明确退出意图也会触发全应用清理。停止时先请求并等待 Core，再请求和等待 Shell；超时只终止 PID、启动时间和路径仍匹配的自有进程，绝不杀死整棵 Desktop 进程树。
+
+定向退出验收使用 `TestScripts/test-pudding-guardian-exit.ps1 -DesktopExe <.work 下隔离程序包> [-WaitForTrayExit]`，自动创建独立 DesktopHome、DataRoot 和端口；检查父关系、Core 单独停止、全应用退出和重新启动。带 `-WaitForTrayExit` 时输出 ready.json 后等待实际托盘点击，再核验外部退出时间与 DataRoot 租约。测试失败证据保留在 `.work/guardian-exit/`，不访问当前业务数据。
 
 ## 诊断与验收
 

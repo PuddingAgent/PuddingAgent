@@ -96,6 +96,7 @@ public sealed partial class DesktopApplicationCoordinator : IAsyncDisposable
     public async Task StartAsync(string[] args, CancellationToken cancellationToken)
     {
         _guardianStartHidden = args.Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));
+        _guardianChild = args.Any(arg => string.Equals(arg, "--guardian-managed", StringComparison.OrdinalIgnoreCase));
         _lifetimeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         _mainWindow = new MainWindow(this);
@@ -136,6 +137,17 @@ public sealed partial class DesktopApplicationCoordinator : IAsyncDisposable
         _guardianConfig = systemResult.Config.Desktop.Guardian;
         StartBootstrapServices(dataRoot, systemResult.Config.Desktop.Bootstrap, _lifetimeCts.Token);
         await EnsureGuardianAsync(dataRoot, systemResult.Config.Desktop, _lifetimeCts.Token);
+
+        if (_guardianManaged && !_guardianChild)
+        {
+            try { await HandOffToGuardianAsync(_lifetimeCts.Token); }
+            catch (Exception ex)
+            {
+                DesktopDiagnosticLog.Write("GuardianHandoff", ex);
+                TransitionTo(DesktopStartupState.CoreFailed, error: ex.Message);
+            }
+            return; // Guardian creates the lasting Desktop; that child alone starts Core.
+        }
 
         if (systemResult.Config.Desktop.Core.AutoStart)
             _ = TryStartCoreAsync(_lifetimeCts.Token);

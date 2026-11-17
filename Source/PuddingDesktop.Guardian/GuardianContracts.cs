@@ -62,8 +62,10 @@ public sealed record GuardianCommand
     public void Validate()
     {
         if (!Guid.TryParse(RequestId, out _)) throw new ArgumentException("requestId must be a UUID.");
-        if (Action is not ("build-restart" or "build" or "restart" or "rollback" or "start" or "stop"))
+        if (Action is not ("build-restart" or "build" or "restart" or "rollback" or "start" or "stop" or "exit" or "launch"))
             throw new ArgumentException("Unsupported action.");
+        if (Action == "exit" && Target != "desktop") throw new ArgumentException("exit targets the whole desktop application.");
+        if (Action == "launch" && Target != "desktop") throw new ArgumentException("launch establishes Guardian ownership of Desktop.");
         if (Target is not ("core" or "desktop")) throw new ArgumentException("target must be core or desktop (includes Core).");
         if (DeploymentMode is not ("desktop-build" or "prebuilt-artifact" or "restart-only"))
             throw new ArgumentException("Unsupported deploymentMode.");
@@ -79,13 +81,15 @@ public sealed record GuardianCommand
 }
 
 public sealed record ProcessIdentity(int Id, DateTime StartTimeUtc, string ExecutablePath);
-public sealed record GuardianHealth(bool DesktopHealthy, bool CoreHealthy, bool IntentionalStop = false, string? Reason = null)
+public sealed record GuardianHealth(bool DesktopHealthy, bool CoreHealthy, bool IntentionalStop = false, string? Reason = null,
+    bool ApplicationExitRequested = false)
 {
     public bool Healthy => DesktopHealthy && CoreHealthy && !IntentionalStop;
 }
 public sealed record ArtifactFile(string Path, string Sha256);
 public sealed record ArtifactSnapshot(string Directory, string Target, IReadOnlyList<ArtifactFile> Files);
 public sealed record PendingDeployment(ArtifactSnapshot Backup, ArtifactSnapshot Candidate);
+public sealed record GuardianExitRequest(string RequestId, string Fingerprint, int Attempts = 0, bool Completed = false);
 public sealed record GuardianState
 {
     public string Phase { get; init; } = "starting";
@@ -98,6 +102,7 @@ public sealed record GuardianState
     public ArtifactSnapshot? Fallback { get; init; }
     public ProcessIdentity? Desktop { get; init; }
     public ProcessIdentity? Core { get; init; }
+    public GuardianExitRequest? ExitRequest { get; init; }
     public DateTimeOffset UpdatedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 
@@ -108,7 +113,7 @@ public interface IGuardianRuntime
     Task<GuardianHealth> ProbeAsync(CancellationToken ct);
     Task<string> PrepareAsync(GuardianCommand command, CancellationToken ct);
     Task StopAsync(string target, CancellationToken ct);
-    Task StartAsync(string target, bool yolo, CancellationToken ct);
+    Task StartAsync(string target, bool yolo, CancellationToken ct, bool respectAutoStart = false);
 }
 
 public static class GuardianJson

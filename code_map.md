@@ -243,7 +243,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | 层 / 项目 | 符号 | 一句话作用 |
 |----------|------|----------|
 | `Desktop → Core` | `PuddingDesktop/Hosting` → `PuddingHost/Hosting` | Shell 以子进程点火 Core：`STARTING`（每 5s 带协议/PID/序号）→ 全部 hosted service 就绪后 `READY` |
-| `bootstrap_reboot → Guardian → Desktop → Core` | `PuddingRuntime/Tools/BuiltIns/Management/BootstrapRebootTool.cs` → `PuddingDesktop.Guardian` → `PuddingDesktop/Hosting/DesktopApplicationCoordinator.Guardian.cs` | 独立进程先构建候选，认证 HTTP 控制停止/启动，UI 响应与 readiness 稳定验收；快照排除 Core 安装根下运行数据，失败恢复旧包，不回滚用户数据 |
+| `bootstrap_reboot → Guardian → Desktop → Core` | `PuddingRuntime/Tools/BuiltIns/Management/BootstrapRebootTool.cs` → `PuddingDesktop.Guardian` → `PuddingDesktop/Hosting/DesktopApplicationCoordinator.Guardian.cs` | 首次窗口交接后由 Guardian 创建正式 Desktop，Desktop 创建 Core；独立构建、认证控制与稳定验收。全应用退出排队等待事务结束，按 Core → Desktop → Guardian 退出；仅停止 Core 保留主管 |
 | `Core 组合根` | `Source/PuddingHost/` | HTTP 宿主、本机控制地址、Browser Bridge、飞书连接器的装配起点 |
 | `SDK / JWT 管理入口 → 单轮执行` | `IAgentWorkApi` → `AgentWorkService` → `CanonicalAgentWorkBackend` → `ISubmitTurnHandler` | 复用原子受理与 worker；以操作 ID 查回确切 Turn/Command 的终态，不创建另一套 Work 状态 |
 | `入口薄壳` | `Source/PuddingAgent/Program.cs` | Console 与 DesktopChild 两种模式分派；Console 只用于开发/诊断 |
@@ -290,7 +290,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 | `TestScripts/BrowserDeliveryReview/` | 浏览器任务授权、原租约复检、完整请求去重及子代理身份的行为回归；[README](TestScripts/BrowserDeliveryReview/README.md) 说明显式注入与迁入常规套件的方式 |
 | `Tests/PuddingDesktop.Tests/` · `Tests/PuddingHost.Tests/` · `Tests/PuddingBrowser.AgentTools.Tests/` | Desktop 进程与配置、调试模式（路由/反向代理/SSE/WS）· Bridge Endpoint · 七项 Agent Tools |
 | `Tests/PuddingDesktop.Diagnostics.Tests/` | 独立现场组件：退出分类、脱敏、文件容量、保留策略、写入失败与补录 |
-| `Source/PuddingDesktop.GuardianTests/` · `Tests/PuddingDesktop.GuardianIntegrationTests/` · `TestScripts/test-pudding-guardian.ps1` | Guardian 独立事务/认证测试 · 真实 WinUI 控制端点 · 隔离产品的构建/故障注入/回滚/停止验收；[运行手册](Docs/13_runbooks/Desktop-Guardian.md) |
+| `Source/PuddingDesktop.GuardianTests/` · `Tests/PuddingDesktop.GuardianIntegrationTests/` · `TestScripts/test-pudding-guardian.ps1` · `TestScripts/test-pudding-guardian-exit.ps1` | 独立状态机与认证测试、真实 WinUI 控制端点、隔离产品的部署/回滚、父进程关系与全应用退出顺序验收；[运行手册](Docs/13_runbooks/Desktop-Guardian.md) |
 | `Tests/PuddingAgent.IntegrationTests/` · `Tests/PuddingNativeChat.IntegrationTests/` · `Tests/e2e/` · `TestScripts/` · `Tests/PuddingBrowser.TestSite/` | 集成测试 · 端到端脚本 · 生命周期/部署/smoke/性能探针 · 测试站点与门禁脚本（见下「关键语义」） |
 | `TestScripts/verify-retrieval-delivery.ps1` · `TestScripts/verify-fulltext-incremental-latency.ps1` · `TestScripts/sample-host-io-shape.ps1` · `TestScripts/correlate-host-read-io.ps1` · `TestScripts/measure-retrieval-resources.ps1` | 检索交付验收三件套（2026-10-28）：**部署门禁**（进程新鲜度 + 程序集 token 双编码探 + 正负对照 + SUSPECT 判据 + 配置）；**G2 增量延迟**（PASS/FAIL/**INCONCLUSIVE** 三态，不把「没跑」写成「不达标」）；**宿主资源/IO 采样**（稳定/突发判形，采样循环不递归扫盘） |
 | `TestScripts/watch-read-io-anomaly.ps1` · `TestScripts/verify-storage-vacuum-readiness.ps1` · `TestScripts/swap-compacted-platform-db.ps1` · `TestScripts/probe-read-io-shape.ps1` | 宿主读 IO 异常捕获与存储回收（2026-10-28）：**异常现场捕获**（超阈值当场写 MBps / ops / blockBytes / priv / user / privateDropMB / shape，退出码 3 表示抓到；`blockBytes≠4096` 追加 `BLOCK-NOT-4096`，表示那是另一个现象、不得混谈）；**VACUUM 可行性预检**（READY / BLOCKED / UNKNOWN 三态，只读，BLOCKED 属正常态）；**停机窗口换库**（VACUUM INTO → 设 INCREMENTAL → 恢复 WAL → 全量校验 → rename 备份 → 换入 → 复检；每步失败都明确"什么都没替换"，并打印回滚命令）；**读 IO 形态采样**（按 4096 字节/页判 PAGE-READ / BULK-READ / MIXED） |

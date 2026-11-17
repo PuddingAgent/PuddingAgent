@@ -11,6 +11,7 @@ public sealed class GuardianController
     private readonly GuardianStore _store;
     private readonly IGuardianRuntime _runtime;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _stateSync = new();
     private readonly TimeProvider _time;
     private readonly Queue<DateTimeOffset> _recoveries = new();
     private GuardianState _state;
@@ -31,23 +32,48 @@ public sealed class GuardianController
     }
     public GuardianState State => Volatile.Read(ref _state);
     public bool Busy => _gate.CurrentCount == 0;
+    public bool ShouldExit => State.ExitRequest?.Completed == true;
     public Task? RunningOperation { get; private set; }
+
+    // Only an explicit fresh Desktop launch re-arms a previously exited installation.
+    public void ResumeAfterUserLaunch()
+    {
+        lock (_stateSync)
+            if (State.ExitRequest is not null)
+                Write(State with { ExitRequest = null, Phase = "starting", Monitoring = true, Error = null }, replaceExit: true);
+    }
 
     public string Submit(GuardianCommand command, CancellationToken lifetime)
     {
         command.Validate();
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(command, GuardianJson.Options))));
-        if (State.RequestId == command.RequestId)
-            return State.RequestFingerprint == fingerprint ? "duplicate" : "conflict";
-        if (!_gate.Wait(0)) return "busy";
-        try
+        lock (_stateSync)
         {
-            if (State.Pending is not null && command.Action != "rollback") throw new InvalidOperationException("An interrupted deployment must be recovered first.");
-            Write(State with { RequestId = command.RequestId, RequestFingerprint = fingerprint, Phase = "accepted", Error = null });
-            RunningOperation = RunAcceptedAsync(command, lifetime);
-            return "accepted";
+            if (command.Action == "exit")
+            {
+                if (State.RequestId == command.RequestId) return "conflict";
+                if (State.ExitRequest is { } exit)
+                {
+                    if (exit.RequestId == command.RequestId) return exit.Fingerprint == fingerprint ? "duplicate" : "conflict";
+                    if (exit.Completed || exit.Attempts < 3) return "shutting-down";
+                }
+                // Queue durably even during a build. The actor drains it after the current transaction.
+                Write(State with { ExitRequest = new(command.RequestId, fingerprint) }, replaceExit: true);
+                return "accepted";
+            }
+            if (State.ExitRequest is not null) return "shutting-down";
+            if (State.RequestId == command.RequestId)
+                return State.RequestFingerprint == fingerprint ? "duplicate" : "conflict";
+            if (!_gate.Wait(0)) return "busy";
+            try
+            {
+                if (State.Pending is not null && command.Action != "rollback") throw new InvalidOperationException("An interrupted deployment must be recovered first.");
+                Write(State with { RequestId = command.RequestId, RequestFingerprint = fingerprint, Phase = "accepted", Error = null });
+                RunningOperation = RunAcceptedAsync(command, lifetime);
+                return "accepted";
+            }
+            catch { _gate.Release(); throw; }
         }
-        catch { _gate.Release(); throw; }
     }
 
     private async Task RunAcceptedAsync(GuardianCommand command, CancellationToken ct)
@@ -98,7 +124,7 @@ public sealed class GuardianController
             else await RollbackFallbackAsync(ct);
             return;
         }
-        var restartOnly = command.Action is "restart" or "start" || command.DeploymentMode == "restart-only";
+        var restartOnly = command.Action is "restart" or "start" or "launch" || command.DeploymentMode == "restart-only";
         if (!restartOnly)
         {
             Write(State with { Phase = "building" });
@@ -118,10 +144,12 @@ public sealed class GuardianController
         else if (command.Action != "start") await _runtime.StopAsync(command.Target, ct);
 
         Write(State with { Phase = "starting", Monitoring = true });
-        await _runtime.StartAsync(command.Target, command.Yolo, ct);
+        var shellOnly = command.Action == "launch" && !_settings.AutoStartCore;
+        await _runtime.StartAsync(command.Target, command.Yolo, ct, respectAutoStart: command.Action == "launch");
         Write(State); // Persist the replacement PID/start time before readiness polling.
-        await WaitHealthyAsync(ct);
-        Write(State with { Fallback = State.Pending?.Backup ?? State.Fallback, Pending = null, Phase = "healthy", Error = null });
+        await WaitHealthyAsync(ct, requireCore: !shellOnly);
+        Write(State with { Fallback = State.Pending?.Backup ?? State.Fallback, Pending = null,
+            Phase = shellOnly ? "stopped" : "healthy", Monitoring = !shellOnly, Error = null });
         _store.Prune(State);
         _failures = 0;
     }
@@ -147,14 +175,28 @@ public sealed class GuardianController
         if (!_gate.Wait(0)) return;
         try
         {
-            if (!State.Monitoring)
+            if (State.ExitRequest is { } exit)
             {
-                // A deliberate stop stays stopped. An explicit UI start or fresh Desktop launch can re-arm supervision.
-                if (State.Phase == "stopped" && (await _runtime.ProbeAsync(ct)).Healthy)
-                    Write(State with { Monitoring = true, Phase = "healthy" });
+                if (exit.Completed || exit.Attempts >= 3) return;
+                Write(State with { Phase = "exiting", Monitoring = false, Error = null,
+                    ExitRequest = exit with { Attempts = exit.Attempts + 1 } }, replaceExit: true);
+                await _runtime.StopAsync("desktop", ct);
+                Write(State with { Phase = "exited", ExitRequest = State.ExitRequest! with { Completed = true } }, replaceExit: true);
                 return;
             }
             var health = await _runtime.ProbeAsync(ct);
+            if (health.ApplicationExitRequested)
+            {
+                Submit(new GuardianCommand { Action = "exit", Target = "desktop" }, ct);
+                return;
+            }
+            if (!State.Monitoring)
+            {
+                // A deliberate stop stays stopped. An explicit UI start or fresh Desktop launch can re-arm supervision.
+                if (State.Phase == "stopped" && health.Healthy)
+                    Write(State with { Monitoring = true, Phase = "healthy" });
+                return;
+            }
             if (health.IntentionalStop)
             {
                 Write(State with { Phase = "stopped", Monitoring = false });
@@ -222,16 +264,17 @@ public sealed class GuardianController
         _store.Prune(State);
     }
 
-    private async Task WaitHealthyAsync(CancellationToken ct)
+    private async Task WaitHealthyAsync(CancellationToken ct, bool requireCore = true)
     {
         var deadline = _time.GetUtcNow().AddSeconds(_settings.StartupTimeoutSeconds);
         DateTimeOffset? since = null;
         while (_time.GetUtcNow() < deadline)
         {
             var health = await _runtime.ProbeAsync(ct);
-            if (health.IntentionalStop) throw new InvalidOperationException("Product deliberately stopped during acceptance.");
+            if (health.ApplicationExitRequested || requireCore && health.IntentionalStop)
+                throw new InvalidOperationException("Product deliberately stopped during acceptance.");
             var now = _time.GetUtcNow();
-            if (health.Healthy)
+            if (requireCore ? health.Healthy : health.DesktopHealthy)
             {
                 since ??= now;
                 if (now - since.Value >= TimeSpan.FromSeconds(_settings.StableSeconds)) return;
@@ -242,11 +285,16 @@ public sealed class GuardianController
         throw new TimeoutException("Product did not pass the stable health window.");
     }
 
-    private void Write(GuardianState state)
+    private void Write(GuardianState state, bool replaceExit = false)
     {
-        state = state with { Desktop = _runtime.Desktop, Core = _runtime.Core, UpdatedAt = _time.GetUtcNow() };
-        _store.Save(state);
-        _log?.Append($"phase={state.Phase} pending={(state.Pending is null ? "none" : "yes")} error={state.Error ?? "-"}");
-        Volatile.Write(ref _state, state);
+        lock (_stateSync)
+        {
+            // An in-flight command may hold an older snapshot when HTTP queues the exit.
+            if (!replaceExit) state = state with { ExitRequest = State.ExitRequest };
+            state = state with { Desktop = _runtime.Desktop, Core = _runtime.Core, UpdatedAt = _time.GetUtcNow() };
+            _store.Save(state);
+            _log?.Append($"phase={state.Phase} pending={(state.Pending is null ? "none" : "yes")} error={state.Error ?? "-"}");
+            Volatile.Write(ref _state, state);
+        }
     }
 }

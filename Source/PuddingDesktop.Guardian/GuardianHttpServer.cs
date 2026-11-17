@@ -45,6 +45,12 @@ public sealed class GuardianHttpServer(GuardianSettings settings, GuardianContro
         }
     }
 
+    public async Task DrainAsync(CancellationToken ct)
+    {
+        // Finish accepted HTTP receipts before the process releases its installation lease.
+        for (var i = 0; i < 16; i++) await _requests.WaitAsync(ct);
+    }
+
     private async Task HandleAsync(HttpListenerContext context, CancellationToken lifetime)
     {
         try
@@ -61,7 +67,8 @@ public sealed class GuardianHttpServer(GuardianSettings settings, GuardianContro
                 await ReplyAsync(context, 200, new { protocol = "pudding.guardian/1", processId = Environment.ProcessId,
                     state.Phase, state.Monitoring, busy = controller.Busy, state.RequestId, state.Error, state.PreparedDirectory,
                     settings.DesktopExecutablePath, settings.DataRoot, settings.DesktopHome,
-                    hasFallback = state.Fallback is not null, pending = state.Pending is not null, state.UpdatedAt });
+                    hasFallback = state.Fallback is not null, pending = state.Pending is not null,
+                    exitRequestId = state.ExitRequest?.RequestId, exiting = state.ExitRequest is not null, state.UpdatedAt });
                 return;
             }
             if (request.HttpMethod != "POST" || request.Url?.AbsolutePath != "/guardian/commands")

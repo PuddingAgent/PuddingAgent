@@ -16,6 +16,8 @@ public sealed partial class DesktopApplicationCoordinator
     private PuddingDesktopGuardianConfig _guardianConfig = new();
     private bool _guardianManaged;
     private bool _guardianStartHidden;
+    private bool _guardianChild;
+    public bool GuardianManaged => _guardianManaged;
     private static readonly JsonSerializerOptions GuardianJson = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
     private async Task EnsureGuardianAsync(string dataRoot, PuddingDesktopConfig desktop, CancellationToken ct)
@@ -55,6 +57,7 @@ public sealed partial class DesktopApplicationCoordinator
                 var info = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = AppContext.BaseDirectory };
                 info.ArgumentList.Add("--config"); info.ArgumentList.Add(configPath);
                 info.ArgumentList.Add("--adopt-pid"); info.ArgumentList.Add(Environment.ProcessId.ToString());
+                if (!_guardianChild) info.ArgumentList.Add("--resume");
                 using var process = Process.Start(info) ?? throw new IOException("Guardian process failed to start.");
                 for (var attempt = 0; attempt < 20 && !_guardianManaged; attempt++)
                 {
@@ -69,6 +72,57 @@ public sealed partial class DesktopApplicationCoordinator
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         catch (Exception ex) { DesktopDiagnosticLog.Write("GuardianStart", ex); }
+    }
+
+    private async Task HandOffToGuardianAsync(CancellationToken ct)
+    {
+        using var client = await GuardianClientAsync(ct);
+        var command = new { requestId = Guid.NewGuid().ToString("N"), action = "launch", target = "desktop" };
+        // The newly started Guardian may still be recovering its durable transaction.
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            using var response = await client.PostAsJsonAsync("/guardian/commands", command, ct);
+            if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                await Task.Delay(500, ct);
+                continue;
+            }
+            response.EnsureSuccessStatusCode();
+            DesktopDiagnosticLog.Journal?.Record("guardian_startup_handoff");
+            _mainWindow?.AppWindow.Hide();
+            return;
+        }
+        throw new InvalidOperationException("Guardian 正在处理其他操作，请稍后从运行中心重试。");
+    }
+
+    public async Task RequestGuardianExitAsync(CancellationToken ct)
+    {
+        using var client = await GuardianClientAsync(ct);
+        using var response = await client.PostAsJsonAsync("/guardian/commands", new {
+            requestId = Guid.NewGuid().ToString("N"), action = "exit", target = "desktop"
+        }, ct);
+        response.EnsureSuccessStatusCode();
+        DesktopDiagnosticLog.Journal?.Record("guardian_exit_queued");
+        // The normal guardian_restart callback closes the Shell once Core is stopped.
+        // Keep the UI alive meanwhile; a failed shutdown must leave a visible repair path.
+        var unavailable = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            await Task.Delay(1000, ct);
+            try
+            {
+                using var status = await client.GetAsync("/guardian/status", ct);
+                status.EnsureSuccessStatusCode();
+                using var json = JsonDocument.Parse(await status.Content.ReadAsStringAsync(ct));
+                unavailable = 0;
+                if (json.RootElement.GetProperty("phase").GetString() == "faulted")
+                    throw new InvalidOperationException("退出未完成，请在运行中心检查 Guardian 状态后重试。");
+            }
+            catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException && !ct.IsCancellationRequested)
+            {
+                if (++unavailable >= 3) throw new InvalidOperationException("无法确认 Guardian 已退出，请在运行中心检查并重试。", ex);
+            }
+        }
     }
 
     private async Task<HttpClient> GuardianClientAsync(CancellationToken ct)

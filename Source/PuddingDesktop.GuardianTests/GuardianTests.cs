@@ -306,6 +306,10 @@ public sealed class GuardianTests
         Assert.Equal(HttpStatusCode.Accepted, (await client.PostAsJsonAsync("/guardian/commands", command)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/guardian/commands", command)).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync("/guardian/commands", new GuardianCommand())).StatusCode);
+        var exit = new GuardianCommand { Action = "exit", Target = "desktop" };
+        Assert.Equal(HttpStatusCode.Accepted, (await client.PostAsJsonAsync("/guardian/commands", exit)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/guardian/commands", exit)).StatusCode);
+        Assert.Contains(exit.RequestId, await client.GetStringAsync("/guardian/status"));
         f.Runtime.BuildGate.SetResult();
         await f.Controller.RunningOperation!;
         lifetime.Cancel();
@@ -363,6 +367,126 @@ public sealed class GuardianTests
         Assert.Contains("phase=rolled-back", text);
     }
 
+    [Fact]
+    public async Task WholeApplicationExitIsDurableIdempotentAndStopsBeforeGuardianExits()
+    {
+        using var f = new Fixture();
+        var exit = new GuardianCommand { Action = "exit", Target = "desktop" };
+        Assert.Equal("accepted", f.Controller.Submit(exit, default));
+        Assert.Equal("duplicate", f.Controller.Submit(exit, default));
+        Assert.Equal("conflict", f.Controller.Submit(exit with { RequestedBy = "changed" }, default));
+        Assert.Equal("shutting-down", f.Controller.Submit(new(), default));
+        Assert.False(f.Controller.ShouldExit);
+        Assert.Equal(exit.RequestId, f.Store.Load().ExitRequest!.RequestId);
+        await f.Controller.TickAsync(default);
+        Assert.Equal(["desktop"], f.Runtime.Stops);
+        Assert.True(f.Controller.ShouldExit);
+        Assert.False(f.Controller.State.Monitoring);
+        Assert.Equal("exited", f.Store.Load().Phase);
+        await f.Controller.TickAsync(default);
+        Assert.Single(f.Runtime.Stops);
+    }
+
+    [Fact]
+    public async Task ExitQueuedDuringBuildWaitsForTransactionAndSurvivesItsWrites()
+    {
+        using var f = new Fixture();
+        f.Runtime.BuildGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Assert.Equal("accepted", f.Controller.Submit(new(), default));
+        var exit = new GuardianCommand { Action = "exit", Target = "desktop" };
+        Assert.Equal("accepted", f.Controller.Submit(exit, default));
+        await f.Controller.TickAsync(default);
+        Assert.Empty(f.Runtime.Stops);
+        f.Runtime.BuildGate.SetResult();
+        await f.Controller.RunningOperation!;
+        Assert.Null(f.Controller.State.Pending);
+        Assert.Equal("healthy", f.Controller.State.Phase);
+        Assert.Equal(exit.RequestId, f.Controller.State.ExitRequest!.RequestId);
+        await f.Controller.TickAsync(default);
+        Assert.Equal(["core", "desktop"], f.Runtime.Stops);
+        Assert.True(f.Controller.ShouldExit);
+    }
+
+    [Fact]
+    public async Task ExitCannotReuseTheActiveDeploymentRequestId()
+    {
+        using var f = new Fixture();
+        var build = new GuardianCommand { Action = "build" };
+        await f.Execute(build);
+        Assert.Equal("conflict", f.Controller.Submit(new() { RequestId = build.RequestId, Action = "exit", Target = "desktop" }, default));
+        Assert.Null(f.Controller.State.ExitRequest);
+    }
+
+    [Fact]
+    public async Task ManualCoreStopKeepsGuardianButTrayExitDrainsWholeApplication()
+    {
+        using var f = new Fixture();
+        f.Runtime.IntentionalStop = true;
+        await f.Controller.TickAsync(default);
+        Assert.Equal("stopped", f.Controller.State.Phase);
+        Assert.Null(f.Controller.State.ExitRequest);
+        Assert.False(f.Controller.ShouldExit);
+        f.Runtime.ApplicationExitRequested = true;
+        await f.Controller.TickAsync(default);
+        await f.Controller.TickAsync(default);
+        Assert.True(f.Controller.ShouldExit);
+        Assert.Equal(["desktop"], f.Runtime.Stops);
+    }
+
+    [Fact]
+    public async Task ExitFailureKeepsGuardianForRepairAndBoundsRetries()
+    {
+        using var f = new Fixture();
+        f.Runtime.StopFailure = true;
+        Assert.Equal("accepted", f.Controller.Submit(new() { Action = "exit", Target = "desktop" }, default));
+        for (var i = 0; i < 4; i++) await f.Controller.TickAsync(default);
+        Assert.False(f.Controller.ShouldExit);
+        Assert.Equal(3, f.Runtime.Stops.Count);
+        Assert.Equal(3, f.Controller.State.ExitRequest!.Attempts);
+        Assert.False(f.Controller.State.Monitoring);
+        f.Runtime.StopFailure = false;
+        Assert.Equal("accepted", f.Controller.Submit(new() { Action = "exit", Target = "desktop" }, default));
+        await f.Controller.TickAsync(default);
+        Assert.True(f.Controller.ShouldExit);
+    }
+
+    [Fact]
+    public async Task CompletedExitDoesNotResurrectUntilExplicitFreshLaunch()
+    {
+        using var f = new Fixture();
+        Assert.Equal("accepted", f.Controller.Submit(new() { Action = "exit", Target = "desktop" }, default));
+        await f.Controller.TickAsync(default);
+        var restarted = new GuardianController(f.Settings, f.Store, f.Runtime, f.Time);
+        await restarted.RecoverInterruptedAsync(default);
+        Assert.True(restarted.ShouldExit);
+        await restarted.TickAsync(default);
+        Assert.Empty(f.Runtime.Starts);
+        restarted.ResumeAfterUserLaunch();
+        Assert.False(restarted.ShouldExit);
+        Assert.Null(f.Store.Load().ExitRequest);
+        Assert.True(restarted.State.Monitoring);
+    }
+
+    [Fact]
+    public void WholeApplicationExitRejectsCoreOnlyTarget()
+    {
+        Assert.Throws<ArgumentException>(() => new GuardianCommand { Action = "exit", Target = "core" }.Validate());
+    }
+
+    [Fact]
+    public async Task FreshLaunchWithAutoStartDisabledAcceptsShellWithoutStartingCore()
+    {
+        using var f = new Fixture();
+        var controller = new GuardianController(f.Settings with { AutoStartCore = false }, f.Store, f.Runtime, f.Time);
+        f.Runtime.HealthOverride = () => false;
+        Assert.Equal("accepted", controller.Submit(new() { Action = "launch", Target = "desktop" }, default));
+        await controller.RunningOperation!;
+        Assert.Equal("stopped", controller.State.Phase);
+        Assert.False(controller.State.Monitoring);
+        Assert.Equal([true], f.Runtime.RespectAutoStart);
+        Assert.Equal(["desktop"], f.Runtime.Starts);
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), "pudding-guardian-tests", Guid.NewGuid().ToString("N"));
@@ -407,13 +531,14 @@ public sealed class GuardianTests
         public ProcessIdentity? Core => null;
         public List<string> Stops { get; } = [];
         public List<string> Starts { get; } = [];
-        public bool BuildFailure, IntentionalStop;
+        public List<bool> RespectAutoStart { get; } = [];
+        public bool BuildFailure, IntentionalStop, ApplicationExitRequested, StopFailure;
         public Func<bool>? HealthOverride;
         public TaskCompletionSource? BuildGate;
         public Task<GuardianHealth> ProbeAsync(CancellationToken ct)
         {
             var healthy = HealthOverride?.Invoke() ?? File.ReadAllText(settings.CoreExecutablePath) != "bad";
-            return Task.FromResult(new GuardianHealth(true, healthy, IntentionalStop));
+            return Task.FromResult(new GuardianHealth(true, healthy, IntentionalStop, ApplicationExitRequested: ApplicationExitRequested));
         }
         public async Task<string> PrepareAsync(GuardianCommand command, CancellationToken ct)
         {
@@ -421,8 +546,14 @@ public sealed class GuardianTests
             if (BuildFailure) throw new InvalidOperationException("build rejected");
             return candidate;
         }
-        public Task StopAsync(string target, CancellationToken ct) { Stops.Add(target); return Task.CompletedTask; }
-        public Task StartAsync(string target, bool yolo, CancellationToken ct) { Starts.Add(target); return Task.CompletedTask; }
+        public Task StopAsync(string target, CancellationToken ct)
+        {
+            Stops.Add(target);
+            if (StopFailure) throw new IOException("owned process has not exited");
+            return Task.CompletedTask;
+        }
+        public Task StartAsync(string target, bool yolo, CancellationToken ct, bool respectAutoStart = false)
+        { Starts.Add(target); RespectAutoStart.Add(respectAutoStart); return Task.CompletedTask; }
     }
 
     private sealed class AdvancingTime : TimeProvider

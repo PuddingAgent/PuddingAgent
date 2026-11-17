@@ -2,5 +2,5 @@
 
 | 文件 | 用途 |
 |---|---|
-| `GuardianTests.cs` | 只引用 Guardian 的边界、构建/部署/回滚、崩溃恢复、HTTP 认证、路径和 PID 身份测试；覆盖活动运行数据和旧清单的保护、产品资源与程序集校验；假时钟与隔离目录不启动产品 |
+| `GuardianTests.cs` | 只引用 Guardian 的状态机、HTTP、进程身份与包保护测试；涵盖持久退出、部署期间排队、请求去重、有限重试、手动停止与重新启动；假时钟与隔离目录不启动产品 |
 | `PuddingDesktop.GuardianTests.csproj` | 独立 xUnit 测试工程，唯一产品引用为 Guardian |

@@ -48,7 +48,8 @@ public sealed partial class MainWindow : Window
     private DesktopTrayIcon? _tray;
     private Uri? _webOrigin;
     private long _webGeneration;
-    private bool _ready, _closing, _closed;
+    private bool _ready, _closing, _closed, _guardianExitQueued;
+    private string? _guardianExitReason;
     private bool _restartRequired, _loadingAppearance;
     private string? _stateError;
 
@@ -238,6 +239,11 @@ public sealed partial class MainWindow : Window
         var startup = runtime.State == DesktopRuntimeState.Ready && runtime.Session is { ReadyAt: { } ready } session ? $" · 启动耗时 {(ready - session.StartedAt).TotalSeconds:F1} 秒" : "";
         RuntimeText.Text = $"接口：{_coordinator.CoreAddress?.Authority ?? "未连接"}{startup}\n数据目录：{_coordinator.DataRoot ?? "尚未设置"}";
         if (!string.IsNullOrWhiteSpace(_stateError ?? runtime.LastError)) RuntimeText.Text += $"\n{_stateError ?? runtime.LastError}";
+        if (_guardianExitQueued)
+        {
+            RuntimeStateText.Text = "正在退出";
+            RuntimeText.Text += "\n等待当前更新结束后，依次退出 Core、Desktop 与 Guardian。";
+        }
         if (runtime.State != DesktopRuntimeState.Ready) UpdateMetrics(null);
         UpdateStartupPanel();
     }
@@ -3378,7 +3384,24 @@ public sealed partial class MainWindow : Window
             Diagnostics.DesktopDiagnosticLog.Journal?.Record("window_hidden_to_tray");
             AppWindow.Hide(); return;
         }
-        Diagnostics.DesktopDiagnosticLog.Journal?.RequestExit(reason ?? (explicitExit ? "user_exit" : "window_close_policy"));
+        if (_coordinator.GuardianManaged && reason != "guardian_restart")
+        {
+            if (_guardianExitQueued) return;
+            _guardianExitQueued = true;
+            _guardianExitReason = reason ?? (explicitExit ? "user_exit" : "window_close_policy");
+            RefreshStatus();
+            try { await _coordinator.RequestGuardianExitAsync(_lifetime.Token); }
+            catch (OperationCanceledException) when (_closing || _lifetime.IsCancellationRequested) { }
+            catch (Exception ex)
+            {
+                _guardianExitQueued = false;
+                App.WriteDiagnostic(ex);
+                RefreshStatus(ex.Message);
+            }
+            return;
+        }
+        Diagnostics.DesktopDiagnosticLog.Journal?.RequestExit(
+            reason == "guardian_restart" && _guardianExitQueued ? _guardianExitReason! : reason ?? (explicitExit ? "user_exit" : "window_close_policy"));
         _closing = true;
         _coordinator.RequestExplicitExit();
         _timer.Stop();

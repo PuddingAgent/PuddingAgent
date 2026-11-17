@@ -23,10 +23,11 @@ public sealed class DesktopGuardianEndpointTests
             portLease.Stop();
             var exit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var pings = 0;
+            var stops = 0;
             var tokens = new TokenService();
             await using var service = new DesktopBootstrapSignalService(new DesktopBootstrapTestHooks
             {
-                StopCoreAsync = _ => throw new InvalidOperationException("Must not invoke legacy stop"),
+                StopCoreAsync = _ => { Interlocked.Increment(ref stops); return Task.CompletedTask; },
                 WaitForCoreFullyStoppedAsync = _ => Task.FromResult(true),
                 StartCoreAsync = _ => throw new InvalidOperationException("Must not invoke legacy start"),
                 BuildAsync = _ => throw new InvalidOperationException("Must not invoke legacy build"),
@@ -52,6 +53,10 @@ public sealed class DesktopGuardianEndpointTests
             Assert.Equal(1, pings);
             Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync("/desktop/bootstrap/start", null)).StatusCode);
             Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync("/desktop/bootstrap/core/stop", null)).StatusCode);
+            Assert.Equal(0, stops);
+            client.DefaultRequestHeaders.Add("X-Pudding-Guardian", "1");
+            Assert.Equal(HttpStatusCode.OK, (await client.PostAsync("/desktop/bootstrap/core/stop", null)).StatusCode);
+            Assert.Equal(1, stops);
             Assert.Equal(HttpStatusCode.Accepted, (await client.PostAsync("/desktop/guardian/exit", null)).StatusCode);
             await exit.Task.WaitAsync(TimeSpan.FromSeconds(5));
         }

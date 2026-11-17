@@ -31,7 +31,7 @@ public sealed class GuardianRuntime : IGuardianRuntime, IDisposable
         {
             using var request = Request(HttpMethod.Get, "/desktop/guardian/health");
             using var response = await _http.SendAsync(request, timeout.Token);
-            if (!response.IsSuccessStatusCode) return new(false, false, HasIntentionalExit());
+            if (!response.IsSuccessStatusCode) return UnavailableHealth();
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
             var value = json.RootElement;
             var desktop = Identify(value.GetProperty("desktopProcessId").GetInt32(), _settings.DesktopExecutablePath);
@@ -46,7 +46,8 @@ public sealed class GuardianRuntime : IGuardianRuntime, IDisposable
                 var candidate = Identify(pid.GetInt32(), _settings.CoreExecutablePath);
                 if (candidate is not null && ParentProcessId(candidate.Id) == Desktop.Id) Core = candidate;
             }
-            if (HasIntentionalExit() || diagnostics.GetProperty("userStopRequested").GetBoolean()) return new(true, false, true);
+            if (HasIntentionalExit()) return new(true, false, true, ApplicationExitRequested: true);
+            if (diagnostics.GetProperty("userStopRequested").GetBoolean()) return new(true, false, true);
             if (Core is null || !IsAlive(Core) || diagnostics.GetProperty("coreState").GetString() != "Ready") return new(true, false);
             if (!Uri.TryCreate(diagnostics.GetProperty("coreAddress").GetString(), UriKind.Absolute, out var address)
                 || !address.IsLoopback || address.Scheme != "http") return new(true, false);
@@ -56,29 +57,46 @@ public sealed class GuardianRuntime : IGuardianRuntime, IDisposable
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or InvalidOperationException or KeyNotFoundException)
         {
             ct.ThrowIfCancellationRequested();
-            return new(false, false, HasIntentionalExit(), "health_unavailable");
+            return UnavailableHealth();
         }
+    }
+
+    private GuardianHealth UnavailableHealth()
+    {
+        var exiting = HasIntentionalExit();
+        return new(false, false, exiting, "health_unavailable", ApplicationExitRequested: exiting);
     }
 
     public async Task StopAsync(string target, CancellationToken ct)
     {
+        // Probe can discover the adopted Desktop before it has published its first PID snapshot.
+        await ProbeAsync(ct);
         RefreshCoreChild();
+        await RequestStopAsync("/desktop/bootstrap/core/stop", ct);
+        await WaitOrTerminateAsync(Core, includeChildren: true, ct);
+        if (target == "desktop")
+        {
+            await RequestStopAsync("/desktop/guardian/exit", ct);
+            await WaitOrTerminateAsync(Desktop, includeChildren: false, ct);
+        }
+    }
+
+    private async Task RequestStopAsync(string path, CancellationToken ct)
+    {
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(_settings.ShutdownTimeoutSeconds));
-            using var request = Request(HttpMethod.Post, target == "desktop" ? "/desktop/guardian/exit" : "/desktop/bootstrap/core/stop");
+            using var request = Request(HttpMethod.Post, path);
             request.Content = JsonContent.Create(new { });
             using var response = await _http.SendAsync(request, timeout.Token);
             if (!response.IsSuccessStatusCode && response.StatusCode == System.Net.HttpStatusCode.Conflict)
                 throw new InvalidOperationException("Desktop is busy with another lifecycle operation.");
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException) { ct.ThrowIfCancellationRequested(); }
-        await WaitOrTerminateAsync(target == "desktop" ? Desktop : Core, includeChildren: target != "desktop", ct);
-        if (target == "desktop") await WaitOrTerminateAsync(Core, includeChildren: true, ct);
     }
 
-    public async Task StartAsync(string target, bool yolo, CancellationToken ct)
+    public async Task StartAsync(string target, bool yolo, CancellationToken ct, bool respectAutoStart = false)
     {
         if (yolo && _settings.AutoYolo)
             await File.WriteAllTextAsync(Path.Combine(_settings.RepositoryRoot ?? Path.GetDirectoryName(_settings.CoreExecutablePath)!, "yolo.signal"),
@@ -96,7 +114,7 @@ public sealed class GuardianRuntime : IGuardianRuntime, IDisposable
             using var process = Process.Start(info) ?? throw new IOException("Could not start Desktop.");
             Desktop = new(process.Id, process.StartTime.ToUniversalTime(), _settings.DesktopExecutablePath);
             Core = null;
-            if (_settings.AutoStartCore) return; // Desktop owns Core auto-start. Readiness is accepted separately.
+            if (_settings.AutoStartCore || respectAutoStart) return; // Desktop owns configured Core auto-start.
             var deadline = DateTime.UtcNow.AddSeconds(_settings.StartupTimeoutSeconds);
             while (DateTime.UtcNow < deadline)
             {
