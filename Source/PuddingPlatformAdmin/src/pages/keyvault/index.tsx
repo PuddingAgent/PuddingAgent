@@ -38,6 +38,7 @@ import {
   type KeyVaultUsageEntryDto,
 } from '@/services/platform/api';
 import { formatCreatedAt } from './createdAt';
+import { describeUsage } from './usageView';
 
 const { Text } = Typography;
 
@@ -276,24 +277,15 @@ const KeyVaultPage: React.FC = () => {
       title: '被引用',
       width: 140,
       render: (_, record) => {
-        const u = usage[record.name];
-        if (!u) return <Typography.Text type="secondary">—</Typography.Text>;
+        const badges = describeUsage(usage[record.name]);
+        if (!badges) return <Typography.Text type="secondary">—</Typography.Text>;
         return (
           <Space size={4} wrap>
-            {u.referenceCount === 0 ? (
-              <Tooltip title="没有任何配置引用它，改它不会影响任何行为。">
-                <Tag color="red" style={{ fontSize: 10 }}>孤儿</Tag>
+            {badges.map((b) => (
+              <Tooltip key={b.key} title={b.tooltip}>
+                <Tag color={b.color} style={{ fontSize: 10 }}>{b.label}</Tag>
               </Tooltip>
-            ) : (
-              <Tooltip title={u.referencedBy.join('\n')}>
-                <Tag color="green" style={{ fontSize: 10 }}>{u.referenceCount} 处</Tag>
-              </Tooltip>
-            )}
-            {u.duplicateGroupId ? (
-              <Tooltip title="与另一条密钥的值完全相同。它们是两条独立条目，改一条不会同步另一条。">
-                <Tag color="purple" style={{ fontSize: 10 }}>重复</Tag>
-              </Tooltip>
-            ) : null}
+            ))}
           </Space>
         );
       },
