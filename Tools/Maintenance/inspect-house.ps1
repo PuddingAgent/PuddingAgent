@@ -30,6 +30,7 @@
 [CmdletBinding()]
 param(
     [int]$ErrorFiles = 20,
+    [int]$StaleQueuedDays = 7,
     [switch]$Json
 )
 
@@ -139,16 +140,33 @@ if (Test-Path $DbPath) {
         $rdr = $cmd.ExecuteReader()
         $byStatus = [ordered]@{}
         $oldestUtc = [ordered]@{}
+        $oldestMs = [ordered]@{}
         while ($rdr.Read()) {
             $st = $rdr.GetString(0)
             $byStatus[$st] = $rdr.GetInt64(1)
             if (-not $rdr.IsDBNull(2)) {
                 $ms = $rdr.GetInt64(2)
+                $oldestMs[$st] = $ms
                 $oldestUtc[$st] = [DateTimeOffset]::FromUnixTimeMilliseconds($ms).UtcDateTime.ToString('yyyy-MM-dd')
             }
         }
         $rdr.Close()
-        $report.queue = [ordered]@{ byStatus = $byStatus; oldestUtc = $oldestUtc }
+
+        # A queued row that stays queued for days means nothing is draining that
+        # target. Eight rows sat here from 2026-07-23 to 2026-11-17 unnoticed.
+        $staleDays = 0
+        if ($oldestMs.Contains('queued')) {
+            $staleDays = [int]((([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) - $oldestMs['queued']) / 86400000)
+        }
+        $staleWarning = $staleDays -gt $StaleQueuedDays
+
+        $report.queue = [ordered]@{
+            byStatus       = $byStatus
+            oldestUtc      = $oldestUtc
+            staleQueuedDays = $staleDays
+            staleThreshold  = $StaleQueuedDays
+            staleWarning    = $staleWarning
+        }
     }
 
     $conn.Close()
@@ -251,6 +269,10 @@ if ($report.queue.Count -gt 0) {
     foreach ($k in $report.queue.byStatus.Keys) {
         $oldest = $report.queue.oldestUtc[$k]
         Write-Output ("  {0,-14} {1,7}   oldest={2}" -f $k, $report.queue.byStatus[$k], $oldest)
+    }
+    if ($report.queue.staleWarning) {
+        Write-Output ("  WARN: oldest queued row is {0} days old (threshold {1}): nothing is draining that target" -f `
+            $report.queue.staleQueuedDays, $report.queue.staleThreshold)
     }
 }
 
