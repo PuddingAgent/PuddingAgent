@@ -11,6 +11,7 @@ import {
   Button,
   Drawer,
   Form,
+  Input,
   Modal,
   Space,
   Tag,
@@ -26,7 +27,7 @@ import {
   ReloadOutlined,
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createKeyVaultSecret,
   deleteKeyVaultSecret,
@@ -34,6 +35,7 @@ import {
   updateKeyVaultSecret,
   type KeyVaultSecretDto,
 } from '@/services/platform/api';
+import { formatCreatedAt } from './createdAt';
 
 const { Text } = Typography;
 
@@ -45,6 +47,11 @@ type KeyVaultFormValues = {
   tagsInput?: string;
 };
 
+/**
+ * 后端 CreatedAt 用 DateTime.UtcNow 写入，但实体列是 SQLite TEXT，
+ * 读回后 DateTimeKind 丢失，序列化不带时区后缀 ⇒ 浏览器当本地时间解析，
+ * 显示时间会比真实时间早 8 小时。这里显式补 UTC 后缀（值的语义一直是 UTC）。
+ */
 const parseTags = (raw?: string): string[] => {
   if (!raw) return [];
   return raw
@@ -73,6 +80,37 @@ const KeyVaultPage: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<KeyVaultSecretDto | null>(null);
   const [form] = Form.useForm<KeyVaultFormValues>();
+
+  // 列表一次性取回后在前端过滤：后端 list 接口不接受任何查询参数，
+  // 每敲一个字就往返一次接口既慢又无谓（当前条目量级为几十条）。
+  const [keyword, setKeyword] = useState('');
+  const [rows, setRows] = useState<KeyVaultSecretDto[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const reloadRows = useCallback(async () => {
+    setLoading(true);
+    try {
+      setRows(await listKeyVaultSecrets());
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reloadRows();
+  }, [reloadRows]);
+
+  const filteredRows = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    if (!kw) return rows;
+    return rows.filter((r) =>
+      [r.name, r.description ?? '', r.category ?? '', ...(r.tags ?? [])]
+        .join(' ')
+        .toLowerCase()
+        .includes(kw),
+    );
+  }, [rows, keyword]);
+
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
@@ -120,7 +158,7 @@ const KeyVaultPage: React.FC = () => {
     }
 
     setDrawerOpen(false);
-    tableRef.current?.reload();
+    void reloadRows();
   };
 
   /** 删除：危险操作，使用 Modal.confirm 二次确认 */
@@ -139,7 +177,7 @@ const KeyVaultPage: React.FC = () => {
       onOk: async () => {
         await deleteKeyVaultSecret(record.keyVaultId);
         message.success('密钥已删除');
-        tableRef.current?.reload();
+        void reloadRows();
       },
     });
   };
@@ -170,11 +208,23 @@ const KeyVaultPage: React.FC = () => {
     {
       title: '名称',
       dataIndex: 'name',
-      width: 180,
+      width: 320,
       render: (_, record) => (
         <Space>
           <SafetyCertificateOutlined style={{ color: '#7c3aed', fontSize: 14 }} />
-          <Typography.Text code>{record.name}</Typography.Text>
+          <Tooltip title={record.name}>
+            <Typography.Text code style={{ fontSize: 12 }}>
+              {record.name}
+            </Typography.Text>
+          </Tooltip>
+          <Tooltip title="复制占位符">
+            <Button
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={() => handleCopyPlaceholder(record)}
+              type="text"
+            />
+          </Tooltip>
         </Space>
       ),
     },
@@ -182,7 +232,21 @@ const KeyVaultPage: React.FC = () => {
       title: '描述',
       dataIndex: 'description',
       ellipsis: true,
-      render: (_, record) => <Typography.Text type="secondary">{record.description || '—'}</Typography.Text>,
+      render: (_, record) => {
+        const desc = record.description ?? '';
+        // 迁移脚本写的描述与原名称同义（Migrated from xxx），是纯噪声；
+        // 收成一个小标记，原文件路径仍可从名称推出，完整描述进 tooltip。
+        if (desc.startsWith('Migrated from')) {
+          return (
+            <Tooltip title={desc}>
+              <Tag color="default" style={{ fontSize: 10 }}>
+                迁移导入
+              </Tag>
+            </Tooltip>
+          );
+        }
+        return <Typography.Text type="secondary">{desc || '—'}</Typography.Text>;
+      },
     },
     {
       title: '分类',
@@ -193,32 +257,8 @@ const KeyVaultPage: React.FC = () => {
         return <Tag color={meta.color}>{meta.label}</Tag>;
       },
     },
-    {
-      title: '密钥值',
-      width: 120,
-      // 列表接口不返回明文（安全设计）。此前此处提供「眼睛」按钮声称可揭示，
-      // 实际只把文案从 '••••••••' 换成 '•••• 已揭示'，是**假功能**——已移除，
-      // 改为静态遮蔽 + 说明；真正的明文查看需后端 includePlainText + 审计（见重设计文档 S3）。
-      render: () => (
-        <Tooltip title="安全设计：列表不返回明文。如需更换密钥值，请使用「轮换」（旧值将被替换）">
-          <Typography.Text type="secondary" style={{ fontFamily: 'monospace', letterSpacing: 1 }}>
-            ••••••••
-          </Typography.Text>
-        </Tooltip>
-      ),
-    },
-    {
-      title: '占位符',
-      width: 200,
-      render: (_, record) => (
-        <Space>
-          <Typography.Text code style={{ fontSize: 12 }}>{`{{vault:${record.name}}}`}</Typography.Text>
-          <Tooltip title="复制占位符">
-            <Button size="small" icon={<CopyOutlined />} onClick={() => handleCopyPlaceholder(record)} type="text" />
-          </Tooltip>
-        </Space>
-      ),
-    },
+    // 「密钥值」整列只是八个圆点（列表接口本就不返回明文，页头已说明），
+    // 「占位符」与「名称」是同一段文字套壳 ⇒ 两列都撤掉，复制按钮并入名称列。
     {
       title: '标签',
       width: 150,
@@ -236,7 +276,7 @@ const KeyVaultPage: React.FC = () => {
       title: '创建时间',
       dataIndex: 'createdAt',
       width: 170,
-      render: (_, record) => new Date(record.createdAt).toLocaleString('zh-CN'),
+      render: (_, record) => formatCreatedAt(record.createdAt),
     },
     {
       title: '操作',
@@ -282,11 +322,17 @@ const KeyVaultPage: React.FC = () => {
         rowKey="keyVaultId"
         columns={columns}
         search={false}
-        request={async () => {
-          const data = await listKeyVaultSecrets();
-          return { data, success: true };
-        }}
+        loading={loading}
+        dataSource={filteredRows}
+        pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: true }}
         toolBarRender={() => [
+          <Input.Search
+            key="search"
+            allowClear
+            placeholder="搜索名称 / 描述 / 标签"
+            style={{ width: 280 }}
+            onChange={(e) => setKeyword(e.target.value)}
+          />,
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
             新建密钥
           </Button>,
