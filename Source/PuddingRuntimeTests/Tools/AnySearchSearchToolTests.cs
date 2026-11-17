@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
@@ -12,6 +14,35 @@ namespace PuddingRuntimeTests.Tools;
 [TestClass]
 public sealed class AnySearchSearchToolTests
 {
+    [TestMethod]
+    public async Task VaultReferenceIsResolvedBeforeBuildingAuthorizationHeader()
+    {
+        using var temp = new TempDirectory();
+        await WriteSearchConfigAsync(temp.Paths, "{\"anysearch\":{\"apiKey\":\"{{vault:search.anysearch}}\"}}");
+        var web = new RecordingWebClient(SuccessResponse());
+        var vault = new Mock<IKeyVaultService>(MockBehavior.Strict);
+        vault.Setup(v => v.InjectAsync("{{vault:search.anysearch}}", It.IsAny<CancellationToken>())).ReturnsAsync("synthetic-vault-key");
+        var tool = new AnySearchSearchTool(web, temp.Paths, NullLogger<AnySearchSearchTool>.Instance, vault.Object);
+        var result = await ExecuteAsync(tool, "{\"query\":\"vault regression\"}");
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual("Bearer synthetic-vault-key", web.LastRequest!.Headers["Authorization"]);
+        Assert.DoesNotContain("{{vault:", web.LastRequest.Headers["Authorization"]);
+    }
+
+    [TestMethod]
+    public async Task UnresolvedVaultReferenceNeverSendsAnHttpRequest()
+    {
+        using var temp = new TempDirectory();
+        await WriteSearchConfigAsync(temp.Paths, "{\"anysearch\":{\"apiKey\":\"{{vault:search.missing}}\"}}");
+        var web = new RecordingWebClient(SuccessResponse());
+        var vault = new Mock<IKeyVaultService>(MockBehavior.Strict);
+        vault.Setup(v => v.InjectAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync("{{vault:search.missing}}");
+        var tool = new AnySearchSearchTool(web, temp.Paths, NullLogger<AnySearchSearchTool>.Instance, vault.Object);
+        var result = await ExecuteAsync(tool, "{\"query\":\"vault regression\"}");
+        Assert.IsFalse(result.Success);
+        Assert.IsNull(web.LastRequest);
+    }
+
     [TestMethod]
     public void Descriptor_Is_Low_Risk_ReadOnly_Network_Tool()
     {
