@@ -660,6 +660,8 @@ public static partial class PuddingServiceCollectionExtensions
         });
         builder.Services.AddSingleton<IKeyVaultService, KeyVaultService>();
         builder.Services.AddHostedService<PuddingAgent.Services.KeyVaultStartupValidationService>();
+        // 描述种子：从 <DataRoot>/config/keyvault.descriptions.json 补齐人读描述（幂等，缺文件即跳过）。
+        builder.Services.AddHostedService<PuddingAgent.Services.KeyVaultDescriptionSeeder>();
         // ── DB 种子服务（启动时从 default-data/ 导入配置到 DB）──
         builder.Services.AddSingleton<DataSeedService>();
         // ── Agent 模板文件服务（模板 manifest 读写 + 头像解析）──
