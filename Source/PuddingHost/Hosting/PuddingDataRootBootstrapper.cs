@@ -127,7 +127,7 @@ public static class PuddingDataRootBootstrapper
     /// 生成 48 字节 CSPRNG 密钥并原子写回（其余字段原样保留）。密钥内容不写日志。
     /// </para>
     /// </summary>
-    private static void EnsureSecurityJwtKey(PuddingDataPaths paths)
+    internal static void EnsureSecurityJwtKey(PuddingDataPaths paths)
     {
         var path = paths.SystemConfigFile("security.json");
         var root = ReadSecurityRoot(path);
@@ -138,24 +138,82 @@ public static class PuddingDataRootBootstrapper
             root["jwt"] = jwt;
         }
 
-        var currentKey = (jwt["key"]?.GetValue<string>() ?? string.Empty).Trim();
-        currentKey = PuddingSecretReferences.BootstrapSecretFile.Resolve(paths.DataRoot, currentKey);
-        var isUsable = currentKey.Length >= MinimumPersistedJwtKeyLength
-                       && !KnownPlaceholderJwtKeys.Contains(currentKey, StringComparer.Ordinal);
-        if (isUsable)
-            return;
+        var persisted = (jwt["key"]?.GetValue<string>() ?? string.Empty).Trim();
+        var isReference = persisted.Contains(
+            PuddingSecretReferences.BootstrapSecretFile.ReferenceMarker,
+            StringComparison.OrdinalIgnoreCase);
 
-        var generatedKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(JwtKeyByteCount));
-        jwt["key"] = generatedKey;
+        var key = isReference
+            ? PuddingSecretReferences.BootstrapSecretFile.Resolve(paths.DataRoot, persisted)
+            : persisted;
+
+        if (IsUsableJwtKey(key) && isReference)
+        {
+            // 已是最佳形态：引用 + 可解析。不重写文件，避免每次启动都碰配置。
+            return;
+        }
+
+        var generated = !IsUsableJwtKey(key);
+        if (generated)
+        {
+            key = Convert.ToBase64String(RandomNumberGenerator.GetBytes(JwtKeyByteCount));
+        }
+
+        // 配置里只存引用，让启动前缓存成为唯一副本；否则同一把密钥存在两份，
+        // 两份一旦不一致，把配置改成引用就会静默换掉签名密钥并让所有已签发会话失效。
+        var reference = PuddingSecretReferences.BootstrapSecretFile.ReferenceMarker
+                        + JwtKeySecretName + "}}";
+        var useReference = TryAlignBootstrapCache(paths.DataRoot, reference, key);
+
+        jwt["key"] = useReference ? reference : key;
 
         var tempPath = path + ".tmp";
         File.WriteAllText(tempPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         File.Move(tempPath, path, overwrite: true);
 
         Serilog.Log.Information(
-            "[Bootstrap] 已在 {Path} 生成新的登录态 JWT 签名密钥（长度 {Length}，内容不入日志）",
-            path,
-            generatedKey.Length);
+            "[Bootstrap] 登录态 JWT 签名密钥已就绪：{Mode}，引用={UsesReference}，长度 {Length}，内容不入日志",
+            generated ? "新生成" : "沿用原值",
+            useReference,
+            key.Length);
+    }
+
+    /// <summary>登录态 JWT 签名密钥在启动前凭据缓存里的名称；与迁移脚本保持一致以便复用既有条目。</summary>
+    internal const string JwtKeySecretName = "cfg.config.security.json.jwt.key";
+
+    /// <summary>长度足够且不是随包占位符才算可用。引用本身也够长，因此必须先解析再调这里。</summary>
+    internal static bool IsUsableJwtKey(string? key) =>
+        !string.IsNullOrWhiteSpace(key)
+        && key.Length >= MinimumPersistedJwtKeyLength
+        && !KnownPlaceholderJwtKeys.Contains(key, StringComparer.Ordinal);
+
+    /// <summary>
+    /// 把值写进启动前缓存并立即回读校验。只有回读结果完全相等才允许配置里存引用；
+    /// 任何异常或不等都退回明文（原因写日志）——宁可状态丑一点，也不能让下次启动起不来。
+    /// </summary>
+    private static bool TryAlignBootstrapCache(string dataRoot, string reference, string expected)
+    {
+        try
+        {
+            PuddingSecretReferences.BootstrapSecretFile.Store(dataRoot, JwtKeySecretName, expected);
+            var roundTrip = PuddingSecretReferences.BootstrapSecretFile.Resolve(dataRoot, reference);
+            if (string.Equals(roundTrip, expected, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            Serilog.Log.Warning(
+                "[Bootstrap] 启动前凭据缓存回读不一致，本次仍以明文保存登录态 JWT 签名密钥（引用未启用）");
+            return false;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException
+                                       or UnauthorizedAccessException or CryptographicException)
+        {
+            Serilog.Log.Warning(
+                ex,
+                "[Bootstrap] 写入启动前凭据缓存失败，本次仍以明文保存登录态 JWT 签名密钥（引用未启用）");
+            return false;
+        }
     }
 
     /// <summary>读取 security.json 根对象；文件缺失时返回模板结构；非法 JSON 直接失败（fail closed）。</summary>

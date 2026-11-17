@@ -10,11 +10,14 @@ public static class BootstrapSecretFile
 {
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("PuddingAgent.BootstrapCredentials.v1");
     private static readonly Regex Reference = new(@"^\{\{vault:(?<name>[a-zA-Z0-9._-]+)\}\}$");
+    /// <summary>引用前缀。配置值以它开头即表示「此处存的是引用，不是值」。</summary>
+    public const string ReferenceMarker = "{{vault:";
+
     public static string FilePath(string dataRoot) => Path.Combine(dataRoot, "secrets", "bootstrap.credentials.dpapi");
 
     public static string Resolve(string dataRoot, string configured)
     {
-        if (!configured.Contains("{{vault:", StringComparison.OrdinalIgnoreCase)) return configured;
+        if (!configured.Contains(ReferenceMarker, StringComparison.OrdinalIgnoreCase)) return configured;
         var match = Reference.Match(configured);
         if (!match.Success) throw new InvalidOperationException("Invalid bootstrap credential reference.");
         try
