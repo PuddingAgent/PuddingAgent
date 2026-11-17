@@ -31,6 +31,7 @@
 param(
     [int]$ErrorFiles = 20,
     [int]$StaleQueuedDays = 7,
+    [int]$AggregateLagDays = 2,
     [switch]$Json
 )
 
@@ -132,6 +133,33 @@ if (Test-Path $DbPath) {
         }
     }
 
+    # ---- usage aggregate lag ---------------------------------------------
+    # llm_usage_daily_aggregates is filled lazily from the detail tables, so the two
+    # can drift apart with nothing surfacing it. That matters because pruning the
+    # detail for an unaggregated day destroys the cost history permanently.
+    $aggExists = Get-Scalar $conn "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='llm_usage_daily_aggregates'"
+    if ($aggExists -gt 0) {
+        $cmdAgg = $conn.CreateCommand()
+        $cmdAgg.CommandText = 'SELECT COUNT(DISTINCT day_utc), MAX(day_utc) FROM llm_usage_daily_aggregates'
+        $rdrAgg = $cmdAgg.ExecuteReader()
+        $aggDays = 0
+        $aggMax = $null
+        if ($rdrAgg.Read()) {
+            $aggDays = [int]$rdrAgg.GetInt64(0)
+            if (-not $rdrAgg.IsDBNull(1)) { $aggMax = $rdrAgg.GetString(1) }
+        }
+        $rdrAgg.Close()
+
+        $lagDays = 0
+        if ($aggMax) {
+            $lagDays = [int](([DateTime]::UtcNow.Date - [DateTime]::Parse($aggMax)).TotalDays)
+        }
+        $report.database['usageAggregateDays'] = $aggDays
+        $report.database['usageAggregateLastDay'] = $aggMax
+        $report.database['usageAggregateLagDays'] = $lagDays
+        $report.database['usageAggregateLagWarn'] = ($lagDays -gt $AggregateLagDays)
+    }
+
     # ---- queue ----------------------------------------------------------
     $queueExists = Get-Scalar $conn "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='message_deliveries'"
     if ($queueExists -gt 0) {
@@ -205,7 +233,7 @@ if (Test-Path $SystemRoot) {
     # (Same trap that made verify-deploy.ps1 report a false red on 2026-11-17.)
     $candidates = Get-ChildItem $SystemRoot -File -Filter 'pudding-*.log' |
         Sort-Object LastWriteTime -Descending |
-        Select-Object -First 4
+        Select-Object -First 20
 
     $latest = $null
     $text = ''
@@ -258,8 +286,16 @@ if ($report.database.Count -gt 0) {
     Write-Output ("  file={0} MB  wal={1} MB  pages={2}  free={3}  reclaimable={4} MB ({5}%)" -f `
         $report.database.fileMB, $report.database.walMB, $report.database.pageCount, `
         $report.database.freePageCount, $report.database.reclaimableMB, $report.database.reclaimablePct)
-    foreach ($k in $report.database.rowsByTable.Keys) {
+        foreach ($k in $report.database.rowsByTable.Keys) {
         Write-Output ("  {0,-28} {1,10} rows" -f $k, $report.database.rowsByTable[$k])
+    }
+    if ($report.database.Contains('usageAggregateLagDays')) {
+        Write-Output ("  usage aggregates: days={0} lastDay={1} lag={2}d" -f `
+            $report.database.usageAggregateDays, $report.database.usageAggregateLastDay, $report.database.usageAggregateLagDays)
+        if ($report.database.usageAggregateLagWarn) {
+            Write-Output ("  WARN: usage detail is not aggregated past {0}. Pruning those days would lose cost history; " -f $report.database.usageAggregateLastDay +
+                "GET /api/stats/tokens/series?yearMonth=<yyyy-MM> once (admin token) to build it.")
+        }
     }
 }
 
@@ -287,7 +323,12 @@ foreach ($e in $report.errorPatterns) {
 
 Write-Output ''
 Write-Output '[startup]'
-Write-Output ("  log={0}  keyvaultCheck={1} (n={2})  diScopeFault={3}" -f `
-    $report.startup.logFile, $report.startup.keyvaultCheck, $report.startup.keyvaultCount, $report.startup.diScopeFault)
+if ($report.startup.Count -eq 0) {
+    Write-Output '  (no startup log found in the recent window; the process may predate the retained files)'
+}
+else {
+    Write-Output ("  log={0}  keyvaultCheck={1} (n={2})  diScopeFault={3}" -f `
+        $report.startup.logFile, $report.startup.keyvaultCheck, $report.startup.keyvaultCount, $report.startup.diScopeFault)
+}
 
 exit 0
