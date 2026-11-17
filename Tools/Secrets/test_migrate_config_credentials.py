@@ -138,6 +138,26 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(len(report["deferredBootstrap"]), 2)
         self.assertEqual(len(self.secrets), 1)
 
+    def test_jwt_stage_keeps_control_token_for_the_old_guardian(self):
+        system = self.data / "config/system.json"
+        system.write_text('{"desktop":{"core":{"controlToken":"synthetic-control"}},"Jwt":{"Key":"synthetic-jwt"}}', encoding="utf-8")
+        result = self.run_migration("jwt")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        migrated = json.loads(system.read_text())
+        self.assertEqual(migrated["desktop"]["core"]["controlToken"], "synthetic-control")
+        self.assertTrue(migrated["Jwt"]["Key"].startswith("{{vault:"))
+        self.assertEqual(len(self.secrets), 1)
+        self.assertTrue((self.data / "secrets/bootstrap.credentials.dpapi").exists())
+
+    def test_only_credential_token_changes_preserving_precision_format_and_bom(self):
+        original = b'\xef\xbb\xbf{ "price":1.2345678901234567890123456789, "nested": {"apiKey":"old-secret"} }\r\n'
+        result = migration.replace_credential_strings(original, {("nested", "apiKey"): "{{vault:test}}"})
+        self.assertEqual(result, original.replace(b'"old-secret"', b'"{{vault:test}}"'))
+
+    def test_duplicate_json_keys_are_rejected_before_configuration_replacement(self):
+        with self.assertRaises(RuntimeError):
+            migration.replace_credential_strings(b'{"apiKey":"one","apiKey":"two"}', {("apiKey",): "{{vault:test}}"})
+
 
 if __name__ == "__main__":
     unittest.main()

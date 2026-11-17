@@ -36,7 +36,63 @@ if($r.mode -eq 'protect'){
                             text=True, encoding="utf-8", capture_output=True)
     if result.returncode:
         raise RuntimeError("DPAPI operation failed; no plaintext recovery copy was written")
-    return result.stdout.strip()
+    return result.stdout
+
+
+def replace_credential_strings(original, replacements):
+    """Replace selected JSON string tokens without reserializing numbers or other fields."""
+    text = original.decode("utf-8-sig")
+    decoder = json.JSONDecoder()
+    spans = []
+    found = set()
+
+    def whitespace(position):
+        while position < len(text) and text[position].isspace():
+            position += 1
+        return position
+
+    def visit(position, location):
+        position = whitespace(position)
+        opening = text[position]
+        if opening in "{[":
+            closing = "}" if opening == "{" else "]"
+            cursor = whitespace(position + 1)
+            index = 0
+            keys = set()
+            while text[cursor] != closing:
+                if opening == "{":
+                    key, cursor = decoder.raw_decode(text, cursor)
+                    if not isinstance(key, str) or key in keys:
+                        raise RuntimeError("Duplicate or invalid JSON property; repair configuration before migration")
+                    keys.add(key)
+                    cursor = whitespace(cursor)
+                    if text[cursor] != ":":
+                        raise RuntimeError("Invalid JSON property delimiter")
+                    cursor += 1
+                else:
+                    key = index
+                    index += 1
+                cursor = whitespace(visit(cursor, location + (key,)))
+                if text[cursor] == closing:
+                    break
+                if text[cursor] != ",":
+                    raise RuntimeError("Invalid JSON collection delimiter")
+                cursor = whitespace(cursor + 1)
+            return cursor + 1
+        value, end = decoder.raw_decode(text, position)
+        if location in replacements:
+            if not isinstance(value, str):
+                raise RuntimeError("Credential replacement target is not a JSON string")
+            spans.append((position, end, json.dumps(replacements[location], ensure_ascii=False)))
+            found.add(location)
+        return end
+
+    if whitespace(visit(0, ())) != len(text) or found != set(replacements):
+        raise RuntimeError("Credential JSON locations could not be verified")
+    for start, end, replacement in reversed(spans):
+        text = text[:start] + replacement + text[end:]
+    prefix = b"\xef\xbb\xbf" if original.startswith(b"\xef\xbb\xbf") else b""
+    return prefix + text.encode("utf-8")
 
 
 def atomic_write(path, data, expected=None):
@@ -63,7 +119,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", required=True, type=pathlib.Path)
     parser.add_argument("--base-url", default="http://127.0.0.1")
-    parser.add_argument("--stage", required=True, choices=["voice", "all", "audit"])
+    parser.add_argument("--stage", required=True, choices=["voice", "jwt", "all", "audit"])
     parser.add_argument("--evidence-dir", required=True, type=pathlib.Path)
     parser.add_argument("--delete-historical-backups", action="store_true")
     parser.add_argument("--business-only", action="store_true", help="Defer bootstrap credentials until Desktop and Guardian readers are deployed")
@@ -104,6 +160,8 @@ def main():
     if args.stage != "voice":
         files += sorted((root / "channels").glob("*/manifest.json"))
         files += sorted((root / "agents").glob("*/secrets/home-assistant.json"))
+    if args.stage == "jwt":
+        files = [root / "config/system.json", root / "config/security.json"]
 
     def candidates(value, at=()):
         if isinstance(value, dict):
@@ -125,11 +183,12 @@ def main():
         document = json.loads(original.decode("utf-8-sig"))
         relative = file.relative_to(root).as_posix()
         pending = list(candidates(document))
-        if args.business_only:
+        if args.business_only or args.stage == "jwt":
             selected = []
             for item in pending:
                 field = ".".join(map(str, item[3]))
-                if field.lower() in ("desktop.core.controltoken", "jwt.key"):
+                excluded = field.lower() in ("desktop.core.controltoken", "jwt.key") if args.business_only else field.lower() != "jwt.key"
+                if excluded:
                     deferred.append(dict(file=relative, field=field))
                 else:
                     selected.append(item)
@@ -141,8 +200,9 @@ def main():
         if plaintext:
             backup = args.evidence_dir / (re.sub(r"[^A-Za-z0-9._-]", "_", relative) + ".dpapi")
             if not backup.exists():
-                protected = dpapi("protect", original.decode("utf-8-sig"), "PuddingAgent.MigrationRecovery.v1")
+                protected = dpapi("protect", original.decode("utf-8"), "PuddingAgent.MigrationRecovery.v1")
                 atomic_write(backup, base64.b64decode(protected))
+        replacements = {}
         for container, key, value, location in pending:
             field = ".".join(map(str, location))
             name = re.sub(r"[^A-Za-z0-9._-]", ".", "cfg." + relative + "." + field)
@@ -174,9 +234,10 @@ def main():
                 protected = dpapi("protect", json.dumps(entries), "PuddingAgent.BootstrapCredentials.v1")
                 atomic_write(cache, base64.b64decode(protected))
             container[key] = reference
+            replacements[location] = reference
             references.append(dict(file=relative, field=field, name=name, kind="vault"))
         if plaintext:
-            atomic_write(file, (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode(), expected=original)
+            atomic_write(file, replace_credential_strings(original, replacements), expected=original)
 
     deleted = []
     if args.delete_historical_backups:

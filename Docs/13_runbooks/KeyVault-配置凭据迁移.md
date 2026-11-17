@@ -29,6 +29,10 @@ draft: false
 4. 运行同一工具 `--stage all --delete-historical-backups`。工具逐项写入保管箱并往返验证，再原子替换对应文件；同名不同值拒绝覆盖。配置若被并发修改则停止。每个修改文件先产生 DPAPI 恢复副本；历史 `.before-*` JSON 只删除、不复制到别处。明确传删除参数才执行非递归删除。
 5. 通过 Guardian 重启 Desktop/Core，核对请求 ID 与 `healthy`，再 `--stage audit`，核对明文字段为零、引用数与保管箱条目数，并进行真实对话回执验收。
 
+若 Guardian 升级暂未完成，可用 `--stage all --business-only` 只迁业务凭据，报告会明确列出延后的启动凭据；不能把这个状态宣布为全量完成。`--stage jwt` 只处理两个 JWT 配置字段；完整部署读取器后仍需 `--stage all` 收口。工具仅替换目标 JSON 字符串 token，保留其余字段数值精度、格式和 UTF-8 BOM，不对整个文档重新序列化。
+
+控制令牌迁移后，外部控制器必须通过 `BootstrapSecretFile.Resolve` 或等价的当前用户 DPAPI 读取方式得到请求头值，不能把配置中的 vault 引用字面量当作认证令牌。始终只在内存与请求头中使用，不放命令行、环境变量、状态或日志。
+
 迁移范围包含配置目录中 LLM、搜索、语音、CalDAV、遗留飞书配置、系统/安全配置；实际飞书凭据还在 `channels/*/manifest.json`，Home Assistant 凭据在 Agent 私有配置。只迁移字段，不修改提供商、模型、账号或密钥值。独立 `keyVault.masterKeyRef` 是来源名称，不作为明文密钥迁移。
 
 ## 恢复

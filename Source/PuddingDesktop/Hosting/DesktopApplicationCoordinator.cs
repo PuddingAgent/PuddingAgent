@@ -543,6 +543,7 @@ public sealed partial class DesktopApplicationCoordinator : IAsyncDisposable
         ValidateCoreConfiguration(coreConfig);
         var controlToken = coreConfig.ControlToken
             ?? await _tokenService.GetOrCreateAsync(dataRoot, cancellationToken);
+        controlToken = PuddingSecretReferences.BootstrapSecretFile.Resolve(dataRoot, controlToken);
 
         _runtimeOptions = new CoreProcessStartOptions
         {
