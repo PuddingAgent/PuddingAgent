@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Configuration;
 using PuddingCode.Goals;
 using PuddingCode.Models;
@@ -31,16 +32,16 @@ public sealed class GoalReadTool : PuddingToolBase<GoalReadArgs, GoalReadResult>
 
     private readonly PuddingDataPaths _paths;
     private readonly ILogger<GoalReadTool> _logger;
-    private readonly IGoalQueryService? _goalQuery;
+    private readonly IServiceScopeFactory? _scopeFactory;
 
     public GoalReadTool(
         PuddingDataPaths paths,
         ILogger<GoalReadTool> logger,
-        IGoalQueryService? goalQuery = null)
+        IServiceScopeFactory? scopeFactory = null)
     {
         _paths = paths;
         _logger = logger;
-        _goalQuery = goalQuery;
+        _scopeFactory = scopeFactory;
     }
 
     protected override async Task<GoalReadResult> ExecuteCoreAsync(
@@ -53,12 +54,20 @@ public sealed class GoalReadTool : PuddingToolBase<GoalReadArgs, GoalReadResult>
         // 结构化 GoalRun 是状态的事实来源；goal.md 只是附注。
         // 取不到（未接线 / 无会话身份 / 无活动 Goal）时原样返回附注，不编造状态。
         var conversationId = context.ExecutionIdentity?.ConversationId;
-        if (_goalQuery is null || string.IsNullOrWhiteSpace(conversationId))
+        if (_scopeFactory is null || string.IsNullOrWhiteSpace(conversationId))
             return note;
 
         try
         {
-            var snapshot = await _goalQuery.GetActiveAsync(workspaceId, conversationId, ct);
+            // 本工具是 Singleton，而 IGoalQueryService 是 Scoped：直接注入会在 DI 校验
+            // （ValidateOnBuild）时抛「Cannot consume scoped service from singleton」并把宿主打死。
+            // 因此只在读快照这一次调用内开一个作用域。
+            using var scope = _scopeFactory.CreateScope();
+            var goalQuery = scope.ServiceProvider.GetService<IGoalQueryService>();
+            if (goalQuery is null)
+                return note;
+
+            var snapshot = await goalQuery.GetActiveAsync(workspaceId, conversationId, ct);
             if (snapshot is null)
                 return note;
 

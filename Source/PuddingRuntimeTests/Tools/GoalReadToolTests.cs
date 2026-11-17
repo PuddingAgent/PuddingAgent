@@ -1,4 +1,10 @@
 using System.Text;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Moq;
+using PuddingCode.Configuration;
+using PuddingCode.Goals;
+using PuddingCode.Tools;
 using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntimeTests.Tools;
@@ -216,5 +222,41 @@ public sealed class GoalReadToolTests
 
         StringAssert.Contains(text, "blocker=-");
         StringAssert.Contains(text, "next=-");
+    }
+
+    /// <summary>
+    /// 复刻宿主真实注册形态：<c>IGoalQueryService</c> 是 Scoped，而工具由扫描器登记为 Singleton。
+    /// </summary>
+    /// <remarks>
+    /// 2026-11-17 事故：把 Scoped 服务直接写进 Singleton 工具的构造函数。单元测试全绿（测试里是
+    /// <c>new GoalReadTool(...)</c>，从不经过容器校验），宿主 <c>ValidateOnBuild</c> 却抛
+    /// <c>AggregateException: Cannot consume scoped service ... from singleton</c>（exit -532462766），
+    /// Guardian 等了 240 秒健康检查后判部署失败并回滚。
+    /// 这条测试用与宿主相同的校验选项把该错误提前到 CI，并要求工具改为在调用内自建作用域。
+    /// </remarks>
+    [TestMethod]
+    public void GoalReadTool_ResolvesFromHostLikeContainer_WhenGoalQueryIsScoped()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pudding-goalread-composition", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+
+        var goalQuery = new Mock<IGoalQueryService>();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(new PuddingDataPaths { DataRoot = root });
+        // Scoped 注册正是事故的一半；另一半是工具被登记为 Singleton。
+        services.AddScoped(_ => goalQuery.Object);
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton(typeof(IPuddingTool), typeof(GoalReadTool)));
+
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+
+        var tools = provider.GetServices<IPuddingTool>().ToList();
+
+        Assert.IsTrue(
+            tools.OfType<GoalReadTool>().Any(),
+            "GoalReadTool 必须能从宿主同款容器解析；解析失败即宿主启动期崩溃。");
     }
 }
