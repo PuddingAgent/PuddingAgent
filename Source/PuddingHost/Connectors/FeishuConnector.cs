@@ -201,36 +201,17 @@ public sealed class FeishuConnector : IPuddingConnector
             {
                 var content = JsonSerializer.Serialize(
                     new { text = message.Content });
-                var openId = Get(message.Metadata, "open_id");
-                SendMessageResponse sendResult;
-                if (!string.IsNullOrWhiteSpace(openId))
-                {
-                    // 私聊路径：有 open_id 时按用户 open_id 发送。
-                    sendResult = await _client.SendMessageAsync(
-                        openId,
-                        "text",
-                        content,
-                        uuid,
-                        ct);
-                }
-                else if (!string.IsNullOrWhiteSpace(message.Target))
-                {
-                    // 群聊兜底路径：没有 open_id 时 message.Target 是飞书
-                    // chat_id（external_conversation_id），不能当作 open_id
-                    // 使用，必须以 receive_id_type=chat_id 发送。
-                    sendResult = await _client.SendMessageAsync(
-                        message.Target,
-                        "text",
-                        content,
-                        uuid,
-                        ct,
-                        receiveIdType: "chat_id");
-                }
-                else
-                {
-                    throw new ArgumentException(
-                        "No open_id or chat target specified for Feishu message");
-                }
+                // 显式 open_id 优先，否则回落到 chat_id；四条发送路径共用同一判定。
+                var (target, receiveIdType) = FeishuRecipientResolver.Resolve(
+                    message.Metadata,
+                    message.Target);
+                var sendResult = await _client.SendMessageAsync(
+                    target,
+                    "text",
+                    content,
+                    uuid,
+                    ct,
+                    receiveIdType: receiveIdType);
 
                 if (sendResult.Code != 0)
                 {
@@ -298,15 +279,17 @@ public sealed class FeishuConnector : IPuddingConnector
         else
         {
             var content = JsonSerializer.Serialize(new { file_key = fileKey });
-            // 无源消息可回复时走群聊路径：message.Target 是 chat_id，
-            // 必须用 receive_id_type=chat_id，不能当作 open_id。
+            // 无源消息可回复时走兜底收件人：显式 open_id 优先，否则 chat_id。
+            var (target, receiveIdType) = FeishuRecipientResolver.Resolve(
+                message.Metadata,
+                message.Target);
             sendResult = await _client.SendMessageAsync(
-                message.Target,
+                target,
                 "audio",
                 content,
                 uuid,
                 ct,
-                receiveIdType: "chat_id");
+                receiveIdType: receiveIdType);
         }
         if (sendResult.Code != 0)
         {
@@ -379,13 +362,17 @@ public sealed class FeishuConnector : IPuddingConnector
         else
         {
             var contentJson = JsonSerializer.Serialize(new { file_key = fileKey });
+            // 无源消息可回复时走兜底收件人：显式 open_id 优先，否则 chat_id。
+            var (target, receiveIdType) = FeishuRecipientResolver.Resolve(
+                message.Metadata,
+                message.Target);
             sendResult = await _client.SendMessageAsync(
-                message.Target,
+                target,
                 "file",
                 contentJson,
                 uuid,
                 ct,
-                receiveIdType: "chat_id");
+                receiveIdType: receiveIdType);
         }
 
         if (sendResult.Code != 0)
@@ -445,15 +432,17 @@ public sealed class FeishuConnector : IPuddingConnector
         {
             var contentJson =
                 JsonSerializer.Serialize(new { image_key = imageKey });
-            // 无源消息可回复时走群聊路径：message.Target 是 chat_id，
-            // 必须用 receive_id_type=chat_id，不能当作 open_id。
+            // 无源消息可回复时走兜底收件人：显式 open_id 优先，否则 chat_id。
+            var (target, receiveIdType) = FeishuRecipientResolver.Resolve(
+                message.Metadata,
+                message.Target);
             sendResult = await _client.SendMessageAsync(
-                message.Target,
+                target,
                 "image",
                 contentJson,
                 uuid,
                 ct,
-                receiveIdType: "chat_id");
+                receiveIdType: receiveIdType);
         }
         if (sendResult.Code != 0)
         {
