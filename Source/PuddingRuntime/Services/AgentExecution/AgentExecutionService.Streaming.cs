@@ -1653,9 +1653,9 @@ public sealed partial class AgentExecutionService
                         Data = new { name = tc.Name, arguments = tc.ArgumentsJson, toolCallId = tc.Id }
                     }, ct);
 
-                    var injectedArgsJson = request.Origin?.IsUnboundChannelSender == true ? tc.ArgumentsJson : await _keyVaultService.InjectAsync(tc.ArgumentsJson, ct);
-                    var safeToolArgs = await _keyVaultService.StripAsync(injectedArgsJson, ct);
-                    var repeatKey = $"{tc.Name}|{injectedArgsJson}";
+                    var toolArgsJson = ToolArgumentPolicy.ForDispatch(tc.ArgumentsJson);
+                    var safeToolArgs = await _keyVaultService.StripAsync(toolArgsJson, ct);
+                    var repeatKey = $"{tc.Name}|{toolArgsJson}";
                     var toolStartedAt = DateTimeOffset.UtcNow;
                     var toolSw = System.Diagnostics.Stopwatch.StartNew();
                     SkillResult result;
@@ -1676,7 +1676,7 @@ public sealed partial class AgentExecutionService
                             InboundMessageId = request.MessageId,
                             ToolCallId = tc.Id,
                             ToolName = tc.Name,
-                            ArgumentsJson = injectedArgsJson,
+                            ArgumentsJson = toolArgsJson,
                             CapabilityPolicy = effectiveCapability,
                             Trace = streamTrace,
                             ExecutionIdentity = request.ExecutionIdentity,
@@ -1711,8 +1711,8 @@ public sealed partial class AgentExecutionService
                                 AgentInstanceId = instance.AgentInstanceId,
                                 WorkspaceId = request.WorkspaceId ?? string.Empty,
                                 SessionId = request.SessionId,
-                                Input = ExtractInputFromJson(injectedArgsJson),
-                                Parameters = ExtractParametersFromJson(injectedArgsJson),
+                                Input = ExtractInputFromJson(toolArgsJson),
+                                Parameters = ExtractParametersFromJson(toolArgsJson),
                             },
                             effectiveCapability,
                             ct);
@@ -1735,7 +1735,7 @@ public sealed partial class AgentExecutionService
                         result.Success
                             ? RuntimeActivityStatuses.Succeeded
                             : RuntimeActivityStatuses.Failed,
-                        injectedArgsJson,
+                        toolArgsJson,
                         safeToolArgs,
                         result,
                         error: null,
@@ -1760,7 +1760,7 @@ public sealed partial class AgentExecutionService
                     ReportMeaningfulProgress(
                         request,
                         $"tool.completed:{tc.Name}",
-                        $"{tc.Name}\u001f{injectedArgsJson}\u001f{result.Output}\u001f{result.Error}");
+                        $"{tc.Name}\u001f{toolArgsJson}\u001f{result.Output}\u001f{result.Error}");
 
                     var toolResultFrame = ServerSentEventFrame.Json(SseEventTypes.ToolResult, new
                     {
@@ -1864,7 +1864,7 @@ public sealed partial class AgentExecutionService
                     }
 
                     // 工具结果追加到历史（非 terminal 工具）
-                    result = await FireToolResultTransformersAsync(loopCtx, round, tc.Name, injectedArgsJson, result, ct);
+                    result = await FireToolResultTransformersAsync(loopCtx, round, tc.Name, toolArgsJson, result, ct);
                     var toolPayloadRaw = result.Success
                         ? $"✅ Tool '{tc.Name}' succeeded (exit={result.ExitCode}):\n{result.Output}"
                         : BuildToolFailurePayload(tc.Name, result, request.SessionId, isPermissionError:

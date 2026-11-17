@@ -1157,17 +1157,17 @@ if (effectiveLlmConfig is not null)
                             break;
                         }
 
-                        var injectedArgsJson = request.Origin?.IsUnboundChannelSender == true ? call.ArgumentsJson ?? "{}" : await _keyVaultService.InjectAsync(call.ArgumentsJson ?? "{}", ct);
-                        var compatibility = HarnessToolCompatibilityAdapter.Normalize(call.Name, injectedArgsJson);
+                        var toolArgsJson = ToolArgumentPolicy.ForDispatch(call.ArgumentsJson);
+                        var compatibility = HarnessToolCompatibilityAdapter.Normalize(call.Name, toolArgsJson);
                         var canonicalCall = call with
                         {
                             Name = compatibility.ToolName,
                             ArgumentsJson = compatibility.ArgumentsJson,
                         };
-                        injectedArgsJson = canonicalCall.ArgumentsJson;
-                        var safeToolArgs = await _keyVaultService.StripAsync(injectedArgsJson, ct);
+                        toolArgsJson = canonicalCall.ArgumentsJson;
+                        var safeToolArgs = await _keyVaultService.StripAsync(toolArgsJson, ct);
 
-                        var repeatKey = $"{canonicalCall.Name}|{injectedArgsJson}";
+                        var repeatKey = $"{canonicalCall.Name}|{toolArgsJson}";
                         toolRepeatMap.TryGetValue(repeatKey, out var repeatCount);
                         if (repeatCount >= _guardrails.MaxSameToolRepeat)
                         {
@@ -1182,7 +1182,7 @@ if (effectiveLlmConfig is not null)
                         await FireHooksAsync(h => h.OnToolCallAsync(loopCtx, round, canonicalCall.Name, safeToolArgs, ct));
                         ReportLiveness(request, $"tool.started:{canonicalCall.Name}");
                         var subAgentToolSw = System.Diagnostics.Stopwatch.StartNew();
-                        var subAgentToolArgsHash = ComputeSha256Hash(injectedArgsJson ?? "");
+                        var subAgentToolArgsHash = ComputeSha256Hash(toolArgsJson ?? "");
                         await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.tool.started", new
                         {
                             sub_agent_id = request.SessionId,
@@ -1237,7 +1237,7 @@ if (effectiveLlmConfig is not null)
                                         InboundMessageId = request.MessageId,
                                         ToolCallId = call.Id,
                                         ToolName = canonicalCall.Name,
-                                        ArgumentsJson = injectedArgsJson,
+                                        ArgumentsJson = toolArgsJson,
                                         CapabilityPolicy = effectiveCapability,
                                         Trace = execTrace,
                                         ExecutionIdentity = request.ExecutionIdentity,
@@ -1272,14 +1272,14 @@ if (effectiveLlmConfig is not null)
                                             AgentInstanceId = instance.AgentInstanceId,
                                             WorkspaceId = request.WorkspaceId,
                                             SessionId = request.SessionId,
-                                            Input = ExtractInputFromJson(injectedArgsJson),
-                                            Parameters = ExtractParametersFromJson(injectedArgsJson),
+                                            Input = ExtractInputFromJson(toolArgsJson),
+                                            Parameters = ExtractParametersFromJson(toolArgsJson),
                                         },
                                         effectiveCapability,
                                         ct);
                                 }
                                 toolSw.Stop();
-                                var toolArgsHash = ComputeSha256Hash(injectedArgsJson ?? "");
+                                var toolArgsHash = ComputeSha256Hash(toolArgsJson ?? "");
                                 if (skillResult.Success)
                                 {
                                     await RecordActivityAsync(
@@ -1295,7 +1295,7 @@ if (effectiveLlmConfig is not null)
                                         {
                                             ["tool_name"] = canonicalCall.Name,
                                             ["tool_args_hash"] = toolArgsHash,
-                                            ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
+                                            ["tool_args_length"] = (toolArgsJson?.Length ?? 0).ToString(),
                                             ["tool_duration_ms"] = toolSw.ElapsedMilliseconds.ToString(),
                                             ["tool_output_length"] = (skillResult.Output?.Length ?? 0).ToString(),
                                             ["session_id"] = request.SessionId,
@@ -1313,7 +1313,7 @@ if (effectiveLlmConfig is not null)
                                         toolStartedAt,
                                         toolSw.ElapsedMilliseconds,
                                         RuntimeActivityStatuses.Succeeded,
-                                        injectedArgsJson,
+                                        toolArgsJson,
                                         safeToolArgs,
                                         skillResult,
                                         error: null,
@@ -1334,7 +1334,7 @@ if (effectiveLlmConfig is not null)
                                         {
                                             ["tool_name"] = canonicalCall.Name,
                                             ["tool_args_hash"] = toolArgsHash,
-                                            ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
+                                            ["tool_args_length"] = (toolArgsJson?.Length ?? 0).ToString(),
                                             ["tool_duration_ms"] = toolSw.ElapsedMilliseconds.ToString(),
                                             ["error_code"] = "tool_failed",
                                             ["error_message"] = Truncate(skillResult.Error ?? "", 500),
@@ -1353,7 +1353,7 @@ if (effectiveLlmConfig is not null)
                                         toolStartedAt,
                                         toolSw.ElapsedMilliseconds,
                                         RuntimeActivityStatuses.Failed,
-                                        injectedArgsJson,
+                                        toolArgsJson,
                                         safeToolArgs,
                                         skillResult,
                                         error: null,
@@ -1367,7 +1367,7 @@ if (effectiveLlmConfig is not null)
                             catch (Exception ex)
                             {
                                 toolSw.Stop();
-                                var toolArgsHash = ComputeSha256Hash(injectedArgsJson ?? "");
+                                var toolArgsHash = ComputeSha256Hash(toolArgsJson ?? "");
                                 await RecordActivityAsync(
                                     execTrace,
                                     component: RuntimeActivityComponents.ToolRunner,
@@ -1381,7 +1381,7 @@ if (effectiveLlmConfig is not null)
                                     {
                                         ["tool_name"] = canonicalCall.Name,
                                         ["tool_args_hash"] = toolArgsHash,
-                                        ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
+                                        ["tool_args_length"] = (toolArgsJson?.Length ?? 0).ToString(),
                                         ["tool_duration_ms"] = toolSw.ElapsedMilliseconds.ToString(),
                                         ["error_code"] = ex.GetType().Name,
                                         ["error_message"] = Truncate(ex.Message, 500),
@@ -1400,7 +1400,7 @@ if (effectiveLlmConfig is not null)
                                     toolStartedAt,
                                     toolSw.ElapsedMilliseconds,
                                     RuntimeActivityStatuses.Failed,
-                                    injectedArgsJson,
+                                    toolArgsJson,
                                     safeToolArgs,
                                     result: null,
                                     error: ex,
@@ -1464,7 +1464,7 @@ if (effectiveLlmConfig is not null)
                                 DateTimeOffset.UtcNow,
                                 0,
                                 RuntimeActivityStatuses.Failed,
-                                injectedArgsJson,
+                                toolArgsJson,
                                 safeToolArgs,
                                 skillResult,
                                 error: null,
@@ -1917,14 +1917,14 @@ if (effectiveLlmConfig is not null)
                     }
 
                     var argsJson = loopResp.Tool!.Args?.GetRawText() ?? "{}";
-                    var injectedArgsJson = request.Origin?.IsUnboundChannelSender == true ? argsJson : await _keyVaultService.InjectAsync(argsJson, ct);
-                    var compatibility = HarnessToolCompatibilityAdapter.Normalize(toolName, injectedArgsJson);
+                    var toolArgsJson = ToolArgumentPolicy.ForDispatch(argsJson);
+                    var compatibility = HarnessToolCompatibilityAdapter.Normalize(toolName, toolArgsJson);
                     toolName = compatibility.ToolName;
-                    injectedArgsJson = compatibility.ArgumentsJson;
-                    toolArgs = await _keyVaultService.StripAsync(injectedArgsJson, ct);
+                    toolArgsJson = compatibility.ArgumentsJson;
+                    toolArgs = await _keyVaultService.StripAsync(toolArgsJson, ct);
 
                     // 检查点 D：相同工具相同参数重复次数
-                    var repeatKey = $"{toolName}|{injectedArgsJson}";
+                    var repeatKey = $"{toolName}|{toolArgsJson}";
                     toolRepeatMap.TryGetValue(repeatKey, out var repeatCount);
                     if (repeatCount >= _guardrails.MaxSameToolRepeat)
                     {
@@ -1957,7 +1957,7 @@ if (effectiveLlmConfig is not null)
                         // 同上：单工具分支无 provider 侧调用 id，靠 tool_call_index 配对。
                         tool_call_id = (string?)null,
                         tool_name = toolName,
-                        args_hash = ComputeSha256Hash(injectedArgsJson ?? ""),
+                        args_hash = ComputeSha256Hash(toolArgsJson ?? ""),
                         arguments_preview = Truncate(toolArgs ?? "", 1024),
                         arguments_truncated = (toolArgs?.Length ?? 0) > 1024,
                         tool_call_index = totalToolCalls,
@@ -1992,7 +1992,7 @@ if (effectiveLlmConfig is not null)
                                 InboundMessageId = request.MessageId,
                                 ToolCallId = toolName, // CONTINUE 路径没有独立 toolCallId
                                 ToolName = toolName,
-                                ArgumentsJson = injectedArgsJson,
+                                ArgumentsJson = toolArgsJson,
                                 CapabilityPolicy = effectiveCapability,
                                 Trace = execTrace,
                                 ExecutionIdentity = request.ExecutionIdentity,
@@ -2026,8 +2026,8 @@ if (effectiveLlmConfig is not null)
                                     AgentInstanceId = instance.AgentInstanceId,
                                     WorkspaceId     = request.WorkspaceId,
                                     SessionId       = request.SessionId,
-                                    Input           = ExtractInputFromJson(injectedArgsJson),
-                                    Parameters      = ExtractParametersFromJson(injectedArgsJson),
+                                    Input           = ExtractInputFromJson(toolArgsJson),
+                                    Parameters      = ExtractParametersFromJson(toolArgsJson),
                                 },
                                 effectiveCapability, ct);
                         }
@@ -2038,7 +2038,7 @@ if (effectiveLlmConfig is not null)
                             request,
                             $"tool.completed:{toolName}",
                             $"{toolName}\u001f{toolArgs}\u001f{skillResult.Output}\u001f{skillResult.Error}");
-                        var toolArgsHash2 = ComputeSha256Hash(injectedArgsJson ?? "");
+                        var toolArgsHash2 = ComputeSha256Hash(toolArgsJson ?? "");
                         if (skillResult.Success)
                         {
                             await RecordActivityAsync(
@@ -2054,7 +2054,7 @@ if (effectiveLlmConfig is not null)
                                 {
                                     ["tool_name"] = toolName,
                                     ["tool_args_hash"] = toolArgsHash2,
-                                    ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
+                                    ["tool_args_length"] = (toolArgsJson?.Length ?? 0).ToString(),
                                     ["tool_duration_ms"] = toolSw2.ElapsedMilliseconds.ToString(),
                                     ["tool_output_length"] = (skillResult.Output?.Length ?? 0).ToString(),
                                     ["session_id"] = request.SessionId,
@@ -2072,7 +2072,7 @@ if (effectiveLlmConfig is not null)
                                 toolStartedAt2,
                                 toolSw2.ElapsedMilliseconds,
                                 RuntimeActivityStatuses.Succeeded,
-                                injectedArgsJson,
+                                toolArgsJson,
                                 toolArgs,
                                 skillResult,
                                 error: null,
@@ -2093,7 +2093,7 @@ if (effectiveLlmConfig is not null)
                                 {
                                     ["tool_name"] = toolName,
                                     ["tool_args_hash"] = toolArgsHash2,
-                                    ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
+                                    ["tool_args_length"] = (toolArgsJson?.Length ?? 0).ToString(),
                                     ["tool_duration_ms"] = toolSw2.ElapsedMilliseconds.ToString(),
                                     ["error_code"] = "tool_failed",
                                     ["error_message"] = Truncate(skillResult.Error ?? "", 500),
@@ -2112,7 +2112,7 @@ if (effectiveLlmConfig is not null)
                                 toolStartedAt2,
                                 toolSw2.ElapsedMilliseconds,
                                 RuntimeActivityStatuses.Failed,
-                                injectedArgsJson,
+                                toolArgsJson,
                                 toolArgs,
                                 skillResult,
                                 error: null,
@@ -2126,7 +2126,7 @@ if (effectiveLlmConfig is not null)
                     catch (Exception ex)
                     {
                         toolSw2.Stop();
-                        var toolArgsHash2 = ComputeSha256Hash(injectedArgsJson ?? "");
+                        var toolArgsHash2 = ComputeSha256Hash(toolArgsJson ?? "");
                         // 异常也必须留下终态事件：否则事件流里只有 started，
                         // 下游会把这次调用当成“仍在进行”。
                         await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.tool.failed", new
@@ -2154,7 +2154,7 @@ if (effectiveLlmConfig is not null)
                             {
                                 ["tool_name"] = toolName,
                                 ["tool_args_hash"] = toolArgsHash2,
-                                ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
+                                ["tool_args_length"] = (toolArgsJson?.Length ?? 0).ToString(),
                                 ["tool_duration_ms"] = toolSw2.ElapsedMilliseconds.ToString(),
                                 ["error_code"] = ex.GetType().Name,
                                 ["error_message"] = Truncate(ex.Message, 500),
@@ -2173,7 +2173,7 @@ if (effectiveLlmConfig is not null)
                             toolStartedAt2,
                             toolSw2.ElapsedMilliseconds,
                             RuntimeActivityStatuses.Failed,
-                            injectedArgsJson,
+                            toolArgsJson,
                             toolArgs,
                             result: null,
                             error: ex,
@@ -2224,7 +2224,7 @@ if (effectiveLlmConfig is not null)
                             tool_name = toolName,
                             success = skillResult.Success,
                             duration_ms = toolSw2.ElapsedMilliseconds,
-                            args_hash = ComputeSha256Hash(injectedArgsJson ?? ""),
+                            args_hash = ComputeSha256Hash(toolArgsJson ?? ""),
                             output_length = skillResult.Output?.Length ?? 0,
                             output_preview = Truncate(safeSingleToolOutput, 2048),
                             output_truncated = safeSingleToolOutput.Length > 2048,
@@ -2244,7 +2244,7 @@ if (effectiveLlmConfig is not null)
                             {
                                 ToolCallId = $"auto-{totalToolCalls}",
                                 ToolName = toolName,
-                                ArgsHash = ComputeSha256Hash(injectedArgsJson ?? ""),
+                                ArgsHash = ComputeSha256Hash(toolArgsJson ?? ""),
                                 Success = skillResult.Success,
                                 DurationMs = toolSw2.ElapsedMilliseconds,
                                 OutputLength = skillResult.Output?.Length ?? 0,
