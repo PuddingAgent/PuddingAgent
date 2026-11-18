@@ -14,6 +14,14 @@ public sealed class SqliteScheduleStore(
     : IScheduleStore
 {
     private const int TaskCreated = 0;
+    private const string InsertSql = """
+        INSERT INTO automation_schedules
+            (id, name, cron_expression, time_zone_id, handler, payload_json, catch_up_policy,
+             is_enabled, next_run_at_utc, last_run_at_utc, last_fire_time_utc, revision)
+        VALUES
+            ($id, $name, $cron, $zone, $handler, $payload, $policy,
+             $enabled, $next, $lastRun, $lastFire, $revision)
+        """;
 
     public static async Task EnsureSchemaAsync(DbConnection connection, CancellationToken cancellationToken)
     {
@@ -28,16 +36,30 @@ public sealed class SqliteScheduleStore(
         await transaction.CommitAsync(cancellationToken);
     }
 
-    public async Task InsertAsync(AutomationScheduleRecord schedule, CancellationToken cancellationToken)
+    public Task InsertAsync(AutomationScheduleRecord schedule, CancellationToken cancellationToken) =>
+        WriteDefinitionAsync(InsertSql, schedule, cancellationToken);
+
+    /// <summary>Reconciles a configured definition. An identical definition preserves its persisted cursor.</summary>
+    public Task SyncDefinitionAsync(AutomationScheduleRecord schedule, CancellationToken cancellationToken) =>
+        WriteDefinitionAsync(InsertSql + "\n" + """
+            ON CONFLICT (id) DO UPDATE SET
+                name = excluded.name, cron_expression = excluded.cron_expression,
+                time_zone_id = excluded.time_zone_id, handler = excluded.handler, payload_json = excluded.payload_json,
+                catch_up_policy = excluded.catch_up_policy, is_enabled = excluded.is_enabled,
+                next_run_at_utc = excluded.next_run_at_utc, revision = automation_schedules.revision + 1
+            WHERE automation_schedules.name IS NOT excluded.name
+               OR automation_schedules.cron_expression IS NOT excluded.cron_expression
+               OR automation_schedules.time_zone_id IS NOT excluded.time_zone_id
+               OR automation_schedules.handler IS NOT excluded.handler
+               OR automation_schedules.payload_json IS NOT excluded.payload_json
+               OR automation_schedules.catch_up_policy IS NOT excluded.catch_up_policy
+               OR automation_schedules.is_enabled IS NOT excluded.is_enabled
+            """, schedule, cancellationToken);
+
+    private async Task WriteDefinitionAsync(string sql, AutomationScheduleRecord schedule, CancellationToken cancellationToken)
     {
-        await using var command = CreateCommand("""
-            INSERT INTO automation_schedules
-                (id, name, cron_expression, time_zone_id, handler, payload_json, catch_up_policy,
-                 is_enabled, next_run_at_utc, last_run_at_utc, last_fire_time_utc, revision)
-            VALUES
-                ($id, $name, $cron, $zone, $handler, $payload, $policy,
-                 $enabled, $next, $lastRun, $lastFire, $revision)
-            """, null, ("$id", schedule.Id.ToString("D")), ("$name", schedule.Name),
+        await using var command = CreateCommand(sql, null,
+            ("$id", schedule.Id.ToString("D")), ("$name", schedule.Name),
             ("$cron", schedule.CronExpression), ("$zone", schedule.TimeZoneId), ("$handler", schedule.Handler),
             ("$payload", schedule.PayloadJson), ("$policy", (int)schedule.CatchUp), ("$enabled", schedule.IsEnabled),
             ("$next", FormatUtc(schedule.NextRunAtUtc)), ("$lastRun", FormatUtc(schedule.LastRunAtUtc)),

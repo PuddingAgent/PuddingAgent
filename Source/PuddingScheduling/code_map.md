@@ -7,7 +7,7 @@
 | `AutomationScheduleRecord.cs` | 持久化模型（设计 §3.2 字段）投影到 `ScheduleState`，以及 `(scheduleId, fireTime)` 幂等键的规范化：fireTime 必须转 UTC 并截到整分钟 |
 | `IScheduleStore.cs` | 读取到期计划并原子提交 tick；按版本拒绝过期快照，只把触发唯一键冲突判为已记录 |
 | `ScheduleStoreSchema.cs` | 计划与触发表 DDL、触发唯一约束、到期扫描索引 |
-| `SqliteScheduleStore.cs` | 复用调用方的 SQLite 连接，任务写入、触发记录和游标共享事务 |
+| `SqliteScheduleStore.cs` | 任务写入、触发和游标共享事务；同一定义重启保留游标，变更递增版本 |
 | `ScheduleTickService.cs` | 从注入时钟读取一轮时间，扫描到期项并逐项规划和提交；返回每项写入或失败 |
 
 叶组件只依赖 BCL。项目的 MSBuild 门禁拒绝 ProjectReference，测试工程提供 SQLite 驱动。

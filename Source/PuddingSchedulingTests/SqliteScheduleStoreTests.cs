@@ -35,6 +35,23 @@ public sealed class SqliteScheduleStoreTests
     public async Task CleanupAsync() => await _database.DisposeAsync();
 
     [TestMethod]
+    public async Task SyncDefinitionAsync_PreservesCursorOnRestartAndFencesOldPlansAfterAnEdit()
+    {
+        var schedule = Schedule(next: Due);
+        await _store.SyncDefinitionAsync(schedule, CancellationToken.None);
+        await _store.SyncDefinitionAsync(schedule with { NextRunAtUtc = Due.AddDays(3) }, CancellationToken.None);
+        Assert.AreEqual(schedule, (await _store.ListDueAsync(Due, 1, CancellationToken.None)).Single());
+
+        var edited = schedule with { PayloadJson = "{\"workspaceId\":\"ops\"}", NextRunAtUtc = Due.AddDays(1) };
+        await _store.SyncDefinitionAsync(edited, CancellationToken.None);
+
+        var current = (await _store.ListDueAsync(Due.AddDays(1), 1, CancellationToken.None)).Single();
+        Assert.AreEqual(edited with { Revision = 1 }, current);
+        Assert.AreEqual(new ScheduleTickWrite(false, 0, 0),
+            await _store.TryApplyTickAsync(schedule, Plan(schedule, Due), Due, CancellationToken.None));
+    }
+
+    [TestMethod]
     public async Task ListDueAsync_UsesUtcFiltersAndReturnsOldestFirst()
     {
         var old = Schedule(next: Due.AddDays(-1), payload: "{\"source\":\"test\"}");
