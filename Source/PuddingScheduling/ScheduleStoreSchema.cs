@@ -40,7 +40,8 @@ public static class ScheduleStoreSchema
             is_enabled         INTEGER NOT NULL,
             next_run_at_utc    TEXT    NULL,
             last_run_at_utc    TEXT    NULL,
-            last_fire_time_utc TEXT    NULL
+            last_fire_time_utc TEXT    NULL,
+            revision           INTEGER NOT NULL DEFAULT 0
         );
         """;
 
@@ -62,6 +63,11 @@ public static class ScheduleStoreSchema
         );
         """;
 
+    private const string CreateDueIndexSql = """
+        CREATE INDEX IF NOT EXISTS ix_automation_schedules_due ON automation_schedules (next_run_at_utc, id)
+        WHERE is_enabled = 1 AND next_run_at_utc IS NOT NULL;
+        """;
+
     /// <summary>Every statement needed to bring an empty database to the current schema.</summary>
-    public static IReadOnlyList<string> All { get; } = new[] { CreateSchedulesSql, CreateRunsSql };
+    public static IReadOnlyList<string> All { get; } = new[] { CreateSchedulesSql, CreateRunsSql, CreateDueIndexSql };
 }

@@ -4,8 +4,7 @@ namespace PuddingScheduling;
 /// The persisted shape of one automation schedule, as defined by the design proposal
 /// (§3.2 of Docs/11_design/定时自动化任务-设计-2026-11-18.md).
 ///
-/// This type holds no persistence behaviour on purpose: the store contract and the EF mapping
-/// belong to the host, so this project stays a leaf that can be tested without a database.
+/// The revision fences a plan against changes to the persisted schedule.
 /// </summary>
 public sealed record AutomationScheduleRecord(
     Guid Id,
@@ -18,7 +17,8 @@ public sealed record AutomationScheduleRecord(
     bool IsEnabled,
     DateTimeOffset? NextRunAtUtc,
     DateTimeOffset? LastRunAtUtc,
-    DateTimeOffset? LastFireTimeUtc)
+    DateTimeOffset? LastFireTimeUtc,
+    long Revision = 0)
 {
     /// <summary>
     /// Projects this record onto the minimal state <see cref="ScheduleTickPlanner"/> needs.

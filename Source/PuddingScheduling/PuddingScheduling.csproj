@@ -4,4 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+  <Target Name="EnforceSchedulingProjectBoundary" BeforeTargets="PrepareForBuild">
+    <Error Condition="'@(ProjectReference)' != ''" Text="PuddingScheduling must not reference other projects." />
+  </Target>
 </Project>
