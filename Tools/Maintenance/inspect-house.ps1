@@ -348,6 +348,35 @@ foreach ($e in $report.errorPatterns) {
 }
 
 Write-Output ''
+Write-Output '[guardian]'
+# The guardian is launched with --adopt-pid and keeps that pid across desktop restarts. A stale
+# value means the control plane answers on its port while supervising nothing, and nothing on the
+# machine reports it. check-guardian-identity.ps1 owns that verdict; this section only relays it so
+# the two cannot drift apart into different definitions of "healthy".
+$identityProbe = Join-Path $PSScriptRoot 'check-guardian-identity.ps1'
+if (-not (Test-Path $identityProbe)) {
+    Write-Output '  (check-guardian-identity.ps1 missing; guardian identity not checked)'
+}
+else {
+    $hostShell = if (Get-Command pwsh -ErrorAction SilentlyContinue) { 'pwsh' } else { 'powershell' }
+    $rawProbe = & $hostShell -NoProfile -File $identityProbe -Json 2>$null
+    $probeExit = $LASTEXITCODE
+    $identity = $null
+    try { $identity = $rawProbe | ConvertFrom-Json } catch { }
+    if ($null -eq $identity) {
+        Write-Output ("  UNKNOWN: probe produced no parsable output (exit {0})" -f $probeExit)
+    }
+    else {
+        foreach ($r in @($identity.Results)) {
+            Write-Output ("  {0,-15} guardian={1} adopt={2}" -f $r.Verdict, $r.GuardianId, $r.AdoptPid)
+        }
+        if (@($identity.Results | Where-Object { $_.Verdict -in @('STALE_ADOPTION', 'NO_GUARDIAN') }).Count -gt 0) {
+            Write-Output '  WARN: the running guardian does not supervise the running desktop; restart it with Tools/Dev/redeploy-desktop.ps1 -Apply.'
+        }
+    }
+}
+
+Write-Output ''
 Write-Output '[startup]'
 if ($report.startup.Count -eq 0) {
     Write-Output '  (no startup log found in the recent window; the process may predate the retained files)'
