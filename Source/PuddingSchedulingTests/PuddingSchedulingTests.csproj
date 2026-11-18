@@ -7,5 +7,11 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../PuddingScheduling/PuddingScheduling.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <!-- NU1903 remediation (same as PuddingCodeIndex): Microsoft.Data.Sqlite 10.0.9 floors
+         SQLitePCLRaw.bundle_e_sqlite3 at 2.1.11, which resolves SQLitePCLRaw.lib.e_sqlite3 2.1.11
+         (advisory GHSA-2m69-gcr7-jv3q). Pinning the bundle to 2.1.13 lifts the native lib and still ships
+         a single native e_sqlite3 build. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
   </ItemGroup>
 </Project>
