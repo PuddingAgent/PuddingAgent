@@ -10,5 +10,5 @@
 | `GuardianStore.cs` | 路径围栏、程序集哈希、持久备份、事务替换及新增文件清理；排除 guardian 自身与 Core 根下的运行数据，旧清单读取也遵守该边界 |
 | `GuardianRuntime.cs` | UI 响应、Core readiness 与进程身份；先 Core 后 Desktop 有界停止，`launch` 遵守 Core 自动启动配置 |
 | `GuardianBuilder.cs` | 隔离编译、前端产物选择与候选包完整性检查 |
-| `GuardianHttpServer.cs` | 仅 IPv4 loopback、令牌认证、有界请求体、202 回执与状态查询；通过链接的 `../PuddingSecretReferences/BootstrapSecretFile.cs` 解析启动凭据引用，不依赖产品程序集或 KeyVault HTTP |
+| `GuardianHttpServer.cs` | 仅 IPv4 loopback、令牌认证、有界请求体、202 回执与状态查询；/guardian/status 同时返回被监护的 `desktopPid`/`corePid`，否则「监护本机」与「监护已退出的桌面」在调用方看来完全相同；通过链接的 `../PuddingSecretReferences/BootstrapSecretFile.cs` 解析启动凭据引用，不依赖产品程序集或 KeyVault HTTP |
 | `../PuddingDesktop.GuardianTests/GuardianTests.cs` | 独立状态机、事务、HTTP 与进程身份回归 |

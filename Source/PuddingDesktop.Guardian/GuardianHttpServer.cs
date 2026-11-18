@@ -67,6 +67,9 @@ public sealed class GuardianHttpServer(GuardianSettings settings, GuardianContro
                 await ReplyAsync(context, 200, new { protocol = "pudding.guardian/1", processId = Environment.ProcessId,
                     state.Phase, state.Monitoring, busy = controller.Busy, state.RequestId, state.Error, state.PreparedDirectory,
                     settings.DesktopExecutablePath, settings.DataRoot, settings.DesktopHome,
+                    // The desktop must be able to tell whether this guardian adopts *it* or a
+                    // desktop that already exited; without the pid the two look identical.
+                    desktopPid = state.Desktop?.Id, corePid = state.Core?.Id,
                     hasFallback = state.Fallback is not null, pending = state.Pending is not null,
                     exitRequestId = state.ExitRequest?.RequestId, exiting = state.ExitRequest is not null, state.UpdatedAt });
                 return;

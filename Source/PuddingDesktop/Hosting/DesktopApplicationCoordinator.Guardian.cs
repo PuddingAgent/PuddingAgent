@@ -145,7 +145,7 @@ public sealed partial class DesktopApplicationCoordinator
         return client;
     }
 
-    private static async Task<bool> CheckGuardianAsync(HttpClient client, string dataRoot, CancellationToken ct)
+    private async Task<bool> CheckGuardianAsync(HttpClient client, string dataRoot, CancellationToken ct)
     {
         try
         {
@@ -157,10 +157,32 @@ public sealed partial class DesktopApplicationCoordinator
                 || !string.Equals(status.GetProperty("desktopExecutablePath").GetString(), Environment.ProcessPath, StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(Path.GetFullPath(status.GetProperty("dataRoot").GetString()!), Path.GetFullPath(dataRoot), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Guardian port belongs to another installation.");
+
+            // Answering on the port does not make it *our* guardian. After a restart the
+            // previous guardian keeps adopting the dead desktop pid and passes every check
+            // above, so the live desktop was left unmanaged without a single warning.
+            var supervised = status.TryGetProperty("desktopPid", out var pidElement) && pidElement.ValueKind == JsonValueKind.Number
+                ? pidElement.GetInt32()
+                : (int?)null;
+            var adoption = GuardianAdoptionPlan.Decide(Environment.ProcessId, supervised, IsProcessAlive(supervised));
+            if (GuardianAdoptionPlan.FailureMessage(adoption, supervised, _guardianConfig.HttpPort, Environment.ProcessId) is { } failure)
+                throw new InvalidOperationException(failure);
             return true;
         }
         catch (HttpRequestException) { return false; }
         catch (TaskCanceledException) when (!ct.IsCancellationRequested) { return false; }
+    }
+
+    private static bool IsProcessAlive(int? processId)
+    {
+        if (processId is not { } id) return false;
+        try
+        {
+            using var process = Process.GetProcessById(id);
+            return !process.HasExited;
+        }
+        catch (ArgumentException) { return false; }
+        catch (InvalidOperationException) { return false; }
     }
 
     private async Task<DesktopBootstrapResult> TriggerGuardianBootstrapAsync(string? requestedBy, bool yolo, CancellationToken ct)

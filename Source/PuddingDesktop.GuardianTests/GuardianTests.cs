@@ -487,7 +487,7 @@ public sealed class GuardianTests
         Assert.Equal(["desktop"], f.Runtime.Starts);
     }
 
-    private sealed class Fixture : IDisposable
+    internal sealed class Fixture : IDisposable
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), "pudding-guardian-tests", Guid.NewGuid().ToString("N"));
         public GuardianSettings Settings { get; }
@@ -525,7 +525,7 @@ public sealed class GuardianTests
         public void Dispose() => Directory.Delete(_root, recursive: true);
     }
 
-    private sealed class FakeRuntime(GuardianSettings settings, string candidate) : IGuardianRuntime
+    internal sealed class FakeRuntime(GuardianSettings settings, string candidate) : IGuardianRuntime
     {
         public ProcessIdentity? Desktop => null;
         public ProcessIdentity? Core => null;
@@ -556,7 +556,7 @@ public sealed class GuardianTests
         { Starts.Add(target); RespectAutoStart.Add(respectAutoStart); return Task.CompletedTask; }
     }
 
-    private sealed class AdvancingTime : TimeProvider
+    internal sealed class AdvancingTime : TimeProvider
     {
         private long _ticks = DateTimeOffset.UtcNow.Ticks;
         public override DateTimeOffset GetUtcNow() => new(Interlocked.Read(ref _ticks), TimeSpan.Zero);
@@ -566,7 +566,7 @@ public sealed class GuardianTests
             Advance(dueTime);
             return new TimerAdapter(callback, state);
         }
-        private sealed class TimerAdapter : ITimer
+        internal sealed class TimerAdapter : ITimer
         {
             private readonly Timer _timer;
             public TimerAdapter(TimerCallback callback, object? state) => _timer = new(callback, state, TimeSpan.FromMilliseconds(1), Timeout.InfiniteTimeSpan);
