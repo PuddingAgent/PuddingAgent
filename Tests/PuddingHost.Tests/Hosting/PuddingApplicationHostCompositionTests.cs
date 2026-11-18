@@ -1,9 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using PuddingCode.Configuration;
 using PuddingCode.Tasks;
 using PuddingHost.Hosting;
 using PuddingPlatform.Services;
+using PuddingPlatform.Services.Scheduling;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.Skills.Telemetry;
@@ -35,6 +37,8 @@ public sealed class PuddingApplicationHostCompositionTests
 
             var builder = PuddingApplicationHost.CreateBuilder([], options);
             await using var app = PuddingApplicationHost.Build(builder);
+            Assert.Single(app.Services.GetServices<IHostedService>().OfType<HouseInspectionScheduleWorker>());
+            Assert.False(app.Services.GetRequiredService<IOptions<HouseInspectionScheduleOptions>>().Value.Enabled);
             Assert.IsType<AudioTranscriptionService>(app.Services.GetRequiredService<PuddingCode.Abstractions.IAudioTranscriptionService>());
             Assert.IsType<VoiceSynthesisService>(app.Services.GetRequiredService<PuddingCode.Abstractions.IVoiceSynthesisService>());
             Assert.IsType<VoiceProviderFactory>(app.Services.GetRequiredService<PuddingCode.Abstractions.IVoiceProviderFactory>());

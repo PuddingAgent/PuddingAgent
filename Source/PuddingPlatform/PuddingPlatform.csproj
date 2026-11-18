@@ -32,6 +32,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
+    <ProjectReference Include="..\PuddingScheduling\PuddingScheduling.csproj" />
     <ProjectReference Include="..\PuddingSpeech\PuddingSpeech.csproj" />
     <ProjectReference Include="..\PuddingAgentConfiguration\PuddingAgentConfiguration.csproj" />
     <ProjectReference Include="..\PuddingAgentWork\PuddingAgentWork.csproj" />

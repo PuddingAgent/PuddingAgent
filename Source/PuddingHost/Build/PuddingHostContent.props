@@ -32,6 +32,8 @@
   </Target>
   <ItemGroup>
     <Content Include="$(MSBuildThisFileDirectory)..\ToolPackages\*.json" Link="tools/host-packages/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(MSBuildThisFileDirectory)..\..\..\Tools\Maintenance\inspect-house.ps1"
+             Link="maintenance/inspect-house.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <!-- default-data tree -->
     <Content Include="$(MSBuildThisFileDirectory)..\default-data\**\*"
              Exclude="$(MSBuildThisFileDirectory)..\default-data\assets\agent-avatars\**\*.png"

@@ -358,6 +358,9 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<TaskAutoDispatchScanRunner>();
         builder.Services.AddSingleton<TaskSchedulerControlService>();
         builder.Services.AddHostedService<TaskAutoDispatchWorker>();
+        builder.Services.AddOptions<HouseInspectionScheduleOptions>()
+            .Bind(builder.Configuration.GetSection(HouseInspectionScheduleOptions.SectionName));
+        builder.Services.AddHostedService<HouseInspectionScheduleWorker>();
         builder.Services.AddHostedService<TaskEventLedgerTailBridge>();
         builder.Services.AddHostedService<TaskSchedulingCoordinator>();
         // Task Command 服务（TB-03：状态机校验 + CAS + Assignment + AppendEvent 原子语义）

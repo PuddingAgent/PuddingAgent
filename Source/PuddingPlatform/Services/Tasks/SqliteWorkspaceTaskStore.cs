@@ -44,9 +44,27 @@ public sealed class SqliteWorkspaceTaskStore(
     public async Task<WorkspaceTask> CreateTaskAsync(CreateTaskRequest request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var now = DateTimeOffset.UtcNow;
+        var task = PrepareTask(request, DateTimeOffset.UtcNow);
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var conn = (SqliteConnection)db.Database.GetDbConnection();
+        await conn.OpenAsync(ct);
+        await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(TxLevel, ct);
+        try
+        {
+            await WriteCreatedTaskAsync(task, tx, ct);
+            await tx.CommitAsync(ct);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
 
-        var task = new WorkspaceTask
+        return task;
+    }
+
+    internal static WorkspaceTask PrepareTask(CreateTaskRequest request, DateTimeOffset now) =>
+        new()
         {
             TaskId = Guid.NewGuid().ToString("N"),
             WorkspaceId = request.WorkspaceId,
@@ -74,34 +92,23 @@ public sealed class SqliteWorkspaceTaskStore(
             UpdatedAtUtc = now,
         };
 
+    /// <summary>Writes the task and its first ledger event using the caller's transaction.</summary>
+    internal static async Task WriteCreatedTaskAsync(WorkspaceTask task, SqliteTransaction tx, CancellationToken ct)
+    {
         var createdEvent = new TaskEvent
         {
             EventId = Guid.NewGuid().ToString("N"),
             TaskId = task.TaskId,
-            WorkspaceId = request.WorkspaceId,
+            WorkspaceId = task.WorkspaceId,
             Sequence = 1,
             EventType = TaskEventType.TaskCreated,
-            Origin = request.Origin,
-            CreatedAtUtc = now,
+            Origin = task.Origin,
+            CreatedAtUtc = task.CreatedAtUtc,
         };
 
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var conn = (SqliteConnection)db.Database.GetDbConnection();
-        await conn.OpenAsync(ct);
-        await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(TxLevel, ct);
-        try
-        {
-            await InsertTaskAsync(conn, tx, task, ct);
-            await InsertEventAsync(conn, tx, createdEvent, ct);
-            await tx.CommitAsync(ct);
-        }
-        catch
-        {
-            await tx.RollbackAsync(ct);
-            throw;
-        }
-
-        return task;
+        var conn = tx.Connection ?? throw new InvalidOperationException("The task transaction is closed.");
+        await InsertTaskAsync(conn, tx, task, ct);
+        await InsertEventAsync(conn, tx, createdEvent, ct);
     }
 
     /// <inheritdoc />

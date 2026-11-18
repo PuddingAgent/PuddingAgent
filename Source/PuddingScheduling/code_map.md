@@ -32,6 +32,6 @@ DST 处理策略：本地时间不存在（春季前跳）则跳过；本地时�
 
 第五处：把 `automation_runs` 的唯一约束换成无作用的 `CHECK (1 = 1)`，`Schema_RejectsASecondRowForTheSameScheduleAndFireTime` 与 `Schema_RejectsDuplicateEvenWhenTheFireTimeIsExpressedWithADifferentOffset` 变红（TEST_EXIT=2），两条「应允许」的用例保持绿——变异只打中该打中的那两条。这组用例跑在真实 SQLite 内存库上，验的是引擎行为而不是我写的假 store。
 
-## 未接入宿主
+## 宿主接线
 
-按交付规程停在 S3/S4：独立工程 + 独立测试 + 边界断言。尚未加入 `PuddingAgentNetwork.slnx`，也没有任何宿主引用，因此不影响现网构建。
+解决方案登记组件与独立测试。Platform 的 [每日巡检 Worker](../PuddingPlatform/Services/Scheduling/HouseInspectionScheduleWorker.cs) 在启用后提供 SQLite 连接和看板任务写入，调度组件保持单向依赖边界。

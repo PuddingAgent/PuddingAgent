@@ -17,6 +17,12 @@
 .PARAMETER ErrorFiles
     How many recent non-empty error logs to scan for repeated signatures.
 
+.PARAMETER DataRoot
+    Data root of the instance to inspect.
+
+.PARAMETER SummaryOnly
+    Report repeated error counts without printing their log signatures.
+
 .PARAMETER Json
     Emit one JSON object instead of a human report.
 
@@ -32,18 +38,21 @@ param(
     [int]$ErrorFiles = 20,
     [int]$StaleQueuedDays = 7,
     [int]$AggregateLagDays = 2,
-    [switch]$Json
+    [switch]$Json,
+    [ValidateNotNullOrEmpty()][string]$DataRoot = 'D:\Data',
+    [switch]$SummaryOnly
 )
 
 $ErrorActionPreference = 'Stop'
 
-$DataRoot = 'D:\Data'
 $DbPath = Join-Path $DataRoot 'databases\pudding_platform.db'
 $LogRoot = Join-Path $DataRoot 'logs'
 $ErrorRoot = Join-Path $LogRoot 'error'
 $SystemRoot = Join-Path $LogRoot 'system'
 
 function Resolve-SqliteAssembly {
+    $bundled = Join-Path (Split-Path -Parent $PSScriptRoot) 'Microsoft.Data.Sqlite.dll'
+    if (Test-Path -LiteralPath $bundled) { return $bundled }
     $live = $null
     try {
         $proc = Get-Process PuddingAgent -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -99,8 +108,18 @@ foreach ($d in Get-PSDrive -PSProvider FileSystem) {
 
 # ---- database -----------------------------------------------------------
 if (Test-Path $DbPath) {
-    Add-Type -Path (Resolve-SqliteAssembly) | Out-Null
-    $conn = New-Object Microsoft.Data.Sqlite.SqliteConnection("Data Source=$DbPath;Mode=ReadOnly")
+    $sqliteDirectory = Split-Path -Parent (Resolve-SqliteAssembly)
+    $arch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant()
+    $nativeDirectory = Join-Path $sqliteDirectory "runtimes\win-$arch\native"
+    $env:PATH = "$sqliteDirectory;$nativeDirectory;$env:PATH"
+    foreach ($dll in @('SQLitePCLRaw.core.dll', 'SQLitePCLRaw.provider.e_sqlite3.dll', 'SQLitePCLRaw.batteries_v2.dll', 'Microsoft.Data.Sqlite.dll')) {
+        Add-Type -Path (Join-Path $sqliteDirectory $dll) | Out-Null
+    }
+    [SQLitePCL.Batteries_V2]::Init()
+    $connectionString = New-Object Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+    $connectionString.DataSource = $DbPath
+    $connectionString.Mode = [Microsoft.Data.Sqlite.SqliteOpenMode]::ReadOnly
+    $conn = New-Object Microsoft.Data.Sqlite.SqliteConnection($connectionString.ToString())
     $conn.Open()
 
     function Get-Scalar($connection, $sql) {
@@ -222,7 +241,9 @@ if (Test-Path $ErrorRoot) {
         $sigs[$sig]++
     }
     foreach ($k in ($sigs.Keys | Sort-Object { -$sigs[$_] })) {
-        $report.errorPatterns += [ordered]@{ signature = $k; occurrences = $sigs[$k] }
+        $pattern = [ordered]@{ occurrences = $sigs[$k] }
+        if (-not $SummaryOnly) { $pattern.signature = $k }
+        $report.errorPatterns += $pattern
     }
 }
 
@@ -318,7 +339,12 @@ if ($report.errorPatterns.Count -eq 0) {
     Write-Output '  (none)'
 }
 foreach ($e in $report.errorPatterns) {
-    Write-Output ("  {0,4} x {1}" -f $e.occurrences, $e.signature)
+    if ($SummaryOnly) {
+        Write-Output ("  {0,4} log files with the same signature" -f $e.occurrences)
+    }
+    else {
+        Write-Output ("  {0,4} x {1}" -f $e.occurrences, $e.signature)
+    }
 }
 
 Write-Output ''

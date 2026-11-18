@@ -37,7 +37,7 @@ draft: false
 | `10_conventions/` | 规程与约定（组件化交付、仓库卫生、SUBAGENTS、协作协议） | [组件化交付规程](10_conventions/组件化交付规程.md) · [Agents-Hygiene](10_conventions/Agents-Hygiene.md) |
 | `11_design/` | 设计规格与视觉/UI 设计 | — |
 | `12_features/` | 设计方案、施工计划、任务书（面向未来施工） | [组件与公共 API 规划](12_features/核心组件与插件公共API规划-2026-11-04.md) · [组件化任务书 1～8](12_features/Agent组件化任务书-总则与依赖-2026-11-05.md) · [单轮执行契约](12_features/Agent单轮执行API-P2-契约与接入说明-2026-11-05.md) |
-| `13_runbooks/` | 运行手册、部署/回滚/一次性操作 | — |
+| `13_runbooks/` | 运行手册、部署/回滚/一次性操作 | [每日只读巡检](13_runbooks/定时巡检.md) |
 | `14_reports/` | 诊断 / 验收 / 评测报告（一次性证据） | — |
 | `15_tasks/` | 任务、待办、路线图、历史任务卡 | [Tasks](15_tasks/Tasks.md) · [待办](15_tasks/待办.md) · [路线图](15_tasks/路线图.md) |
 | `16_qa/` | 验收记录与审阅索引 | [Review](16_qa/Review.md) |

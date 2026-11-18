@@ -165,6 +165,7 @@ HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 St
 | `Services/HeartbeatService.cs` | 当前 Agent 心跳编排（见下「关键语义」） |
 | `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | Goal/Task 编排 worker 组合注册（见下「关键语义」） |
 | `Services/TaskAutoDispatchOptionsStartupValidator.cs` | TaskAutoDispatch 启动自愈：authoritative 缺 Goal 前置降级 disabled；其余非法仍 fail-closed |
+| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` · `Build/PuddingHostContent.props` | 登记每日巡检 Worker 并随 Core 打包只读巡检脚本 |
 | `Services/CronSchedulerService.cs` | Cron 调度 |
 | `Services/ConfigHotReloadService.cs` | 配置热重载 |
 | `Services/IndexPrebuildService.cs` | 索引预构建 |

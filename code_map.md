@@ -95,6 +95,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingCore/` | 跨层抽象与契约：接口与基础模型类型（含 Goal 与编排） | [code_map](Source/PuddingCore/code_map.md) |
 | 渠道开发权限 | 工具归属工作区与 Agent；渠道绑定识别发送者，Core 执行时核对操作权限 | [策略服务](Source/PuddingPlatform/Services/ChannelDevelopmentTrust.cs) · [渠道设置](Source/PuddingPlatformAdmin/src/pages/workspace/ChannelTrustSettings.tsx) |
 | `Source/PuddingPlatform/` | Session · Web 与外部 API · EF Core + SQLite · 消息网关 | [code_map](Source/PuddingPlatform/code_map.md) |
+| `Source/PuddingScheduling/` | 定时触发、错过补偿、SQLite 原子建卡 | [code_map](Source/PuddingScheduling/code_map.md) |
 | `Source/PuddingMemoryEngine/` | Library/Book/Chapter 记忆库 · FTS5 · 潜意识检索 | [code_map](Source/PuddingMemoryEngine/code_map.md) |
 | `Source/PuddingMemoryEngineBenchmarks/` | 记忆库与记忆召回的 BenchmarkDotNet 基准工程（不参与运行时装配） | — |
 | `Source/PuddingGateway/` | LLM 服务商网关适配：openai / responses / anthropic 三协议 | [code_map](Source/PuddingGateway/code_map.md) |
@@ -195,6 +196,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | **Slack 渠道** | `Source/PuddingSlack/` → `Source/PuddingHost/Connectors/SlackConnector.cs` → Message Gateway → Web 渠道会话 | 持久化后 ACK；DM / @提及；`slack_lookup_member` 绑定当前路由查成员 ID；显式提及与 bot 防循环；线程隔离和过程可见；Unknown 不盲目重试；[接入](Docs/01_message_channels/Slack接入.md) |
 | **Message Fabric / send_message** | `Source/PuddingPlatform/Services/` | `MessageDeliveryPolicy` + `MessageDeliveryDispatcher`：inform/report_result 只通知，仅 ask/request_review/delegate 执行；`agent_reply` 永远被动 |
 | **Task 自动派发 / Goal / WorkUnit** | `Source/PuddingPlatform/Services/Scheduling/` | availability → backlog 精炼 → Plan/WorkUnit 编译 → 五态跟踪；promotion/start/repair 只有一个 CAS 写入者 |
+| **每日只读巡检** | [巡检 Worker](Source/PuddingPlatform/Services/Scheduling/HouseInspectionScheduleWorker.cs) | 到期触发原子创建看板任务，交给现有 Task 自动派发 |
 | **工具系统与审批** | `Source/PuddingRuntime/Tools/` + [自动审批设计](Docs/18_superpowers/specs/2026-06-03-auto-tool-approval-design.md) | 复杂任务前三次内进入 `smart_*` 或 `spawn_sub_agent`；只读/构建秒放、危险秒拒、未知形态交 LLM 审批；工具 schema 投递受 `toolExposure` 预算约束（默认 48 个/40 KiB，turn 边界按最近使用淘汰非核心，`search_tools` 可重载） |
 | **代码索引组件族** | §2 + [ADR-089](Docs/07_architecture/103ADR-089Agent统一检索与渐进展开工具链ADR.md) · [目标边界](Docs/12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md) | CodeIndex 不反向引用 CodeIntelligence；覆盖否定、生产向量及多语言 provider 边界以设计为准；拟新增工程不等于已有组件 |
 | **Desktop ↔ Core 能力通道** | §2 + [能力通道](Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md) | 两端只经 `Pudding.Contracts`（DTO）与 `Pudding.Rpc.Protocol`（wire）；启用前必须过 `DesktopCapabilityChannelPreflight` |
