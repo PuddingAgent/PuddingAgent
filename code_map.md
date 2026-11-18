@@ -268,6 +268,7 @@ Snapshot ref 绑定页面版本，动作后以新观察验证。真实空白文�
 
 | 测试工程 | 覆盖 |
 |------|------|
+| [提交前测试门禁](TestScripts/check-staged-tests.ps1) | 按暂存 C# 类型选择测试，核对 TRX 执行证据，再用基线判定新增失败 |
 | `Source/PuddingCoreTests/` · `Source/PuddingRuntimeTests/` · `Source/PuddingPlatformTests/` · `Source/PuddingMemoryEngineTests/` · `Source/PuddingWebApiTests/` | 工具契约、LLM 网关、MessageFabric · Agent Loop、上下文管线、语音/图片 · 渠道配置与 Artifact · 记忆库与 FTS5 · Web API |
 | `Source/PuddingCodeIndexTests/` · `Source/PuddingIndexChunkingTests/` | 索引组件独立测试：变更管线/调度/维护/存储 + 分块（含边界断言） |
 | `Source/PuddingContextPolicyTests/` | 上下文策略独立测试：容量算术、配置比例与预测、完整候选边界、严格及显式追加校验、真实摘要收益、冷却不能屏蔽硬保护，以及程序集依赖边界 |

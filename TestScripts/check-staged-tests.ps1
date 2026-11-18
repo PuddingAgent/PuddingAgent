@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Pre-commit gate: run the tests that actually reference the C# types you staged, and block the commit
-    when a NEW test fails.
+    when a NEW test fails or a selected project does not produce a complete run.
 
 .DESCRIPTION
     Why this exists (2026-10-27): commit 967da97 rewrote the text of
@@ -200,32 +200,19 @@ try {
 
         $assembly = Get-BuiltTestAssembly -ProjectPath $ProjectPath
         if ($null -eq $assembly) {
-            return [pscustomobject]@{ Skipped = $true; Failed = @(); Reason = 'no built test assembly found'; Runner = 'mtp' }
+            throw "MTP found no built test assembly for $ProjectPath"
         }
 
-        $before = @(Get-ChildItem $ResultsDirectory -Filter *.trx -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
         $output = & dotnet $assembly.FullName --filter $Filter --report-trx --results-directory $ResultsDirectory 2>&1
         $exitCode = $LASTEXITCODE
-        $fresh = @(Get-ChildItem $ResultsDirectory -Filter *.trx -ErrorAction SilentlyContinue |
-            ForEach-Object { $_.FullName } | Where-Object { $before -notcontains $_ })
+        $reports = @(Get-ChildItem -LiteralPath $ResultsDirectory -Filter *.trx -File)
 
-        if ($fresh.Count -eq 0) {
+        if ($reports.Count -ne 1) {
             Write-Host ($output | Select-Object -Last 20 | Out-String)
-            return [pscustomobject]@{ Skipped = $true; Failed = @(); Reason = "mtp runner exited $exitCode without a trx"; Runner = 'mtp' }
+            throw "MTP for $ProjectPath exited $exitCode and produced $($reports.Count) TRX reports; expected one"
         }
 
-        [xml]$trx = Get-Content $fresh[0] -Raw -Encoding UTF8
-        $failed = @($trx.TestRun.Results.UnitTestResult |
-            Where-Object { $_.outcome -eq "Failed" } |
-            ForEach-Object { [string]$_.testName })
-
-        [pscustomobject]@{
-            Skipped  = $false
-            ExitCode = $exitCode
-            Failed   = $failed
-            Trx      = $fresh[0]
-            Runner   = 'mtp'
-        }
+        Read-TestRun -TrxPath $reports[0].FullName -ExitCode $exitCode -FailureExitCode 2
     }
 
     function Invoke-TestProject {
@@ -242,28 +229,57 @@ try {
             if ($joined -match 'VSTest target is no longer supported') {
                 return Invoke-MtpTestProject -ProjectPath $ProjectPath -Filter $Filter -ResultsDirectory $ResultsDirectory
             }
-            # A filter that matches zero tests makes dotnet test exit 1 WITHOUT a TRX, which is not a
-            # build failure. Distinguish the two: a real build failure always prints 'error CSxxxx' /
-            # 'error MSBxxxx'. Language-independent on purpose (ASCII-only script, zh/en host locales).
-            if ($joined -notmatch 'error\s+(CS|MSB|NU)\d+') {
-                return [pscustomobject]@{ Skipped = $true; Failed = @(); Reason = 'no test matched the filter'; Runner = 'vstest' }
-            }
-
             Write-Host ($output | Select-Object -Last 30 | Out-String)
-            throw "dotnet test for $ProjectPath exited $exitCode and produced no TRX log; fix the build first"
+            throw "dotnet test for $ProjectPath exited $exitCode and produced no TRX report"
         }
 
-        [xml]$trx = Get-Content $trxPath -Raw -Encoding UTF8
-        $failed = @($trx.TestRun.Results.UnitTestResult |
-            Where-Object { $_.outcome -eq "Failed" } |
-            ForEach-Object { [string]$_.testName })
+        Read-TestRun -TrxPath $trxPath -ExitCode $exitCode -FailureExitCode 1
+    }
+
+    function Read-TestRun {
+        param([string]$TrxPath, [int]$ExitCode, [int]$FailureExitCode)
+
+        [xml]$trx = Get-Content -LiteralPath $TrxPath -Raw -Encoding UTF8
+        $summary = $trx.TestRun.ResultSummary
+        $counters = $summary.Counters
+        $executed = 0
+        $passed = 0
+        $failedCount = 0
+        if (-not $counters -or
+            -not [int]::TryParse($counters.executed, [ref]$executed) -or
+            -not [int]::TryParse($counters.passed, [ref]$passed) -or
+            -not [int]::TryParse($counters.failed, [ref]$failedCount) -or
+            $executed -le 0 -or $passed -lt 0 -or $failedCount -lt 0 -or
+            $passed + $failedCount -ne $executed) {
+            throw "TRX $TrxPath has missing or invalid execution counts, or zero tests executed (runner exit $ExitCode)"
+        }
+
+        $incompleteCounters = @('error', 'timeout', 'aborted', 'passedButRunAborted', 'notRunnable', 'disconnected', 'inProgress', 'pending') |
+            Where-Object { $counters.GetAttribute($_) -notin @('', '0') }
+        # MTP's TRX reporter records its normal test-failure exit code as a run-level Error.
+        # Ignore only that exact notice for exit 2; any other run-level error still blocks.
+        $mtpFailureNotice = "Exit code indicates failure: '2'. Please refer to https://aka.ms/testingplatform/exitcodes for more information."
+        $runErrors = @($summary.RunInfos.RunInfo | Where-Object {
+            $_.outcome -in @('Error', 'Failed', 'Aborted', 'Timeout') -and
+            -not ($FailureExitCode -eq 2 -and $ExitCode -eq 2 -and $_.outcome -eq 'Error' -and $_.Text -ceq $mtpFailureNotice)
+        })
+        $expectedOutcome = if ($failedCount -gt 0) { 'Failed' } else { 'Completed' }
+        $expectedExit = if ($failedCount -gt 0) { $FailureExitCode } else { 0 }
+        if ($summary.outcome -ne $expectedOutcome -or $ExitCode -ne $expectedExit -or $runErrors.Count -gt 0 -or $incompleteCounters) {
+            throw "TRX $TrxPath did not report a complete run (outcome=$($summary.outcome), exit=$ExitCode, run errors=$($runErrors.Count), incomplete counters=[$($incompleteCounters -join ', ')])"
+        }
+
+        $results = @($trx.TestRun.Results.UnitTestResult | Where-Object { $_ })
+        $passedResults = @($results | Where-Object { $_.outcome -eq 'Passed' })
+        $failures = @($results | Where-Object { $_.outcome -eq 'Failed' })
+        if ($passedResults.Count -ne $passed -or $failures.Count -ne $failedCount -or
+            @($failures | Where-Object { [string]::IsNullOrWhiteSpace($_.testName) }).Count -gt 0) {
+            throw "TRX $TrxPath has incomplete test results"
+        }
 
         [pscustomobject]@{
-            Skipped  = $false
-            ExitCode = $exitCode
-            Failed   = $failed
-            Trx      = $trxPath
-            Runner   = 'vstest'
+            Executed = $executed
+            Failed   = @($failures | ForEach-Object { [string]$_.testName })
         }
     }
 
@@ -392,25 +408,26 @@ try {
     }
 
     # --- run ------------------------------------------------------------------------------------
-    $resultsDirectory = Join-Path $repositoryRoot "temp\gate-trx"
-    if (-not (Test-Path $resultsDirectory)) { New-Item -ItemType Directory -Path $resultsDirectory -Force | Out-Null }
+    $runDirectory = Join-Path $repositoryRoot ('.work/staged-test-gate/' + [guid]::NewGuid().ToString('N'))
 
     $newFailures = @()
     $ranProjects = 0
-    $skippedProjects = @()
 
     foreach ($project in ($selection.Keys | Sort-Object)) {
         $types = @($selection[$project] | Sort-Object)
         $filter = ($types | ForEach-Object { "FullyQualifiedName~$_" }) -join "|"
         Write-Host ("--- {0}  filter~{1}" -f (Resolve-Path -Relative $project), ($types -join "|"))
 
-        $result = Invoke-TestProject -ProjectPath $project -Filter $filter -ResultsDirectory $resultsDirectory
-        if ($null -eq $result) { continue }
-        if ($result.Skipped) {
-            Write-Host ("    SKIPPED ({0}): {1}" -f $result.Runner, $result.Reason)
-            $skippedProjects += [pscustomobject]@{ Project = $project; Reason = $result.Reason; Runner = $result.Runner }
-            continue
+        $resultsDirectory = Join-Path $runDirectory ([string]($ranProjects + 1))
+        New-Item -ItemType Directory -Path $resultsDirectory -Force | Out-Null
+        try {
+            $result = Invoke-TestProject -ProjectPath $project -Filter $filter -ResultsDirectory $resultsDirectory
         }
+        catch {
+            Write-Warning ("BLOCKED: {0}: {1}" -f (Resolve-Path -Relative $project), $_.Exception.Message)
+            exit 1
+        }
+        Write-Host ("    executed {0} test(s)" -f $result.Executed)
         $ranProjects++
 
         foreach ($name in $result.Failed) {
@@ -426,25 +443,11 @@ try {
 
     # --- verdict --------------------------------------------------------------------------------
     Write-Host ("=== ran {0} test project(s)" -f $ranProjects)
-    if ($skippedProjects.Count -gt 0) {
-        # A skipped project is not evidence of anything: surface it separately so a green verdict
-        # is never read as "these tests passed".
-        Write-Host ("=== NOT VERIFIED: {0} test project(s) skipped" -f $skippedProjects.Count)
-        foreach ($skipped in $skippedProjects) {
-            Write-Host ("    {0} [{1}]: {2}" -f (Resolve-Path -Relative $skipped.Project), $skipped.Runner, $skipped.Reason)
-        }
-    }
-
     if ($newFailures.Count -gt 0) {
         Write-Warning ("BLOCKED: {0} new test failure(s)" -f $newFailures.Count)
         foreach ($name in $newFailures) { Write-Warning ("    {0}" -f $name) }
         Write-Warning "If a failure is genuinely pre-existing and unrelated, add it to $BaselinePath with a dated reason."
         exit 1
-    }
-
-    if ($skippedProjects.Count -gt 0) {
-        Write-Host "=== OK among projects that ran (skipped projects were not verified)"
-        exit 0
     }
 
     Write-Host "=== OK: no new test failures"

@@ -1054,9 +1054,9 @@ pwsh -File TestScripts\check-staged-tests.ps1 -IncludeAllChanged   # CI 用：�
 
 1. 取 `git diff --cached` 里的 `.cs` 文件；
 2. 从每个文件里抽取声明的类型名（`class` / `record` / `interface` / `struct` / `enum`）；
-3. 在 `Tests/**/*Tests.csproj` 的源码里找提到这些类型的工程，用 `--filter FullyQualifiedName~类型名` 只跑相关测试类；
-4. 用 TRX logger 读结果（不解析控制台文本：Theory 失败会打印 `...Anchors(anchor: "x") [FAIL]`，`\S+` 会误解析）；
-5. 失败名不在基线里 ⇒ **阻断提交**。
+3. 在 `Tests/` 和 `Source/` 下的测试工程里找提到这些类型的源码，用 `--filter` 运行相关测试类；
+4. 核对 runner 退出码、TRX 的实际执行数与逐项结果。已选项目缺报告、执行数为零或运行中止时阻断提交；
+5. 运行完成后用失败用例名核对基线，新增失败阻断提交。TRX 保存在 `.work/staged-test-gate/<运行标识>/`。
 
 ### 基线是 ratchet，不是"全绿"
 
