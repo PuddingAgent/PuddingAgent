@@ -68,6 +68,42 @@ public sealed class ScheduleTickPlannerTests
     }
 
     [TestMethod]
+    public void SkipPolicy_StillFiresWithinTheScheduledMinute()
+    {
+        var due = At(2026, 11, 19, 8, 0);
+        var state = new ScheduleState(true, due, null, CatchUpPolicy.Skip);
+        var plan = ScheduleTickPlanner.Plan(Daily8, Cst, state, due.AddSeconds(59));
+
+        CollectionAssert.AreEqual(new[] { due }, plan.FireTimes.ToArray());
+        Assert.AreEqual(due.AddDays(1), plan.NextRunAtUtc);
+        Assert.AreEqual(0, plan.Skipped);
+    }
+
+    [TestMethod]
+    public void SkipPolicy_AfterLongOutage_FiresOnlyTheLiveMinute()
+    {
+        var old = At(2026, 11, 1, 8, 0);
+        var now = At(2026, 11, 19, 8, 0);
+        var plan = ScheduleTickPlanner.Plan(Daily8, Cst, new(true, old, null, CatchUpPolicy.Skip), now, maxCatchUp: 3);
+
+        CollectionAssert.AreEqual(new[] { now }, plan.FireTimes.ToArray());
+        Assert.AreEqual(now.AddDays(1), plan.NextRunAtUtc);
+        Assert.AreEqual(4, plan.Skipped);
+        Assert.IsTrue(plan.SkippedIsLowerBound);
+    }
+
+    [TestMethod]
+    public void SkipPolicy_AfterLongOutage_LeavesNoFireWhenTheCurrentMinuteDoesNotMatch()
+    {
+        var old = At(2026, 11, 1, 8, 0);
+        var today = At(2026, 11, 19, 8, 0);
+        var plan = ScheduleTickPlanner.Plan(Daily8, Cst, new(true, old, null, CatchUpPolicy.Skip), today.AddMinutes(1), maxCatchUp: 3);
+
+        Assert.IsEmpty(plan.FireTimes);
+        Assert.AreEqual(today.AddDays(1), plan.NextRunAtUtc);
+    }
+
+    [TestMethod]
     public void RunOncePolicy_MissedDays_FiresExactlyOnce_WithOriginalFireTime()
     {
         var first = At(2026, 11, 15, 8, 0);
@@ -100,6 +136,21 @@ public sealed class ScheduleTickPlannerTests
 
         Assert.HasCount(3, plan.FireTimes, "the cap must bound a single tick");
         Assert.IsGreaterThan(0, plan.Skipped, "the overflow must be reported, not silently dropped");
+        Assert.IsTrue(plan.SkippedIsLowerBound);
+        Assert.AreEqual(At(2026, 11, 19, 8, 0), plan.NextRunAtUtc,
+            "later ticks must not re-enqueue the deliberately dropped backlog");
+    }
+
+    [TestMethod]
+    public void ExactlyOneOccurrenceOverTheCap_ReportsExactSkippedCount()
+    {
+        var start = At(2026, 11, 18, 8, 0);
+        var plan = ScheduleTickPlanner.Plan(Daily8, Cst, new(true, start, null, CatchUpPolicy.RunAll), start.AddDays(1), maxCatchUp: 1);
+
+        Assert.HasCount(1, plan.FireTimes);
+        Assert.AreEqual(1, plan.Skipped);
+        Assert.IsFalse(plan.SkippedIsLowerBound);
+        Assert.AreEqual(start.AddDays(2), plan.NextRunAtUtc);
     }
 
     [TestMethod]
@@ -114,6 +165,7 @@ public sealed class ScheduleTickPlannerTests
         CollectionAssert.AreEqual(a.FireTimes.ToArray(), b.FireTimes.ToArray());
         Assert.AreEqual(a.NextRunAtUtc, b.NextRunAtUtc);
         Assert.AreEqual(a.Skipped, b.Skipped);
+        Assert.AreEqual(a.SkippedIsLowerBound, b.SkippedIsLowerBound);
     }
 
     [TestMethod]

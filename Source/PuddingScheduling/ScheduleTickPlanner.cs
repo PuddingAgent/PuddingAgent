@@ -20,11 +20,15 @@ public sealed record ScheduleState(
     DateTimeOffset? LastFireTimeUtc,
     CatchUpPolicy CatchUp);
 
-/// <summary>One tick's decision: what to fire now, how far to advance, and how much was dropped on purpose.</summary>
+/// <summary>
+/// One tick's decision: what to fire, where to advance, and the count of dropped occurrences covered
+/// by the bounded scan. When <see cref="SkippedIsLowerBound"/> is true, the scan did not count the whole backlog.
+/// </summary>
 public sealed record TickPlan(
     IReadOnlyList<DateTimeOffset> FireTimes,
     DateTimeOffset? NextRunAtUtc,
-    int Skipped)
+    int Skipped,
+    bool SkippedIsLowerBound = false)
 {
     public static readonly TickPlan None = new(Array.Empty<DateTimeOffset>(), null, 0);
 }
@@ -68,39 +72,39 @@ public static class ScheduleTickPlanner
         if (due > nowUtc)
             return new TickPlan(Array.Empty<DateTimeOffset>(), due, 0);
 
-        // Collect every occurrence that is due, up to one more than the cap so the overflow
-        // is observable rather than silently truncated.
+        // Inspect one extra due occurrence so overflow is visible without walking a long outage.
         var dueTimes = new List<DateTimeOffset>();
-        var cursor = due;
-        while (cursor <= nowUtc && dueTimes.Count <= maxCatchUp)
+        DateTimeOffset? cursor = due;
+        while (cursor is { } occurrence && occurrence <= nowUtc && dueTimes.Count <= maxCatchUp)
         {
-            dueTimes.Add(cursor);
-            var next = cron.NextOccurrence(timeZone, cursor);
-            if (next is null) break;
-            cursor = next.Value;
+            dueTimes.Add(occurrence);
+            cursor = cron.NextOccurrence(timeZone, occurrence);
         }
 
-        // cursor is now the first occurrence strictly after now (or the last one if the cron
-        // cannot produce another). If the loop stopped on the collection cap, advance once more.
-        var nextRunAt = cursor > nowUtc ? cursor : cron.NextOccurrence(timeZone, cursor);
+        var truncated = cursor <= nowUtc;
+        var nextRunAt = truncated ? cron.NextOccurrence(timeZone, nowUtc) : cursor;
 
         switch (state.CatchUp)
         {
             case CatchUpPolicy.Skip:
-                return new TickPlan(Array.Empty<DateTimeOffset>(), nextRunAt, dueTimes.Count);
+                // Skip missed minutes, including after a long outage, while still firing the live minute.
+                var currentMinute = new DateTimeOffset(ScheduleFireKey.NormalizeFireTime(nowUtc));
+                var countedCurrent = dueTimes.Contains(currentMinute);
+                var live = countedCurrent || (truncated && cron.IsOccurrence(timeZone, currentMinute));
+                return new TickPlan(
+                    live ? [currentMinute] : [],
+                    nextRunAt,
+                    dueTimes.Count - (countedCurrent ? 1 : 0),
+                    truncated);
 
             case CatchUpPolicy.RunOnce:
                 // Keep the *original* fire time as the key: repeated restarts must not produce
                 // a second run for the same missed window.
-                return new TickPlan(new[] { dueTimes[0] }, nextRunAt, dueTimes.Count - 1);
+                return new TickPlan([dueTimes[0]], nextRunAt, dueTimes.Count - 1, truncated);
 
             case CatchUpPolicy.RunAll:
-                if (dueTimes.Count > maxCatchUp)
-                {
-                    var kept = dueTimes.Take(maxCatchUp).ToArray();
-                    return new TickPlan(kept, nextRunAt, dueTimes.Count - maxCatchUp);
-                }
-                return new TickPlan(dueTimes, nextRunAt, 0);
+                var kept = dueTimes.Take(maxCatchUp).ToArray();
+                return new TickPlan(kept, nextRunAt, dueTimes.Count - kept.Length, truncated);
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(state), state.CatchUp, "Unhandled catch-up policy.");

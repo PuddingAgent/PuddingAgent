@@ -130,6 +130,16 @@ public sealed class CronExpression
         return null;
     }
 
+    internal bool IsOccurrence(TimeZoneInfo timeZone, DateTimeOffset utcMinute)
+    {
+        var local = TimeZoneInfo.ConvertTime(utcMinute, timeZone);
+        return _months.Contains(local.Month)
+            && DayMatches(local.DateTime)
+            && _hours.Contains(local.Hour)
+            && _minutes.Contains(local.Minute)
+            && local.Offset == timeZone.GetUtcOffset(local.DateTime);
+    }
+
     private bool DayMatches(DateTime local)
     {
         var dayOfMonthMatch = _daysOfMonth.Contains(local.Day);

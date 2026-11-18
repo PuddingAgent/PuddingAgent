@@ -3,7 +3,7 @@
 | 文件 | 契约 |
 |---|---|
 | `CronExpression.cs` | 五段 cron（分 时 日 月 周）的解析与下一次触发计算；纯函数，时钟与时区由调用方传入 |
-| `ScheduleTickPlanner.cs` | 单次 tick 的决策：该触发哪些时刻、游标推到哪、丢了多少；三档错过补偿策略（Skip/RunOnce/RunAll），无数据库无时钟 |
+| `ScheduleTickPlanner.cs` | 有界计算触发、游标和跳过数；Skip 保留当前调度分钟，截断时游标推进到未来并标注跳过数下限 |
 | `AutomationScheduleRecord.cs` | 持久化模型（设计 §3.2 字段）投影到 `ScheduleState`，以及 `(scheduleId, fireTime)` 幂等键的规范化：fireTime 必须转 UTC 并截到整分钟 |
 | `IScheduleStore.cs` | 持久化契约（ListDue / TryRecordFire / AdvanceCursor）；明确规定「已记录」必须来自唯一约束冲突，不得先查后插 |
 | `ScheduleStoreSchema.cs` | 两张表的 DDL 常量，唯一约束内联在 CREATE TABLE 里；DDL 放在组件而非测试夹具，避免测试证明的是夹具 |
@@ -18,7 +18,7 @@ DST 处理策略：本地时间不存在（春季前跳）则跳过；本地时�
 
 ## 测试门禁
 
-`Source/PuddingSchedulingTests` —— 42 个用例（cron 19 + tick 决策 10 + 持久化契约 13）。变异验证两处，均已实测：
+`Source/PuddingSchedulingTests` 覆盖 cron、tick 决策和 SQLite 持久化契约。
 
 注意：该用例最初写成 `0 0 20 * 5`，而 2026-11-20 同时满足「20 号」和「周五」，OR 与 AND 都落到同一天，变异因此存活。改用 `0 0 25 * 5` 后变异才被杀掉 —— 断言必须选在两种语义分歧的位置。
 
