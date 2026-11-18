@@ -218,9 +218,19 @@ try {
     function Invoke-TestProject {
         param([string]$ProjectPath, [string]$Filter, [string]$ResultsDirectory)
 
+        # Opt-in: build into an isolated tree via PUDDING_GATE_ARTIFACTS. Without it the
+        # default output directory is used, which is correct but unusable while the desktop
+        # app is running: it locks temp/build/winui3 and every build fails with MSB3027, so
+        # the gate cannot execute at all. Measured 2026-11-18, three separate times.
+        $gateArtifacts = $env:PUDDING_GATE_ARTIFACTS
+        $artifactsArgs = @()
+        if (-not [string]::IsNullOrWhiteSpace($gateArtifacts)) {
+            $artifactsArgs = @("-p:ArtifactsPath=$gateArtifacts")
+        }
+
         $trxName = [guid]::NewGuid().ToString("N")
         $output = & dotnet test $ProjectPath --nologo -v q --filter $Filter `
-            --logger "trx;LogFileName=$trxName.trx" --results-directory $ResultsDirectory 2>&1
+            --logger "trx;LogFileName=$trxName.trx" --results-directory $ResultsDirectory @artifactsArgs 2>&1
         $exitCode = $LASTEXITCODE
 
         $trxPath = Join-Path $ResultsDirectory "$trxName.trx"
