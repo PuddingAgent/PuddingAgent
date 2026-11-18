@@ -287,8 +287,21 @@ public sealed class WorkspaceTaskCoreTests
             Assert.AreEqual(WorkspaceTaskStatus.Archived, next);
         }
 
-        Assert.IsFalse(TaskStateMachine.TryApplyCommand(
-            WorkspaceTaskStatus.Ready, TaskCommand.Archive, out _));
+        // Backlog must stay excluded, and that is load-bearing rather than incidental:
+        // TaskCommandService's archive path still contains a "hard-delete a pristine Backlog card"
+        // branch, which is only unreachable because Archive cannot start from Backlog. Anyone who
+        // adds that edge later turns archive into an irreversible delete, so this assertion is the
+        // tripwire. Measured 2026-11-19: archive on a Backlog card returns task.invalid_transition.
+        foreach (var from in new[]
+                 {
+                     WorkspaceTaskStatus.Backlog,
+                     WorkspaceTaskStatus.Ready,
+                     WorkspaceTaskStatus.InProgress,
+                     WorkspaceTaskStatus.Blocked
+                 })
+        {
+            Assert.IsFalse(TaskStateMachine.TryApplyCommand(from, TaskCommand.Archive, out _));
+        }
     }
 
     [TestMethod]
