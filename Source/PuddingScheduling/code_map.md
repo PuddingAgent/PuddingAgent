@@ -4,6 +4,7 @@
 |---|---|
 | `CronExpression.cs` | 五段 cron（分 时 日 月 周）的解析与下一次触发计算；纯函数，时钟与时区由调用方传入 |
 | `ScheduleTickPlanner.cs` | 单次 tick 的决策：该触发哪些时刻、游标推到哪、丢了多少；三档错过补偿策略（Skip/RunOnce/RunAll），无数据库无时钟 |
+| `AutomationScheduleRecord.cs` | 持久化模型（设计 §3.2 字段）投影到 `ScheduleState`，以及 `(scheduleId, fireTime)` 幂等键的规范化：fireTime 必须转 UTC 并截到整分钟 |
 
 叶组件不引用 Core、Host、Platform、Runtime 或 Desktop，只依赖 BCL。
 
@@ -15,11 +16,15 @@ DST 处理策略：本地时间不存在（春季前跳）则跳过；本地时�
 
 ## 测试门禁
 
-`Source/PuddingSchedulingTests` —— 29 个用例（cron 19 + tick 决策 10）。变异验证两处，均已实测：
+`Source/PuddingSchedulingTests` —— 37 个用例（cron 19 + tick 决策 10 + 持久化契约 8）。变异验证两处，均已实测：
 
 注意：该用例最初写成 `0 0 20 * 5`，而 2026-11-20 同时满足「20 号」和「周五」，OR 与 AND 都落到同一天，变异因此存活。改用 `0 0 25 * 5` 后变异才被杀掉 —— 断言必须选在两种语义分歧的位置。
 
 第二处：把 `CatchUpPolicy.Skip` 改成表现如 `RunOnce`，`SkipPolicy_MissedDays_FiresNothing_ButAdvancesPastNow` 变红（已实测，TEST_EXIT=2，复原后文件 SHA 逐位一致）。
+
+第三处：把 `ToState()` 的两个位置参数交换（`NextRunAtUtc` 与 `LastFireTimeUtc` 互换），`ToState_MapsEachFieldByName_NotByPosition` 与 `ToState_DoesNotConfuseNextRunWithLastFire` 同时变红（TEST_EXIT=2）。record 的按名初始化一旦写错顺序，编译器不会拦，只会静默把游标和上次触发时刻喂反。
+
+第四处：去掉 `NormalizeFireTime` 里的 `ToUniversalTime()`，`FireKey_SameInstantInDifferentOffsets_IsOneKey` 与 `NormalizeFireTime_ReturnsUtcKind` 变红（TEST_EXIT=2）。这两条锁的是同一件事：唯一索引要挡得住重复，先得让两侧算出同一个键。
 
 ## 未接入宿主
 
