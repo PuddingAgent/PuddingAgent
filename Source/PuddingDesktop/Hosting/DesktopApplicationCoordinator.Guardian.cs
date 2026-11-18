@@ -59,11 +59,23 @@ public sealed partial class DesktopApplicationCoordinator
                 info.ArgumentList.Add("--adopt-pid"); info.ArgumentList.Add(Environment.ProcessId.ToString());
                 if (!_guardianChild) info.ArgumentList.Add("--resume");
                 using var process = Process.Start(info) ?? throw new IOException("Guardian process failed to start.");
-                for (var attempt = 0; attempt < 20 && !_guardianManaged; attempt++)
+                for (var attempt = 0; attempt < GuardianLaunchPlan.DefaultMaxAttempts && !_guardianManaged; attempt++)
                 {
                     await Task.Delay(250, ct);
                     _guardianManaged = await CheckGuardianAsync(client, dataRoot, ct);
-                    if (!_guardianManaged && process.HasExited) break;
+
+                    var exited = process.HasExited;
+                    var decision = GuardianLaunchPlan.Decide(
+                        connected: _guardianManaged,
+                        childExited: exited,
+                        exitCode: exited ? process.ExitCode : null,
+                        attempt: attempt,
+                        maxAttempts: GuardianLaunchPlan.DefaultMaxAttempts);
+
+                    var exitCode = exited ? process.ExitCode : (int?)null;
+                    if (GuardianLaunchPlan.FailureMessage(decision, exitCode, _guardianConfig.HttpPort) is { } failure)
+                        throw new IOException(failure);
+                    if (decision != GuardianLaunchDecision.KeepWaiting) break;
                 }
             }
             else _guardianManaged = true;
