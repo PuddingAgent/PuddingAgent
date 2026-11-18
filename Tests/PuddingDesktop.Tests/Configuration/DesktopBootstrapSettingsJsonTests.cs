@@ -46,7 +46,9 @@ public sealed class DesktopBootstrapSettingsJsonTests
         Assert.Null(settings.ToolWorkspace);
         // 已配置但未指定比例时，类型自身默认仍是通用 0.45
         Assert.Equal(0.45, new DesktopToolWorkspaceSettings().WidthRatio);
-        Assert.False(new DesktopToolWorkspaceSettings().AutoExpandOnActivity);
+        // 2026-11-18 fbfbc79 有意把默认改为 true：活动时自动展开，让用户看见替其执行了什么；
+        // 手动收起仍在本轮活动内抑制（ToolWorkspaceActivityPolicy），最终决定权在用户。
+        Assert.True(new DesktopToolWorkspaceSettings().AutoExpandOnActivity);
         // The workspace never starts expanded, so no expansion flag is persisted.
         Assert.DoesNotContain("IsExpanded", JsonSerializer.Serialize(settings, JsonOptions));
     }
