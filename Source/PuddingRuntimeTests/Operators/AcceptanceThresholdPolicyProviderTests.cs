@@ -334,7 +334,7 @@ public sealed class AcceptanceThresholdPolicyProviderTests
 
     private static async Task<JsonElement> ReadThresholdsAsync(ServiceProvider provider)
     {
-        var tool = provider.GetServices<IPuddingTool>().OfType<ClassifierStatusTool>().Single();
+        var tool = provider.GetRequiredService<ClassifierStatusTool>();
         var result = await tool.ExecuteAsync(new ToolExecutionRequest
         {
             ToolCallId = "call-classifier-status",

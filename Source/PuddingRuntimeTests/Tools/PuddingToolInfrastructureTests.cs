@@ -2030,8 +2030,7 @@ public sealed partial class PuddingToolInfrastructureTests
         services.AddPuddingToolRegistry();
 
         using var provider = services.BuildServiceProvider();
-        var requestApprovalTool = provider.GetServices<IPuddingTool>()
-            .Single(t => t.Descriptor.ToolId == "request_tool_approval");
+        var requestApprovalTool = provider.GetRequiredService<IPuddingToolRegistry>().GetTool("request_tool_approval")!;
         var context = SampleContext() with
         {
             Trace = RuntimeTraceContext.CreateNew(userId: "user-1"),
@@ -3884,8 +3883,7 @@ public sealed partial class PuddingToolInfrastructureTests
         services.AddPuddingToolRegistry();
 
         using var provider = services.BuildServiceProvider();
-        var tool = provider.GetServices<IPuddingTool>()
-            .Single(t => t.Descriptor.ToolId == "request_tool_approval");
+        var tool = provider.GetRequiredService<IPuddingToolRegistry>().GetTool("request_tool_approval")!;
 
         var result = await tool.ExecuteAsync(new ToolExecutionRequest
         {
@@ -3954,8 +3952,7 @@ public sealed partial class PuddingToolInfrastructureTests
         services.AddPuddingToolRegistry();
 
         using var provider = services.BuildServiceProvider();
-        var tool = provider.GetServices<IPuddingTool>()
-            .Single(t => t.Descriptor.ToolId == "request_tool_approval");
+        var tool = provider.GetRequiredService<IPuddingToolRegistry>().GetTool("request_tool_approval")!;
 
         var result = await tool.ExecuteAsync(new ToolExecutionRequest
         {
@@ -4007,8 +4004,7 @@ public sealed partial class PuddingToolInfrastructureTests
         services.AddPuddingToolRegistry();
 
         using var provider = services.BuildServiceProvider();
-        var tool = provider.GetServices<IPuddingTool>()
-            .Single(t => t.Descriptor.ToolId == "request_tool_approval");
+        var tool = provider.GetRequiredService<IPuddingToolRegistry>().GetTool("request_tool_approval")!;
 
         var result = await tool.ExecuteAsync(new ToolExecutionRequest
         {
@@ -4040,8 +4036,7 @@ public sealed partial class PuddingToolInfrastructureTests
         services.AddPuddingToolRegistry();
 
         using var provider = services.BuildServiceProvider();
-        var tool = provider.GetServices<IPuddingTool>()
-            .Single(t => t.Descriptor.ToolId == "request_tool_approval");
+        var tool = provider.GetRequiredService<IPuddingToolRegistry>().GetTool("request_tool_approval")!;
 
         var result = await tool.ExecuteAsync(new ToolExecutionRequest
         {
@@ -4094,8 +4089,7 @@ public sealed partial class PuddingToolInfrastructureTests
         services.AddPuddingToolRegistry();
 
         using var provider = services.BuildServiceProvider();
-        var tool = provider.GetServices<IPuddingTool>()
-            .Single(t => t.Descriptor.ToolId == "request_tool_approval");
+        var tool = provider.GetRequiredService<IPuddingToolRegistry>().GetTool("request_tool_approval")!;
 
         var result = await tool.ExecuteAsync(new ToolExecutionRequest
         {

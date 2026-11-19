@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -64,10 +65,20 @@ public static class PuddingToolServiceCollectionExtensions
         services.AddPuddingTool<PluginUnloadTool>();
         services.AddPuddingTool<PluginDiagnosticsTool>();
 
+        // Activation gaps are recorded here and read back by diagnostics surfaces. The concrete
+        // type is the writer, the interface is the read-only view; both point at one instance.
+        services.TryAddSingleton<ToolActivationDiagnostics>();
+        services.TryAddSingleton<IToolActivationDiagnostics>(sp =>
+            sp.GetRequiredService<ToolActivationDiagnostics>());
+
         services.TryAddSingleton<IPuddingToolRegistry>(sp =>
         {
 
-            var nativeTools = sp.GetServices<IPuddingTool>().ToList();
+            // Resolve native tools one at a time instead of asking the container for the whole
+            // IPuddingTool sequence: enumeration constructs every tool eagerly, so a single tool
+            // with a missing dependency used to abort registry construction and take every other
+            // tool down with it.
+            var nativeTools = ResolveNativeTools(sp, services);
             var toolSources = sp.GetServices<IPuddingToolSource>().ToList();
             var workspaceToolSources = sp.GetServices<IWorkspacePuddingToolSource>().ToList();
 
@@ -316,6 +327,86 @@ public static class PuddingToolServiceCollectionExtensions
         }
 
         return services;
+    }
+
+    /// <summary>
+    /// Resolves every registered <see cref="IPuddingTool"/> individually, quarantining the ones
+    /// whose container activation fails.
+    /// <para>
+    /// The registry factory must not call <c>GetServices&lt;IPuddingTool&gt;()</c>: that constructs
+    /// every tool eagerly, so one missing dependency aborts the whole registry and hides every
+    /// unrelated tool with it. Descriptors keep their plain type registration (so
+    /// <c>ImplementationType</c> stays observable to callers and tests); only the resolution
+    /// strategy changes here.
+    /// </para>
+    /// </summary>
+    private static List<IPuddingTool> ResolveNativeTools(
+        IServiceProvider provider,
+        IServiceCollection services)
+    {
+        var diagnostics = provider.GetService<ToolActivationDiagnostics>();
+        var resolved = new List<IPuddingTool>();
+
+        foreach (var descriptor in services.Where(d => d.ServiceType == typeof(IPuddingTool)))
+        {
+            if (TryResolveNativeTool(provider, descriptor, out var tool, out var error))
+            {
+                resolved.Add(tool!);
+                continue;
+            }
+
+            if (descriptor.ImplementationType is { } toolType && error is not null)
+                diagnostics?.Record(ToolActivationFailure.Create(toolType, error));
+        }
+
+        return resolved;
+    }
+
+    /// <summary>
+    /// Resolves a single tool descriptor without letting one failure escape.
+    /// Container-registered tool types are resolved through the provider first so the singleton
+    /// instance stays identical to <c>GetService&lt;TTool&gt;()</c>; assembly-scanned tools that
+    /// are not their own service type are activated from the container's dependency graph.
+    /// </summary>
+    private static bool TryResolveNativeTool(
+        IServiceProvider provider,
+        ServiceDescriptor descriptor,
+        out IPuddingTool? tool,
+        out Exception? error)
+    {
+        tool = null;
+        error = null;
+
+        try
+        {
+            if (descriptor.ImplementationInstance is IPuddingTool instance)
+            {
+                tool = instance;
+                return true;
+            }
+
+            if (descriptor.ImplementationFactory is { } factory)
+            {
+                tool = factory(provider) as IPuddingTool;
+                return tool is not null;
+            }
+
+            if (descriptor.ImplementationType is not { } implementationType)
+                return false;
+
+            tool = provider.GetService(implementationType) as IPuddingTool;
+            if (tool is not null)
+                return true;
+
+            tool = (IPuddingTool)ActivatorUtilities.CreateInstance(provider, implementationType);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            tool = null;
+            error = ex;
+            return false;
+        }
     }
 
     private static bool HasPuddingToolRegistration(IServiceCollection services, Type toolType) =>

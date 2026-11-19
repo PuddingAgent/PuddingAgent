@@ -205,7 +205,7 @@ public sealed class ClassifierStatusToolTests
     }
 
     private static ClassifierStatusTool ResolveTool(ServiceProvider provider)
-        => provider.GetServices<IPuddingTool>().OfType<ClassifierStatusTool>().Single();
+        => provider.GetRequiredService<ClassifierStatusTool>();
 
     private static Task<ToolExecutionResult> ExecuteAsync(ClassifierStatusTool tool)
         => tool.ExecuteAsync(new ToolExecutionRequest

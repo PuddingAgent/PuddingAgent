@@ -593,7 +593,8 @@
 | `Tools/Platform/JsonElementExtensions.cs` | JsonElement 的读取扩展 | `JsonElementExtensions` | `Tools/BuiltIns/Memory/MemoryToolArgs.cs` | — |
 | `Tools/Platform/OperationZone.cs` | 工具操作分区的枚举 | `OperationZone` | `Tools/Platform/ToolPermissionPolicyService.cs` | — |
 | `Tools/Platform/PuddingToolRegistry.cs` | 工具注册表与 schema 投影 | `IPuddingToolRegistry` | `Services/Tools/ToolExposurePlanner.cs` | 内置工具在进程生命周期内保持稳定 |
-| `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` | 工具与分类器的装配注册 | `PuddingToolServiceCollectionExtensions` | `DependencyInjection.cs` | 新增注册一律追加，不改既有注册行 |
+| `Tools/Platform/PuddingToolActivationDiagnostics.cs` | 工具激活失败的进程内证据 | `IToolActivationDiagnostics` | `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` | 只读视图；按工具类型去重，保存类型与原始容器异常 |
+| `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` | 工具与分类器的装配注册 | `PuddingToolServiceCollectionExtensions` | `DependencyInjection.cs` | 新增注册一律追加，不改既有注册行；工具逐个解析，单个激活失败只隔离该工具 |
 | `Tools/Platform/ToolInvocationService.cs` | 工具调用的统一执行边界 | `IToolInvocationService` | `Services/AgentFirewall.cs` | callId 进入注册表后保持不变 |
 | `Tools/Platform/ToolLoopInstructionBuilder.cs` | 工具循环指引的稳定生成 | `ToolLoopInstructionBuilder` | `Services/Tools/ToolExposurePlanner.cs` | 只在 `search_tools` 可见时才宣称可发现延迟工具 |
 | `Tools/Platform/ToolPermissionPolicyService.cs` | 默认的工具权限策略 | `IToolPermissionPolicyService` | `Services/AgentFirewall.cs` | — |
