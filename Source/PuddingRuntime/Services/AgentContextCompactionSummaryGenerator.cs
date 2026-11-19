@@ -39,11 +39,23 @@ public sealed class AgentContextCompactionSummaryGenerator : IContextCompactionS
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, _options.AgentSummaryTimeoutSeconds)));
 
-        // 压缩是一次独立的 LLM 调用，必须在派发前解出 provider/model；
-        // 否则下游 RequireInvocationProfile 只会报「missing LlmProfile」，无法定位。
-        var llmRoute = string.IsNullOrWhiteSpace(request.LlmConfig?.ModelId)
+        // 压缩是一次独立的 LLM 调用，必须在派发前解出 provider/model。
+        // 调用方不保证会传 LlmConfig（SessionCompactTool / ContextWindowManager 都不传），
+        // 因此优先回退到 Agent 的运行时档案；两者都无才显式失败于下游。
+        AgentRuntimeProfile? agentProfile = null;
+        var profileResolver = _services.GetService<IAgentRuntimeProfileResolver>();
+        if (profileResolver is not null && !string.IsNullOrWhiteSpace(request.AgentId))
+        {
+            agentProfile = await profileResolver.ResolveAsync(request.WorkspaceId, request.AgentId!, ct);
+        }
+
+        var modelRoute = request.LlmConfig?.ModelId
+            ?? agentProfile?.PreferredModelId
+            ?? agentProfile?.LlmConfig?.ModelId;
+
+        var llmRoute = string.IsNullOrWhiteSpace(modelRoute)
             ? null
-            : await _llmResolver.ResolveRouteAsync(request.LlmConfig!.ModelId, requiredCapabilityTags: null, ct);
+            : await _llmResolver.ResolveRouteAsync(modelRoute, requiredCapabilityTags: null, ct);
 
         var dispatchRequest = new RuntimeDispatchRequest
         {
