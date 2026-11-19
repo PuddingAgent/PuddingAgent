@@ -30,7 +30,8 @@ param(
     [int]$MaSlow = 60,
     [double]$KeyLevelLow = 0,
     [double]$KeyLevelHigh = 0,
-    [string]$KeyLevelLabel = ''
+    [string]$KeyLevelLabel = '',
+    [string]$DeliverablesRoot = 'D:\Data\workspaces\default\deliverables'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -231,7 +232,24 @@ foreach ($def in $rangeDefs) {
 
 Set-Content -LiteralPath $Out -Value ($html.ToString() -split "`r?`n") -Encoding UTF8
 $scriptCount = ([regex]::Matches($html.ToString(), '<script').Count)
+if ($scriptCount -gt 0) { throw 'Output contains <script>; the panel would drop every SVG element. Remove it before rendering.' }
+
+# render_panel 只能读工作区目录内的 html_path；这里直接把产物落到那里并打印可用的调用参数。
+$delivered = ''
+if ($DeliverablesRoot) {
+    if (-not (Test-Path $DeliverablesRoot)) { New-Item -ItemType Directory -Path $DeliverablesRoot -Force | Out-Null }
+    $delivered = Join-Path $DeliverablesRoot (Split-Path $Out -Leaf)
+    if ([IO.Path]::GetFullPath($delivered) -ne [IO.Path]::GetFullPath($Out)) {
+        Copy-Item -LiteralPath $Out -Destination $delivered -Force
+    }
+}
+
 Write-Output ('out=' + $Out)
 Write-Output ('points=' + $n + '  bytes=' + (Get-Item $Out).Length + '  script_tags=' + $scriptCount + '  events=' + $events.Count)
-Write-Output ('next: copy to D:\Data\workspaces\default\deliverables\ then render_panel(html_path=...)')
-if ($scriptCount -gt 0) { throw 'Output contains <script>; the panel would drop every SVG element. Remove it before rendering.' }
+if ($delivered) {
+    Write-Output ('delivered=' + $delivered)
+    Write-Output ('render_panel(panel_id="' + [IO.Path]::GetFileNameWithoutExtension($delivered) + '", html_path="' + $delivered + '")')
+}
+else {
+    Write-Output 'next: copy into the workspace deliverables directory, then render_panel(html_path=...)'
+}
