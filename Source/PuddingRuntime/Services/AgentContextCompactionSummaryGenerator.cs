@@ -69,7 +69,7 @@ public sealed class AgentContextCompactionSummaryGenerator : IContextCompactionS
             SuppressContextAutoCompaction = true,
             AssignedObjective = "Generate semantic context compaction summary.",
             ExpectedOutputContract = "Return only the <compact_summary> markdown block.",
-            LlmConfig = request.LlmConfig,
+            LlmConfig = request.LlmConfig ?? agentProfile?.LlmConfig,
             LlmProfile = llmRoute is null
                 ? null
                 : new LlmInvocationProfile
