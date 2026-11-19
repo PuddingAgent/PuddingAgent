@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Observability;
 using PuddingCode.Runtime;
@@ -372,13 +373,46 @@ public sealed class AgentDiagnosticsToolTests
 
         Assert.IsTrue(result.Success, result.Error);
 
-        var lowered = result.Output.ToLowerInvariant();
+        var scannable = RemoveExternallyAuthoredText(result.Output);
+
+        // 阳性对照：剥离后必须仍是完整诊断输出。若这里退化成空对象，
+        // 下面的循环会因为「什么都没扫到」而永久变绿——那才是真正的失控。
+        StringAssert.Contains(scannable, "\"assemblies\"");
+        StringAssert.Contains(scannable, "\"vocabulary\"");
+
+        var lowered = scannable.ToLowerInvariant();
         foreach (var forbidden in new[] { "token", "secret", "password", "apikey", "api_key", "connectionstring" })
         {
             Assert.IsFalse(
                 lowered.Contains(forbidden, StringComparison.Ordinal),
                 $"runtime_identity must not echo '{forbidden}'");
         }
+    }
+
+    /// <summary>
+    /// 去掉 git 提交主题后再做泄漏扫描。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 提交主题是**人写的自由文本**：一条叫「fix: rotate the apiKey」的提交会让这条断言
+    /// 永久变红，而它并不表示诊断泄漏了任何秘密（该文本本来就在 git 历史里公开）。
+    /// 实测触发点：HEAD 提交 <c>eee9503</c> 的主题含 "apiKey"，于是
+    /// <c>freshness.headSubject</c> 把整条断言带红。
+    /// </para>
+    /// <para>
+    /// 扫描对象应是**工具自己选择输出的运行时事实**——程序集路径、词表来源、环境变量名。
+    /// <c>headSubject</c> 要留着（它是「部署的是哪一版」的直接证据），只把它排除在扫描之外。
+    /// </para>
+    /// </remarks>
+    private static string RemoveExternallyAuthoredText(string json)
+    {
+        var node = JsonNode.Parse(json);
+        if (node?["freshness"] is JsonObject freshness)
+        {
+            freshness.Remove("headSubject");
+        }
+
+        return node?.ToJsonString() ?? json;
     }
 
     [TestMethod]
