@@ -14,7 +14,8 @@ namespace PuddingRuntime.Services;
 ///       <c>Jev:ModelId</c> → <c>JEV_MODEL_ID</c> → <c>jev-latest</c>。</item>
 /// </list>
 /// 密钥解析链：<b>资源池 provider 的 apiKeyRef（→ LlmConfig.KeyVaultId，经 <see cref="IKeyVaultService"/>）</b>
-/// → <b>资源池 provider 的 <c>apiKey</c>（支持 <c>${ENV_NAME}</c> 占位展开）</b>
+/// → <b>资源池 provider 的 <c>apiKey</c>（支持 <c>${ENV_NAME}</c> 占位展开；
+///       若是 <c>{{vault:…}}</c> 引用则经 KeyVault 注入）</b>
 /// → <c>Jev:ApiKey</c> / <c>JEV_API_KEY</c>（支持 <c>${ENV_NAME}</c> 占位展开）
 /// → <c>Jev:ApiKeyRef</c> / <c>JEV_API_KEY_REF</c> 经 KeyVault。
 /// </para>
@@ -73,6 +74,12 @@ public sealed class JevDecisionOptionsProvider(
 
         if (string.IsNullOrWhiteSpace(apiKey))
             apiKey = ExpandEnvironmentPlaceholders(pool.ApiKey ?? string.Empty);
+
+        // 资源池迁移到 KeyVault 之后，apiKey 的标准形态是 {{vault:…}} 引用（全部 provider 都如此）。
+        // 必须在这里解引用：把占位符原样发出去只会拿到 401，而那读起来像「密钥配错了」，
+        // 实际是「引用没解开」。解不出来就返回空，让下面走「未配置」这条明确路径。
+        if (ContainsVaultReference(apiKey))
+            apiKey = await ResolveVaultReferenceAsync(apiKey, ct).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
@@ -150,6 +157,52 @@ public sealed class JevDecisionOptionsProvider(
             string.IsNullOrWhiteSpace(modelId) ? null : modelId,
             string.IsNullOrWhiteSpace(keyVaultId) ? null : keyVaultId,
             string.IsNullOrWhiteSpace(apiKey) ? null : apiKey);
+    }
+
+    /// <summary>KeyVault 引用标记。资源池迁移后 <c>apiKey</c> 的标准形态就是它。</summary>
+    private const string VaultReferenceMarker = "{{vault:";
+
+    private static bool ContainsVaultReference(string value) =>
+        value.Contains(VaultReferenceMarker, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 把 <c>{{vault:…}}</c> 引用交给 KeyVault 解开。
+    /// </summary>
+    /// <remarks>
+    /// 拿不到 vault 服务、或解析结果仍含引用标记时返回空串，让调用方走「未配置」这条明确路径。
+    /// 带着占位符去请求会让错误看起来像密钥不对，而真相是引用没解开——两者修法完全不同。
+    /// </remarks>
+    private async Task<string> ResolveVaultReferenceAsync(string reference, CancellationToken ct)
+    {
+        if (keyVaultService is null)
+        {
+            logger?.LogWarning(
+                "[Jev] 资源池 apiKey 是 KeyVault 引用，但当前容器没有 IKeyVaultService，无法解析。");
+            return string.Empty;
+        }
+
+        string resolved;
+        try
+        {
+            resolved = await keyVaultService.InjectAsync(reference, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "[Jev] 资源池 KeyVault 引用解析失败。");
+            return string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(resolved) || ContainsVaultReference(resolved))
+        {
+            logger?.LogWarning("[Jev] 资源池 KeyVault 引用未解开（结果为空或仍含引用标记）。");
+            return string.Empty;
+        }
+
+        return resolved.Trim();
     }
 
     private async Task<string> ResolveSecretAsync(string keyVaultId, CancellationToken ct)

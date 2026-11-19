@@ -124,6 +124,38 @@ public sealed class JevDecisionOptionsProviderPoolTests
 
     // ── fakes ─────────────────────────────────────────────────────────────
 
+    [TestMethod]
+    public async Task GetOptionsAsync_PoolApiKeyIsVaultReference_IsInjectedBeforeUse()
+    {
+        // 资源池迁移到 KeyVault 后，apiKey 的标准形态是 {{vault:…}} 引用。
+        // 不解析就发出去只能拿到 401，而错误读起来像「密钥配错了」。
+        var configuration = Config(("Jev:BaseUrl", ConfigBaseUrl));
+        var llm = FakeLlmConfigService.WithJev(
+            PoolBaseUrl, "jev-latest", keyVaultId: null, apiKey: "{{vault:jev.apiKey}}");
+        var vault = new FakeKeyVaultService { Value = "resolved-plaintext" };
+
+        var options = await Provider(configuration, llm, vault).GetOptionsAsync();
+
+        Assert.AreEqual("resolved-plaintext", options.ApiKey);
+        Assert.IsFalse(
+            options.ApiKey.Contains("{{vault:", StringComparison.Ordinal),
+            "引用必须被解开，不能把占位符当密钥带出去。");
+    }
+
+    [TestMethod]
+    public async Task GetOptionsAsync_VaultReferenceWithoutVaultService_FailsClosedInsteadOfSendingPlaceholder()
+    {
+        // 没有 vault 服务时绝不能把占位符当密钥：那会让真实错误被 401 掩盖。
+        var configuration = Config(("Jev:BaseUrl", ConfigBaseUrl));
+        var llm = FakeLlmConfigService.WithJev(
+            PoolBaseUrl, "jev-latest", keyVaultId: null, apiKey: "{{vault:jev.apiKey}}");
+
+        var exception = await Assert.ThrowsExactlyAsync<JevDecisionException>(
+            () => Provider(configuration, llm, vault: null).GetOptionsAsync());
+
+        Assert.AreEqual(JevDecisionCodes.NotConfigured, exception.Code);
+    }
+
     private sealed class FakeLlmConfigService : ILlmConfigService
     {
         private readonly List<LlmProviderInfo> _providers = [];
@@ -135,7 +167,8 @@ public sealed class JevDecisionOptionsProviderPoolTests
             string? modelId = null,
             string? keyVaultId = null,
             string providerId = "jev",
-            IReadOnlyList<(string ModelId, int SortOrder)>? models = null)
+            IReadOnlyList<(string ModelId, int SortOrder)>? models = null,
+            string? apiKey = null)
         {
             var service = new FakeLlmConfigService();
             service._providers.Add(new LlmProviderInfo
@@ -163,6 +196,9 @@ public sealed class JevDecisionOptionsProviderPoolTests
                     Endpoint = baseUrl,
                     ModelId = id,
                     KeyVaultId = keyVaultId,
+#pragma warning disable CS0618 // 资源池迁移后 apiKey 正常形态是 {{vault:…}} 引用，必须能表达。
+                    ApiKey = apiKey,
+#pragma warning restore CS0618
                 };
             }
 
@@ -230,7 +266,7 @@ public sealed class JevDecisionOptionsProviderPoolTests
             => throw new NotSupportedException();
 
         public Task<string> InjectAsync(string text, CancellationToken ct = default)
-            => Task.FromResult(text);
+            => Task.FromResult(Value ?? text);
 
         public Task<string> StripAsync(string text, CancellationToken ct = default)
             => Task.FromResult(text);

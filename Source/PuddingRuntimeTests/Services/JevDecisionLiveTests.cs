@@ -69,6 +69,18 @@ public sealed class JevDecisionLiveTests
             return;
         }
 
+        // KeyVault 迁移后 apiKey 的标准形态是 {{vault:…}} 引用。本测试刻意不注入 IKeyVaultService
+        // （那需要主密钥与用户上下文），所以这种形态下拿不到明文密钥 ⇒ 跳过而不是失败。
+        // 让它失败会把「本机密钥放在 vault 里」报成「密钥配错了」，两者的修法完全不同。
+        if (string.IsNullOrWhiteSpace(environmentApiKey)
+            && poolApiKey is not null
+            && poolApiKey.Contains("{{vault:", StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.Inconclusive(
+                "资源池中 jev.apiKey 是 KeyVault 引用；本测试不解 vault，如需联网验证请把 JEV_API_KEY 设为明文密钥。");
+            return;
+        }
+
         Assert.IsNotNull(providerNode, "资源池中缺少 providerId=\"jev\" 的 provider。");
         Assert.AreEqual(
             ExpectedBaseUrl,

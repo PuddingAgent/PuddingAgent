@@ -178,7 +178,7 @@
 | `Services/InMemoryRuntimeSessionStore.cs` | 会话运行时记录的进程内存储 | `InMemoryRuntimeSessionStore` | `Models/SessionRuntimeRecord.cs` | — |
 | `Services/InMemorySubAgentOrchestrationRunStore.cs` | MOA run 快照的进程内存储 | `ISubAgentOrchestrationRunStore` | `Services/DesignCouncilRuntimeService.cs` | 版本 CAS 防重复领取，不做跨重启恢复 |
 | `Services/IRuntimeLlmClient.cs` | LLM 客户端抽象 | `IRuntimeLlmClient` | `Services/DirectLlmClient.cs` | — |
-| `Services/JevDecisionOptionsProvider.cs` | Jev 连接参数的解析（资源池优先） | `IJevDecisionOptionsProvider` | `Services/JevDecisionService.cs` | 未配置即报错，绝不返回空端点；密钥不入日志 |
+| `Services/JevDecisionOptionsProvider.cs` | Jev 连接参数的解析（资源池优先） | `IJevDecisionOptionsProvider` | `Services/JevDecisionService.cs` | 未配置即报错，绝不返回空端点；密钥不入日志；资源池 apiKey 为 `{{vault:…}}` 引用时必须经 KeyVault 解开，解不开按未配置失败 |
 | `Services/JevDecisionService.cs` | Jev 决策模型的 HTTP 适配器 | `JevDecisionService` | `Tools/Approval/JevToolCallClassifier.cs` | 返回结构化决策数据；非 2xx 一律 fail-closed |
 | `Services/KnowledgeAccessRuntime.cs` | Runtime 侧知识基础设施的访问桥接 | `KnowledgeAccessRuntime` | `Tools/BuiltIns/Memory/MemoryLibraryTool.cs` | — |
 | `Services/LlmInvocationPurposeAccessor.cs` | 单次 LLM 调用的计费归因作用域 | `LlmInvocationPurposeAccessor` | `Services/DirectLlmClient.cs` | 嵌套调用完成后必须恢复外层作用域 |
