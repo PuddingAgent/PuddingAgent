@@ -146,7 +146,7 @@
 | `Services/DeepSeekWeb/WebClientDeepSeekTransport.cs` | 组件传输端口到既有 `IWebClient` 的原样适配 | `WebClientDeepSeekTransport` | `../PuddingDeepSeekWeb/DeepSeekWebTransport.cs` | 不分类、不重试、不吞异常；错误语义归组件所有 |
 | `Services/Demo/DemoDesktopHostBridge.cs` | 演示用的嵌入式宿主桥接实现 | `DemoDesktopHostBridge` | `Services/INativeHostBridge.cs` | — |
 | `Services/DesignCouncilRuntimeService.cs` | MOA 设计委员会的运行时适配与状态持久化 | `IDesignCouncilRuntimeService` | `Services/InMemorySubAgentOrchestrationRunStore.cs` | 派发为只读，结果由调用方回填 |
-| `Services/Diagnostics/RuntimeDiagnosisEngine.cs` | 四维运行时指标的确定性诊断 | `RuntimeDiagnosisEngine` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | 无证据判 unknown，绝不判 healthy |
+| `Services/Diagnostics/RuntimeDiagnosisEngine.cs` | 四维运行时指标的确定性诊断 | `RuntimeDiagnosisEngine` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | 无证据判 unknown，绝不判 healthy；工具装配失败是确定事实（计入证据），但「无失败」不得充当已跑检查 |
 | `Services/DirectLlmClient.cs` | 按选中模型协议直连 LLM 的客户端 | `DirectLlmClient` | `Services/FrozenVisionContextAccessor.cs` | 视觉能力只读冻结快照，无快照即 fail-closed |
 | `Services/LlmFailureDiagnostics.cs` | 分类证据与有界尝试快照随异常跨层传递 | `LlmFailureDiagnostics` | `Services/DirectLlmClient.cs` | 重试状态取真实控制流；每次耗时独立计量 |
 | `Services/Diagnostics/TerminalDiagnosticExport.cs` | 终态事故投影与可复制报告 | `TerminalDiagnosticExport` | `Services/AgentExecutionService.cs` | 保留全部已采集尝试；TurnId/RunId 来自执行身份，不用 MessageId 替代 |
@@ -352,7 +352,7 @@
 | `Tools/BuiltIns/CodeIntelligence/ProjectMapTool.cs` | `project_map`：项目模块概览 | `ProjectMapTool` | `Tools/BuiltIns/CodeIntelligence/CodeSummaryTool.cs` | — |
 | `Tools/BuiltIns/Context/SessionCompactTool.cs` | `compact_session`：会话上下文的手动压缩 | `SessionCompactTool` | `Services/ContextCompactionService.cs` | 当前轮围栏守卫优先于手动压缩 |
 | `Tools/BuiltIns/Context/ContextHandoffTool.cs` | `context_handoff`：工作模型 save/read 交接摘要 | `ContextHandoffTool` | `PuddingContextHandoff/HandoffStore.cs` | 6000 字节正文；宿主作用域和 Turn ID；save 仅回定位；原文/后续用户纠正优先 |
-| `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | `agent_diagnostics`：Agent 自我诊断（含 runtime_identity 运行身份核实） | `AgentDiagnosticsTool` | `Services/Diagnostics/RuntimeDiagnosisEngine.cs` | 数据源不可用时显式报出，不当作无问题；运行身份只报磁盘事实，读不到时报 error 不编造 |
+| `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | `agent_diagnostics`：Agent 自我诊断（含 runtime_identity 运行身份核实） | `AgentDiagnosticsTool` | `Services/Diagnostics/RuntimeDiagnosisEngine.cs` | 数据源不可用时显式报出，不当作无问题；运行身份只报磁盘事实，读不到时报 error 不编造；diagnose 必须带上工具装配失败清单 |
 | `Tools/BuiltIns/Documents/ReadOfficeDocumentTool.cs` | `read_office_document`：办公文档读取 | `ReadOfficeDocumentTool` | `Tools/BuiltIns/Files/FileChunkService.cs` | — |
 | `Tools/BuiltIns/Events/EventSubscriptionTool.cs` | `event_subscribe`：事件类型的订阅与退订 | `EventSubscriptionTool` | `Services/Events/EventDispatcher.cs` | — |
 | `Tools/BuiltIns/Files/FileChunkService.cs` | 大文件的分块与流式窗口 | `FileChunkService` | `Tools/BuiltIns/Files/FileTools.cs` | — |

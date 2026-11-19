@@ -1,4 +1,5 @@
 using PuddingRuntime.Services.Diagnostics;
+using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntimeTests.Services;
 
@@ -381,6 +382,59 @@ public sealed class RuntimeDiagnosisEngineTests
 
     private static DiagnosisFinding? Find(DiagnosisReport report, string code)
         => report.Findings.FirstOrDefault(f => f.Code == code);
+
+    [TestMethod]
+    public void ToolActivationFailure_DegradesVerdict_AndNamesTheTool()
+    {
+        // 装配失败的工具有一个隐蔽特征：调用统计里永远没有它的记录，因为实例根本不存在。
+        // 只看调用指标的话，它不存在 = 零失败 = 假健康。
+        var report = RuntimeDiagnosisEngine.Diagnose(BaseInput(
+            Tool("a", calls: 20, failures: 0)) with
+        {
+            ActivationFailures =
+            [
+                new ToolActivationFailure(
+                    "PuddingRuntime.Tools.Security.KeyVaultListTool",
+                    "Unable to resolve service for type 'PuddingCode.Abstractions.IKeyVaultService'.",
+                    DateTimeOffset.UnixEpoch),
+            ],
+        });
+
+        var finding = Find(report, DiagnosisCodes.ToolActivationFailed);
+        Assert.IsNotNull(finding);
+        Assert.AreEqual(DiagnosisSeverities.Warning, finding.Severity);
+        Assert.AreEqual(DiagnosisVerdicts.Degraded, report.Verdict);
+        Assert.AreEqual("1", finding.Evidence["failure_count"]);
+        StringAssert.Contains(finding.Evidence["tool_types"], "KeyVaultListTool");
+        StringAssert.Contains(finding.Evidence["first_message"], "IKeyVaultService");
+    }
+
+    [TestMethod]
+    public void ToolActivationFailure_IsEvidenceOnItsOwn_NotSamplesMissing()
+    {
+        // 装配失败是确定事实，不是「没采到样本」：哪怕活动流为空，也不得报 unknown。
+        var report = RuntimeDiagnosisEngine.Diagnose(new DiagnosisInput
+        {
+            ActivationFailures =
+            [
+                new ToolActivationFailure("X", "missing dependency", DateTimeOffset.UnixEpoch),
+            ],
+        });
+
+        Assert.AreEqual(DiagnosisVerdicts.Degraded, report.Verdict);
+        Assert.IsTrue(report.ChecksRun.Contains(DiagnosisCodes.ToolActivationFailed));
+        Assert.IsNull(Find(report, DiagnosisCodes.SamplingInsufficient));
+    }
+
+    [TestMethod]
+    public void NoActivationFailure_DoesNotFakeACheckRun()
+    {
+        // 反向守护：把「无失败」也记成跑过的检查，会把覆不完整从 unknown 放松成 healthy。
+        var report = RuntimeDiagnosisEngine.Diagnose(new DiagnosisInput());
+
+        Assert.AreEqual(DiagnosisVerdicts.Unknown, report.Verdict);
+        Assert.IsFalse(report.ChecksRun.Contains(DiagnosisCodes.ToolActivationFailed));
+    }
 
     private static string Fingerprint(DiagnosisReport report)
         => string.Join("|", report.Findings.Select(f => $"{f.Code}:{f.Severity}:{f.Category}"));

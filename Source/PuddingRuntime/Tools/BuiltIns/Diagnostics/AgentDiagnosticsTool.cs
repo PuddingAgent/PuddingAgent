@@ -56,17 +56,20 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISubAgentDiagnosticsService? _subAgentDiagnostics;
     private readonly PuddingDataPaths? _dataPaths;
+    private readonly IToolActivationDiagnostics? _toolActivation;
 
     public AgentDiagnosticsTool(
         IRuntimeActivitySink? activitySink,
         IServiceScopeFactory scopeFactory,
         ISubAgentDiagnosticsService? subAgentDiagnostics = null,
-        PuddingDataPaths? dataPaths = null)
+        PuddingDataPaths? dataPaths = null,
+        IToolActivationDiagnostics? toolActivation = null)
     {
         _activitySink = activitySink;
         _scopeFactory = scopeFactory;
         _subAgentDiagnostics = subAgentDiagnostics;
         _dataPaths = dataPaths;
+        _toolActivation = toolActivation;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -1026,6 +1029,8 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             SubAgentBudgetExhausted = null,
             SubAgentHoursBack = hoursBack,
             SubAgentError = subAgentError,
+            // 装配隔离与调用样本无关：工具没装配起来，调用统计里永远看不到它。
+            ActivationFailures = _toolActivation?.Failures ?? [],
         };
     }
 

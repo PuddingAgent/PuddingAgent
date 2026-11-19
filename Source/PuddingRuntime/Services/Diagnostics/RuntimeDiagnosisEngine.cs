@@ -1,3 +1,5 @@
+using PuddingRuntime.Services.Tools;
+
 namespace PuddingRuntime.Services.Diagnostics;
 
 /// <summary>诊断发现的严重度。</summary>
@@ -31,6 +33,9 @@ public static class DiagnosisCodes
     public const string ObservationWindowUnknown = "sampling.window_unknown";
     public const string SourceUnavailable = "source.unavailable";
 
+    /// <summary>工具已注册但无法从容器装配：能力会静默消失，必须显式报告。</summary>
+    public const string ToolActivationFailed = "tool.activation_failed";
+
     /// <summary>四个数据源没有全部可用时产生：判定只代表已覆盖维度。</summary>
     public const string CoveragePartial = "coverage.partial";
 }
@@ -58,6 +63,11 @@ public sealed record DiagnosisInput
     public DateTimeOffset? WindowEndUtc { get; init; }
 
     public IReadOnlyList<DiagnosisToolMetric> Tools { get; init; } = [];
+
+    /// <summary>
+    /// 装配阶段就被隔离的工具。它与调用样本无关：工具根本没有被装配起来，所以再怎么统计调用也永远看不见它。
+    /// </summary>
+    public IReadOnlyList<ToolActivationFailure> ActivationFailures { get; init; } = [];
 
     public double? CacheHitRate { get; init; }
     public int? CacheAnalyzedEvents { get; init; }
@@ -133,6 +143,7 @@ public static class RuntimeDiagnosisEngine
         var checksRun = new List<string>();
         var checksSkipped = new List<string>();
 
+        EvaluateToolActivation(input, findings, checksRun);
         EvaluateToolFailureRates(input, findings, checksRun, checksSkipped);
         EvaluateErrorConcentration(input, findings, checksRun, checksSkipped);
         EvaluateLatencyOutliers(input, findings, checksRun, checksSkipped);
@@ -198,6 +209,42 @@ public static class RuntimeDiagnosisEngine
             checksSkipped,
             coverage,
             BuildObservationWindow(input));
+    }
+
+    /// <summary>
+    /// 装配隔离报告。
+    /// <para>
+    /// 这里刻意只在**确有失败**时向 checksRun 记账。把「无失败」也当成一项跑过的检查，会让
+    /// 「其它数据源全不可用」从 unknown 被放松成 healthy —— 那就把「没查到」说成了「没问题」。
+    /// </para>
+    /// </summary>
+    private static void EvaluateToolActivation(
+        DiagnosisInput input,
+        List<DiagnosisFinding> findings,
+        List<string> checksRun)
+    {
+        if (input.ActivationFailures.Count == 0)
+            return;
+
+        checksRun.Add(DiagnosisCodes.ToolActivationFailed);
+
+        var toolNames = input.ActivationFailures
+            .Select(f => f.ToolType)
+            .Take(5)
+            .ToArray();
+
+        findings.Add(new DiagnosisFinding(
+            DiagnosisCodes.ToolActivationFailed,
+            DiagnosisSeverities.Warning,
+            "tool",
+            $"{input.ActivationFailures.Count} 个工具因依赖缺失未能装配，对 Agent 不可见（进程仍然活着）。",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["failure_count"] = input.ActivationFailures.Count.ToString(),
+                ["tool_types"] = string.Join(",", toolNames),
+                ["first_message"] = input.ActivationFailures[0].Message,
+            },
+            "补齐缺失的容器依赖；若该工具已下线，就把注册一并移除，不要让它静默消失。"));
     }
 
     private static void EvaluateToolFailureRates(
@@ -523,6 +570,7 @@ public static class RuntimeDiagnosisEngine
     private static bool HasAnyEvidence(DiagnosisInput input)
         => input.TotalActivities > 0
            || input.Tools.Count > 0
+           || input.ActivationFailures.Count > 0
            || input.CacheHitRate.HasValue
            || input.ContextUsageRatio.HasValue
            || input.SubAgentTotalRuns > 0;
