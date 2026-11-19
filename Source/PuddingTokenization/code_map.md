@@ -32,6 +32,7 @@
 | `IsolatedSplitPreTokenizer.cs` | 顺序执行 Split(Isolated)，保留未匹配片段；特殊标记独立；返回前物化原文区间 |
 | `ScalarRegex.cs` | 将 Split 正则的 Unicode 大类扩展到补充平面，匹配结果仍为原文 UTF-16 坐标 |
 | `TokenizerProvider.cs` | `TokenizerHandle`（单次解析结果）+ 按 modelId 缓存与回退 |
+| `TokenizerAssetDirectory.cs` | 决定去哪儿找 `<identity>.tokenizer.json`；判据是「目录里至少一份资产」而不是「目录存在」 |
 | `PuddingTokenization.csproj` | 唯一允许引 `Microsoft.ML.Tokenizers` 的地方 |
 
 ## 三个必须保留的实现细节（每一个都是踩出来的）
@@ -67,8 +68,15 @@ SHA256  C90DFA01249DB1BE4245780A052EDE752E1361C612AC6D08E2BDADA7D599476B
 （5,530,562 B，ETag `628e3364…`），拿它去算 V4.1 会产出错误计数而不是报错 —— 哈希就是
 为拦住这个而钉的。
 
-运行时目录来源（`LlmOptions.ResolveTokenizerAssetDirectory`）：
-`PUDDING_TOKENIZER_ASSETS` 环境变量 → 应用目录旁的 `tokenizers/` → 都没有则回退通用编码。
+运行时目录来源（`TokenizerAssetDirectory.Resolve`，由 `LlmOptions` 在类型初始化时调用）：
+`PUDDING_TOKENIZER_ASSETS` 环境变量 → 应用目录旁的 `tokenizers/`（**必须含至少一份
+`*.tokenizer.json`**）→ 都没有则回退通用编码。
+
+⚠️ 第二个来源的判据是「目录里有资产」，不是「目录存在」。部署产物天然带一个**空的**
+`tokenizers/`，按「目录存在」判会让诊断报出 `assetSource=beside-application` + `AssetMissing`——
+读起来像「文件被删了」，实际是「从没放过文件」，两类问题的处置完全不同。
+`TokenizerAssetDirectoryTests` 用一条用例把这个区别钉住（变异取红：把判据退回
+`Directory.Exists`，该用例与「只有无关文件」那条一起变红）。
 
 ## 正确性判据
 

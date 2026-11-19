@@ -237,46 +237,15 @@ namespace PuddingCode.Platform
         /// <remarks>
         /// 未配置词表目录、或模型未登记时，<see cref="TokenizerProvider"/> 会返回带原因的回退，
         /// 此时继续走原来的 TiktokenTokenizer 路径，**行为与改动前完全一致**。
-        /// 之所以不把词表目录写死：它是环境数据（同代码索引库），换目录不应该要改代码。
+        /// 目录解析策略见 <see cref="TokenizerAssetDirectory"/>：它在那里有独立用例，
+        /// 因为「空目录算不算已配置」必须能被断言，而这个 static readonly 字段在本进程内改不动。
         /// </remarks>
-        private static readonly TokenizerAssetResolution VocabularyAssets = ResolveTokenizerAssetDirectory();
+        private static readonly TokenizerAssetResolution VocabularyAssets = TokenizerAssetDirectory.Resolve(
+            Environment.GetEnvironmentVariable(TokenizerAssetDirectory.EnvironmentVariableName),
+            AppContext.BaseDirectory);
 
         private static readonly TokenizerProvider ModelTokenizers =
             TokenizerProvider.Create(VocabularyAssets.Directory);
-
-        /// <summary>
-        /// 定位词表目录：环境变量优先，其次找应用目录旁的 <c>tokenizers</c>。
-        /// 两者都不存在时 <c>Directory</c> 为 <c>null</c>，表示“放弃精确计数”而不是报错。
-        /// </summary>
-        private static TokenizerAssetResolution ResolveTokenizerAssetDirectory()
-        {
-            var fromEnvironment = Environment.GetEnvironmentVariable("PUDDING_TOKENIZER_ASSETS");
-            if (!string.IsNullOrWhiteSpace(fromEnvironment))
-                return new TokenizerAssetResolution(fromEnvironment.Trim(), TokenizerAssetSources.Environment);
-
-            var besideApplication = Path.Combine(AppContext.BaseDirectory, "tokenizers");
-            return Directory.Exists(besideApplication)
-                ? new TokenizerAssetResolution(besideApplication, TokenizerAssetSources.BesideApplication)
-                : new TokenizerAssetResolution(null, TokenizerAssetSources.None);
-        }
-
-        /// <summary>词表资产的解析结果：目录 + 它从哪儿来。</summary>
-        /// <param name="Directory">词表目录；<c>null</c> 表示放弃精确计数。</param>
-        /// <param name="Source">来源，取值见 <see cref="TokenizerAssetSources"/>。</param>
-        private sealed record TokenizerAssetResolution(string? Directory, string Source);
-
-        /// <summary>词表目录的三种来源。区分它们，是为了让「配错了」和「被部署清掉了」不再长得一样。</summary>
-        private static class TokenizerAssetSources
-        {
-            /// <summary>来自环境变量。</summary>
-            public const string Environment = "environment";
-
-            /// <summary>来自应用目录旁的子目录。</summary>
-            public const string BesideApplication = "beside-application";
-
-            /// <summary>两处都没有 ⇒ 放弃精确计数。</summary>
-            public const string None = "none";
-        }
 
         /// <summary>一份已登记词表在本进程内的解析状态。</summary>
         public sealed record ModelTokenizerStatus(
