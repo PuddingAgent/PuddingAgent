@@ -111,6 +111,43 @@ public sealed class AgentContextCompactionSummaryGeneratorTests
         StringAssert.Contains(ex.Message, "Agent LLM config is null");
     }
 
+    [TestMethod]
+    public async Task GenerateSummaryAsync_ResolvesProfileAndConfigFromAgentWhenCallerPassesNeither()
+    {
+        var dispatcher = new RecordingDispatcher([
+            ServerSentEventFrame.Json(SseEventTypes.Done, new
+            {
+                reply = "<compact_summary>ok</compact_summary>"
+            })
+        ]);
+        var services = new ServiceCollection()
+            .AddSingleton<IRuntimeAgentDispatcher>(dispatcher)
+            .AddSingleton<IAgentRuntimeProfileResolver>(new StubAgentRuntimeProfileResolver("stub-provider", "stub-model"))
+            .BuildServiceProvider();
+
+        var generator = new AgentContextCompactionSummaryGenerator(
+            services,
+            new ContextCompactionOptions { SummaryGenerator = "agent", AgentSummaryTimeoutSeconds = 5 },
+            NullLogger<AgentContextCompactionSummaryGenerator>.Instance,
+            new StubLlmResolver());
+
+        // 真实调用方（SessionCompactTool / ContextWindowManager）都不传 LlmConfig，只带 AgentId。
+        await generator.GenerateSummaryAsync(new ContextCompactionSummaryRequest(
+            WorkspaceId: "workspace-1",
+            SessionId: "session-1",
+            AgentId: "agent-1",
+            Messages: [new ContextCompactionMessage("m1", 1, "user", "请压缩")],
+            Reason: "user command /compact"));
+
+        Assert.IsNotNull(dispatcher.LastRequest);
+        Assert.IsNotNull(dispatcher.LastRequest!.LlmProfile,
+            "缺少 LlmConfig 时必须从 Agent 运行时档案解出 profile，否则下游 RequireInvocationProfile 抛错");
+        Assert.AreEqual("stub-provider", dispatcher.LastRequest.LlmProfile!.ProviderId);
+        Assert.AreEqual("stub-model", dispatcher.LastRequest.LlmProfile!.ModelId);
+        Assert.IsNotNull(dispatcher.LastRequest.LlmConfig,
+            "下游在 LlmConfig 为空时会抛『Agent LLM config is null』，所以它也必须回退到档案");
+    }
+
     private sealed class RecordingDispatcher : IRuntimeAgentDispatcher
     {
         private readonly IReadOnlyList<ServerSentEventFrame> _frames;
