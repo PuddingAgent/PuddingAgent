@@ -82,10 +82,6 @@ function Write-ReachabilityNote {
     Write-Host "       or re-run with -RegisterEnvironmentVariable."
 }
 
-if (-not (Test-Path -LiteralPath $Destination)) {
-    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
-}
-
 $target = Join-Path $Destination $assetName
 
 if (-not $Force -and (Test-Asset $target)) {
@@ -97,43 +93,68 @@ if (-not $Force -and (Test-Asset $target)) {
     return
 }
 
+# The destination is created only once there is something to stage into, and is
+# removed again if this run fails to deliver.
+#
+# Previously it was created before the download, so an aborted run left an EMPTY
+# directory behind. An empty `tokenizers/` beside the application does not read as
+# "no assets configured" -- it reads as "assets were configured and then deleted",
+# which is exactly the wrong lead. The deploy tree carried such a directory from
+# 2026-10-24 onwards: created 07:01:14Z, zero files, and reported as a configured
+# source until it was traced during a diagnostics investigation.
+$createdDestination = $false
+if (-not (Test-Path -LiteralPath $Destination)) {
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    $createdDestination = $true
+}
 
 # Staging path: the asset is moved into place only after both checks pass.
 $temp = Join-Path $Destination ($assetName + '.download')
 
-if ($SourcePath) {
-    if (-not (Test-Path -LiteralPath $SourcePath)) {
-        throw "SourcePath not found: $SourcePath"
+try {
+    if ($SourcePath) {
+        if (-not (Test-Path -LiteralPath $SourcePath)) {
+            throw "SourcePath not found: $SourcePath"
+        }
+        Write-Host "[copy] $SourcePath"
+        Copy-Item -LiteralPath $SourcePath -Destination $temp -Force
     }
-    Write-Host "[copy] $SourcePath"
-    Copy-Item -LiteralPath $SourcePath -Destination $temp -Force
-}
-else {
-    Write-Host "[fetch] $url"
-    try {
-        Invoke-WebRequest -Uri $url -OutFile $temp -TimeoutSec 300 -UseBasicParsing
+    else {
+        Write-Host "[fetch] $url"
+        try {
+            Invoke-WebRequest -Uri $url -OutFile $temp -TimeoutSec 300 -UseBasicParsing
+        }
+        catch {
+            throw "Download failed: $($_.Exception.Message). If this host cannot reach HuggingFace, re-run with -SourcePath pointing at a local copy."
+        }
     }
-    catch {
-        if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force }
-        throw "Download failed: $($_.Exception.Message). If this host cannot reach HuggingFace, re-run with -SourcePath pointing at a local copy."
+
+    $actualBytes = (Get-Item -LiteralPath $temp).Length
+    if ($actualBytes -ne $expectedBytes) {
+        throw "Length mismatch: expected $expectedBytes, got $actualBytes. Refusing to install."
+    }
+
+    $actualSha = Get-Sha256 $temp
+    if ($actualSha -ne $expectedSha256) {
+        throw "SHA-256 mismatch: expected $expectedSha256, got $actualSha. Refusing to install."
+    }
+
+    # Only move into place after both checks pass, so a partial/corrupt download can
+    # never leave a file that the runtime would happily load.
+    Move-Item -LiteralPath $temp -Destination $target -Force
+}
+finally {
+    # One cleanup point for every failure path, including ones that throw from
+    # outside this script's own checks (Copy-Item / Invoke-WebRequest failures).
+    if (Test-Path -LiteralPath $temp) {
+        Remove-Item -LiteralPath $temp -Force
+    }
+    if ($createdDestination -and (Test-Path -LiteralPath $Destination)) {
+        if ((Get-ChildItem -LiteralPath $Destination -Force | Measure-Object).Count -eq 0) {
+            Remove-Item -LiteralPath $Destination -Recurse -Force
+        }
     }
 }
-
-$actualBytes = (Get-Item -LiteralPath $temp).Length
-if ($actualBytes -ne $expectedBytes) {
-    Remove-Item -LiteralPath $temp -Force
-    throw "Length mismatch: expected $expectedBytes, got $actualBytes. Refusing to install."
-}
-
-$actualSha = Get-Sha256 $temp
-if ($actualSha -ne $expectedSha256) {
-    Remove-Item -LiteralPath $temp -Force
-    throw "SHA-256 mismatch: expected $expectedSha256, got $actualSha. Refusing to install."
-}
-
-# Only move into place after both checks pass, so a partial/corrupt download can
-# never leave a file that the runtime would happily load.
-Move-Item -LiteralPath $temp -Destination $target -Force
 
 Write-Host "[ok] installed and verified"
 Write-Host "     $target"

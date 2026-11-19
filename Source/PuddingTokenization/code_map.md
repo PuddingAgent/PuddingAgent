@@ -68,6 +68,11 @@ SHA256  C90DFA01249DB1BE4245780A052EDE752E1361C612AC6D08E2BDADA7D599476B
 （5,530,562 B，ETag `628e3364…`），拿它去算 V4.1 会产出错误计数而不是报错 —— 哈希就是
 为拦住这个而钉的。
 
+安装失败时脚本会删掉它刚建的那个目录。早期版本不删，于是中止的运行会留下一个**空的**
+`tokenizers/`——而空目录读起来是「配过又没了」，不是「从没配」。部署树里那个从
+2026-10-24T07:01:14Z 起就存在的空目录就是这么来的：创建时间早于首份资产落地，零文件，
+却让诊断报了一个月的 `beside-application` + `AssetMissing`。
+
 运行时目录来源（`TokenizerAssetDirectory.Resolve`，由 `LlmOptions` 在类型初始化时调用）：
 `PUDDING_TOKENIZER_ASSETS` 环境变量 → 应用目录旁的 `tokenizers/`（**必须含至少一份
 `*.tokenizer.json`**）→ 都没有则回退通用编码。
