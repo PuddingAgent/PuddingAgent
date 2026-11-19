@@ -25,7 +25,8 @@ public sealed class AgentContextCompactionSummaryGeneratorTests
         var generator = new AgentContextCompactionSummaryGenerator(
             services,
             new ContextCompactionOptions { SummaryGenerator = "agent", AgentSummaryTimeoutSeconds = 5 },
-            NullLogger<AgentContextCompactionSummaryGenerator>.Instance);
+            NullLogger<AgentContextCompactionSummaryGenerator>.Instance,
+            new StubLlmResolver());
 
         var summary = await generator.GenerateSummaryAsync(new ContextCompactionSummaryRequest(
             WorkspaceId: "workspace-1",
@@ -61,7 +62,8 @@ public sealed class AgentContextCompactionSummaryGeneratorTests
         var generator = new AgentContextCompactionSummaryGenerator(
             services,
             new ContextCompactionOptions { SummaryGenerator = "agent", AgentSummaryTimeoutSeconds = 1 },
-            NullLogger<AgentContextCompactionSummaryGenerator>.Instance);
+            NullLogger<AgentContextCompactionSummaryGenerator>.Instance,
+            new StubLlmResolver());
 
         await Assert.ThrowsExactlyAsync<TimeoutException>(() =>
             generator.GenerateSummaryAsync(new ContextCompactionSummaryRequest(
@@ -91,7 +93,8 @@ public sealed class AgentContextCompactionSummaryGeneratorTests
         var generator = new AgentContextCompactionSummaryGenerator(
             services,
             new ContextCompactionOptions { SummaryGenerator = "agent", AgentSummaryTimeoutSeconds = 5 },
-            NullLogger<AgentContextCompactionSummaryGenerator>.Instance);
+            NullLogger<AgentContextCompactionSummaryGenerator>.Instance,
+            new StubLlmResolver());
 
         var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             generator.GenerateSummaryAsync(new ContextCompactionSummaryRequest(

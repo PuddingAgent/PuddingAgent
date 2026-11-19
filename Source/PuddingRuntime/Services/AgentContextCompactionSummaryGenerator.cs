@@ -17,15 +17,18 @@ public sealed class AgentContextCompactionSummaryGenerator : IContextCompactionS
     private readonly IServiceProvider _services;
     private readonly ContextCompactionOptions _options;
     private readonly ILogger<AgentContextCompactionSummaryGenerator> _logger;
+    private readonly ILlmResolver _llmResolver;
 
     public AgentContextCompactionSummaryGenerator(
         IServiceProvider services,
         ContextCompactionOptions options,
-        ILogger<AgentContextCompactionSummaryGenerator> logger)
+        ILogger<AgentContextCompactionSummaryGenerator> logger,
+        ILlmResolver llmResolver)
     {
         _services = services;
         _options = options;
         _logger = logger;
+        _llmResolver = llmResolver;
     }
 
     public async Task<string> GenerateSummaryAsync(
@@ -35,6 +38,12 @@ public sealed class AgentContextCompactionSummaryGenerator : IContextCompactionS
         var dispatcher = _services.GetRequiredService<IRuntimeAgentDispatcher>();
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, _options.AgentSummaryTimeoutSeconds)));
+
+        // 压缩是一次独立的 LLM 调用，必须在派发前解出 provider/model；
+        // 否则下游 RequireInvocationProfile 只会报「missing LlmProfile」，无法定位。
+        var llmRoute = string.IsNullOrWhiteSpace(request.LlmConfig?.ModelId)
+            ? null
+            : await _llmResolver.ResolveRouteAsync(request.LlmConfig!.ModelId, requiredCapabilityTags: null, ct);
 
         var dispatchRequest = new RuntimeDispatchRequest
         {
@@ -49,6 +58,15 @@ public sealed class AgentContextCompactionSummaryGenerator : IContextCompactionS
             AssignedObjective = "Generate semantic context compaction summary.",
             ExpectedOutputContract = "Return only the <compact_summary> markdown block.",
             LlmConfig = request.LlmConfig,
+            LlmProfile = llmRoute is null
+                ? null
+                : new LlmInvocationProfile
+                {
+                    ProviderId = llmRoute.ProviderId,
+                    ModelId = llmRoute.ModelId,
+                    ProfileId = $"agent:{request.AgentId ?? "unknown"}:compaction",
+                    Role = "compaction",
+                },
             CapabilityPolicy = request.CapabilityPolicy,
             ToolDefinitions = request.ToolDefinitions,
             SkillPackages = request.SkillPackages,
