@@ -36,6 +36,9 @@ The invocation boundary must resolve provider/profile/model before execution.
 
 - 生成器注入 `ILlmResolver`，派发前 `ResolveRouteAsync(request.LlmConfig?.ModelId, requiredCapabilityTags: null, ct)`；
 - 用返回的 `ProviderId` / `ModelId` **自行构造** `LlmInvocationProfile`（`ProfileId = agent:{AgentId}:compaction`，`Role = "compaction"`）。
+- **两份前置物都要回退**：`RuntimeDispatchRequest` 除了 `LlmProfile` 还要求 `LlmConfig` 不为空（否则下游 `AgentExecutionService.cs:1282` 抛 `Agent LLM config is null`）。两者现在共用同一份回退链：`request.LlmConfig` → `agentProfile.PreferredModelId` / `agentProfile.LlmConfig`。
+
+为什么不能只依赖调用方：`SessionCompactTool.cs:115`（手动 `/compact`）和 `ContextWindowManager.cs:1242`（自动压缩）**都不传 `LlmConfig`**，只带 `AgentId`。所以真正的解析来源是 `IAgentRuntimeProfileResolver.ResolveAsync(workspaceId, agentId)`——运行时容器里早已注册（`MessageDeliveryDispatcher.cs:1507` 就在用）。
 
 为什么不是「沿链透传 profile」：要改两处 record 加字段、三处构造透传，而压缩只是一次辅助调用；相对地，解析器只有一个注入点。
 
@@ -44,7 +47,8 @@ The invocation boundary must resolve provider/profile/model before execution.
 ## 验证
 
 - 新增测试桩 `StubLlmResolver`（`Config = new LlmConfig { ModelId = ... }`；`LlmConfig` 全可空 init、无 required 成员）；
-- `dotnet test --filter FullyQualifiedName~AgentContextCompactionSummaryGenerator`：**失败 0 / 通过 3 / 总计 3**；
+- `dotnet test --filter FullyQualifiedName~AgentContextCompactionSummaryGenerator`：**失败 0 / 通过 4 / 总计 4**；
+- 变异取红：去掉 `?? agentProfile?.LlmConfig` 后 **失败 1 / 通过 3**，红的正是新加的「只传 AgentId」用例——说明它不是空转；
 - commit gate 通过。
 
 ## 未完成
