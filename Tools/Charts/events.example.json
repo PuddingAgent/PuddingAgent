@@ -1,0 +1,38 @@
+{
+  "schema": "pudding.chart.events.v1",
+  "subject": "示例：事件标注文件（换标的时只改这个文件）",
+  "generatedAt": "2026-11-19",
+  "note": "date 用 yyyy-MM-dd；category 决定标记颜色（rates 红 / trade 橙 / forecast 紫 / price 蓝）；source 写可追溯来源，写不出来源就不要编。与价格拐点的对应关系是推断，不是因果证明。",
+  "events": [
+    {
+      "date": "2026-06-11",
+      "label": "示例事件：政策口径变化",
+      "category": "rates",
+      "source": "https://example.com/news/1"
+    },
+    {
+      "date": "2026-08-26",
+      "label": "示例事件：价格结构转折",
+      "category": "price",
+      "source": "日线数据（必盈 jj/lskx）"
+    },
+    {
+      "date": "2026-10-28",
+      "label": "示例事件：会议结果",
+      "category": "rates",
+      "source": "https://example.com/news/2"
+    },
+    {
+      "date": "2026-11-05",
+      "label": "示例事件：机构下调预期",
+      "category": "forecast",
+      "source": "https://example.com/news/3"
+    },
+    {
+      "date": "2026-11-10",
+      "label": "示例事件：贸易节点",
+      "category": "trade",
+      "source": "https://example.com/news/4"
+    }
+  ]
+}
