@@ -745,6 +745,42 @@ public sealed class AgentDiagnosticsToolTests
             Metadata = null,
         };
 
+    /// <summary>
+    /// 2026-11-19 仪器缺陷回归：diagnose 早先与 tool_stats 不同——后者按 ToolRunner 组件过滤，
+    /// 前者只取「最近 2000 条混合活动」再筛 tool_name。实测结果是 diagnose 报 healthy 且
+    /// tool_metric_count=0（零工具证据），而同刻其它活动刷屏。这里钉死：工具维度必须单独按组件查。
+    /// </summary>
+    [TestMethod]
+    public async Task Diagnose_QueriesToolRunnerComponent_SoToolEvidenceIsNotStarved()
+    {
+        var resolver = new FakeContextCapacityResolver
+        {
+            Capacity = new ResolvedContextCapacity(200_000, 8_192, 128_000),
+        };
+        var compaction = new FakeContextCompactionService
+        {
+            Health = new ContextHealthSnapshot(
+                "session-1", 50_000, 200_000, 180_000, 130_000, 0.277,
+                ContextHealthState.Healthy, false, false, false),
+        };
+        var sink = new FakeActivitySink([]);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(resolver);
+        services.AddSingleton(compaction);
+        using var provider = services.BuildServiceProvider();
+        var tool = new AgentDiagnosticsTool(
+            activitySink: sink,
+            scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+        var result = await ExecuteAsync(tool, """{"action":"diagnose"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsNotNull(sink.LastQuery, "diagnose 必须查询活动源");
+        Assert.AreEqual("tool_runner", sink.LastQuery!.Component,
+            "工具指标必须单独按 ToolRunner 组件查询，否则会被 LLM/投递活动挤成空集");
+    }
+
     private sealed class FakeActivitySink : IRuntimeActivitySink
     {
         private readonly IReadOnlyList<RuntimeActivity> _activities;

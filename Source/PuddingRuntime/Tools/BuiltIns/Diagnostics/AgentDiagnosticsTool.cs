@@ -864,7 +864,11 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             var activities = await _activitySink.QueryAsync(new RuntimeActivityQuery { Limit = 2000 }, ct);
             totalActivities = activities.Count;
 
-            var toolActivities = activities
+            // 工具指标必须**单独按组件查询**：混合活动流的「最近 N 条」经常被 LLM 调用、
+            // 消息投递等占满，tool_name 一条都采不到 ⇒ diagnose 会报 healthy 却零工具证据。
+            // （tool_stats 路径早已按 ToolRunner 过滤，这里漏了同一修正，2026-11-19 实测暴露。）
+            var toolActivities = (await _activitySink.QueryAsync(
+                    new RuntimeActivityQuery { Component = RuntimeActivityComponents.ToolRunner, Limit = 2000 }, ct))
                 .Where(a => a.Metadata is not null
                             && a.Metadata.TryGetValue("tool_name", out var name)
                             && !string.IsNullOrWhiteSpace(name))
