@@ -281,6 +281,11 @@ public static partial class PuddingServiceCollectionExtensions
         // ICodeIndexMaintenance / ICodeIndexScopeRegistry / ICodeProjectRegistry（AddPuddingCodeIntelligence）
         // 与 PuddingDataPaths（PuddingApplicationHost 注册的实例）。只调用查询型 API，不打开写事务。
         builder.Services.AddSingleton<CodeIndexStatusProbe>();
+        // 需求 3（2026-11-20）：子代理委派策略的读写口（SubAgentDelegationAdminController 注入它）。
+        // 读 IConfiguration（四个键由 SubAgentTool 每次派发实时读取）；
+        // 写 data/config/system.json 的 SubAgentDelegation 段 —— 该文件以 reloadOnChange: true
+        // 接入配置链，因此写入后下一次派发即生效，无需重启 Core。
+        builder.Services.AddSingleton<PuddingAgent.Services.SubAgentDelegationSettingsStore>();
         builder.Services.AddPuddingAgentTool<SearchGrepTool>();
 
         // ── Smart 工作流工具（角色化子代理）──
