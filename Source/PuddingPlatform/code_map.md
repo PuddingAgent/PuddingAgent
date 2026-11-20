@@ -118,6 +118,8 @@
 | `Services/SubAgentPool.cs` | Core ISubAgentPool 的 Platform 实现 | `SubAgentPool` | `Services/SubAgentManager.cs` | — |
 | `Services/AgentPoolSchemaBootstrapper.cs` | agent_pool 表的幂等 DDL（存量库不会被 EF EnsureCreated 补表，故表与索引都靠它建） | `AgentPoolSchemaBootstrapper` | `Data/Entities/AgentPoolEntity.cs` | `CREATE TABLE/INDEX IF NOT EXISTS`；列清单必须与实体声明一致，由 `AgentPoolSchemaBootstrapperTests` 锁死；不写 ALTER/回填 |
 | `Data/Entities/AgentPoolEntity.cs` | 子代理池条目的持久化实体（18 列） | `AgentPoolEntity` | `Data/PlatformDbContext.cs` | 状态常量集中于此；`name` 为部分唯一索引（`deleted_at IS NULL`）；本阶段无任何读写方 |
+| `Services/AgentPool/IAgentPoolEntryStore.cs` | 池条目存储层契约 | `IAgentPoolEntryStore`、`AgentPoolEntrySnapshot`、`AgentPoolInsertRequest` | `Services/AgentPool/AgentPoolEntryStore.cs` | 9 个方法全部返回受影响行数：0 行 = 前置条件不成立（池满/归属不符/令牌不符），不是异常 |
+| `Services/AgentPool/AgentPoolEntryStore.cs` | 池条目 EF 实现 | `AgentPoolEntryStore` | `Data/PlatformDbContext.cs`（经 `IDbContextFactory`） | 条件全部写进同一条 UPDATE 的 WHERE（禁止先查后改）；驱逐为单语句子查询；已知取舍：TryInsert 用 deferred 事务、last_used_at 按 ISO 文本序 |
 | `Services/SubAgentTransientDirectoryGcService.cs` | 历史空 Skill 脚手架目录 GC | `SubAgentTransientDirectoryGcService` | `Services/SubAgentPool.cs` | 以精确目录形状 + 子代理池 + durable run 终态多重门禁；先移入 retention-archive 隔离，延迟后再安全删除 |
 | `Services/SubAgentDiagnosticsService.cs` | 子代理诊断 | `SubAgentDiagnosticsService` | `Services/SubAgentManager.cs` | — |
 | `Services/FileSubAgentRunStore.cs` | 子代理运行文件存储 | `FileSubAgentRunStore` | `Controllers/Api/SubAgentRunController.cs` | 终态 run.json 固化轮次/工具/耗时/错误；支持可恢复终态 budget_exhausted；per-run gate + sharing violation 退避重试，耗尽写 archive-degraded.json 降级 |
