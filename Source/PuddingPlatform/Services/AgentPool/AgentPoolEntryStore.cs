@@ -204,35 +204,67 @@ public sealed class AgentPoolEntryStore(
     }
 
     /// <inheritdoc />
-    public async Task<int> TryEvictOldestSleepingAsync(DateTimeOffset now, CancellationToken ct)
+    public async Task<string?> TryEvictOldestSleepingAsync(DateTimeOffset now, CancellationToken ct)
     {
         await using var db = await factory.CreateDbContextAsync(ct);
         var stamp = FormatTime(now);
 
-        // 必须是单条语句：子查询在 UPDATE 执行时求值，选人 + 打标在同一事务内完成。
-        // 若拆成「SELECT 一条 → UPDATE WHERE status='sleeping'」，第二个调用方会读到同一批 sleeping
-        // 并各自更新一条（超量淘汰），或者更新到已经被别人改过的行（重复墓碑）。
-        // 这里 WHERE "pool_id" = (子查询) 还有一个好处：子查询返回 NULL 时整个条件为假，
-        // 也就是「已经没有 sleeping 条目」时自然得到 0 行，不需要额外的存在性判断。
-        var affected = await db.Database.ExecuteSqlInterpolatedAsync($"""
-            UPDATE "agent_pool"
-               SET "status" = {AgentPoolEntity.StatusDead},
-                   "deleted_at" = {stamp},
-                   "active_execution_id" = NULL,
-                   "version" = "version" + 1
-             WHERE "pool_id" = (
-                SELECT "pool_id" FROM "agent_pool"
+        // 为什么不再用「一条 UPDATE + 子查询」：那种写法只能拿到受影响行数，调用方不知道
+        // 被淘汰的是哪一条，内存视图就无法跟随（库死了内存还活着 = 重启前内存里多一个幽灵；
+        // 反过来内存死了库还活着 = 重启后条目复活）。所以改为事务内「选人 → 打标」，
+        // 并把选中的 pool_id 返回给调用方。
+        //
+        // 为什么仍然不会双删：Microsoft.Data.Sqlite 的默认事务是非延迟（BEGIN IMMEDIATE），
+        // 写锁在事务开始时就持有，两个淘汰者不可能同时进入事务体：第二个会在 BEGIN 处等到
+        // 第一个提交，随后 SELECT 已经看不到 sleeping 条目，自然返回 null。
+        // 即使隔离退化（有人把这个事务改成延迟的），UPDATE 里的 status / deleted_at 守卫
+        // 也会让被抢先的那一次命中 0 行，不会误删别人。
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        // 重试一次：只有在 SELECT 与 UPDATE 之间被另一个连接改掉选中行时才会走到这里。
+        // 不无限重试：淘汰是后台清理动作，失败留给调用方下一轮再触发即可。
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var poolId = await db.Database.SqlQuery<string>($"""
+                SELECT "pool_id" AS Value
+                  FROM "agent_pool"
                  WHERE "status" = {AgentPoolEntity.StatusSleeping}
                    AND "deleted_at" IS NULL
                  ORDER BY "last_used_at" ASC
                  LIMIT 1
-             );
-            """, ct);
+                """).FirstOrDefaultAsync(ct);
 
-        if (affected > 0)
-            logger.LogDebug("[AgentPool] Evicted oldest sleeping entry ({Count} row)", affected);
+            if (poolId is null)
+            {
+                await transaction.RollbackAsync(ct);
+                return null;
+            }
 
-        return affected;
+            var affected = await db.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE "agent_pool"
+                   SET "status" = {AgentPoolEntity.StatusDead},
+                       "deleted_at" = {stamp},
+                       "active_execution_id" = NULL,
+                       "version" = "version" + 1
+                  WHERE "pool_id" = {poolId}
+                    AND "status" = {AgentPoolEntity.StatusSleeping}
+                    AND "deleted_at" IS NULL;
+                """, ct);
+
+            if (affected == 1)
+            {
+                await transaction.CommitAsync(ct);
+                logger.LogDebug("[AgentPool] Evicted oldest sleeping entry {PoolId}", poolId);
+                return poolId;
+            }
+
+            logger.LogDebug(
+                "[AgentPool] Eviction candidate {PoolId} changed before update (attempt {Attempt}); retrying",
+                poolId, attempt + 1);
+        }
+
+        await transaction.RollbackAsync(ct);
+        return null;
     }
 
     /// <inheritdoc />

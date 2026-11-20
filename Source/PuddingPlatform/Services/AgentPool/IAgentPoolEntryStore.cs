@@ -119,11 +119,21 @@ public interface IAgentPoolEntryStore
         CancellationToken ct);
 
     /// <summary>
-    /// 淘汰一条最久未使用的 sleeping 条目（置 dead + 写 deleted_at）。
-    /// <para>必须是单条 SQL：分成「先 SELECT 再 UPDATE」时，两个调度者会选中同一条并各删一次，
-    /// 或者选中两条不同条目从而超量淘汰。</para>
+    /// 淘汰一条最久未使用的 sleeping 条目（置 dead + 写 deleted_at），返回被淘汰条目的 <c>pool_id</c>；
+    /// 没有可淘汰条目时返回 <c>null</c>。
+    /// <para>
+    /// <b>为什么返回 <c>pool_id</c> 而不是受影响行数：</b>淘汰是「库与内存两边一起死」的动作。
+    /// 调用方必须知道死的是哪一条，才能把内存视图里同一个 <c>PoolId</c> 踢掉；
+    /// 只拿到 1 行的话，调用方要么自己再猜一次 LRU（内存与库的 last_used_at 可能已经分叉），
+    /// 要么只改内存——后者会让条目在重启后被 <c>LoadAllAsync</c> 从库里复活。
+    /// 没有候选时返回 <c>null</c> 也是最自然的表达：0 行已经不足以区分「没有候选」与「候选被别人抢先」。
+    /// </para>
+    /// <para>
+    /// <b>不会双删：</b>实现必须在事务内「选出唯一一条 → 带 <c>status='sleeping'</c> 与
+    /// <c>deleted_at IS NULL</c> 守卫地更新」，并由事务保证两个并发淘汰者加起来最多删一条。
+    /// </para>
     /// </summary>
-    Task<int> TryEvictOldestSleepingAsync(DateTimeOffset now, CancellationToken ct);
+    Task<string?> TryEvictOldestSleepingAsync(DateTimeOffset now, CancellationToken ct);
 
     /// <summary>
     /// 进程重启后把残留的 busy 复位成 sleeping（reason=recovered_busy）。

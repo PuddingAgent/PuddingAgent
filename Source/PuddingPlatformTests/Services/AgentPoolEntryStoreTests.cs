@@ -156,23 +156,32 @@ public sealed class AgentPoolEntryStoreTests
         // （SQLite 没有真正的异步 I/O），直接拿两个 Task 再 await 会在同一个线程上顺序完成，
         // 那样这个用例根本不可能并发，只能证明两次串行调用之和 <= 1。
         //
-        // 诚实地说明本用例的检测边界：它锁定的是「结果不变量」（不得超量淘汰、不得报 1 行却打多个墓碑），
-        // 但区分不了「先 SELECT 再 UPDATE」的写法 —— 那种写法要露出「重复计数」需要真实的读写交错窗口，
-        // 在 SQLite 的串行写锁下多数时候观察不到。那一类缺陷的可检测形态（漏掉「只取一条」
-        // 导致一次清空整个池）由 TryEvictOldestSleeping_WithThreeSleepingEntries_EvictsExactlyTheOldestOne 覆盖。
+        // 诚实地说明本用例的检测边界：它锁定的是「结果不变量」（不得超量淘汰、
+        // 不得报 pool_id 却没打墓碑、两次合计最多一条）；实现到底是用单条 UPDATE 子查询
+        // 还是事务内「SELECT → UPDATE」，这个用例都应当绿——那两种写法在结果上等价。
+        // 两者真正的区分点在调用方：只返回行数时内存无法跟随，由 AgentPoolEvictionTests 覆盖。
         var first = Task.Run(() => scope.Store.TryEvictOldestSleepingAsync(BaseTime.AddHours(1), default));
         var second = Task.Run(() => scope.Store.TryEvictOldestSleepingAsync(BaseTime.AddHours(1), default));
         var results = await Task.WhenAll(first, second);
-        var total = results.Sum();
+        // 返回类型是「被淘汰的 pool_id 或 null」：非空的结果就代表这一次真的删到了行。
+        var winners = results.Where(x => x is not null).ToList();
 
         await using var db = scope.CreateDbContext();
-        var tombstoned = await db.AgentPool.CountAsync(x => x.DeletedAt != null);
+        var tombstonedRows = await db.AgentPool.Where(x => x.DeletedAt != null).ToListAsync();
         var rows = await db.AgentPool.CountAsync();
 
-        Console.WriteLine($"[evidence] evict#1={results[0]}, evict#2={results[1]}, total={total}, tombstoned={tombstoned}, rows={rows}");
+        Console.WriteLine($"[evidence] evict#1={results[0] ?? "<null>"}, evict#2={results[1] ?? "<null>"}, winners={winners.Count}, tombstoned={tombstonedRows.Count}, rows={rows}");
 
-        Assert.IsLessThanOrEqualTo(1, total, $"并发两次驱逐总共最多只能删 1 条，实际 {total} 条");
-        Assert.AreEqual(total, tombstoned, "受影响行数必须与真实墓碑数一致（不允许报 1 行却打了多个墓碑）");
+        Assert.IsLessThanOrEqualTo(1, winners.Count, $"并发两次驱逐总共最多只能删 1 条，实际 {winners.Count} 条");
+        Assert.AreEqual(1, tombstonedRows.Count, "只有一条 sleeping 条目，墓碑数必须恰好为 1");
+        Assert.AreEqual(winners.Count, tombstonedRows.Count,
+            "只有真正删到行的那次调用才能返回 pool_id（不得报 pool_id 却没打墓碑）");
+        if (winners.Count == 1)
+        {
+            Assert.AreEqual("pool-1", winners[0], "唯一一条 sleeping 被淘汰后，返回的必须是它的 pool_id");
+            Assert.AreEqual("pool-1", tombstonedRows[0].PoolId, "墓碑必须落在被返回的那一条上");
+        }
+
         Assert.AreEqual(1, rows, "驱逐是软删，物理行必须仍在（否则诊断与去重都丢失）");
     }
 
@@ -205,10 +214,11 @@ public sealed class AgentPoolEntryStoreTests
         var tombstoned = await db.AgentPool.CountAsync(x => x.DeletedAt != null);
         var remaining = await scope.Store.LoadAllAsync(default);
 
-        Console.WriteLine($"[evidence] evicted={evicted}, tombstoned={tombstoned}, remaining={string.Join(",", remaining.Select(x => x.PoolId))}");
+        Console.WriteLine($"[evidence] evicted={evicted ?? "<null>"}, tombstoned={tombstoned}, remaining={string.Join(",", remaining.Select(x => x.PoolId))}");
 
-        Assert.AreEqual(1, evicted, "一次淘汰只能删一条（否则一次 LRU 淘汰会把整个池清空）");
-        Assert.AreEqual(1, tombstoned, "墓碑数必须与受影响行数一致");
+        Assert.AreEqual("pool-1", evicted,
+            "必须返回被淘汰那条的 pool_id（last_used_at 最早的 pool-1），而不是行数或其它条目");
+        Assert.AreEqual(1, tombstoned, "墓碑数必须与返回结果一致");
         Assert.HasCount(2, remaining, "三条 sleeping 淘汰一条后必须还剩两条");
         Assert.IsNull(await scope.Store.GetByIdAsync("pool-1", default), "必须淘汰 last_used_at 最早的那条（pool-1）");
         Assert.IsNotNull(await scope.Store.GetByIdAsync("pool-2", default), "较新的 pool-2 不得被误淘汰");

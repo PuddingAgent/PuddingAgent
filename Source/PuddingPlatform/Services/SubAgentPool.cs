@@ -952,31 +952,74 @@ public sealed class SubAgentPool : ISubAgentPool
     /// <summary>
     /// 尝试淘汰最久未使用的 Sleeping 子代理。
     /// 返回被淘汰的子代理名称，无可用候选时返回 null。
+    /// <para>
+    /// <b>有存储层时淘汰必须以库为准：</b>淘汰语义是「这条条目永久不可复用」，
+    /// 只改内存会让库里那一行继续保持 <c>sleeping</c> 且未软删，重启后
+    /// <see cref="EnsureReadyAsync"/> 会把它从库重新加载回来（复活缺陷）。
+    /// 因此顺序固定为「先写库 → 成功后再踢内存」，与 <see cref="DestroyAsync"/> 同形。
+    /// </para>
     /// </summary>
     public async Task<string?> EvictLeastRecentlyUsedAsync(CancellationToken ct = default)
     {
         await _stateLock.WaitAsync(ct);
         try
         {
-            var candidate = _pool.Values
-                .Where(e => e.Status == PooledSubAgentStatus.Sleeping)
-                .OrderBy(e => e.LastUsedAt)
-                .FirstOrDefault();
-
-            if (candidate == null)
+            // 纯内存模式（无 store）：没有「重启复活」这回事，保持原有 LRU 行为。
+            if (_entryStore is null)
             {
-                _logger.LogDebug("[SubAgentPool] EvictLRU: no sleeping candidate found");
+                var candidate = _pool.Values
+                    .Where(e => e.Status == PooledSubAgentStatus.Sleeping)
+                    .OrderBy(e => e.LastUsedAt)
+                    .FirstOrDefault();
+
+                if (candidate == null)
+                {
+                    _logger.LogDebug("[SubAgentPool] EvictLRU: no sleeping candidate found");
+                    return null;
+                }
+
+                _pool.TryRemove(candidate.Name, out _);
+                candidate.Status = PooledSubAgentStatus.Dead;
+
+                _logger.LogInformation(
+                    "[SubAgentPool] Evicted LRU sub-agent '{Name}' lastUsed={LastUsed}",
+                    candidate.Name, candidate.LastUsedAt);
+
+                return candidate.Name;
+            }
+
+            // 有 store 时选人交给库：LRU 的顺序必须与库里 <c>last_used_at</c> 一致，
+            // 由内存再猜一次容易与库分叉（两者的时间可能不是同一份）。
+            var evictedPoolId = await _entryStore.TryEvictOldestSleepingAsync(DateTimeOffset.UtcNow, ct);
+            if (evictedPoolId is null)
+            {
+                _logger.LogDebug("[SubAgentPool] EvictLRU: store reports no sleeping entry to evict");
                 return null;
             }
 
-            _pool.TryRemove(candidate.Name, out _);
-            candidate.Status = PooledSubAgentStatus.Dead;
+            // 按 PoolId 而不是按名字回查：名字可以被 destroy → create 换成另一个对象，
+            // 只有 PoolId 与库里那一行一一对应。
+            var entry = _pool.Values.FirstOrDefault(e => e.PoolId == evictedPoolId);
+            if (entry is null)
+            {
+                // 库淘汰成功但内存没有对应条目：说明两边已经分叉（例如本进程从未走过
+                // EnsureReadyAsync，或条目只存在于库里）。库已经改了，抛异常只会让
+                // 调用方误以为可以重试；这里记 warning 暴露分叉即可。
+                _logger.LogWarning(
+                    "[SubAgentPool] EvictLRU: store evicted poolId={PoolId} but memory has no matching entry; " +
+                    "views have diverged",
+                    evictedPoolId);
+                return null;
+            }
+
+            _pool.TryRemove(entry.Name, out _);
+            entry.Status = PooledSubAgentStatus.Dead;
 
             _logger.LogInformation(
-                "[SubAgentPool] Evicted LRU sub-agent '{Name}' lastUsed={LastUsed}",
-                candidate.Name, candidate.LastUsedAt);
+                "[SubAgentPool] Evicted LRU sub-agent '{Name}' poolId={PoolId} lastUsed={LastUsed}",
+                entry.Name, entry.PoolId, entry.LastUsedAt);
 
-            return candidate.Name;
+            return entry.Name;
         }
         finally
         {

@@ -319,7 +319,7 @@ public sealed class AgentPoolReadinessTests
             string? statusReason, bool clearExecution, DateTimeOffset now, CancellationToken ct)
             => throw new NotSupportedException("S4 不覆盖状态迁移写路径");
 
-        public Task<int> TryEvictOldestSleepingAsync(DateTimeOffset now, CancellationToken ct)
+        public Task<string?> TryEvictOldestSleepingAsync(DateTimeOffset now, CancellationToken ct)
             => throw new NotSupportedException("S4 不覆盖淘汰写路径");
 
         public Task<int> ResetStaleBusyAsync(DateTimeOffset now, CancellationToken ct)
