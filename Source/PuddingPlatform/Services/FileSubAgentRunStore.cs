@@ -464,6 +464,25 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             ct);
     }
 
+    /// <inheritdoc />
+    public async Task<string?> FindRunningRunIdAsync(string subSessionId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(subSessionId))
+            return null;
+
+        var key = subSessionId.Trim();
+
+        // 与 GetRunningCountByParentTurnAsync 同理：DB 索引是 best-effort 写入，但本方法的返回值
+        // 决定「还有没有运行需要终结」。读不到时抛给调用方，由它记日志并降级为「无可终结」，
+        // 而不是把异常当成 0 静默放过。
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.SubAgentRuns
+            .Where(e => e.SubSessionId == key && e.Status == SubAgentRunEntity.RunningStatus)
+            .OrderByDescending(e => e.StartedAt)
+            .Select(e => e.RunId)
+            .FirstOrDefaultAsync(ct);
+    }
+
     private async Task<SubAgentRunArchive> ReadRunArchiveCoreAsync(string runDir, CancellationToken ct)
     {
         // 读 run.json

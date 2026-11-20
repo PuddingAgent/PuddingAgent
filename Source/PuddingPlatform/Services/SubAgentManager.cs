@@ -205,13 +205,8 @@ public sealed class SubAgentManager : ISubAgentManager
 
                 // 正常路径由 Runtime 提交终态；异常边界由 Manager 兜底尝试。
                 // ISubAgentRunStore 负责终态唯一性与幂等投影。
-                string? completedRunId = null;
-                if (_runIdMap.TryRemove(subSessionId, out var removedRunId))
-                {
-                    await RevokeBrowserDelegationAsync(removedRunId).ConfigureAwait(false);
-                    completedRunId = removedRunId;
-                }
-                else
+                var completedRunId = await TakeRunIdAndRevokeAsync(subSessionId, CancellationToken.None).ConfigureAwait(false);
+                if (completedRunId is null)
                 {
                     _logger.LogWarning("[SubAgentMgr] No runId found for sub={Sub} during async completion cleanup", subSessionId);
                 }
@@ -295,9 +290,9 @@ public sealed class SubAgentManager : ISubAgentManager
                 _logger.LogError(ex, "[SubAgentMgr] Async failed sub={Sub} parent={Parent}", subSessionId, request.ParentSessionId);
 
                 // 异常路径也完成运行归档（幂等保护）
-                if (_runIdMap.TryRemove(subSessionId, out var failedRunId))
+                var failedRunId = await TakeRunIdAndRevokeAsync(subSessionId, CancellationToken.None).ConfigureAwait(false);
+                if (failedRunId is not null)
                 {
-                    await RevokeBrowserDelegationAsync(failedRunId).ConfigureAwait(false);
                                         var writeResult = await _runStore.CompleteRunAsync(failedRunId, new SubAgentRunCompletion
                     {
                         Status = "failed",
@@ -403,10 +398,8 @@ public sealed class SubAgentManager : ISubAgentManager
         catch (Exception ex)
         {
             // R4: 该路径也是**运行收尾** —— 必须撤销委派授权（此前 out _ 丢弃 runId ⇒ 会泄漏授权）。
-            if (_runIdMap.TryRemove(subSessionId, out var failedSyncRunId))
-            {
-                await RevokeBrowserDelegationAsync(failedSyncRunId).ConfigureAwait(false);
-            }
+            // R4: 该路径也是运行收尾 —— 取 runId 时即撤权，不会漏。
+            await TakeRunIdAndRevokeAsync(subSessionId, CancellationToken.None).ConfigureAwait(false);
 
             var status = ex is TimeoutException
                 ? "timed_out"
@@ -472,10 +465,8 @@ public sealed class SubAgentManager : ISubAgentManager
         }, CancellationToken.None);
 
         // R4: 成功收尾同样必须撤销委派授权（此前 out _ 丢弃 runId ⇒ 会泄漏授权）。
-        if (_runIdMap.TryRemove(subSessionId, out var completedSyncRunId))
-        {
-            await RevokeBrowserDelegationAsync(completedSyncRunId).ConfigureAwait(false);
-        }
+        // R4: 成功收尾同样必须撤销委派授权 —— 取 runId 时即撤权，不会漏。
+        await TakeRunIdAndRevokeAsync(subSessionId, CancellationToken.None).ConfigureAwait(false);
 
         // Token usage is persisted per LLM round by AgentExecutionService. Do not add a second
         // run-terminal aggregate row here; TrackSubAgentCompleteAsync already keeps the summary.
@@ -538,6 +529,58 @@ public sealed class SubAgentManager : ISubAgentManager
         return true;
     }
 
+    /// <summary>
+    /// 取出该子会话对应的运行 id，撤销它的浏览器委派授权，并从内存索引移除。
+    /// <para>
+    /// 内存索引只保存**本进程创建**的运行。进程重启后必然未命中，若此时直接放过，
+    /// 重启前遗留的运行会永远停在 Running（2026-11-20 实测：`sub_agent_runs` 积了 2 条 46 小时，
+    /// `session_sub_agents` 积了 10 条 4 个月）。因此未命中时必须回落到运行账本。
+    /// </para>
+    /// <para>
+    /// **取 runId 与撤权必须原子**：拆成两个调用点时，任何新增的终结路径都可能只做前者、
+    /// 漏掉后者，导致浏览器委派授权悬挂（R4 缺陷的原始形态）。源码不变量守卫
+    /// （SubAgentManagerRevokeCoverageGuardTests）依赖这两者在同一个窗口内相邻出现。
+    /// </para>
+    /// </summary>
+    private async Task<string?> TakeRunIdAndRevokeAsync(string subSessionId, CancellationToken ct)
+    {
+        string? runId;
+        if (_runIdMap.TryRemove(subSessionId, out var inMemoryRunId))
+        {
+            runId = inMemoryRunId;
+            // R4：取到 runId 立即撤权；提前返回，避免与回落路径重复撤权。
+            await RevokeBrowserDelegationAsync(runId).ConfigureAwait(false);
+            return runId;
+        }
+        else
+        {
+            try
+            {
+                runId = await _runStore.FindRunningRunIdAsync(subSessionId, ct).ConfigureAwait(false);
+                if (runId is not null)
+                {
+                    _logger.LogInformation(
+                        "[SubAgentMgr] Resolved runId from run store after memory miss sub={Sub} runId={RunId}",
+                        subSessionId,
+                        runId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "[SubAgentMgr] Run store fallback failed; run may remain running sub={Sub}",
+                    subSessionId);
+                return null;
+            }
+        }
+
+        if (runId is not null)
+            await RevokeBrowserDelegationAsync(runId).ConfigureAwait(false);
+
+        return runId;
+    }
+
     private async Task CancelOneAsync(
         SubAgentStatus sa, string parentSessionId, string reason, CancellationToken ct)
     {
@@ -553,9 +596,9 @@ public sealed class SubAgentManager : ISubAgentManager
         }, ct);
 
         // 完成运行归档（ADR-021，幂等保护）
-        if (_runIdMap.TryRemove(sa.SubSessionId, out var cancelledRunId))
+        var cancelledRunId = await TakeRunIdAndRevokeAsync(sa.SubSessionId, ct).ConfigureAwait(false);
+        if (cancelledRunId is not null)
         {
-            await RevokeBrowserDelegationAsync(cancelledRunId).ConfigureAwait(false);
             var writeResult = await _runStore.CompleteRunAsync(cancelledRunId, new SubAgentRunCompletion
             {
                 Status = "cancelled",

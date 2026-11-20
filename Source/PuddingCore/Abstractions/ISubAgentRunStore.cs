@@ -32,6 +32,16 @@ public interface ISubAgentRunStore
     /// <param name="parentTurnId">父 Turn ID；为空时无法做 Turn 归属，返回 0。</param>
     Task<int> GetRunningCountByParentTurnAsync(string? parentTurnId, CancellationToken ct = default);
     /// <summary>
+    /// 按子会话查找仍处于非终态的运行 id。
+    /// <para>
+    /// 仅供**终结路径回落**使用：子代理运行的终结不得因为「本进程没创建过它」而跳过。
+    /// 进程内存里只保存本进程创建的运行，重启后必然未命中；若未命中就静默放过，
+    /// 重启前遗留的运行会永远停在 Running（2026-11-20 实测：两张表分别积了 4 个月与 46 小时）。
+    /// </para>
+    /// <para>返回 null 表示没有可终结的运行（已终态，或从未创建）。</para>
+    /// </summary>
+    Task<string?> FindRunningRunIdAsync(string subSessionId, CancellationToken ct = default);
+    /// <summary>
     /// 将本次进程启动前遗留的非终态运行提交为 interrupted。
     /// 子代理执行是进程内任务，进程重启后不得继续显示为 Running。
     /// </summary>

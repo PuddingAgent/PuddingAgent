@@ -911,6 +911,52 @@ public sealed class FileSubAgentRunStoreTests
         Assert.AreEqual(1, await store.GetRunningCountByParentTurnAsync("turn-2"));
     }
 
+    /// <summary>
+    /// 回落查询必须能按子会话找到非终态运行。
+    /// <para>
+    /// 背景：终结路径原本只认进程内存里的 runId（`_runIdMap`）。进程重启后内存为空，
+    /// 于是取消/失败/完成都拿不到 runId ⇒ 重启前遗留的运行永远停在 running。
+    /// 实测（2026-11-20）：`sub_agent_runs` 积了 2 条 46 小时，`session_sub_agents` 积了 10 条 4 个月。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task FindRunningRunIdAsync_ReturnsOnlyNonTerminalRunOfThatSubSession()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        var dbPath = Path.Combine(temp.Path, "platform.db");
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={dbPath}")
+            .Options;
+
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var store = new FileSubAgentRunStore(
+            paths,
+            NullLogger<FileSubAgentRunStore>.Instance,
+            new TestDbContextFactory(options),
+            new RecordingConversationEventStore());
+
+        var handle = await store.CreateRunAsync(BuildParentIdentityRequest("sub-recover", "turn-9"));
+        const string subSessionId = "parent-session/sub/sub-recover";
+
+        Assert.AreEqual(handle.RunId, await store.FindRunningRunIdAsync(subSessionId),
+            "运行中的子会话必须能被回落查到");
+
+        // 终态后不得再被命中：否则会把已完成的时间与结果覆盖成取消。
+        await store.CompleteRunAsync(handle.RunId, new SubAgentRunCompletion { Status = "completed" });
+        Assert.IsNull(await store.FindRunningRunIdAsync(subSessionId),
+            "已终态的运行不得被回落命中");
+
+        // 空/空白/不存在的子会话不查库，直接返回 null。
+        Assert.IsNull(await store.FindRunningRunIdAsync(""));
+        Assert.IsNull(await store.FindRunningRunIdAsync("   "));
+        Assert.IsNull(await store.FindRunningRunIdAsync("parent-session/sub/not-exist"));
+    }
+
     private static SubAgentRunCreateRequest BuildParentIdentityRequest(
         string subSessionSuffix,
         string? parentTurnId)

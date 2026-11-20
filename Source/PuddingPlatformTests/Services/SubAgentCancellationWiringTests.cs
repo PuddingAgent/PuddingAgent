@@ -358,6 +358,9 @@ public sealed class SubAgentCancellationWiringTests
         public Task<int> GetRunningCountByParentTurnAsync(string? parentTurnId, CancellationToken ct = default)
             => Task.FromResult(0);
 
+        public Task<string?> FindRunningRunIdAsync(string subSessionId, CancellationToken ct = default)
+            => Task.FromResult<string?>(null);
+
         public Task<int> RecoverInterruptedRunsAsync(
             DateTimeOffset startedBeforeUtc, int maxRuns, CancellationToken ct = default)
             => Task.FromResult(0);
