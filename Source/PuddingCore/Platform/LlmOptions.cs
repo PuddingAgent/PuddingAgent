@@ -794,7 +794,16 @@ namespace PuddingCode.Platform
                 };
             }
 
-            if (frozen.RawEstimatedTokens > 0 && providerPromptTokens > 0)
+            // 2026-11-21：缓存读参与时**不校准**。
+            // 依据（实测 session=…-sub-0b13bcea，49 轮按轮拆解）：round0 prompt=89,987（cacheHit=0），
+            // round1 prompt=651,027 其中 cacheHit=598,378 —— 缓存读比上一轮的**全量请求**还大，
+            // 不可能是本轮请求的前缀；经转售层（FastRouter）cache_read 不是「本轮复用了多少」。
+            // 而 observedRatio 的分子正是 PromptTokens（含 cache_read），一旦学进去，
+            // 系数会被一个与请求体积无关的数抬走（历史事故：学到 6.7 ⇒ 每轮 usedTokens×6.7
+            // ⇒ 预测越窗 ⇒ 保护态拒发 ⇒ 子代理当场失败）。
+            // 取舍：缓存参与的轮次一律不学；未命中轮（通常是会话首轮）仍能学到干净的密度比。
+            var cacheReadParticipated = usage.PromptCacheHitTokens is > 0;
+            if (frozen.RawEstimatedTokens > 0 && providerPromptTokens > 0 && !cacheReadParticipated)
             {
                 // 用**该请求自己的** raw 与 model 校准 ⇒ 校准天然按路由隔离。
                 var observedRatio = providerPromptTokens / (double)frozen.RawEstimatedTokens;

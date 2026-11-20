@@ -78,6 +78,38 @@ public sealed class PromptCalibrationConvergenceTests
             "跨数量级的观测比必须被忽略，系数保持未校准状态");
     }
 
+    /// <summary>
+    /// 2026-11-21 回归：缓存读参与的观测不参与校准。
+    /// <para>
+    /// 实测（session=…-sub-0b13bcea，49 轮按轮拆解）：round0 prompt=89,987（cacheHit=0）；
+    /// round1 prompt=651,027，其中 cacheHit=598,378 —— 缓存读大于上一轮全量请求，
+    /// 不可能是本轮请求的前缀。observedRatio 的分子含 cache_read，学进去就会把一个
+    /// 与请求体积无关的数当成「密度事实」（历史事故：学到 6.7 ⇒ 子代理必死）。
+    /// 对照组：<see cref="Ratio_RisesImmediately_WhenProviderReportsMoreTokens"/> 保持缓存未命中的
+    /// 观测仍能正常校准。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public void Ratio_IgnoresObservationWhenCacheReadParticipated()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var prepared = Capture(store, "s-cache", "inv-c");
+
+        store.RecordProviderUsage(
+            "s-cache",
+            new TokenUsageDto
+            {
+                PromptTokens = (int)(prepared.RawEstimatedTokens * 2),
+                PromptCacheHitTokens = (int)(prepared.RawEstimatedTokens * 1.5),
+            },
+            LlmCallPurposes.Agent,
+            "inv-c",
+            attemptId: null);
+
+        Assert.AreEqual(1.0, store.GetPromptCalibrationRatio("s-cache", "model-A"), 1e-6,
+            "缓存读参与时不得参与校准，系数保持未校准状态");
+    }
+
     private static ContextUsageSnapshot Capture(
         ContextUsageSnapshotStore store, string sessionId, string invocationId)
         => store.CaptureLlmRequest(
