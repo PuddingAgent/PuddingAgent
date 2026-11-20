@@ -28,6 +28,20 @@ public sealed class SubAgentPool : ISubAgentPool
     /// </summary>
     private sealed class PoolEntry
     {
+        /// <summary>
+        /// 库里的稳定主键（<c>agent_pool.pool_id</c>）。
+        /// <para>
+        /// 名字可以撞、条目可以被 destroy → create 换成另一个对象，只有 pool_id 不变。
+        /// 所有条件写库都必须凭它定位那一行：按 name 写会把结果落到墓碑或新条目上
+        /// （软删后同名可被新条目占用，唯一索引带 <c>deleted_at</c> 过滤）。
+        /// </para>
+        /// <para>
+        /// 纯内存模式（没有 store）也照样生成：字段非空让日志与诊断始终有一个可引用的身份，
+        /// 不必在每条日志里再写一遍「有 store 吗」。
+        /// </para>
+        /// </summary>
+        public string PoolId { get; }
+
         public string Name { get; }
         public string SubSessionId { get; }
         public string TemplateId { get; }
@@ -51,8 +65,16 @@ public sealed class SubAgentPool : ISubAgentPool
         /// <summary>创建者工作区。跨工作区复用同样会污染投影，故一并记录。</summary>
         public string? OwnerWorkspaceId { get; }
 
-        public PoolEntry(string name, string subSessionId, string templateId, string? role, string? ownerSessionId, string? ownerWorkspaceId)
+        public PoolEntry(
+            string poolId,
+            string name,
+            string subSessionId,
+            string templateId,
+            string? role,
+            string? ownerSessionId,
+            string? ownerWorkspaceId)
         {
+            PoolId = poolId;
             Name = name;
             SubSessionId = subSessionId;
             TemplateId = templateId;
@@ -74,6 +96,7 @@ public sealed class SubAgentPool : ISubAgentPool
         /// </para>
         /// </summary>
         public PoolEntry(
+            string poolId,
             string name,
             string subSessionId,
             string templateId,
@@ -87,6 +110,7 @@ public sealed class SubAgentPool : ISubAgentPool
             bool? lastSuccess,
             string? activeExecutionId)
         {
+            PoolId = poolId;
             Name = name;
             SubSessionId = subSessionId;
             TemplateId = templateId;
@@ -234,6 +258,9 @@ public sealed class SubAgentPool : ISubAgentPool
                 // 可能在加载期间已经建了一个同名条目并正在执行。那个条目带着活的子会话，
                 // 用库里的快照覆盖它会把正在执行的收尾丢掉（FinishAsync 是引用相等判定）。
                 _pool.TryAdd(snapshot.Name, new PoolEntry(
+                    // pool_id 只从快照带回来，绝不在这里重新生成：
+                    // 重新生成会让重启后的每个条目都指向一个库里不存在的 id，后续所有条件写都落空。
+                    poolId: snapshot.PoolId,
                     name: snapshot.Name,
                     subSessionId: snapshot.SubSessionId,
                     templateId: snapshot.TemplateId,
@@ -269,6 +296,24 @@ public sealed class SubAgentPool : ISubAgentPool
         AgentPoolEntity.StatusSleeping => PooledSubAgentStatus.Sleeping,
         AgentPoolEntity.StatusDead => PooledSubAgentStatus.Dead,
         _ => PooledSubAgentStatus.Dead,
+    };
+
+    /// <summary>
+    /// 运行时状态 → 库内状态串（<see cref="MapStatus"/> 的反方向）。
+    /// <para>
+    /// 两个方向刻意不共用一张表：恢复路径遇到「未知值」映射成 Dead 是安全的（不可复用），
+    /// 而写入路径遇到未知值必须在写库前就报错——不得静默化简成 idle，
+    /// 否则一个新增的运行时状态会在库里表现为「刚创建、从未执行过」。
+    /// </para>
+    /// </summary>
+    private static string ToStoreStatus(PooledSubAgentStatus status) => status switch
+    {
+        PooledSubAgentStatus.Idle => AgentPoolEntity.StatusIdle,
+        PooledSubAgentStatus.Busy => AgentPoolEntity.StatusBusy,
+        PooledSubAgentStatus.Sleeping => AgentPoolEntity.StatusSleeping,
+        PooledSubAgentStatus.Dead => AgentPoolEntity.StatusDead,
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(status), status, "Unknown pooled status; refusing to write an unmapped value to agent_pool.status"),
     };
 
     private PoolNotReadyException BuildNotReadyException() => new(
@@ -321,7 +366,13 @@ public sealed class SubAgentPool : ISubAgentPool
             // 池创建只预留稳定会话标识，不创建 run，也不执行任务。
             // 真正执行统一由 ExecuteSyncAsync 完成，否则 create → execute 会对同一
             // SubSessionId 重叠启动两次，并污染当前状态投影与 runId 映射。
+            //
+            // pool_id 在创建处一次性生成并同时交给「写库」与「内存条目」：
+            // 两处各生成一个的话，内存里的 id 永远指向一行不存在的记录，
+            // 之后每一次条件写库都会静默落空（0 行），而内存看上去一切正常。
+            var poolId = Guid.NewGuid().ToString("N");
             entry = new PoolEntry(
+                poolId: poolId,
                 name: name,
                 subSessionId: SubAgentSessionId.Create(request.ParentSessionId),
                 templateId: request.TemplateId,
@@ -335,7 +386,7 @@ public sealed class SubAgentPool : ISubAgentPool
                 // 否则重启后它会凭空消失，而调用方已经拿到了它的 SubSessionId。
                 var inserted = await _entryStore.TryInsertAsync(
                     new AgentPoolInsertRequest(
-                        PoolId: Guid.NewGuid().ToString("N"),
+                        PoolId: poolId,
                         Name: name,
                         SubSessionId: entry.SubSessionId,
                         TemplateId: request.TemplateId,
@@ -422,6 +473,35 @@ public sealed class SubAgentPool : ISubAgentPool
                 return;
             }
 
+            // 第二道判定（S5a，DB 为准）：内存令牌只在本进程内有效——
+            // 条目可能在另一路径被写成 sleeping（sleep / 重启后的 busy 复位），
+            // 那时内存里的 ActiveExecutionId 仍与本次令牌相等，但库里那行已经不归这次执行了。
+            // 因此必须再由库条件（status='busy' 且 active_execution_id 匹配）确认一次。
+            //
+            // 为什么 0 行时连内存也不改：内存是库的缓存，不是事实源。
+            // 库已经判定「这次收尾不成立」时如果只改内存，会出现内存 task_count=1 /
+            // status=sleeping 而库里 task_count=0 / status=busy 的分叉：
+            // 下一次 ExecuteAsync 的内存前置检查会放行，DB 侧却抢不到——错误要到那时才暴露，
+            // 而且看起来像另一个无关模块的 bug。
+            if (_entryStore is not null)
+            {
+                var affected = await _entryStore.TryCompleteAsync(
+                    executedEntry.PoolId,
+                    executedEntry.SubSessionId,
+                    executionId,
+                    success,
+                    DateTimeOffset.UtcNow,
+                    ct);
+
+                if (affected == 0)
+                {
+                    _logger.LogWarning(
+                        "[SubAgentPool] Stale completion dropped by store name={Name} poolId={PoolId} sub={Sub} exec={Exec}",
+                        name, executedEntry.PoolId, executedEntry.SubSessionId, executionId);
+                    return;
+                }
+            }
+
             current.Status = PooledSubAgentStatus.Sleeping;
             current.TaskCount++;
             current.LastSuccess = success;
@@ -431,6 +511,56 @@ public sealed class SubAgentPool : ISubAgentPool
         finally
         {
             _stateLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// 条件抢占库里的那一行（S5a：所有执行都必须先过库这一道）。
+    /// <para>
+    /// 0 行不是异常而是结论：那一行已被别的执行占着、归属不符、状态已前进或已软删。
+    /// 此时必须原地放弃——继续执行会真的建子会话并消费父级预算，而收尾时
+    /// <c>TryCompleteAsync</c> 又会因令牌不匹配把结果丢掉，等于白跑一轮还把内存状态搞乱。
+    /// </para>
+    /// <para>
+    /// 纯内存模式（<c>_entryStore == null</c>）直接放行：没有库就没有「抢占」这回事，
+    /// 既有 38 个池用例走的就是这条路。
+    /// </para>
+    /// <para>
+    /// 归属谓词无法表达时（遗留行 <c>owner_session_id</c> 为 NULL）也放行：
+    /// SQL 里 <c>NULL = @p</c> 恒为假，硬要调用只会把一条本可复用的条目永久判成「被占用」。
+    /// </para>
+    /// </summary>
+    private async Task AcquireInStoreAsync(
+        PoolEntry entry,
+        SubAgentSpawnRequest request,
+        string executionId,
+        CancellationToken ct)
+    {
+        if (_entryStore is null)
+            return;
+
+        if (string.IsNullOrEmpty(entry.OwnerSessionId))
+        {
+            _logger.LogDebug(
+                "[SubAgentPool] Skipping store acquire for '{Name}' poolId={PoolId}: no owner session recorded",
+                entry.Name, entry.PoolId);
+            return;
+        }
+
+        var affected = await _entryStore.TryAcquireAsync(
+            entry.PoolId,
+            request.ParentSessionId,
+            request.WorkspaceId,
+            executionId,
+            DateTimeOffset.UtcNow,
+            ct);
+
+        if (affected == 0)
+        {
+            throw new InvalidOperationException(
+                $"Sub-agent '{entry.Name}' could not be acquired in the persistent store " +
+                $"(poolId={entry.PoolId}): it is busy, owned by another session/workspace, " +
+                "or already deleted. Refusing to run a task the store has not handed to this execution.");
         }
     }
 
@@ -449,6 +579,11 @@ public sealed class SubAgentPool : ISubAgentPool
 
         // 每次执行生成一个令牌，收尾时与条目上的令牌比对；不匹配即视为迟到收尾并丢弃。
         var executionId = Guid.NewGuid().ToString("N");
+
+        // 先把库里的视图加载好再写库（S5a）：未加载时内存里看不到库里已有的行，
+        // 条件更新会命中一个本地根本不知道的行，于是「本地看上去空闲」与
+        // 「库里已经被别的执行占着」会得出相反结论，而且两边都不会报错。
+        await EnsureReadyAsync(ct);
 
         // 获取或创建池条目
         PoolEntry entry;
@@ -495,6 +630,11 @@ public sealed class SubAgentPool : ISubAgentPool
                         PoolOwnershipMismatchException.OwnerWorkspaceReason);
                 }
 
+                // 标记为 Busy 之前先抢库里的那一行（S5a，DB 是第一道真相）。
+                // 顺序不能倒：先改内存再写库时，若库拒绝（被别的执行占着 / 已软删 / 状态已前进），
+                // 内存就会停在 Busy 而那条执行根本不存在，之后同名的每次调用都会被自己卡死。
+                await AcquireInStoreAsync(existing, request, executionId, ct);
+
                 // 标记为 Busy（在锁内，确保状态变更原子性）
                 existing.Status = PooledSubAgentStatus.Busy;
                 existing.LastUsedAt = DateTimeOffset.UtcNow;
@@ -509,7 +649,9 @@ public sealed class SubAgentPool : ISubAgentPool
                         $"Cannot create '{name}'. Consider calling DestroyAsync on unused agents.");
                 }
 
+                var poolId = Guid.NewGuid().ToString("N");
                 entry = new PoolEntry(
+                    poolId: poolId,
                     name: name,
                     subSessionId: SubAgentSessionId.Create(request.ParentSessionId),
                     templateId: request.TemplateId,
@@ -520,6 +662,41 @@ public sealed class SubAgentPool : ISubAgentPool
                     Status = PooledSubAgentStatus.Busy,
                     LastUsedAt = DateTimeOffset.UtcNow,
                 };
+
+                if (_entryStore is not null)
+                {
+                    // 自动预留的条目此刻库里还没有行。必须先插成 idle 再走与 CreateAsync 同一道
+                    // TryAcquire：两条路径落成同一种库语义（插入 → 条件抢占），
+                    // 而不是在打开路径里直接写一个 busy 行——后者会让重启恢复读到一个
+                    // 从未被 TryAcquire 校验过归属的 busy 行。
+                    var inserted = await _entryStore.TryInsertAsync(
+                        new AgentPoolInsertRequest(
+                            PoolId: poolId,
+                            Name: name,
+                            SubSessionId: entry.SubSessionId,
+                            TemplateId: request.TemplateId,
+                            Role: request.RoleInPlan,
+                            OwnerWorkspaceId: request.WorkspaceId,
+                            OwnerSessionId: request.ParentSessionId,
+                            OwnerAgentId: request.ParentAgentId,
+                            CreatedAt: entry.CreatedAt),
+                        capacity: _maxCapacity,
+                        ct);
+
+                    if (inserted == 0)
+                    {
+                        // 与 CreateAsync 同一文案：两种「满」对调用方的处置完全一样。
+                        throw new InvalidOperationException(
+                            $"Sub-agent pool is full (capacity={_maxCapacity}). " +
+                            $"Cannot create '{name}'. Consider calling DestroyAsync on unused agents.");
+                    }
+
+                    // 抢不到就抛：这行刚由本方法插入且是 idle，抢不到只能说明前提判断错了，
+                    // 此时宁可报错也不要把一个未接管的条目塞进内存。
+                    await AcquireInStoreAsync(entry, request, executionId, ct);
+                }
+
+                // 先落库再进内存：库拒绝时内存里不得留下「看起来存在但库里不可抢」的条目。
                 _pool[name] = entry;
                 autoReserved = true;
             }
@@ -611,6 +788,41 @@ public sealed class SubAgentPool : ISubAgentPool
                     ct);
             }
 
+            // DB 为准（S5a）：先把库里那一行迁到 sleeping，成功才改缓存。
+            //
+            // 为什么 0 行时不改内存：库拒绝意味着「我看到的那个前置状态已经不成立」
+            // （被别的执行改成 busy、已被置 dead、行已软删）。此时把内存改成 Sleeping
+            // 会让下次 ExecuteAsync 的内存前置检查放行，而 DB 侧又抢不到——
+            // 错会推迟到下一次派活才暴露，届时已分不清是谁改的。
+            //
+            // 取舍（见 RISKS）：0 行不回读校正——本阶段只把 DB 当唯一真相并停下来，
+            // 回读需要额外的读路径与它自己的一致性错误处理，而那属于 S5c 的恢复语义。
+            if (_entryStore is not null)
+            {
+                var expected = ToStoreStatus(entry.Status);
+                var affected = await _entryStore.TrySetStatusAsync(
+                    entry.PoolId,
+                    expected,
+                    AgentPoolEntity.StatusSleeping,
+                    statusReason: null,
+                    clearExecution: true,
+                    now: DateTimeOffset.UtcNow,
+                    ct);
+
+                if (affected == 0)
+                {
+                    _logger.LogWarning(
+                        "[SubAgentPool] SleepAsync: store rejected transition for '{Name}' poolId={PoolId} " +
+                        "expected={Expected}; memory left untouched (store is the source of truth)",
+                        name, entry.PoolId, expected);
+                    return false;
+                }
+
+                // 缓存跟随库：库已经把执行令牌清空，内存再留着它会让之后的迟到收尾
+                // 在内存这一关「判定通过」，白跑一次 DB 回写。
+                entry.ActiveExecutionId = null;
+            }
+
             entry.Status = PooledSubAgentStatus.Sleeping;
             entry.LastUsedAt = DateTimeOffset.UtcNow;
 
@@ -636,11 +848,42 @@ public sealed class SubAgentPool : ISubAgentPool
         await _stateLock.WaitAsync(ct);
         try
         {
-            if (!_pool.TryRemove(name, out var entry))
+            if (!_pool.TryGetValue(name, out var entry))
             {
                 _logger.LogWarning("[SubAgentPool] DestroyAsync: '{Name}' not found", name);
                 return false;
             }
+
+            // 同 SleepAsync：先让库迁到 dead（store 会同时写 deleted_at），成功后才动内存。
+            // 两种侧重点不同的错误在这里对称：
+            //   • 先删内存再写库 → 库拒绝时库里还活着、内存没了，重启后它又“活”回来，
+            //     而调用方已经收到「已销毁」；
+            //   • 库拒绝却删内存 → 同一个名字又能被 create 成新条目，但库里旧行还占着唯一索引
+            //     （软删后同名才可被新条目占用），新条目会在插库时撞约束。
+            // 所以 0 行时一律保留内存条目并返回 false，让调用方重试或先查清状态。
+            if (_entryStore is not null)
+            {
+                var expected = ToStoreStatus(entry.Status);
+                var affected = await _entryStore.TrySetStatusAsync(
+                    entry.PoolId,
+                    expected,
+                    AgentPoolEntity.StatusDead,
+                    statusReason: null,
+                    clearExecution: true,
+                    now: DateTimeOffset.UtcNow,
+                    ct);
+
+                if (affected == 0)
+                {
+                    _logger.LogWarning(
+                        "[SubAgentPool] DestroyAsync: store rejected transition for '{Name}' poolId={PoolId} " +
+                        "expected={Expected}; entry kept in memory",
+                        name, entry.PoolId, expected);
+                    return false;
+                }
+            }
+
+            _pool.TryRemove(name, out _);
 
             var wasBusy = entry.Status == PooledSubAgentStatus.Busy;
             entry.Status = PooledSubAgentStatus.Dead;

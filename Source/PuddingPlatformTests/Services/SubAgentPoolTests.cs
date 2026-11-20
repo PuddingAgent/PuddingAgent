@@ -589,8 +589,15 @@ public sealed class TestSubAgentManager : ISubAgentManager
     public bool ShouldFail { get; set; }
     private int _spawnCounter;
     private int _spawnCallCount;
+    private int _executeCallCount;
 
     public int SpawnCallCount => Volatile.Read(ref _spawnCallCount);
+
+    /// <summary>
+    /// 真正进入执行链的次数。用于区分「被前置门（归属 / 库抢占）拦住」与
+    /// 「拦了但已经建了 run」——后者会消耗预算并在会话投影里留下一条失败记录。
+    /// </summary>
+    public int ExecuteCallCount => Volatile.Read(ref _executeCallCount);
     public SubAgentSpawnRequest? LastExecuteRequest { get; private set; }
 
     public Task<SubAgentSpawnResult> SpawnAsync(SubAgentSpawnRequest request, CancellationToken ct = default)
@@ -606,6 +613,7 @@ public sealed class TestSubAgentManager : ISubAgentManager
 
     public async Task<SubAgentExecuteResult> ExecuteSyncAsync(SubAgentSpawnRequest request, CancellationToken ct = default)
     {
+        Interlocked.Increment(ref _executeCallCount);
         LastExecuteRequest = request;
         if (ShouldFail)
             throw new InvalidOperationException("Simulated execution failure");
