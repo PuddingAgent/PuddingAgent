@@ -62,6 +62,74 @@ public sealed class SessionStateManagerSequenceTests
     }
 
     /// <summary>
+    /// 启动对账：只修正**本进程启动之前** spawn 的非终态投影。
+    /// <para>
+    /// 背景：`session_sub_agents` 此前没有任何对账入口，2026-11-20 实测积了 10 条
+    /// 自 2026-07-23 起的 running，占着「运行中」计数。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task RecoverInterruptedSubAgentsAsync_FailsOnlyProjectionsOlderThanCutoff()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"test_{Guid.NewGuid():N}.db");
+        try
+        {
+            var ssm = CreateSsm(dbPath);
+            var cutoff = DateTimeOffset.UtcNow;
+
+            var scopeFactory = CreateScopeFactory(dbPath);
+            using (var seedScope = scopeFactory.CreateScope())
+            {
+                var seedDb = seedScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                seedDb.SessionSubAgents.AddRange(
+                    new SessionSubAgentEntity
+                    {
+                        ParentSessionId = "parent", SubSessionId = "stale", Status = "running",
+                        TaskSummary = "probe", SpawnedAt = cutoff.AddDays(-30).ToString("O"),
+                    },
+                    new SessionSubAgentEntity
+                    {
+                        ParentSessionId = "parent", SubSessionId = "fresh", Status = "running",
+                        TaskSummary = "probe", SpawnedAt = cutoff.AddMinutes(1).ToString("O"),
+                    },
+                    new SessionSubAgentEntity
+                    {
+                        ParentSessionId = "parent", SubSessionId = "already-done", Status = "completed",
+                        TaskSummary = "probe", SpawnedAt = cutoff.AddDays(-30).ToString("O"),
+                    });
+                await seedDb.SaveChangesAsync();
+            }
+
+            var recovered = await ssm.RecoverInterruptedSubAgentsAsync(cutoff, maxRows: 100);
+
+            Assert.AreEqual(1, recovered, "只应修正 cutoff 之前的那一条");
+
+            using var verifyScope = scopeFactory.CreateScope();
+            var db = verifyScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var stale = await db.SessionSubAgents.SingleAsync(e => e.SubSessionId == "stale");
+            var fresh = await db.SessionSubAgents.SingleAsync(e => e.SubSessionId == "fresh");
+            var done = await db.SessionSubAgents.SingleAsync(e => e.SubSessionId == "already-done");
+
+            Assert.AreEqual("failed", stale.Status);
+            Assert.AreEqual(false, stale.Success);
+            Assert.IsNotNull(stale.CompletedAt);
+            StringAssert.Contains(stale.ErrorSummary, "Recovered as failed");
+
+            // 本进程启动之后创建的仍可能是真的在跑，不得误伤。
+            Assert.AreEqual("running", fresh.Status);
+            Assert.IsNull(fresh.CompletedAt);
+
+            // 已终态的原样保留。
+            Assert.AreEqual("completed", done.Status);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    /// <summary>
     /// 同一 session 并发 50 个 append → 序列号连续递增、无重复、无不连续。
     /// </summary>
     [TestMethod]

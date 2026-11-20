@@ -101,6 +101,23 @@ public interface ISessionStateManager
 
     /// <summary>获取会话中正在运行的子代理数量。</summary>
     Task<int> GetRunningSubAgentCountAsync(string parentSessionId, CancellationToken ct = default);
+    /// <summary>
+    /// 把本次进程启动前遗留的非终态子代理提交为 failed。
+    /// <para>
+    /// `sub_agent_runs` 已有同类对账（<c>ISubAgentRunStore.RecoverInterruptedRunsAsync</c>），
+    /// 但 `session_sub_agents` 是另一张投影表，此前**没有任何对账入口**：
+    /// 2026-11-20 实测积了 10 条自 2026-07-23 起的 running，占着「运行中」计数。
+    /// </para>
+    /// <para>
+    /// 只处理 <paramref name="startedBeforeUtc"/> 之前 spawn 的行：本进程启动之后创建的
+    /// 可能真的在跑，不得误伤。解析不出时间的行原样保留。
+    /// </para>
+    /// </summary>
+    /// <returns>被修正的行数。</returns>
+    Task<int> RecoverInterruptedSubAgentsAsync(
+        DateTimeOffset startedBeforeUtc,
+        int maxRows,
+        CancellationToken ct = default);
 
     // ════════════════════════════════════════════════════════
     // 生命周期标记

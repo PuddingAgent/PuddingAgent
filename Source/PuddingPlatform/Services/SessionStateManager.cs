@@ -767,6 +767,63 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             .CountAsync(e => e.ParentSessionId == parentSessionId && e.Status == "running", ct);
     }
 
+    /// <inheritdoc />
+    public async Task<int> RecoverInterruptedSubAgentsAsync(
+        DateTimeOffset startedBeforeUtc,
+        int maxRows,
+        CancellationToken ct = default)
+    {
+        if (maxRows <= 0)
+            return 0;
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        // 只取 running 的行，按 spawn 时间升序截断。正常情况下应接近 0；
+        // 有堆积时也不至于一次把库拖死。
+        var candidates = await db.SessionSubAgents
+            .Where(e => e.Status == "running")
+            .OrderBy(e => e.SpawnedAt)
+            .Take(maxRows)
+            .ToListAsync(ct);
+
+        var recovered = 0;
+        var nowText = DateTimeOffset.UtcNow.ToString("O");
+
+        foreach (var entity in candidates)
+        {
+            // spawned_at 是字符串列，历史行可能带不同 UTC 偏移；解析失败就原样保留
+            // ——宁可留一条脏数据，也不误判一条真在跑的运行。
+            if (!DateTimeOffset.TryParse(entity.SpawnedAt, out var spawnedAt))
+            {
+                _logger.LogWarning(
+                    "[SSM] Cannot parse spawned_at, left untouched sub={Sub} raw={Raw}",
+                    entity.SubSessionId, entity.SpawnedAt);
+                continue;
+            }
+
+            if (spawnedAt >= startedBeforeUtc)
+                continue;
+
+            entity.Status = "failed";
+            entity.CompletedAt = nowText;
+            entity.Success = false;
+            entity.ErrorSummary =
+                "Recovered as failed: the owning process exited before the sub-agent committed a terminal state.";
+            recovered++;
+        }
+
+        if (recovered > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            _logger.LogWarning(
+                "[SSM] Recovered {Count} non-terminal sub-agent projections from a previous process",
+                recovered);
+        }
+
+        return recovered;
+    }
+
     private async Task ReconcileSubAgentTerminalStatesAsync(
         PlatformDbContext db,
         string parentSessionId,

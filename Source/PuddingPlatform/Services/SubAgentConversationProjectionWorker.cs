@@ -10,6 +10,7 @@ namespace PuddingPlatform.Services;
 /// </summary>
 public sealed class SubAgentConversationProjectionWorker(
     ISubAgentRunStore runStore,
+    ISessionStateManager sessionState,
     ILogger<SubAgentConversationProjectionWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
@@ -28,6 +29,19 @@ public sealed class SubAgentConversationProjectionWorker(
                 logger.LogWarning(
                     "[SubAgentProjection] Recovered {Count} non-terminal runs from a previous process as interrupted",
                     recovered);
+            }
+
+            // session_sub_agents 是另一张投影表，此前没有任何对账入口：
+            // 2026-11-20 实测积了 10 条自 2026-07-23 起的 running，占着「运行中」计数。
+            var recoveredProjections = await sessionState.RecoverInterruptedSubAgentsAsync(
+                _processStartedAtUtc,
+                maxRows: 10_000,
+                stoppingToken);
+            if (recoveredProjections > 0)
+            {
+                logger.LogWarning(
+                    "[SubAgentProjection] Recovered {Count} non-terminal sub-agent projections from a previous process as failed",
+                    recoveredProjections);
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

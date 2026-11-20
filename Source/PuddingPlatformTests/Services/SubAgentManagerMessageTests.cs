@@ -946,6 +946,10 @@ public sealed class SubAgentManagerMessageTests
         public Task<int> GetRunningSubAgentCountAsync(string parentSessionId, CancellationToken ct = default) =>
             Task.FromResult(0);
         
+        public Task<int> RecoverInterruptedSubAgentsAsync(
+            DateTimeOffset startedBeforeUtc, int maxRows, CancellationToken ct = default) =>
+            Task.FromResult(0);
+
         public Task MarkStreamCompleteAsync(string sessionId, CancellationToken ct = default) => Task.CompletedTask;
         public Task MarkSessionClosedAsync(string sessionId, CancellationToken ct = default) => Task.CompletedTask;
         
