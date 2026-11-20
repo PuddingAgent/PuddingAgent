@@ -258,6 +258,9 @@ try {
 
         $filtered = Invoke-TestProjectOnce -ProjectPath $ProjectPath -Filter $Filter -ResultsDirectory $ResultsDirectory -AllowZero
         if ($filtered.Executed -gt 0) { return $filtered }
+        # Every test in the project is environment-gated, so the unfiltered rerun would be gated too.
+        # Returning here keeps the report honest without a second useless run.
+        if ($filtered.Gated) { return $filtered }
 
         Write-Host "    no test matched the derived filter; running the whole project instead"
         $unfilteredDirectory = Join-Path $ResultsDirectory "unfiltered"
@@ -291,8 +294,30 @@ try {
             -not [int]::TryParse($counters.passed, [ref]$passed) -or
             -not [int]::TryParse($counters.failed, [ref]$failedCount) -or
             $passed -lt 0 -or $failedCount -lt 0 -or
-            $passed + $failedCount -ne $executed -or
-            ($executed -le 0 -and -not $AllowZero)) {
+            $passed + $failedCount -ne $executed) {
+            throw "TRX $TrxPath has missing or invalid execution counts (runner exit $ExitCode)"
+        }
+
+        # Environment gating is not the silent-zero hole (measured 2026-11-20).
+        # MSTest 4 records an Assert.Inconclusive test as notExecuted, so a project whose every test
+        # is gated by an environment variable yields total>0 / executed=0 / notExecuted=total,
+        # ResultSummary outcome="Failed", plus an MTP run-level Error quoting exit 8. The previous
+        # single condition folded that into "silent zero execution" and blocked the commit forever on
+        # PuddingPluginAgentApi.IntegrationTests (4 tests, all require PUDDING_PLUGIN_WORKER).
+        # The two cases must stay distinguishable: total=0 means nothing was ever discovered and still
+        # blocks hard (that is the hole this gate exists for), while total>0 with nothing executed is an
+        # environment gate and must be reported, not disguised as a failure verdict.
+        $total = 0
+        $notExecuted = 0
+        $gatedRun = ([int]::TryParse($counters.total, [ref]$total)) -and
+                    ([int]::TryParse($counters.notExecuted, [ref]$notExecuted)) -and
+                    $total -gt 0 -and $executed -eq 0 -and $notExecuted -eq $total
+        if ($gatedRun) {
+            Write-Warning ("    environment-gated: {0}/{0} test(s) not executed (runner exit {1})" -f $total, $ExitCode)
+            return [pscustomobject]@{ Executed = 0; Gated = $true; Total = $total; Failed = @() }
+        }
+
+        if ($executed -le 0 -and -not $AllowZero) {
             throw "TRX $TrxPath has missing or invalid execution counts, or zero tests executed (runner exit $ExitCode)"
         }
 
@@ -469,7 +494,12 @@ try {
             Write-Warning ("BLOCKED: {0}: {1}" -f (Resolve-Path -Relative $project), $_.Exception.Message)
             exit 1
         }
-        Write-Host ("    executed {0} test(s)" -f $result.Executed)
+        if ($result.Gated) {
+            Write-Host ("    environment-gated: {0} test(s) not executed" -f $result.Total)
+        }
+        else {
+            Write-Host ("    executed {0} test(s)" -f $result.Executed)
+        }
         $ranProjects++
 
         foreach ($name in $result.Failed) {
