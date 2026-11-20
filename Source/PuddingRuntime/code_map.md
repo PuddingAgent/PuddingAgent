@@ -118,7 +118,7 @@
 | `Services/ContextHealthEvaluator.cs` | 上下文健康度的评估 | `ContextHealthEvaluator` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | 占用率分母 = 模型窗口、门禁分母 = 有效输入窗口，两者不可混用；容量分量与来源须如实输出，回退输出预算单列而不得冒充用户预算（见下「关键语义」） |
 | `Services/ContextLayerContracts.cs` | 上下文分层的契约模型 | `ContextLayerContracts` | `Services/ContextPipelineLayers.cs` | — |
 | `Services/ContextPipeline.cs` | 分层上下文组装的对外实现 | `ContextPipeline` | `Services/ContextPipelineLayers.cs` | 稳定 system prefix 与本轮 User tail 必须分离 |
-| `Services/ContextPipelineLayers.cs` | 上下文各层的装配 | `ContextPipelineLayers` | `Services/ContextPipelineOrchestrator.cs` | 实例配置正文指纹刷新静态层；系统指令、协作、人设、工具约定与记忆策略完整注入，显式空文档不回退模板；常驻技能索引只投射 skillId+一句话摘要（不投影 tags/keywords，2026-10-23） |
+| `Services/ContextPipelineLayers.cs` | 上下文各层的装配 | `ContextPipelineLayers` | `Services/ContextPipelineOrchestrator.cs` | 实例配置正文指纹刷新静态层；系统指令、协作、人设、工具约定与记忆策略完整注入，显式空文档不回退模板；常驻技能索引只投射 skillId+一句话摘要（不投影 tags/keywords，2026-10-23）。**2026-11-20**：工具目录取数必须经 `ResolveToolDescriptors`（携带 `ToolExecutionContext`），退回 `ListAvailable(policy, workspaceId)` 会让 host-catalog 工具源整体缺席（实测目录报 6 个而实际可用 40+） |
 | `Services/AgentPromptSnapshot.cs` | 推理使用的实例提示词快照 | `AgentPromptSnapshot` | `Services/SystemPromptBuilder.cs` | 按 manifest 文档引用读取 UTF-8；分层与直接构建共用实例名称、角色和提示词来源 |
 | `Services/ContextPipelineOrchestrator.cs` | 上下文组装编排与分层占比快照 | `ContextPipelineOrchestrator` | `Services/ContextPipelineLayers.cs` | BuildSessionMessagePreviews 仅供快照显示，不可回填模型历史 |
 | `Services/ContextWindowConstants.cs` | 上下文窗口的命名常量 | `ContextWindowConstants` | `Services/ContextWindowManager.cs` | — |

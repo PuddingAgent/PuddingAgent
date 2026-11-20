@@ -306,7 +306,7 @@ public sealed partial class ContextPipeline
 
         if (_toolRegistry is not null)
         {
-            var descriptors = _toolRegistry.ListAvailable(request.Capability, request.WorkspaceId);
+            var descriptors = ResolveToolDescriptors(_toolRegistry, request);
             // P0-5 step 4a: L1 索引文本优先从 session 已加载工具集合（append-only）生成，
             // 可见工具 = Core ∪ Loaded，与 ToolExposurePlanner.CreatePlan 的可见集语义一致
             // （Core ∪ loaded ∪ committed 不收缩），消除每轮从实时 registry 全量重建导致
@@ -368,6 +368,42 @@ public sealed partial class ContextPipeline
         }
         return Task.FromResult(sb.ToString());
     }
+
+    /// <summary>
+    /// L1/L9 工具目录的数据来源。抽成 internal static 是为了可测：调用方若退回
+    /// <c>ListAvailable(policy, workspaceId)</c> 重载，记录型假实现会收到 null context，测试立即取红。
+    /// </summary>
+    internal static IReadOnlyList<ToolDescriptor> ResolveToolDescriptors(
+        IPuddingToolRegistry? registry, ContextRequest request)
+    {
+        if (registry is null) return [];
+        return registry.ListAvailable(request.Capability, CreateToolContext(request));
+    }
+
+    /// <summary>
+    /// 从 <see cref="ContextRequest"/> 就地构造工具执行上下文。
+    /// <para>
+    /// 必须传 context：host-catalog 工具源（pudding.shell / pudding.files 等 host-service 包）只在
+    /// <c>PuddingToolRegistry.BuildToolSnapshot</c> 收到非空 <see cref="ToolExecutionContext"/> 时才并入
+    /// （见 PuddingToolRegistry.cs:49-56）。缺了它，目录只能看到 native/toolSource 注册的工具——
+    /// 实测报 6 个而实际可用 40+，模型因此反复 search_tools 试探（diagnose 记录连续 8 次）。
+    /// </para>
+    /// <para>
+    /// 字段全部来自请求本身，不新增契约：ToolExecutionContext 的必填项（WorkspaceId / SessionId /
+    /// AgentInstanceId）与 CapabilityPolicy 在 ContextRequest 里都已具备。
+    /// </para>
+    /// </summary>
+    internal static ToolExecutionContext CreateToolContext(ContextRequest request) => new()
+    {
+        WorkspaceId = request.WorkspaceId,
+        SessionId = request.SessionId,
+        AgentInstanceId = request.AgentInstanceId,
+        ConfigurationAgentInstanceId = request.ConfigurationAgentInstanceId,
+        WorkingDirectory = request.WorkingDirectory,
+        AgentTemplateId = request.AgentTemplateId,
+        Trace = request.Trace,
+        CapabilityPolicy = request.Capability,
+    };
 
     private static void AppendToolDescriptorList(StringBuilder sb, IReadOnlyList<ToolDescriptor> descriptors, ContextRequest request)
     {
