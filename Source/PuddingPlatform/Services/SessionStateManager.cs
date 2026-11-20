@@ -768,6 +768,50 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
     }
 
     /// <inheritdoc />
+    public async Task<int> GetRunningSubAgentDescendantCountAsync(string rootSessionId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(rootSessionId))
+            return 0;
+
+        // 逐层下钻而不是递归 CTE：委派层数本来就很浅，
+        // 而递归 CTE 在 EF Core 里只能走裸 SQL，会多出一段与实体不同源的 schema 要维护。
+        // 深度上限同时是防护：即使库里出现环，也不会无限查下去。
+        const int maxDepth = 8;
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        var visited = new HashSet<string>(StringComparer.Ordinal) { rootSessionId };
+        var frontier = new List<string> { rootSessionId };
+        var running = 0;
+
+        for (var depth = 0; depth < maxDepth && frontier.Count > 0; depth++)
+        {
+            var children = await db.SessionSubAgents
+                .Where(e => frontier.Contains(e.ParentSessionId))
+                .Select(e => new { e.SubSessionId, e.Status })
+                .ToListAsync(ct);
+
+            foreach (var child in children)
+            {
+                if (string.Equals(child.Status, "running", StringComparison.Ordinal))
+                    running++;
+            }
+
+            var nextFrontier = new List<string>();
+            foreach (var child in children)
+            {
+                if (!string.IsNullOrEmpty(child.SubSessionId) && visited.Add(child.SubSessionId))
+                    nextFrontier.Add(child.SubSessionId);
+            }
+
+            frontier = nextFrontier;
+        }
+
+        return running;
+    }
+
+    /// <inheritdoc />
     public async Task<int> RecoverInterruptedSubAgentsAsync(
         DateTimeOffset startedBeforeUtc,
         int maxRows,

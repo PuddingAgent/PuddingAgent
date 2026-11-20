@@ -101,6 +101,17 @@ public interface ISessionStateManager
 
     /// <summary>获取会话中正在运行的子代理数量。</summary>
     Task<int> GetRunningSubAgentCountAsync(string parentSessionId, CancellationToken ct = default);
+
+    /// <summary>
+    /// 统计以 <paramref name="rootSessionId"/> 为根、**所有递归层级**上仍存活的子代理总数。
+    /// <para>
+    /// 与 <paramref name="rootSessionId"/> 直接派生的计数（<see cref="GetRunningSubAgentCountAsync"/>）不同：
+    /// 需求 5 的口径是「同一主 Agent 下所有递归层级同时存活的子智能体总数」，
+    /// 因此必须沿 parent → sub 的链逐层下钻。
+    /// </para>
+    /// <para>根会话本身不计入，只数它派生出来的子代理。</para>
+    /// </summary>
+    Task<int> GetRunningSubAgentDescendantCountAsync(string rootSessionId, CancellationToken ct = default);
     /// <summary>
     /// 把本次进程启动前遗留的非终态子代理提交为 failed。
     /// <para>

@@ -883,6 +883,12 @@ public sealed class SubAgentManagerMessageTests
 
     private sealed class RecordingSessionStateManager : ISessionStateManager
     {
+        // 默认 0：未设置时不影响既有消息用例。
+        public int RunningDescendantCount { get; set; }
+
+        public Task<int> GetRunningSubAgentDescendantCountAsync(string rootSessionId, CancellationToken ct = default)
+            => Task.FromResult(RunningDescendantCount);
+
         public Task<long> AppendAsync(
             string sessionId,
             string workspaceId,

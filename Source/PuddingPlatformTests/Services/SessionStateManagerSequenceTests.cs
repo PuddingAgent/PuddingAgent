@@ -62,6 +62,63 @@ public sealed class SessionStateManagerSequenceTests
     }
 
     /// <summary>
+    /// 需求 5：并发上限的计数口径是「同一主 Agent 下所有递归层级」，
+    /// 不是只看直接子代理。对照组（旧方法）必须只数到 1，才能证明新方法确实跨层。
+    /// </summary>
+    [TestMethod]
+    public async Task GetRunningSubAgentDescendantCountAsync_CountsAllRecursiveLevels()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"test_{Guid.NewGuid():N}.db");
+        try
+        {
+            var ssm = CreateSsm(dbPath);
+            var scopeFactory = CreateScopeFactory(dbPath);
+            var now = DateTimeOffset.UtcNow.ToString("O");
+
+            using (var seedScope = scopeFactory.CreateScope())
+            {
+                var seedDb = seedScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                seedDb.SessionSubAgents.AddRange(
+                    // 第一层：root 直接派生的 b（running）与 d（已完成）
+                    new SessionSubAgentEntity
+                    {
+                        ParentSessionId = "root", SubSessionId = "b", Status = "running",
+                        TaskSummary = "probe", SpawnedAt = now,
+                    },
+                    new SessionSubAgentEntity
+                    {
+                        ParentSessionId = "root", SubSessionId = "d", Status = "completed",
+                        TaskSummary = "probe", SpawnedAt = now,
+                    },
+                    // 第二层：b 派生的 c（running）
+                    new SessionSubAgentEntity
+                    {
+                        ParentSessionId = "b", SubSessionId = "c", Status = "running",
+                        TaskSummary = "probe", SpawnedAt = now,
+                    },
+                    // 无关分支：不属于 root 的树
+                    new SessionSubAgentEntity
+                    {
+                        ParentSessionId = "other", SubSessionId = "x", Status = "running",
+                        TaskSummary = "probe", SpawnedAt = now,
+                    });
+                await seedDb.SaveChangesAsync();
+            }
+
+            var descendants = await ssm.GetRunningSubAgentDescendantCountAsync("root");
+            var direct = await ssm.GetRunningSubAgentCountAsync("root");
+
+            Assert.AreEqual(2, descendants, "root 下跨层级存活应为 b 与 c 两个；d 已完成、x 不属于这棵树。");
+            Assert.AreEqual(1, direct, "对照组：旧方法只看直接子代理，应为 1。");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    /// <summary>
     /// 启动对账：只修正**本进程启动之前** spawn 的非终态投影。
     /// <para>
     /// 背景：`session_sub_agents` 此前没有任何对账入口，2026-11-20 实测积了 10 条

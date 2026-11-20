@@ -222,6 +222,12 @@ public sealed class SubAgentManagerTerminalStatusMatrixTests
 
     private sealed class RecordingSessionStateManager : ISessionStateManager
     {
+        // 默认 0：未设置时不影响既有矩阵用例。
+        public int RunningDescendantCount { get; set; }
+
+        public Task<int> GetRunningSubAgentDescendantCountAsync(string rootSessionId, CancellationToken ct = default)
+            => Task.FromResult(RunningDescendantCount);
+
         private readonly TaskCompletionSource<SubAgentResult> _completed =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 

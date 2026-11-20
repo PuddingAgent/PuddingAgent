@@ -242,6 +242,12 @@ public sealed class SubAgentCancellationWiringTests
 
     private sealed class FakeSessionStateManager : ISessionStateManager
     {
+        // 默认 0：未设置时不影响既有并发用例。
+        public int RunningDescendantCount { get; set; }
+
+        public Task<int> GetRunningSubAgentDescendantCountAsync(string rootSessionId, CancellationToken ct = default)
+            => Task.FromResult(RunningDescendantCount);
+
         public List<SubAgentStatus> SubAgents { get; } = new();
         public List<string> Completed { get; } = new();
 

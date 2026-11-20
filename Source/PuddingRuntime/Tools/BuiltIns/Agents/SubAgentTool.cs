@@ -334,6 +334,11 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         if (depthDeny is not null)
             return depthDeny;
 
+        // 需求 5：同一主 Agent 下所有递归层级同时存活的子代理总数上限。
+        var concurrencyDeny = await CheckConcurrencyLimitAsync(request.SessionId, ct);
+        if (concurrencyDeny is not null)
+            return concurrencyDeny;
+
         var childDelegationDepth = (taskPlanning.DelegationDepth ?? 0) + 1;
         var childAllowSubDelegation = taskPlanning.AllowSubDelegation == true;
 
@@ -985,6 +990,70 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         return int.TryParse(raw, out var value) ? value : 1;
     }
 
+    /// <summary>
+    /// 需求 5：同一主 Agent 下**所有递归层级**同时存活的子代理总数守卫。
+    /// 配置 SubAgentDelegation:MaxConcurrentSubAgents，默认 0 = 不限制（保留既有行为）。
+    /// 判据来自会话状态的递归计数，不是模型传参。
+    /// </summary>
+    private async Task<ToolExecutionResult?> CheckConcurrencyLimitAsync(string? sessionId, CancellationToken ct)
+    {
+        var limit = ResolveMaxConcurrentSubAgents();
+        if (limit <= 0)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return null;
+
+        var sessionState = _services.GetService<ISessionStateManager>();
+        if (sessionState is null)
+        {
+            _logger.LogWarning(
+                "[SubAgent] 并发上限守卫跳过：ISessionStateManager 未注册（session={Session}）",
+                sessionId);
+            return null;
+        }
+
+        int running;
+        try
+        {
+            running = await sessionState.GetRunningSubAgentDescendantCountAsync(sessionId, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[SubAgent] 并发上限查询失败，放行（session={Session}）", sessionId);
+            return null;
+        }
+
+        if (running < limit)
+            return null;
+
+        return Fail(
+            $"子代理并发数已达上限：当前主 Agent 下所有层级存活子代理 {running} 个，" +
+            $"配置 SubAgentDelegation:MaxConcurrentSubAgents={limit}。" +
+            "请等现有子代理结束后再派发，或调整该配置。");
+    }
+
+    /// <summary>
+    /// 读取并发上限。默认 0 = 不限制；正数表示上限。
+    /// </summary>
+    private int ResolveMaxConcurrentSubAgents()
+    {
+        var configuration = _services.GetService<IConfiguration>();
+        var raw = configuration?["SubAgentDelegation:MaxConcurrentSubAgents"];
+        return int.TryParse(raw, out var value) ? value : 0;
+    }
+
+    /// <summary>
+    /// 需求 6：是否允许 Agent 为子代理选择模型。默认 true（保持既有行为）；
+    /// false 时忽略模型传参，改用 SubAgentDelegation:DefaultModelRoute。
+    /// </summary>
+    private bool ResolveAllowModelSelection()
+    {
+        var configuration = _services.GetService<IConfiguration>();
+        var raw = configuration?["SubAgentDelegation:AllowModelSelection"];
+        return !bool.TryParse(raw, out var value) || value;
+    }
+
     private async Task<ToolExecutionResult?> CheckTaskPlanningPolicyAsync(
         TaskPlanningSpawnContext planning,
         CancellationToken ct)
@@ -1280,6 +1349,24 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         CancellationToken ct)
     {
         var resolver = _services.GetRequiredService<ILlmResolver>();
+
+        // 需求 6：关闭「允许 Agent 为子代理选模型」时，忽略模型传参（含 fallback），
+        // 改用配置的默认路由。
+        // 刻意不依赖「传 null 让它找默认」：ILlmResolver 对空路由是明确拒绝的 ——
+        // 它的契约写着「不存在平台默认路由」，所以必须把目标路由显式抄出来。
+        if (!ResolveAllowModelSelection())
+        {
+            var configured = _services.GetService<IConfiguration>()?["SubAgentDelegation:DefaultModelRoute"];
+            if (string.IsNullOrWhiteSpace(configured))
+            {
+                throw new InvalidOperationException(
+                    "已关闭 SubAgentDelegation:AllowModelSelection，但未配置 " +
+                    "SubAgentDelegation:DefaultModelRoute，无法确定子代理使用哪个模型。");
+            }
+
+            modelId = configured.Trim();
+        }
+
         var requiredTags = capabilityRequirements?
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(tag => tag.Length > 0)
