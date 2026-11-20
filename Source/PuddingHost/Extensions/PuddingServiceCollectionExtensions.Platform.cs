@@ -35,6 +35,7 @@ using PuddingPlatform.Services.Plugins;
 using PuddingPlatform.Services.Eventing;
 using PuddingPlatform.Services.Configuration;
 using PuddingPlatform.Services.Agents;
+using PuddingPlatform.Services.AgentPool;
 using PuddingPlatform.Services.AgentWork;
 using PuddingAgents.Contracts;
 using PuddingPlatform.Services.Models;
@@ -594,6 +595,11 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IDbContextFactory<PlatformDbContext>, PlatformDbContextFactory>();
         builder.Services.AddScoped(sp =>
             sp.GetRequiredService<IDbContextFactory<PlatformDbContext>>().CreateDbContext());
+
+        // 持久子代理池存储层（S2）：无状态，且唯一调用方是 Singleton 的池，故注册为 Singleton。
+        // 刻意不是 Scoped —— Scoped 服务被 Singleton 捕获会变成「永远用同一个实例」，
+        // 而这里的实例本身不持有 DbContext（每次方法调用从工厂新建并释放），没有捕获问题。
+        builder.Services.AddSingleton<IAgentPoolEntryStore, AgentPoolEntryStore>();
 
         // Core-owned database/index analysis and explicit previewed cleanup API.
         builder.Services.AddSingleton<StorageMaintenanceService>();
