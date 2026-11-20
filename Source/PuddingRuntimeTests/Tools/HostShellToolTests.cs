@@ -56,6 +56,26 @@ public sealed class HostShellToolTests
     }
 
     [TestMethod]
+    public async Task HostShellExecutor_AutoMode_OnWindows_PrefersPwsh7()
+    {
+        // auto 的 Windows 解析链是 pwsh 7 > Windows PowerShell 5.1 > cmd；
+        // 结果里的 Executable 必须暴露「实际用了哪个 exe」，否则 shell 选错时无从判断。
+        if (!OperatingSystem.IsWindows()) Assert.Inconclusive("Windows auto chain is Windows-specific.");
+
+        var result = await HostShellExecutor.ExecuteAsync(new HostShellRequest
+        {
+            Command = "echo auto-chain-ok",
+            Shell = "auto",
+            TimeoutSeconds = 10,
+        }, NullLogger.Instance);
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("powershell", result.Shell, "auto 在 Windows 上应解析到 PowerShell 家族");
+        // 本机装有 PowerShell 7；若将来在没有 pwsh 的机器上跑，这里应放宽为 pwsh|powershell.exe。
+        Assert.AreEqual("pwsh", result.Executable, "有 pwsh 时必须优先 PowerShell 7 而不是 5.1");
+    }
+
+    [TestMethod]
     public async Task HostShellExecutor_Rejects_Unsupported_Shell()
     {
         var result = await HostShellExecutor.ExecuteAsync(new HostShellRequest

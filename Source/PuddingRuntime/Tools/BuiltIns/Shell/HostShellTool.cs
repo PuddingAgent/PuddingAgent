@@ -149,7 +149,7 @@ public sealed record HostShellToolArgs
     [ToolParam("Command to execute on the host. Relative paths inside the command are resolved against working_directory when it is provided; avoid repeating the same directory prefix in both fields. Use absolute paths when unsure.")]
     public required string Command { get; init; }
 
-    [ToolParam("Shell mode: auto, wsl, bash, cmd, powershell, or pwsh. Default auto = PowerShell on Windows, Bash elsewhere. CMD syntax requires shell=cmd; auto does not detect the command dialect.")]
+    [ToolParam("Shell mode: auto, wsl, bash, cmd, powershell, or pwsh. auto resolves on Windows to pwsh (PowerShell 7) > Windows PowerShell 5.1 > cmd, and on other systems to bash > sh. CMD syntax requires shell=cmd; auto does not detect the command dialect.")]
     public string? Shell { get; init; }
 
     [ToolParam("Host working directory. Default: current runtime directory. If this points at the workspace directory, command paths should be relative to that directory or absolute, not prefixed again with the workspace path.")]

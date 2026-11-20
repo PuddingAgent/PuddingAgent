@@ -178,10 +178,12 @@ public static partial class HostShellExecutor
                 psi.ArgumentList.Add("-lc");
                 psi.ArgumentList.Add(command);
                 return HostShellStartInfoResult.Ok(psi);
+            // auto 在非 Windows 上会退到 sh（bash 不可用时）；两者调用方式相同。
             case "bash":
-                if (!CommandExists("bash"))
-                    return HostShellStartInfoResult.Fail("bash is not available on this host.");
-                psi.FileName = "bash";
+            case "sh":
+                if (!CommandExists(shell))
+                    return HostShellStartInfoResult.Fail($"{shell} is not available on this host.");
+                psi.FileName = shell;
                 psi.ArgumentList.Add("-lc");
                 psi.ArgumentList.Add(command);
                 return HostShellStartInfoResult.Ok(psi);
@@ -198,7 +200,16 @@ public static partial class HostShellExecutor
         if (!requestedShell.Equals("auto", StringComparison.OrdinalIgnoreCase))
             return requestedShell.ToLowerInvariant();
 
-        return OperatingSystem.IsWindows() ? "powershell" : "bash";
+        if (!OperatingSystem.IsWindows())
+            return CommandExists("bash") ? "bash" : "sh";
+
+        // Windows 的 auto 解析链：pwsh 7 > Windows PowerShell 5.1 > cmd。
+        // PowerShell 家族统一解析为 "powershell"（具体可执行文件由
+        // ResolvePowerShellExecutable 决定，它同样优先 pwsh）；两者都不可用时退到 cmd，
+        // 而不是直接失败——auto 的语义是「选一个能跑的」，不是「必须给我 PowerShell」。
+        return CommandExists("pwsh") || CommandExists("powershell.exe")
+            ? "powershell"
+            : "cmd";
     }
 
     private static string ResolveWorkingDirectory(string? workingDirectory) =>
