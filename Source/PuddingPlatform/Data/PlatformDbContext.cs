@@ -83,6 +83,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
 
     // 子代理运行归档索引（ADR-021）
     public DbSet<SubAgentRunEntity> SubAgentRuns => Set<SubAgentRunEntity>();
+
+    // 持久子代理池（S1：仅 schema，暂无读写方）
+    public DbSet<AgentPoolEntity> AgentPool => Set<AgentPoolEntity>();
     public DbSet<TaskPlanRunEntity> TaskPlanRuns => Set<TaskPlanRunEntity>();
     public DbSet<TaskNodeEntity> TaskNodes => Set<TaskNodeEntity>();
     public DbSet<WorkUnitAwaitHandleEntity> WorkUnitAwaitHandles => Set<WorkUnitAwaitHandleEntity>();
@@ -518,6 +521,29 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(r => r.ParentSessionId);
             e.HasIndex(r => r.WorkspaceId);
             e.HasIndex(r => r.Status);
+        });
+
+        // ── AgentPool（持久子代理池：S1 仅 schema）─────────────────
+        // 索引名与 AgentPoolSchemaBootstrapper 中逐字一致：新库由这里的模型建，
+        // 存量库由 bootstrapper 的 CREATE INDEX IF NOT EXISTS 建，两边同名才不会重复。
+        modelBuilder.Entity<AgentPoolEntity>(e =>
+        {
+            e.ToTable("agent_pool");
+            // 软删后允许同名复用，因此 name 是「未删除行唯一」的部分索引。
+            e.HasIndex(x => x.Name)
+                .IsUnique()
+                .HasFilter("\"deleted_at\" IS NULL")
+                .HasDatabaseName(AgentPoolEntity.NameIndexName);
+            // 复用键全局唯一：同一个会话不能被两个池条目同时认领。
+            e.HasIndex(x => x.SubSessionId)
+                .IsUnique()
+                .HasDatabaseName(AgentPoolEntity.SubSessionIndexName);
+            // 选池主查询：按状态过滤后按最近使用时间排序。
+            e.HasIndex(x => new { x.Status, x.LastUsedAt })
+                .HasDatabaseName(AgentPoolEntity.StatusLastUsedIndexName);
+            // 与 raw DDL 保持同一默认值，避免两条建表路径产生差异。
+            e.Property(x => x.TaskCount).HasDefaultValue(0);
+            e.Property(x => x.Version).HasDefaultValue(0);
         });
 
         // ── Task Planning Run / Node（ADR-XXX）───────────────────

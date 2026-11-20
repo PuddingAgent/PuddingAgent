@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingPlatform.Data;
+using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
 using PuddingPlatform.Services.Orchestration;
 using PuddingPlatform.Services.Tasks;
@@ -41,6 +42,8 @@ public sealed class SchemaBootstrapperFreshDatabaseColumnTests
         await AgentOrchestrationSchemaBootstrapper.EnsureCreatedAsync(db);
         // ③ EF 模型未声明索引补建。
         await SubAgentRunSchemaBootstrapper.EnsureCreatedAsync(db);
+        // ③' agent_pool：存量库不会被 EnsureCreated 补表，必须由 bootstrapper 建表。
+        await AgentPoolSchemaBootstrapper.EnsureCreatedAsync(db);
         // ④ conversation_events（raw DDL；含被压缩迁移的 agent_id/source_kind/trace_id/producer_component）。
         var eventStore = BuildConversationEventStore(connection);
         await eventStore.EnsureTablesAsync(CancellationToken.None);
@@ -66,6 +69,13 @@ public sealed class SchemaBootstrapperFreshDatabaseColumnTests
             "error_message", "task_planning_metadata_json", "total_rounds", "total_tool_calls",
             "total_duration_ms");
 
+        // ── agent_pool：18 列（列声明在 EF 实体，存量库由 AgentPoolSchemaBootstrapper 建）──
+        await AssertColumnsAsync(db, "agent_pool",
+            "Id", "pool_id", "owner_workspace_id", "name", "sub_session_id", "template_id",
+            "role", "owner_session_id", "owner_agent_id", "active_execution_id",
+            "status", "status_reason", "task_count", "last_success",
+            "created_at", "last_used_at", "version", "deleted_at");
+
         // ── orchestration_node_runs：19 列（outputs_json 已在 CREATE TABLE）──────────
         await AssertColumnsAsync(db, "orchestration_node_runs",
             "run_id", "node_id", "node_kind", "status", "attempt", "max_attempts",
@@ -88,6 +98,12 @@ public sealed class SchemaBootstrapperFreshDatabaseColumnTests
         Assert.IsTrue(
             await IndexExistsAsync(db, SubAgentRunSchemaBootstrapper.ParentTurnStatusIndex),
             $"{SubAgentRunSchemaBootstrapper.ParentTurnStatusIndex} 必须存在");
+        Assert.IsTrue(await IndexExistsAsync(db, AgentPoolEntity.NameIndexName),
+            $"{AgentPoolEntity.NameIndexName} 必须存在（name 的部分唯一索引）");
+        Assert.IsTrue(await IndexExistsAsync(db, AgentPoolEntity.SubSessionIndexName),
+            $"{AgentPoolEntity.SubSessionIndexName} 必须存在（复用键唯一）");
+        Assert.IsTrue(await IndexExistsAsync(db, AgentPoolEntity.StatusLastUsedIndexName),
+            $"{AgentPoolEntity.StatusLastUsedIndexName} 必须存在（选池查询）");
     }
 
     [TestMethod]
@@ -104,6 +120,7 @@ public sealed class SchemaBootstrapperFreshDatabaseColumnTests
         await WorkspaceTaskSchemaBootstrapper.EnsureCreatedAsync(db);
         await AgentOrchestrationSchemaBootstrapper.EnsureCreatedAsync(db);
         await SubAgentRunSchemaBootstrapper.EnsureCreatedAsync(db);
+        await AgentPoolSchemaBootstrapper.EnsureCreatedAsync(db);
         var eventStore = BuildConversationEventStore(connection);
         await eventStore.EnsureTablesAsync(CancellationToken.None);
 
@@ -113,6 +130,7 @@ public sealed class SchemaBootstrapperFreshDatabaseColumnTests
         await WorkspaceTaskSchemaBootstrapper.EnsureCreatedAsync(db);
         await AgentOrchestrationSchemaBootstrapper.EnsureCreatedAsync(db);
         await SubAgentRunSchemaBootstrapper.EnsureCreatedAsync(db);
+        await AgentPoolSchemaBootstrapper.EnsureCreatedAsync(db);
         await eventStore.EnsureTablesAsync(CancellationToken.None);
 
         var after = await ReadColumnsAsync(db, "workspace_tasks");

@@ -67,6 +67,8 @@ public static class PuddingApplicationInitializer
             await ExecutionRunSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             phases?.Mark(StartupPhases.Schema(nameof(SubAgentRunSchemaBootstrapper)));
             await SubAgentRunSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            phases?.Mark(StartupPhases.Schema(nameof(AgentPoolSchemaBootstrapper)));
+            await AgentPoolSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             phases?.Mark(StartupPhases.Schema(nameof(MessageFabricSchemaBootstrapper)));
             await MessageFabricSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             phases?.Mark(StartupPhases.Schema(nameof(ConnectorStreamProjectionSchemaBootstrapper)));

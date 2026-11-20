@@ -56,6 +56,14 @@
       "affected": [
         "PuddingDesktop.Tests.Browser.DesktopBrowserBridgeClientTests.Watchdog_AdvancingFakeClock_CancelsBlockedReceive"
       ]
+    },
+    "sessionCompactTitleAndGoalQuery": {
+      "recordedAt": "2026-11-21",
+      "reason": "CompactSession_DoesNotStackCompactionPrefixInNewSessionTitle 在 2026-11-21 实测为真红：期望 newSessionTitle=「压缩 - mimo」，实际为空串；PuddingWebApiTests 整工程跑 184 测试仅此 1 条失败。基线对照：把当次 agent_pool schema 改动 git stash 掉（工作树回到 c00aa5d）后同一用例同样失败（失败 1 / 通过 0），故与当次改动无关、属预先存在。GoalQueries_Return_Snapshot_And_Empty_Iterations 单独跑与整工程跑均通过，仅在同一门禁并发跑多工程时失败，判为门禁隔离性问题而非用例本身。两者与 agent_pool schema 改动无共享代码。定位修复后应从基线移除。",
+      "affected": [
+        "CompactSession_DoesNotStackCompactionPrefixInNewSessionTitle",
+        "GoalQueries_Return_Snapshot_And_Empty_Iterations"
+      ]
     }
   },
   "knownFailures": [
@@ -76,6 +84,8 @@
     "RealWorker_DiscoversScoresRejectsForgedScope_AndUnloads",
     "CatalogOnlyCapability_CannotExecuteScoring",
     "ScoringFailure_DoesNotCertifyEarlierToolEffectsAsNone",
-    "InvalidObservations_AreTypedFailuresThroughWorker"
+    "InvalidObservations_AreTypedFailuresThroughWorker",
+    "CompactSession_DoesNotStackCompactionPrefixInNewSessionTitle",
+    "GoalQueries_Return_Snapshot_And_Empty_Iterations"
   ]
 }

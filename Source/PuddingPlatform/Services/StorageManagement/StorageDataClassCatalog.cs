@@ -277,7 +277,7 @@ public static class StorageDataClassCatalog
             ShowInManualSelector = false,
         },
         // ── 以下四类：仅用于界面归因，**永不可清理** ──────────────────────────
-        // 这 44 张表原本既不属于任何可清理数据类、也不在保护区，全部落进「未归类」，
+        // 这些表原本既不属于任何可清理数据类、也不在保护区，全部落进「未归类」，
         // 首屏「各库构成」因此有一大条无法解释的灰段。给它们名字而不是让它们消失：
         // 用户需要知道那几 GB 是「对话编排」还是「任务编排」，而不是「不知道是啥」。
         // 共同点：ManualCleanupAllowed=false、TimestampColumn 为空（不参与任何 DELETE）。
@@ -305,6 +305,7 @@ public static class StorageDataClassCatalog
                 new StoragePhysicalTable { Table = "session_steering_messages", TimestampColumn = "" },
                 new StoragePhysicalTable { Table = "session_sub_agents", TimestampColumn = "" },
                 new StoragePhysicalTable { Table = "sub_agent_runs", TimestampColumn = "" },
+                new StoragePhysicalTable { Table = "agent_pool", TimestampColumn = "" },
                 new StoragePhysicalTable { Table = "connector_stream_projections", TimestampColumn = "" },
             ],
         },

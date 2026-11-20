@@ -22,7 +22,7 @@ namespace PuddingPlatformTests.Services.StorageManagement;
 public sealed class StorageAttributionCoverageTests
 {
     /// <summary>
-    /// <c>PlatformDbContext</c> 里 <c>ToTable(..., "platform")</c> 声明的全部表（2026-11-13 快照，53 张）。
+    /// <c>PlatformDbContext</c> 里 <c>ToTable(..., "platform")</c> 声明的全部表（2026-11-21 快照，54 张；本次新增 agent_pool）。
     /// 新增表时这张清单会过时 —— 过时本身不会让测试变红，但第 ① 条会覆盖清单内的每一张，
     /// 所以「加表却忘了归因」只要有人同步本清单就能立刻被抓到。
     /// </summary>
@@ -54,6 +54,7 @@ public sealed class StorageAttributionCoverageTests
         "session_steering_messages",
         "session_sub_agents",
         "sub_agent_runs",
+        "agent_pool",
         "connector_stream_projections",
         // 仅归因：任务与目标编排
         "acceptance_batches",
