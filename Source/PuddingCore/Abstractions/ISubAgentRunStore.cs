@@ -42,6 +42,20 @@ public interface ISubAgentRunStore
     /// </summary>
     Task<string?> FindRunningRunIdAsync(string subSessionId, CancellationToken ct = default);
     /// <summary>
+    /// 判断给定会话是否曾经作为**子代理会话**存在（即它是被 spawn 出来的，而不是用户发起的主会话）。
+    /// <para>
+    /// 专供委派深度守卫使用：判据是平台在创建运行时写入的会话归属列，
+    /// **不是模型传入的 depth 参数** ⇒ 模型无法通过伪造参数绕过深度限制。
+    /// </para>
+    /// <para>
+    /// 不限运行终态：该会话跑完之后，它「曾被 spawn 过」这一事实不消失。
+    /// </para>
+    /// </summary>
+    /// <param name="sessionId">待判定的会话 id（通常是当前 Agent 所在会话）。</param>
+    /// <returns>true 表示该会话是被 spawn 出来的子代理会话。</returns>
+    Task<bool> HasSubAgentAncestryAsync(string sessionId, CancellationToken ct = default);
+
+    /// <summary>
     /// 将本次进程启动前遗留的非终态运行提交为 interrupted。
     /// 子代理执行是进程内任务，进程重启后不得继续显示为 Running。
     /// </summary>

@@ -280,6 +280,14 @@ public sealed class SubAgentManagerTerminalStatusMatrixTests
 
     private sealed class RecordingSubAgentRunStore : ISubAgentRunStore
     {
+        // 默认 null：不声称任何会话是子代理会话，保持既有用例语义不变。
+        public string? SubAgentAncestrySessionId { get; set; }
+
+        public Task<bool> HasSubAgentAncestryAsync(string sessionId, CancellationToken ct = default)
+            => Task.FromResult(
+                !string.IsNullOrEmpty(SubAgentAncestrySessionId) &&
+                string.Equals(SubAgentAncestrySessionId, sessionId, StringComparison.Ordinal));
+
         public Task<SubAgentRunHandle> CreateRunAsync(SubAgentRunCreateRequest request, CancellationToken ct = default) =>
             Task.FromResult(new SubAgentRunHandle
             {

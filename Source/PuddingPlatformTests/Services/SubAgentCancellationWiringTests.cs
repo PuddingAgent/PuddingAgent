@@ -343,6 +343,10 @@ public sealed class SubAgentCancellationWiringTests
 
     private sealed class FakeRunStore : ISubAgentRunStore
     {
+        // 默认无子代理会话归属（既有用例不受影响）。
+        public Task<bool> HasSubAgentAncestryAsync(string sessionId, CancellationToken ct = default)
+            => Task.FromResult(false);
+
         public Task<SubAgentRunHandle> CreateRunAsync(SubAgentRunCreateRequest request, CancellationToken ct = default)
             => throw new NotSupportedException();
 

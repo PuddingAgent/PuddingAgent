@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
@@ -326,6 +327,13 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         var policyDeny = await CheckTaskPlanningPolicyAsync(taskPlanning, ct);
         if (policyDeny is not null)
             return policyDeny;
+
+        // 平台级委派深度守卫：必须位于所有创建路径（sync/async/pool/batch）之前，
+        // 且位于 cancel/logs 分支之后 —— 那两条是管理操作，不是创建。
+        var depthDeny = await CheckDelegationDepthAsync(request.SessionId, ct);
+        if (depthDeny is not null)
+            return depthDeny;
+
         var childDelegationDepth = (taskPlanning.DelegationDepth ?? 0) + 1;
         var childAllowSubDelegation = taskPlanning.AllowSubDelegation == true;
 
@@ -922,6 +930,59 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             .ToArray();
 
         return lines;
+    }
+
+    private async Task<ToolExecutionResult?> CheckDelegationDepthAsync(
+        string? sessionId,
+        CancellationToken ct)
+    {
+        var maxDepth = ResolveDelegationMaxDepth();
+        if (maxDepth <= 0)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return null;
+
+        var runStore = _services.GetService<ISubAgentRunStore>();
+        if (runStore is null)
+        {
+            // fail-open：基础设施未注册时不能把整条派发能力掰断；但必须留下可检索的痕迹。
+            _logger.LogWarning(
+                "[SubAgent] 委派深度守卫跳过：ISubAgentRunStore 未注册（session={Session}）",
+                sessionId);
+            return null;
+        }
+
+        bool isSubAgentSession;
+        try
+        {
+            isSubAgentSession = await runStore.HasSubAgentAncestryAsync(sessionId, ct);
+        }
+        catch (Exception ex)
+        {
+            // 与上面同理：查询失败不等于「它是子代理」，不因此拦截正常派发。
+            _logger.LogWarning(ex, "[SubAgent] 委派深度守卫查询失败，放行（session={Session}）", sessionId);
+            return null;
+        }
+
+        if (!isSubAgentSession)
+            return null;
+
+        return Fail(
+            $"子代理不得再创建子代理：平台配置 SubAgentDelegation:MaxDepth={maxDepth}，" +
+            "而当前会话本身已经是子代理会话（该会话由平台创建的运行归档记录，不受 depth 参数影响）。" +
+            "如需多层委派，将 SubAgentDelegation:MaxDepth 调大（当前实现仅支持 1）。");
+    }
+
+    /// <summary>
+    /// 读取平台级委派深度上限。默认 1 = 仅主 Agent 可创建子代理。
+    /// 0 或负数 = 不限制（仍保留留给运维的逃生口）。
+    /// </summary>
+    private int ResolveDelegationMaxDepth()
+    {
+        var configuration = _services.GetService<IConfiguration>();
+        var raw = configuration?["SubAgentDelegation:MaxDepth"];
+        return int.TryParse(raw, out var value) ? value : 1;
     }
 
     private async Task<ToolExecutionResult?> CheckTaskPlanningPolicyAsync(

@@ -133,6 +133,9 @@ public sealed class SubAgentRunControllerTests
 
     private sealed class StubRunStore(SubAgentRunArchive archive) : ISubAgentRunStore
     {
+        public Task<bool> HasSubAgentAncestryAsync(string sessionId, CancellationToken ct = default)
+            => Task.FromResult(false);
+
         public Task<SubAgentRunArchive?> GetRunArchiveAsync(string runId, CancellationToken ct = default) =>
             Task.FromResult<SubAgentRunArchive?>(runId == archive.Manifest.RunId ? archive : null);
 

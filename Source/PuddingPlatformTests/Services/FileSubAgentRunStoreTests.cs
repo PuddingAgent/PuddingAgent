@@ -77,6 +77,61 @@ public sealed class FileSubAgentRunStoreTests
         Assert.AreEqual(350, index.TotalDurationMs);
     }
 
+    /// <summary>
+    /// 委派深度守卫的判据：只有被平台 spawn 出来的会话才算子代理会话。
+    /// 三个断言点分别锁住「命中」「不命中」「终态不消除归属」。
+    /// </summary>
+    [TestMethod]
+    public async Task HasSubAgentAncestryAsync_IsTrueOnlyForSessionsCreatedAsSubAgents()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={Path.Combine(temp.Path, "platform.db")}")
+            .Options;
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var store = new FileSubAgentRunStore(
+            paths,
+            NullLogger<FileSubAgentRunStore>.Instance,
+            new TestDbContextFactory(options),
+            new RecordingConversationEventStore());
+
+        var handle = await store.CreateRunAsync(new SubAgentRunCreateRequest
+        {
+            ParentSessionId = "main-session",
+            SubSessionId = "main-session/sub/child",
+            WorkspaceId = "default",
+            AgentInstanceId = "agent-child",
+            TemplateId = "workspace-task-agent",
+            Task = "child task",
+            DelegationDepth = 1,
+        });
+
+        Assert.IsTrue(
+            await store.HasSubAgentAncestryAsync("main-session/sub/child"),
+            "被 spawn 出来的会话必须被判认为子代理会话，否则子代理仍可无限递归派发。");
+
+        Assert.IsFalse(
+            await store.HasSubAgentAncestryAsync("main-session"),
+            "主会话从未作为 sub_session 出现过，不得被判认为子代理，否则主代理会被误拦。");
+
+        // 关键语义：运行跑到终态不消除「曾被 spawn」这一事实；
+        // 否则子代理完成一次后深度守卫就对它失效了。
+        await store.CompleteRunAsync(handle.RunId, new SubAgentRunCompletion
+        {
+            Status = "completed",
+            Output = "done",
+        });
+
+        Assert.IsTrue(
+            await store.HasSubAgentAncestryAsync("main-session/sub/child"),
+            "运行进入终态后仍须判认为子代理会话。");
+    }
+
     [TestMethod]
     public async Task RunArchive_Writes_Expected_File_Formats_And_Terminal_State_Is_Idempotent()
     {

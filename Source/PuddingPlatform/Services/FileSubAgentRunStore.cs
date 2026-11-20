@@ -483,6 +483,20 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             .FirstOrDefaultAsync(ct);
     }
 
+    /// <inheritdoc />
+    public async Task<bool> HasSubAgentAncestryAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return false;
+
+        var key = sessionId.Trim();
+
+        // 与 FindRunningRunIdAsync 的区别：这里**不限终态**，也不限状态列。
+        // 判据是「这个会话是否被 spawn 出来过」，与其当前是否还在跑无关。
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.SubAgentRuns.AnyAsync(e => e.SubSessionId == key, ct);
+    }
+
     private async Task<SubAgentRunArchive> ReadRunArchiveCoreAsync(string runDir, CancellationToken ct)
     {
         // 读 run.json
