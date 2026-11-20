@@ -317,8 +317,17 @@ try {
             return [pscustomobject]@{ Executed = 0; Gated = $true; Total = $total; Failed = @() }
         }
 
-        if ($executed -le 0 -and -not $AllowZero) {
-            throw "TRX $TrxPath has missing or invalid execution counts, or zero tests executed (runner exit $ExitCode)"
+        if ($executed -le 0) {
+            if (-not $AllowZero) {
+                throw "TRX $TrxPath has missing or invalid execution counts, or zero tests executed (runner exit $ExitCode)"
+            }
+
+            # AllowZero = 调用方接受「零匹配」并会回退到跑整个工程（见调用点的
+            # "no test matched the derived filter" 分支）。
+            # MTP 工程零匹配时退出码是 8（不是 VSTest 的 1），而 ResultSummary.outcome 仍是
+            # Failed；只放过 counters 校验会让后面的 outcome 校验把它误判成「运行不完整」，
+            # 从而永久挡住提交（实测 2026-11-21：PuddingAgentsTests 的 SubAgentPool 过滤器零匹配）。
+            return [pscustomobject]@{ Executed = 0; Gated = $false; Total = 0; Failed = @() }
         }
 
         $incompleteCounters = @('error', 'timeout', 'aborted', 'passedButRunAborted', 'notRunnable', 'disconnected', 'inProgress', 'pending') |
