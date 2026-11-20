@@ -3,6 +3,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
+using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services.AgentPool;
 
 namespace PuddingPlatform.Services;
 
@@ -64,6 +66,41 @@ public sealed class SubAgentPool : ISubAgentPool
             LastSuccess = null;
         }
 
+        /// <summary>
+        /// 从持久化快照重建条目（进程重启后把库里的池恢复成内存视图）。
+        /// <para>
+        /// 时间与计数全部以库为准：用 <c>UtcNow</c> 重建会让「创建于上周」的条目看起来是刚生的，
+        /// LRU 选型、保留策略、诊断时间线都会因此错位。
+        /// </para>
+        /// </summary>
+        public PoolEntry(
+            string name,
+            string subSessionId,
+            string templateId,
+            string? role,
+            string? ownerSessionId,
+            string? ownerWorkspaceId,
+            DateTimeOffset createdAt,
+            DateTimeOffset lastUsedAt,
+            PooledSubAgentStatus status,
+            int taskCount,
+            bool? lastSuccess,
+            string? activeExecutionId)
+        {
+            Name = name;
+            SubSessionId = subSessionId;
+            TemplateId = templateId;
+            Role = role;
+            OwnerSessionId = ownerSessionId;
+            OwnerWorkspaceId = ownerWorkspaceId;
+            CreatedAt = createdAt;
+            LastUsedAt = lastUsedAt;
+            Status = status;
+            TaskCount = taskCount;
+            LastSuccess = lastSuccess;
+            ActiveExecutionId = activeExecutionId;
+        }
+
         public PooledSubAgent ToSnapshot() => new()
         {
             Name = Name,
@@ -81,13 +118,35 @@ public sealed class SubAgentPool : ISubAgentPool
     private readonly ConcurrentDictionary<string, PoolEntry> _pool = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _stateLock = new(1, 1);
 
+    /// <summary>
+    /// 持久化存储。<c>null</c> 表示纯内存模式（既有行为，测试与未接存储的宿主都走这条路）。
+    /// 非空时池必须先就绪才能读写：未就绪就去写，会与库里的既有条目撞唯一索引，
+    /// 而那时候池本身还看不到那些条目。
+    /// </summary>
+    private readonly IAgentPoolEntryStore? _entryStore;
+
+    /// <summary>一次性加载的临界区：并发调用只会真的读一次库。</summary>
+    private readonly SemaphoreSlim _readyGate = new(1, 1);
+
+    /// <summary>就绪状态（由 <see cref="EnsureReadyAsync"/> 驱动；无 store 时恒为 Ready）。</summary>
+    private volatile PoolReadiness _readiness;
+
+    /// <summary>上次加载失败的原始异常。失败是终态，错误文案里必须能说出原因。</summary>
+    private Exception? _loadFailure;
+
     public SubAgentPool(
         ISubAgentManager subAgentManager,
         IConfiguration configuration,
-        ILogger<SubAgentPool> logger)
+        ILogger<SubAgentPool> logger,
+        IAgentPoolEntryStore? entryStore = null)
     {
         _subAgentManager = subAgentManager;
         _logger = logger;
+        _entryStore = entryStore;
+
+        // 没有存储层就没有「加载」这回事：池一开始就是就绪的，
+        // 这样既有的 29 个池用例与纯内存宿主无需任何改动。
+        _readiness = entryStore is null ? PoolReadiness.Ready : PoolReadiness.NotStarted;
 
         var configCapacity = configuration["SubAgentPool:MaxCapacity"];
         if (int.TryParse(configCapacity, out var parsed) && parsed > 0)
@@ -109,6 +168,118 @@ public sealed class SubAgentPool : ISubAgentPool
     /// <summary>池容量上限。</summary>
     public int MaxCapacity => _maxCapacity;
 
+    /// <inheritdoc />
+    public PoolReadiness Readiness => _readiness;
+
+    // ════════════════════════════════════════════════════════
+    // 就绪
+    // ════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 确保池内视图已从存储加载（一次性；并发调用只真读一次库）。
+    /// <para>
+    /// <b>为什么失败不降级为空池：</b>池集合是 GC 的删除白名单（见 <see cref="PoolNotReadyException"/>）。
+    /// 库读不到时“降级为空”会让 GC 把全部池化目录当成孤儿隔离，而“报错”只会让本轮扫描跳过。
+    /// 两者的代价完全不对称，所以失败必须留成 <see cref="PoolReadiness.Failed"/> 并向上抛。
+    /// </para>
+    /// <para>
+    /// 失败是<b>终态</b>（不自动重试）：库不可用是个环境故障，静默重试只会让每次调用都先超时一次，
+    /// 而调用方从异常里拿不到“刚才已经失败过 20 次”这个信息。需要重试就重启进程。
+    /// </para>
+    /// </summary>
+    public async Task EnsureReadyAsync(CancellationToken ct = default)
+    {
+        // 纯内存模式：没有“未就绪”这回事。
+        if (_entryStore is null)
+            return;
+
+        // 快路径：已就绪直接返回；已失败不抢锁，但要把原因报出去。
+        var observed = _readiness;
+        if (observed == PoolReadiness.Ready)
+            return;
+        if (observed == PoolReadiness.Failed)
+            throw BuildNotReadyException();
+
+        await _readyGate.WaitAsync(ct);
+        try
+        {
+            // 双检：等锁期间可能已被另一个调用方加载完成（或已失败）。
+            if (_readiness == PoolReadiness.Ready)
+                return;
+            if (_readiness == PoolReadiness.Failed)
+                throw BuildNotReadyException();
+
+            _readiness = PoolReadiness.Loading;
+
+            IReadOnlyList<AgentPoolEntrySnapshot> loaded;
+            try
+            {
+                loaded = await _entryStore.LoadAllAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                _loadFailure = ex;
+                _readiness = PoolReadiness.Failed;
+                _logger.LogError(ex, "[SubAgentPool] Failed to load persisted pool entries; pool marked Failed");
+                throw new PoolNotReadyException(
+                    $"[SubAgentPool] Pool recovery failed and will not be treated as an empty pool: " +
+                    $"{ex.GetType().Name}: {ex.Message}",
+                    PoolReadiness.Failed,
+                    ex);
+            }
+
+            foreach (var snapshot in loaded)
+            {
+                // 用 TryAdd 而不是索引赋值：ExecuteAsync 的「自动预留」路径不经过就绪门，
+                // 可能在加载期间已经建了一个同名条目并正在执行。那个条目带着活的子会话，
+                // 用库里的快照覆盖它会把正在执行的收尾丢掉（FinishAsync 是引用相等判定）。
+                _pool.TryAdd(snapshot.Name, new PoolEntry(
+                    name: snapshot.Name,
+                    subSessionId: snapshot.SubSessionId,
+                    templateId: snapshot.TemplateId,
+                    role: snapshot.Role,
+                    ownerSessionId: snapshot.OwnerSessionId,
+                    ownerWorkspaceId: snapshot.OwnerWorkspaceId,
+                    createdAt: snapshot.CreatedAt,
+                    lastUsedAt: snapshot.LastUsedAt,
+                    status: MapStatus(snapshot.Status),
+                    taskCount: snapshot.TaskCount,
+                    lastSuccess: snapshot.LastSuccess,
+                    activeExecutionId: snapshot.ActiveExecutionId));
+            }
+
+            _readiness = PoolReadiness.Ready;
+            _logger.LogInformation(
+                "[SubAgentPool] Restored {Count} pool entries from storage (readiness=Ready)", loaded.Count);
+        }
+        finally
+        {
+            _readyGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// 库内状态串 → 运行时状态。未知值一律当成 <see cref="PooledSubAgentStatus.Dead"/>
+    /// （不可复用），而不是猜成 Idle：认错方向的代价是「一个不该被复用的子代理被派活」。
+    /// </summary>
+    private static PooledSubAgentStatus MapStatus(string status) => status switch
+    {
+        AgentPoolEntity.StatusIdle => PooledSubAgentStatus.Idle,
+        AgentPoolEntity.StatusBusy => PooledSubAgentStatus.Busy,
+        AgentPoolEntity.StatusSleeping => PooledSubAgentStatus.Sleeping,
+        AgentPoolEntity.StatusDead => PooledSubAgentStatus.Dead,
+        _ => PooledSubAgentStatus.Dead,
+    };
+
+    private PoolNotReadyException BuildNotReadyException() => new(
+        $"[SubAgentPool] Pool is not ready (readiness={_readiness}); " +
+        $"refusing to report an empty pool. " +
+        (_loadFailure is null
+            ? "It has not finished loading yet."
+            : $"Last load error: {_loadFailure.GetType().Name}: {_loadFailure.Message}"),
+        _readiness,
+        _loadFailure);
+
     // ════════════════════════════════════════════════════════
     // 创建
     // ════════════════════════════════════════════════════════
@@ -125,6 +296,10 @@ public sealed class SubAgentPool : ISubAgentPool
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Sub-agent pool name cannot be null or empty.", nameof(name));
+
+        // 先把视图从库加载好：没加载就写库，会与库里的既有条目撞唯一索引（name / sub_session_id），
+        // 而那时池自己还看不到它们——错会变成“约束报错”，而不是“名字已存在”这种可理解的拒绝。
+        await EnsureReadyAsync(ct);
 
         PoolEntry entry;
         await _stateLock.WaitAsync(ct);
@@ -153,6 +328,35 @@ public sealed class SubAgentPool : ISubAgentPool
                 role: request.RoleInPlan,
                 ownerSessionId: request.ParentSessionId,
                 ownerWorkspaceId: request.WorkspaceId);
+
+            if (_entryStore is not null)
+            {
+                // 先落库再进内存：写库失败时内存里不得留下「看起来存在但库里没有」的条目，
+                // 否则重启后它会凭空消失，而调用方已经拿到了它的 SubSessionId。
+                var inserted = await _entryStore.TryInsertAsync(
+                    new AgentPoolInsertRequest(
+                        PoolId: Guid.NewGuid().ToString("N"),
+                        Name: name,
+                        SubSessionId: entry.SubSessionId,
+                        TemplateId: request.TemplateId,
+                        Role: request.RoleInPlan,
+                        OwnerWorkspaceId: request.WorkspaceId,
+                        OwnerSessionId: request.ParentSessionId,
+                        OwnerAgentId: request.ParentAgentId,
+                        CreatedAt: entry.CreatedAt),
+                    capacity: _maxCapacity,
+                    ct);
+
+                if (inserted == 0)
+                {
+                    // store 按库里的未软删行数判定池满。与内存池满用同一种异常与文案：
+                    // 两种“满”对调用方的处置（先 destroy 不用的条目）完全一样。
+                    throw new InvalidOperationException(
+                        $"Sub-agent pool is full (capacity={_maxCapacity}). " +
+                        $"Cannot create '{name}'. Consider calling DestroyAsync on unused agents.");
+                }
+            }
+
             _pool[name] = entry;
         }
         finally
@@ -466,13 +670,36 @@ public sealed class SubAgentPool : ISubAgentPool
     // 列表
     // ════════════════════════════════════════════════════════
 
-    /// <summary>列出池中所有子代理的状态快照。</summary>
+    /// <summary>
+    /// 列出池中所有子代理的状态快照。
+    /// <para>
+    /// <b>未就绪时必须抛错，不能返回空集合：</b>本方法的调用方之一是
+    /// <c>SubAgentTransientDirectoryGcService</c>，它拿这个集合当「哪些目录受池保护」的删除白名单。
+    /// 「还没加载完」返回空集合 = 告诉 GC「没有任何池化目录需要保护」，那些目录会被当成孤儿隔离。
+    /// 把「不知道」伪装成「没有」会直接导致丢数据；抛错只会让本轮扫描跳过。
+    /// </para>
+    /// </summary>
     public IReadOnlyList<PooledSubAgent> List()
     {
+        if (_readiness != PoolReadiness.Ready)
+            throw BuildNotReadyException();
+
         return _pool.Values
             .Select(e => e.ToSnapshot())
             .OrderByDescending(e => e.LastUsedAt)
             .ToList();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// 与 <see cref="List"/> 的差别只在「会不会先等加载」：同步方法无法 await，
+    /// 所以需要「等到就绪再取」的调用方用这个。未就绪且加载失败时同样抛错，
+    /// 不回退成空集合。
+    /// </remarks>
+    public async Task<IReadOnlyList<PooledSubAgent>> GetSnapshotAsync(CancellationToken ct = default)
+    {
+        await EnsureReadyAsync(ct);
+        return List();
     }
 
     // ════════════════════════════════════════════════════════

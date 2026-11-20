@@ -50,4 +50,17 @@ public interface ISubAgentPool
     Task<bool> DestroyAsync(string name, CancellationToken ct = default);
     IReadOnlyList<PooledSubAgent> List();
     Task<string?> EvictLeastRecentlyUsedAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// 池的就绪状态。NotStarted/Loading/Failed 都不可用；Failed 表示恢复失败。
+    /// <para>
+    /// 持久化之后「池里有什么」需要先从一个库读回来，于是多了一个「还没读回来」的状态。
+    /// 调用方必须先看它（或直接用会等就绪的 <see cref="GetSnapshotAsync"/>），
+    /// 不能把未就绪当成空池。
+    /// </para>
+    /// </summary>
+    PoolReadiness Readiness { get; }
+
+    /// <summary>异步取快照（会等待/触发加载）。未就绪且恢复失败时抛 <see cref="PoolNotReadyException"/>。</summary>
+    Task<IReadOnlyList<PooledSubAgent>> GetSnapshotAsync(CancellationToken ct = default);
 }

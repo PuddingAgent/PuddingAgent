@@ -416,6 +416,11 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ISubAgentRunStore, FileSubAgentRunStore>();
         builder.Services.AddSingleton<ISubAgentDiagnosticsService, SubAgentDiagnosticsService>();
         builder.Services.AddHostedService<SubAgentConversationProjectionWorker>();
+        // 持久池预热（S4 就绪门）。必须注册在投影 worker 之后：
+        // 宿主按 DI 注册顺序依次调 StartAsync，预热要晚于中断恢复那一步开始——
+        // busy 恢复必须看到已对账的 run（详见 AgentPoolWarmupService 注释与交付 RISKS）。
+        // 预热本身只依赖 ISubAgentPool 的 Singleton 实例（启动时才解析，此时全部注册已完成）。
+        builder.Services.AddHostedService<AgentPoolWarmupService>();
         builder.Services.TryAddSingleton<IRuntimeExecutionConfigService, RuntimeExecutionConfigService>();
         builder.Services.AddHostedService<SubAgentTransientDirectoryGcService>();
         builder.Services.TryAddSingleton<IExecutionProgressRegistry, ExecutionProgressRegistry>();

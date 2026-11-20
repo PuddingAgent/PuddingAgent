@@ -185,6 +185,12 @@ public sealed class SubAgentTransientDirectoryGcServiceTests
         public int Count => subSessionIds.Count;
         public int MaxCapacity => 100;
 
+        /// <summary>这组用例只验 GC 的删除决策，池总是就绪的（就绪门本身由 AgentPoolReadinessTests 覆盖）。</summary>
+        public PoolReadiness Readiness => PoolReadiness.Ready;
+
+        public Task<IReadOnlyList<PooledSubAgent>> GetSnapshotAsync(CancellationToken ct = default) =>
+            Task.FromResult(List());
+
         public IReadOnlyList<PooledSubAgent> List() => subSessionIds
             .Select((id, index) => new PooledSubAgent
             {

@@ -115,6 +115,43 @@ public sealed partial class SubAgentTransientDirectoryGcService : BackgroundServ
                 return new SubAgentTransientDirectoryGcResult();
 
             var purged = await PurgeExpiredQuarantineAsync(nowUtc, options, ct);
+
+            // 池快照必须先于目录枚举：这个集合是「删除白名单」，而持久化之后「还没加载完」
+            // 与「池里确实没有成员」都是空集合。先拿一个确定可用的集合，拿不到就整轮跳过——
+            // 先枚举（甚至开始隔离）再发现池不可用，等于在不认识白名单的情况下已经动了可删对象。
+            HashSet<string> pooledSubSessionIds;
+            try
+            {
+                pooledSubSessionIds = _subAgentPool.List()
+                    .Select(entry => entry.SubSessionId)
+                    .ToHashSet(StringComparer.Ordinal);
+            }
+            catch (PoolNotReadyException ex)
+            {
+                // 专门的 catch：这不是「查失败」，而是「还不能问」。Scanned=0 是事实（未枚举），
+                // 不写 quarantine、不移动任何目录，等下一轮池就绪后再扫。
+                _logger.LogWarning(
+                    ex,
+                    "[SubAgentDirectoryGc] Pool not ready (readiness={Readiness}); sweep skipped without scanning",
+                    ex.Readiness);
+                return new SubAgentTransientDirectoryGcResult
+                {
+                    Scanned = 0,
+                    Purged = purged,
+                    Errors = 1,
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[SubAgentDirectoryGc] Pool-state lookup failed; no source directories changed");
+                return new SubAgentTransientDirectoryGcResult
+                {
+                    Scanned = 0,
+                    Purged = purged,
+                    Errors = 1,
+                };
+            }
+
             if (!Directory.Exists(_paths.AgentInstancesRoot))
                 return new SubAgentTransientDirectoryGcResult { Purged = purged };
 
@@ -126,24 +163,6 @@ public sealed partial class SubAgentTransientDirectoryGcService : BackgroundServ
                 .OrderBy(directory => directory.LastWriteTimeUtc)
                 .Take(scanLimit)
                 .ToArray();
-
-            HashSet<string> pooledSubSessionIds;
-            try
-            {
-                pooledSubSessionIds = _subAgentPool.List()
-                    .Select(entry => entry.SubSessionId)
-                    .ToHashSet(StringComparer.Ordinal);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "[SubAgentDirectoryGc] Pool-state lookup failed; no source directories changed");
-                return new SubAgentTransientDirectoryGcResult
-                {
-                    Scanned = candidates.Length,
-                    Purged = purged,
-                    Errors = 1,
-                };
-            }
 
             IReadOnlyDictionary<string, RunIndexSnapshot> latestRuns;
             try

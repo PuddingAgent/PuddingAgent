@@ -51,3 +51,56 @@ public sealed class PoolOwnershipMismatchException : InvalidOperationException
     /// <summary>机器可读的原因码，供工具层映射文案（S5）。</summary>
     public string ReasonCode { get; }
 }
+
+/// <summary>
+/// 池的就绪状态（持久化池 S4 引入）。
+/// <para>
+/// 池从「纯内存字典」变成「从库重建的视图」之后，多了一个此前不存在的状态：<b>视图还没加载完</b>。
+/// 这个状态必须显式建模，因为「未加载完」与「池里确实没有成员」在类型上看起来是同一个空集合，
+/// 而调用方（尤其拿池集合当删除白名单的 GC）对这两者的处置完全相反。
+/// </para>
+/// </summary>
+public enum PoolReadiness
+{
+    /// <summary>尚未尝试加载（池的初始状态）。不可当作「空池」使用。</summary>
+    NotStarted,
+
+    /// <summary>正在加载（另一个调用方已进入加载临界区）。不可当作「空池」使用。</summary>
+    Loading,
+
+    /// <summary>已就绪：内存视图与库一致，可以正常读写。</summary>
+    Ready,
+
+    /// <summary>恢复失败（加载抛异常）。<b>终态</b>，不自动重试、绝不降级为空池。</summary>
+    Failed,
+}
+
+/// <summary>
+/// 池未就绪：底层视图尚未可用，调用方不得把它当成空池继续。
+/// <para>
+/// <b>为什么必须抛而不是返回空集合：</b>池集合有一处「删除白名单」用法
+/// （<c>SubAgentTransientDirectoryGcService</c>）：返回空集合等于告诉 GC「没有任何池化目录需要保护」，
+/// 那些目录会被当成孤儿隔离。把「不知道」伪装成「没有」，代价是删数据；
+/// 显式抛错则只会让本轮扫描跳过——错误可见且可重试。
+/// </para>
+/// </summary>
+public sealed class PoolNotReadyException : InvalidOperationException
+{
+    public PoolNotReadyException(string message, PoolReadiness readiness) : base(message)
+    {
+        Readiness = readiness;
+    }
+
+    /// <summary>
+    /// 带原始异常的构造：加载失败的原因（SQLite 打不开、schema 缺失等）必须留在异常链里，
+    /// 否则上层只能看到「池不可用」而丢失「为什么」，排障要重新跑一遍才能知道。
+    /// </summary>
+    public PoolNotReadyException(string message, PoolReadiness readiness, Exception? innerException)
+        : base(message, innerException)
+    {
+        Readiness = readiness;
+    }
+
+    /// <summary>抛出时的就绪状态：NotStarted / Loading / Failed。</summary>
+    public PoolReadiness Readiness { get; }
+}
