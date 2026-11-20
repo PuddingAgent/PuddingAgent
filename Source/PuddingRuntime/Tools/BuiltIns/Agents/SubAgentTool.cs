@@ -401,7 +401,9 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         var destroyed = await pool.DestroyAsync(args.PoolName, ct);
                         return destroyed
                             ? Success($"? 池化子代理 '{args.PoolName}' 已销毁。")
-                            : Fail($"? 子代理 '{args.PoolName}' 不存在或已销毁。");
+                            // false 是「确认没有这个条目」，与「未就绪（还不知道有没有）」是相反的事实，
+                            // 所以这里单独给「未命中 + 下一步」，不并进通用失败文案。
+                            : Fail(DescribePoolEntryMissing(args.PoolName, "destroy"));
                     }
 
                     case "sleep":
@@ -409,11 +411,16 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         var slept = await pool.SleepAsync(args.PoolName, ct);
                         return slept
                             ? Success($"? 池化子代理 '{args.PoolName}' 已休眠。")
-                            : Fail($"? 子代理 '{args.PoolName}' 不存在或已销毁。");
+                            // 同 destroy：false 表示名字未命中或条目已死，不是「池不可用」。
+                            : Fail(DescribePoolEntryMissing(args.PoolName, "sleep"));
                     }
 
                     case "list":
                     {
+                        // 未就绪时 List() 按契约抛 PoolNotReadyException，**不返回空集合**——
+                        // 因为「还没加载完」与「池里确实为空」处置相反（前者等，后者创建）。
+                        // 所以「池为空」只可能出现在真正 Ready 且确实没有条目时；
+                        // 未就绪由末尾的 catch 渲染成「池未就绪 / 恢复失败」，不会伪装成空池。
                         var agents = pool.List();
                         if (agents.Count == 0)
                             return Success("池为空。使用 pool_name=\"<name>\" pool_action=\"create\" 创建新的池化子代理。");
@@ -525,9 +532,15 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             }
             catch (InvalidOperationException ex)
             {
-                // 池满/忙/不存在等业务异常
+                // 已知的池失败按类别渲染（未就绪 / 归属不匹配 / 忙 / 池满），每类给出不同的下一步；
+                // 其余 InvalidOperationException（例如「同名条目已存在」）保持既有通用文案——
+                // 既不吞掉，也不硬塞进某个类别里错报。
+                //
+                // 非 InvalidOperationException（取消、参数错误等）刻意不在此捕获：它们不是池的业务失败，
+                // 包装成「池操作失败」只会掩盖真实原因，交由上层既有路径处理。
                 return Fail(
-                    $"? 池操作失败: {ex.Message}\n\n提示: 使用 pool_name=\"{args.PoolName}\" pool_action=\"list\" 查看当前池状态。");
+                    DescribePoolFailure(ex, args.PoolName)
+                    ?? $"? 池操作失败: {ex.Message}\n\n提示: 使用 pool_name=\"{args.PoolName}\" pool_action=\"list\" 查看当前池状态。");
             }
         }
 
@@ -1395,6 +1408,169 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
     }
 
     private static ToolExecutionResult Fail(string error) => ToolExecutionResult.Fail(error);
+
+    // ══════════════════════════════════════════════════════
+    // 池操作失败分类（S5d）
+    // ══════════════════════════════════════════════════════
+    //
+    // 为什么必须分类：这些失败的**下一步动作完全不同**。「稍后重试」对未就绪是对的，
+    // 对「池满」永远无效；「换个名字」对未命中是对的，对「归属不匹配」也是误导（换个名字仍可能不是自己的）。
+    // 把所有池异常渲染成同一句「池操作失败」，模型只能反复重试同一个注定失败的动作。
+
+    /// <summary>池失败的可区分类别；<see cref="PoolFailureKind.Unknown"/> 表示不属于已知业务失败。</summary>
+    private enum PoolFailureKind
+    {
+        Unknown,
+        NotReady,
+        OwnershipMismatch,
+        Busy,
+        PoolFull,
+    }
+
+    // 两个稳定文案前缀。
+    // 为什么不用异常类型区分「忙」与「池满」：两者在池实现里都是 InvalidOperationException——
+    // 它们确实是不同错误（一个等，一个腾地方），但平台不该为此各造一个异常类型（本任务也不允许新建异常）。
+    // 因此按抛出方的文案前缀判定；前缀被改文案后会退化为 Unknown，落到既有通用提示，
+    // 不会错报成另一类别（失败方向是安全的）。
+    private const string PoolBusyMessageMarker = "is currently busy";
+    private const string PoolFullMessageMarker = "pool is full (capacity=";
+
+    private static PoolFailureKind ClassifyPoolFailure(Exception ex) => ex switch
+    {
+        // 顺序有意义：PoolNotReadyException / PoolOwnershipMismatchException 都继承
+        // InvalidOperationException，必须先按具体类型判定，再落到文案匹配。
+        PoolNotReadyException => PoolFailureKind.NotReady,
+        PoolOwnershipMismatchException => PoolFailureKind.OwnershipMismatch,
+        InvalidOperationException { Message: var busyMessage }
+            when busyMessage.Contains(PoolBusyMessageMarker, StringComparison.Ordinal) => PoolFailureKind.Busy,
+        InvalidOperationException { Message: var fullMessage }
+            when fullMessage.Contains(PoolFullMessageMarker, StringComparison.Ordinal) => PoolFailureKind.PoolFull,
+        _ => PoolFailureKind.Unknown,
+    };
+
+    /// <summary>
+    /// 把已知池失败渲染为可行动文本；非已知类别返回 null，由调用方保留既有通用文案。
+    /// </summary>
+    private static string? DescribePoolFailure(Exception ex, string? poolName)
+    {
+        var entryName = string.IsNullOrWhiteSpace(poolName) ? "(未指定)" : poolName!;
+        return ClassifyPoolFailure(ex) switch
+        {
+            PoolFailureKind.NotReady => DescribePoolNotReady((PoolNotReadyException)ex),
+            PoolFailureKind.OwnershipMismatch =>
+                DescribePoolOwnershipMismatch((PoolOwnershipMismatchException)ex, entryName),
+            PoolFailureKind.Busy =>
+                $"? 子代理池条目 '{entryName}' 正忙：它正在执行上一次任务，不能并发接第二个任务。\n\n" +
+                $"提示：等它这一轮结束后重试，或换用另一个池条目（用 pool_name=\"{entryName}\" pool_action=\"list\" " +
+                "看状态列，Busy 即正在执行）。",
+            PoolFailureKind.PoolFull => DescribePoolFull(ex, entryName),
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// 未就绪：池视图还没从持久化存储加载完。
+    /// <para>
+    /// <b>为什么必须强调「不是池为空」：</b>未就绪时内存里根本没有内容，若报成空池，
+    /// 模型会认为子代理都消失了，进而去做「重建 / 清理」这类不可逆动作；
+    /// 而事实是「还不知道」。同理，Failed 是终态，说成「稍后重试」会让人无限等待一个不会自愈的池。
+    /// </para>
+    /// </summary>
+    private static string DescribePoolNotReady(PoolNotReadyException ex)
+    {
+        var (verdict, next) = ex.Readiness switch
+        {
+            PoolReadiness.Failed => (
+                "恢复已失败",
+                "这是终态：池不会自动重试，重复调用无效。请先按下面的底层原因排查持久化存储（数据库打不开 / schema 缺失等），修复后重启 Core。"),
+            PoolReadiness.Loading => (
+                "正在加载",
+                "这是暂时状态：加载完成后即可正常使用，请稍后重试。"),
+            _ => (
+                "尚未开始加载",
+                "这是暂时状态：首次访问会触发加载，请稍后重试。"),
+        };
+
+        var cause = ex.InnerException is { } inner
+            ? $"\n底层原因：{inner.GetType().Name}: {inner.Message}"
+            : string.Empty;
+
+        return $"? 子代理池未就绪（readiness={ex.Readiness}，{verdict}）：池视图还没有从持久化存储加载完成，" +
+               "此刻无法判断池里到底有哪些条目。\n" +
+               $"处置：{next}{cause}\n" +
+               "注意：本次结果只说明「还不知道」，不代表「池里确实没有条目」，也不代表子代理已经消失；" +
+               "不要据此做删除或重建决定，需要日志时可查 Core 启动期与 SubAgentPool 的加载记录。";
+    }
+
+    /// <summary>
+    /// 归属不匹配：条目属于另一个父会话/工作区（或没有归属）。
+    /// <para>
+    /// 必须与「忙」区分：忙是「等一会儿同一个操作就能成功」，归属不匹配是「永远不可能成功」，
+    /// 只能改用自己创建的条目。合并两者会让模型对一个权限性拒绝无限重试。
+    /// </para>
+    /// </summary>
+    private static string DescribePoolOwnershipMismatch(
+        PoolOwnershipMismatchException ex, string entryName)
+    {
+        var (dimension, detail) = ex.ReasonCode switch
+        {
+            PoolOwnershipMismatchException.OwnerSessionReason => (
+                "其他父会话",
+                "该条目由另一个父会话创建，跨父会话驱动会污染该会话的执行投影"),
+            PoolOwnershipMismatchException.OwnerWorkspaceReason => (
+                "其他工作区",
+                "该条目属于另一个工作区，跨工作区复用会把子代理写到错误的目录与权限面"),
+            PoolOwnershipMismatchException.OrphanReason => (
+                "无归属（历史遗留）",
+                "该条目没有创建者记录（历史遗留或从未真正执行过），按 fail-closed 不允许任何会话接管"),
+            _ => ("未知维度", "归属校验未通过"),
+        };
+
+        var owner = string.IsNullOrWhiteSpace(ex.OwnerSessionId) ? "(无)" : ex.OwnerSessionId!;
+        var requested = string.IsNullOrWhiteSpace(ex.RequestedSessionId) ? "(无)" : ex.RequestedSessionId!;
+
+        return $"? 池操作被拒绝：子代理 '{entryName}' 属于{dimension}（reason={ex.ReasonCode}）。\n" +
+               $"{detail}；平台在创建 run 之前就拒绝了本次请求，没有产生失败 run，池计数也没被污染。\n" +
+               $"归属：父会话 {owner}，本次请求：{requested}。\n" +
+               $"提示：改用本会话自己创建的池条目名；或用 pool_name=\"{entryName}\" pool_action=\"list\" " +
+               "查看可用条目（SubSessionId 前 8 位即父会话标识）。";
+    }
+
+    /// <summary>池满：容量耗尽。<b>下一步是腾地方</b>，不是等待（等待不会释放容量）。</summary>
+    private static string DescribePoolFull(Exception ex, string entryName)
+    {
+        var capacity = TryReadPoolCapacity(ex.Message);
+        var capacityText = capacity is null ? "已达上限" : $"容量 {capacity} 已达上限";
+        return $"? 子代理池已满：{capacityText}，无法再创建或自动预留 '{entryName}'。\n" +
+               "提示：先用 pool_name=\"<不用的条目>\" pool_action=\"destroy\" 销毁不用的条目再重试，" +
+               "或降低并发派发的数量。";
+    }
+
+    /// <summary>
+    /// 条目名未命中：确认「池里没有这个条目」。
+    /// <para>
+    /// 与未就绪严格区分：未就绪是「不知道有没有」（应等待），未命中是「确认没有」（应改名字或重建）。
+    /// 两者处置相反，文案不能合并。
+    /// </para>
+    /// </summary>
+    private static string DescribePoolEntryMissing(string? poolName, string action)
+        => $"? 子代理 '{poolName}' 未命中：池里没有这个条目名（可能从未创建、已销毁，或名字拼错）。\n" +
+           $"提示：先用 pool_name=\"{poolName}\" pool_action=\"list\" 查看可用条目名，再重试 {action}。";
+
+    /// <summary>从池满文案里取回容量数值，让报错给出可核对的数字而不是只有「已满」。</summary>
+    private static string? TryReadPoolCapacity(string message)
+    {
+        var start = message.IndexOf(PoolFullMessageMarker, StringComparison.Ordinal);
+        if (start < 0)
+            return null;
+
+        start += PoolFullMessageMarker.Length;
+        var end = start;
+        while (end < message.Length && char.IsAsciiDigit(message[end]))
+            end++;
+
+        return end > start ? message[start..end] : null;
+    }
 
     /// <summary>
     /// 派生剩余预算可执行性守卫：父级真实剩余不足以支撑一次可执行子运行时，
