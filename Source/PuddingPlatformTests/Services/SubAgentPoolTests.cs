@@ -196,6 +196,34 @@ public sealed class SubAgentPoolTests
     }
 
     [TestMethod]
+    public async Task ExecuteAsync_StaleCompletion_AfterDestroyAndRecreate_DoesNotTouchNewEntry()
+    {
+        // D-P0-3 回归：同名条目在「置 Busy」与「收尾」之间被 destroy → create 换成新对象后，
+        // 旧执行的收尾必须被丢弃。判据是引用相等 + 执行令牌，而不是名字。
+        var manager = new TestSubAgentManager { DelayMs = 800 };
+        var pool = CreatePool(manager);
+        await pool.CreateAsync("dev-agent", CreateSpawnRequest());
+
+        var firstRun = pool.ExecuteAsync("dev-agent", CreateSpawnRequest("first run"));
+
+        // 等它进入 manager 的延时窗口（此时条目已 Busy 并写下执行令牌）
+        await Task.Delay(250);
+
+        await pool.DestroyAsync("dev-agent");
+        await pool.CreateAsync("dev-agent", CreateSpawnRequest());
+
+        // 让第一次执行收尾：它可能因取消而抛，也可能正常返回；两种都不该污染新条目
+        try { await firstRun; }
+        catch (Exception) { /* 取消导致的失败不是本用例的断言对象 */ }
+
+        var snapshot = await pool.GetAsync("dev-agent");
+        Assert.IsNotNull(snapshot);
+        Assert.AreEqual(0, snapshot!.TaskCount, "迟到收尾不得给新条目累加 task_count");
+        Assert.IsNull(snapshot.LastSuccess, "迟到收尾不得覆盖新条目的 last_success");
+        Assert.AreEqual(PooledSubAgentStatus.Idle, snapshot.Status, "迟到收尾不得把新条目打回 Sleeping");
+    }
+
+    [TestMethod]
     public async Task ExecuteAsync_ThrowsWhenAgentBusy()
     {
         var manager = new TestSubAgentManager { DelayMs = 2000 };

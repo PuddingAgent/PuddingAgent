@@ -36,6 +36,13 @@ public sealed class SubAgentPool : ISubAgentPool
         public int TaskCount { get; set; }
         public bool? LastSuccess { get; set; }
 
+        /// <summary>
+        /// 本次执行的令牌。收尾时必须与它比对：同名条目可能在「置 Busy」与「收尾」之间
+        /// 被 destroy → create 替换成另一个对象，迟到的收尾若按名字回查就会把结果写到
+        /// 新条目上（D-P0-3 的 stale completion）。
+        /// </summary>
+        public string? ActiveExecutionId { get; set; }
+
         public PoolEntry(string name, string subSessionId, string templateId, string? role)
         {
             Name = name;
@@ -169,6 +176,47 @@ public sealed class SubAgentPool : ISubAgentPool
     // ════════════════════════════════════════════════════════
 
     /// <summary>
+    /// 执行收尾：只在「条目仍是被执行的那个对象」且「执行令牌仍匹配」时应用结果。
+    /// <para>
+    /// 判据刻意不用名字：同名条目可能在执行期间被 destroy → create 换成另一个对象，
+    /// 此时按名字回查会把旧执行的结果写到新条目上（task_count 被加、last_success 被覆盖、
+    /// status 被打回 Sleeping）。引用相等 + 令牌双判，任一不符即丢弃并记一条 warning。
+    /// </para>
+    /// </summary>
+    private async Task FinishAsync(
+        string name,
+        PoolEntry executedEntry,
+        string executionId,
+        bool success,
+        CancellationToken ct)
+    {
+        await _stateLock.WaitAsync(ct);
+        try
+        {
+            if (!_pool.TryGetValue(name, out var current) ||
+                !ReferenceEquals(current, executedEntry) ||
+                !string.Equals(current.ActiveExecutionId, executionId, StringComparison.Ordinal))
+            {
+                // stale completion：丢弃，不碰任何计数与状态
+                _logger.LogWarning(
+                    "[SubAgentPool] Stale completion dropped name={Name} sub={Sub} exec={Exec}",
+                    name, executedEntry.SubSessionId, executionId);
+                return;
+            }
+
+            current.Status = PooledSubAgentStatus.Sleeping;
+            current.TaskCount++;
+            current.LastSuccess = success;
+            current.LastUsedAt = DateTimeOffset.UtcNow;
+            current.ActiveExecutionId = null;
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+    }
+
+    /// <summary>
     /// 向已有子代理发送新任务，追加到已有会话。
     /// 若子代理不存在则自动创建。
     /// 执行期间状态从 Sleeping/Idle → Busy，完成后 → Sleeping。
@@ -180,6 +228,9 @@ public sealed class SubAgentPool : ISubAgentPool
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Sub-agent pool name cannot be null or empty.", nameof(name));
+
+        // 每次执行生成一个令牌，收尾时与条目上的令牌比对；不匹配即视为迟到收尾并丢弃。
+        var executionId = Guid.NewGuid().ToString("N");
 
         // 获取或创建池条目
         PoolEntry entry;
@@ -227,6 +278,9 @@ public sealed class SubAgentPool : ISubAgentPool
                 _pool[name] = entry;
                 autoReserved = true;
             }
+
+            // 置 Busy 的同时写入执行令牌：收尾必须凭它判定「这次执行是否还属于这个条目」。
+            entry.ActiveExecutionId = executionId;
         }
         finally
         {
@@ -254,22 +308,8 @@ public sealed class SubAgentPool : ISubAgentPool
         }
         catch (Exception ex)
         {
-            // 执行失败，更新状态
-            await _stateLock.WaitAsync(CancellationToken.None);
-            try
-            {
-                if (_pool.TryGetValue(name, out var current))
-                {
-                    current.Status = PooledSubAgentStatus.Sleeping;
-                    current.TaskCount++;
-                    current.LastSuccess = false;
-                    current.LastUsedAt = DateTimeOffset.UtcNow;
-                }
-            }
-            finally
-            {
-                _stateLock.Release();
-            }
+            // 执行失败，更新状态（迟到的收尾会被 FinishAsync 丢弃）
+            await FinishAsync(name, entry, executionId, success: false, CancellationToken.None);
 
             _logger.LogError(ex,
                 "[SubAgentPool] Execute failed for '{Name}' subSessionId={Sub}",
@@ -278,22 +318,8 @@ public sealed class SubAgentPool : ISubAgentPool
             throw;
         }
 
-        // 执行成功，更新状态
-        await _stateLock.WaitAsync(CancellationToken.None);
-        try
-        {
-            if (_pool.TryGetValue(name, out var current))
-            {
-                current.Status = PooledSubAgentStatus.Sleeping;
-                current.TaskCount++;
-                current.LastSuccess = result.Success;
-                current.LastUsedAt = DateTimeOffset.UtcNow;
-            }
-        }
-        finally
-        {
-            _stateLock.Release();
-        }
+        // 执行成功，更新状态（迟到的收尾会被 FinishAsync 丢弃）
+        await FinishAsync(name, entry, executionId, success: result.Success, CancellationToken.None);
 
         _logger.LogInformation(
             "[SubAgentPool] Execute completed for '{Name}' success={Success} taskCount={TaskCount}",
