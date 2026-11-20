@@ -57,6 +57,27 @@ public sealed class PromptCalibrationConvergenceTests
             "实测更高必须立即抬高，不能等回落");
     }
 
+    /// <summary>
+    /// 2026-11-20 回归：provider 报数出现跨数量级异常时，不得被学进校准系数。
+    /// <para>
+    /// 实测现场（session=…-sub-ce1d23b7）：同一份约 209 KB 的请求，provider 第二轮报
+    /// prompt=582,469（其中 cache_read=534,194），相对本地原始估算约 6.7 倍，而两轮之间
+    /// 文本只多了 2,792 字节。系数只升不降，一旦学到 6.7，该会话每次 usedTokens 都被放大 6.7 倍，
+    /// growthTokens 随之变成约 50 万 ⇒ 预测占用越窗 ⇒ 保护态拒发 ⇒ 子代理当场失败。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public void Ratio_IgnoresImplausiblyHighObservation()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var prepared = Capture(store, "s-implausible", "inv-x");
+
+        Record(store, "s-implausible", (int)(prepared.RawEstimatedTokens * 6.7), "inv-x");
+
+        Assert.AreEqual(1.0, store.GetPromptCalibrationRatio("s-implausible", "model-A"), 1e-6,
+            "跨数量级的观测比必须被忽略，系数保持未校准状态");
+    }
+
     private static ContextUsageSnapshot Capture(
         ContextUsageSnapshotStore store, string sessionId, string invocationId)
         => store.CaptureLlmRequest(

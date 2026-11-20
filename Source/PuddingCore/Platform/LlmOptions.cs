@@ -309,6 +309,24 @@ namespace PuddingCode.Platform
         /// </summary>
         private const double MinPromptCalibrationRatio = 0.5;
 
+        /// <summary>
+        /// 校准系数「可疑上限」：观测比一旦超过它就不学习。
+        /// <para>
+        /// 依据（2026-11-20 实测，session=…-sub-ce1d23b7）：同一份约 209 KB 的请求，
+        /// provider 第一轮报 prompt=86,669，第二轮报 prompt=582,469（其中 cache_read=534,194）
+        /// ⇒ observedRatio≈6.7。两轮之间文本只多了 2,792 字节，密度不可能变化 6.7 倍。
+        /// 也就是说，这不是「本地估算偏低」的密度事实，而是 provider 报数与本地估算量的**不是同一个量**
+        /// （缓存读被并入了 prompt）。
+        /// </para>
+        /// <para>
+        /// 后果为何致命：系数只升不降（见下方 AddOrUpdate），一旦学到 6.7，该会话此后每次
+        /// usedTokens 都被放大 6.7 倍；下一轮的 growthTokens 因此变成约 50 万 ⇒ 预测占用越过窗口
+        /// ⇒ <c>PrefixCompactionPolicy</c> 判定 WaitForCandidate ⇒ 保护态拒发请求，子代理当场失败。
+        /// 保留 4.0 而不是压低到 2.0，是为了不干扰历史实测正常收敛区间（0.5~2.0）。
+        /// </para>
+        /// </summary>
+        private const double ImplausiblePromptCalibrationRatio = 4.0;
+
         /// <summary>最近一次**主请求**的 Provider 实测（与 prepared 快照分离的槽位）。</summary>
         private readonly ConcurrentDictionary<string, MeasuredRequestUsage> _lastMeasuredRequests = new(StringComparer.Ordinal);
 
@@ -788,13 +806,22 @@ namespace PuddingCode.Platform
                 // 规则：实测更高就立即抬高（防超窗）；实测更低则逐轮按系数回落，下限是
                 // MinPromptCalibrationRatio 而不是 1.0——夹在 1.0 会让「本地数一直偏高」这种
                 // 系统性偏差永远学不回来，闸门于是长期按虚高的分子判定提前压缩。
-                _promptCalibrationRatios.AddOrUpdate(
-                    calibrationKey,
-                    observedRatio,
-                    (_, current) => observedRatio >= current
-                        ? observedRatio
-                        : Math.Max(MinPromptCalibrationRatio,
-                            Math.Max(observedRatio, current * CalibrationRelaxFactor)));
+                // 观测比超过可疑上限 ⇒ 视为 provider 报数口径异常，本次不参与校准（保持原系数）。
+                // 宁可少一次校准，也不让一个跨数量级的异常把系数永久抬走。
+                if (observedRatio > ImplausiblePromptCalibrationRatio)
+                {
+                    _promptCalibrationRatios.AddOrUpdate(calibrationKey, 1.0, (_, current) => current);
+                }
+                else
+                {
+                    _promptCalibrationRatios.AddOrUpdate(
+                        calibrationKey,
+                        observedRatio,
+                        (_, current) => observedRatio >= current
+                            ? observedRatio
+                            : Math.Max(MinPromptCalibrationRatio,
+                                Math.Max(observedRatio, current * CalibrationRelaxFactor)));
+                }
             }
 
             // Provider 完全没报数（Prompt/Completion/Total 全空）⇒ 不产生实测、不推进投影。
