@@ -310,6 +310,44 @@ public sealed class TerminalToolsTests
     }
 
     [TestMethod]
+    public async Task TerminalRead_DefaultCall_ReturnsHeadTailPreview()
+    {
+        using var scope = CreateScope();
+        var start = new TerminalStartTool(scope.Manager, NullLogger<TerminalStartTool>.Instance);
+        var read = new TerminalReadTool(scope.Manager);
+        var scriptName = "emit-many-lines.py";
+        var script = Path.Combine(scope.Root, scriptName);
+        await File.WriteAllTextAsync(script, """
+        for i in range(60):
+            print("preview-line-" + str(i))
+        """);
+        var command = $"{PythonExe} {scriptName}";
+
+        var startResult = await ExecuteAsync(start, $$"""
+        {
+          "command": "{{JsonEncodedText(command)}}",
+          "cwd": "{{JsonEncodedText(scope.Root)}}"
+        }
+        """);
+        Assert.IsTrue(startResult.Success, startResult.Error);
+        var jobId = ReadString(startResult.Output, "job", "job_id");
+
+        // 不传 from_offset/max_lines/max_chars ⇒ 走默认头尾预览。
+        var readResult = await ExecuteAsync(read, $$"""
+        {
+          "job_id": "{{jobId}}"
+        }
+        """);
+
+        Assert.IsTrue(readResult.Success, readResult.Error);
+        StringAssert.Contains(readResult.Output, "preview-line-0");
+        StringAssert.Contains(readResult.Output, "preview-line-59");
+        Assert.IsFalse(readResult.Output.Contains("preview-line-30", StringComparison.Ordinal),
+            "middle lines must be omitted in preview mode");
+        StringAssert.Contains(readResult.Output, "line(s) omitted");
+    }
+
+    [TestMethod]
     public async Task TerminalWait_Returns_Read_Handle_When_Output_Is_Truncated()
     {
         using var scope = CreateScope();

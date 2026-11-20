@@ -15,6 +15,13 @@ internal static class TerminalToolJson
     public const int DefaultReadLines = 200;
     public const int DefaultReadChars = 8_000;
 
+    /// <summary>默认预览模式：头部保留行数。</summary>
+    public const int DefaultPreviewHeadLines = 20;
+    /// <summary>默认预览模式：尾部保留行数。</summary>
+    public const int DefaultPreviewTailLines = 5;
+    /// <summary>默认预览模式：单次读取字符上限（头/尾各自）。</summary>
+    public const int DefaultPreviewReadChars = 2_000;
+
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
     public static string Serialize(object value) => JsonSerializer.Serialize(value, Options);
@@ -367,6 +374,16 @@ public sealed class TerminalReadTool : PuddingToolBase<TerminalReadArgs, Termina
         if (job is null)
             throw new InvalidOperationException($"terminal job not found in this session: {args.JobId}");
 
+        // 默认预览（2026-11-20 用户指示）：未显式指定切片参数时只返回「头几行 + 一行省略提示 + 尾几行」。
+        // 动机：实测子代理一次任务里 6 次 terminal_read 读入约 70 KB 构建/测试日志，
+        // 每读一次都要在后续所有轮次重发，是子代理成本的主要来源之一。
+        if (args.FromOffset is null && args.MaxLines is null && args.MaxChars is null)
+        {
+            var preview = await TryBuildHeadTailPreviewAsync(job.ProcessId, ct);
+            if (preview is not null)
+                return preview;
+        }
+
         var snapshot = await _processManager.ReadOutputAsync(
             job.ProcessId,
             Math.Max(0, args.FromOffset ?? 0),
@@ -384,6 +401,60 @@ public sealed class TerminalReadTool : PuddingToolBase<TerminalReadArgs, Termina
                 snapshot,
                 "Buffered output slice is complete for now. Use terminal_wait to wait for future output.",
                 "Buffered output slice is complete and the job is no longer running."),
+        };
+    }
+
+    /// <summary>默认预览：头 N 行 + 一行省略提示 + 尾 M 行；总行数不超过头尾之和时原样返回。</summary>
+    private async Task<TerminalWaitResult?> TryBuildHeadTailPreviewAsync(string processId, CancellationToken ct)
+    {
+        var head = await _processManager.ReadOutputAsync(
+            processId, 0, TerminalToolJson.DefaultPreviewHeadLines, TerminalToolJson.DefaultPreviewReadChars, ct);
+        if (head is null)
+            return null;
+
+        var total = head.TotalLines;
+        var keep = TerminalToolJson.DefaultPreviewHeadLines + TerminalToolJson.DefaultPreviewTailLines;
+        if (total <= keep)
+        {
+            return new TerminalWaitResult
+            {
+                Result = TerminalToolJson.ToOutputDto(head),
+                NextAction = TerminalToolJson.NextAction(
+                    head,
+                    "Buffered output slice is complete for now. Use terminal_wait to wait for future output.",
+                    "Buffered output slice is complete and the job is no longer running."),
+            };
+        }
+
+        var tailOffset = Math.Max(0, total - TerminalToolJson.DefaultPreviewTailLines);
+        var tail = await _processManager.ReadOutputAsync(
+            processId, tailOffset, TerminalToolJson.DefaultPreviewTailLines, TerminalToolJson.DefaultPreviewReadChars, ct);
+
+        var omitted = Math.Max(0, tailOffset - head.Lines.Count);
+        var notice =
+            $"[… {omitted} line(s) omitted of {total} total. " +
+            $"Read the full log with terminal_read(job_id=\"{processId}\", from_offset={head.NextOffset}, max_lines=200); " +
+            $"keep paginating with next_offset until it reaches total_lines. …]";
+
+        var merged = new List<string>(head.Lines.Count + 1 + (tail?.Lines.Count ?? 0));
+        merged.AddRange(head.Lines);
+        merged.Add(notice);
+        if (tail is not null)
+            merged.AddRange(tail.Lines);
+
+        return new TerminalWaitResult
+        {
+            Result = TerminalToolJson.ToOutputDto(head) with
+            {
+                Lines = merged,
+                Output = string.Join(Environment.NewLine, merged),
+                Truncated = true,
+                NextOffset = tail?.NextOffset ?? head.NextOffset,
+                Handle = TerminalToolJson.ToOutputHandle(head),
+            },
+            NextAction =
+                $"Preview only (head {TerminalToolJson.DefaultPreviewHeadLines} + tail {TerminalToolJson.DefaultPreviewTailLines} " +
+                $"of {total} lines). Use terminal_read with from_offset/max_lines to read a specific slice.",
         };
     }
 }
