@@ -295,6 +295,15 @@ public sealed partial class ContextPipeline
         var sb = new StringBuilder();
         sb.AppendLine("--- LAYER: TOOLS ---");
 
+        // 工具契约注记（2026-11-20 用户指示）：子代理带着别家 CLI 的训练习惯来，会按 codex/
+        // Claude CLI 的工具语义调用我们的同名/近名工具。实测一次任务 54 轮里 4 次 apply_patch
+        // 失败、11 次 shell 探路、6 次整段读构建日志，均属这一类摩擦。平台在启动提示词里
+        // 直接给出本环境的真实契约，比事后纠错便宜。文本常驻，故只保留三条高频项。
+        sb.AppendLine("Tool contract notes for THIS environment (not your vendor CLI):");
+        sb.AppendLine("- Editing: prefer `file_patch` with operations [{type:\"replace\", old_text, new_text}]. `apply_patch` requires a standard unified diff (---/+++ and @@ headers) and fails fast otherwise.");
+        sb.AppendLine("- `terminal_read` called without arguments returns only head 20 lines + an omission notice + tail 5 lines. Pass `from_offset` / `max_lines` to read a specific slice of a long log.");
+        sb.AppendLine("- Paths supplied in the task brief are authoritative; read them directly instead of probing with `shell` first.");
+
         if (_toolRegistry is not null)
         {
             var descriptors = _toolRegistry.ListAvailable(request.Capability, request.WorkspaceId);
