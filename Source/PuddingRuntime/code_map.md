@@ -423,7 +423,7 @@
 | `Tools/BuiltIns/Search/ZhihuSearchTool.cs` | `zhihu_search`：知乎站内检索 | `ZhihuSearchTool` | `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | — |
 | `Tools/BuiltIns/Sessions/QuerySessionLogsTool.cs` | `query_session_logs`：原始转录、精确 Turn 和压缩来源回查 | `QuerySessionLogsTool` | `Services/CompactionEvidenceReader.cs` | 转录窗口保留筛选条件；归档原文需 diagnostic=true；强类型参数是各调用入口 schema 的共同来源 |
 | `Tools/BuiltIns/Sessions/QuerySessionsTool.cs` | `query_sessions`：会话消息转录查询 | `QuerySessionsTool` | `Tools/BuiltIns/Sessions/QuerySessionLogsTool.cs` | — |
-| `Tools/BuiltIns/Shell/HostShellExecutor.cs` | 宿主命令的直执行与输出收集 | `HostShellExecutor` | `Services/TerminalSecurity.cs` | CMD 保留原始引号；PowerShell 拒绝 cd /d 前缀并指明修正参数 |
+| `Tools/BuiltIns/Shell/HostShellExecutor.cs` | 宿主命令的直执行与输出收集 | `HostShellExecutor` | `Services/TerminalSecurity.cs` | CMD 保留原始引号；PowerShell 拒绝 cd /d 前缀并指明修正参数；`auto` 解析链 Windows pwsh7>ps5>cmd、非 Windows bash>sh，缺失时降级而非失败；结果含 `Shell`（方言）与 `Executable`（实际 exe） |
 | `Tools/BuiltIns/Shell/HostShellTool.cs` | `shell`：短命令的宿主执行 | `HostShellTool` | `Tools/BuiltIns/Shell/HostShellExecutor.cs` | — |
 | `Tools/BuiltIns/Skills/AgentSkillTool.cs` | `agent_skill`：技能文件的读取与增改 | `AgentSkillTool` | `Services/Skills/AgentSkillFileService.cs` | — |
 | `Tools/BuiltIns/Skills/SkillHubTool.cs` | `skill_hub`：技能市场清单与安装 | `SkillHubTool` | `Services/Skills/AgentSkillFileService.cs` | — |
