@@ -13,6 +13,20 @@
     }
   },
   "reasonGroups": {
+    "pluginWorkerPrerequisites": {
+      "recordedAt": "2026-11-20",
+      "reason": "PuddingModelEvaluation / PuddingOperatorApi / PuddingPluginAgentApi 的集成用例在 Fixture 构造函数里就抛 InvalidOperationException: Test root required.（之后还需要 PUDDING_PLUGIN_WORKER）。这两个变量由 TestScripts/test-model-evaluation-api.ps1 与 TestScripts/test-pudding-tool-plugins.ps1 负责构建 Worker 并注入。提交门禁直接跑 dotnet test，不带这两个变量，所以失败发生在任何产品代码执行之前（堆栈停在 Fixture..ctor），与当次改动无关——实测 8 条失败全部如此。修法二选一：让门禁改走那两个脚本，或在门禁环境预置变量；修好后应从基线移除。",
+      "affected": [
+        "ParentCancellationEndsWorkerCall_LateProviderKeepsSlotThroughUnload",
+        "RealWorker_ClassifiesReviewsAndAccounts_RejectsForgedParent_ThenUnloads",
+        "ParentCallsAndOutputCannotResetAcrossPluginReload_ExternalUsageCounts",
+        "MissingParentAndMissingCapabilityAreDeniedBeforeModelDispatch",
+        "RealWorker_DiscoversScoresRejectsForgedScope_AndUnloads",
+        "CatalogOnlyCapability_CannotExecuteScoring",
+        "ScoringFailure_DoesNotCertifyEarlierToolEffectsAsNone",
+        "InvalidObservations_AreTypedFailuresThroughWorker"
+      ]
+    },
     "environmentKeyVault": {
       "recordedAt": "2026-10-27",
       "reason": "Test initialization throws InvalidOperationException: environment variable PUDDING_KEYVAULT_MASTER_KEY is not valid Base64. The variable is present only in the parent process environment (length 44, not base64), so any dotnet test launched from this agent session inherits it and PuddingWebApiTests.* TestInitialize fails before any production code runs. Unrelated to tool exposure; remove once the variable is a valid base64 key or is unset for test runs.",
@@ -54,6 +68,14 @@
     "AgentExecutionService_Uses_UnifiedToolInvocationFacade",
     "ContextPipeline_ShouldTriggerGentleCompaction",
     "DesktopServiceTests.DocsMarkdownEncodingTests.DocsMarkdownHasNoBomAndStartsWithFrontMatter",
-    "PuddingDesktop.Tests.Browser.DesktopBrowserBridgeClientTests.Watchdog_AdvancingFakeClock_CancelsBlockedReceive"
+    "PuddingDesktop.Tests.Browser.DesktopBrowserBridgeClientTests.Watchdog_AdvancingFakeClock_CancelsBlockedReceive",
+    "ParentCancellationEndsWorkerCall_LateProviderKeepsSlotThroughUnload",
+    "RealWorker_ClassifiesReviewsAndAccounts_RejectsForgedParent_ThenUnloads",
+    "ParentCallsAndOutputCannotResetAcrossPluginReload_ExternalUsageCounts",
+    "MissingParentAndMissingCapabilityAreDeniedBeforeModelDispatch",
+    "RealWorker_DiscoversScoresRejectsForgedScope_AndUnloads",
+    "CatalogOnlyCapability_CannotExecuteScoring",
+    "ScoringFailure_DoesNotCertifyEarlierToolEffectsAsNone",
+    "InvalidObservations_AreTypedFailuresThroughWorker"
   ]
 }

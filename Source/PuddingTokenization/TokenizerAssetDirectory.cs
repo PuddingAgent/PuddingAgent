@@ -47,6 +47,20 @@ public static class TokenizerAssetDirectory
     public const string NoneSource = "none";
 
     /// <summary>
+    /// 数据根下的词表目录（<c>{DataRoot}/models/tokenizers</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 「词表放在数据根的哪里」与「资产叫什么、怎么算配好了」是同一件事，所以两者住在一起：
+    /// 安装脚本把文件放进去，运行时去那里找，中间不需要另一处约定。数据根本身由宿主解析，
+    /// 本组件不读环境变量也不猜它。
+    /// </remarks>
+    public static string DataRootAssetDirectory(string dataRoot)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(dataRoot);
+        return Path.Combine(dataRoot, "models", "tokenizers");
+    }
+
+    /// <summary>
     /// 解析目录。
     /// </summary>
     /// <remarks>
@@ -77,6 +91,10 @@ public static class TokenizerAssetDirectory
     /// </summary>
     /// <remarks>
     /// <para>
+    /// 公开而不是私有：「什么样的目录算配好了资产」必须只有一份定义。解析策略与引导期
+    /// （把数据根告诉运行时）都要问同一个问题，两处各写一份必然会漂移。
+    /// </para>
+    /// <para>
     /// 不抛异常是硬要求：本方法会经由 <c>static readonly</c> 字段在**类型初始化**里被调用，
     /// 一次 <see cref="UnauthorizedAccessException"/> 就会让整个计数类型的初始化失败，
     /// 把「没有精确词表」升级成「所有上下文估算都不可用」。读不到就按「没有」处理，
@@ -87,7 +105,7 @@ public static class TokenizerAssetDirectory
     /// 扩展名长度变化，而这里要的是一个能写进断言的确定语义。
     /// </para>
     /// </remarks>
-    private static bool ContainsAnyAsset(string directory)
+    public static bool ContainsAnyAsset(string directory)
     {
         try
         {

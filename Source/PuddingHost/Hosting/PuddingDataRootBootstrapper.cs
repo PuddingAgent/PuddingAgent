@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using PuddingCode.Configuration;
+using PuddingTokenization;
 
 namespace PuddingHost.Hosting;
 
@@ -55,10 +56,52 @@ public static class PuddingDataRootBootstrapper
 
         EnsureDefaultData(dataPaths.DataRoot, defaultDataDir);
         EnsureRuntimeDirectories(dataPaths);
+        EnsureTokenizerAssetsVisible(dataPaths);
         EnsureSecurityJwtKey(dataPaths);
         EnsureDefaultAgentInstance(dataPaths);
 
         return dataPaths;
+    }
+
+    /// <summary>
+    /// 让进程内能看见数据根下的词表资产。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 词表目录原先只认 <c>PUDDING_TOKENIZER_ASSETS</c>（User 级环境变量）与应用目录旁的
+    /// <c>tokenizers/</c>。前者有一个真实踩过的坑：Windows 的环境块在进程创建时从父进程继承，
+    /// 所以「用户级变量已经登记」与「本进程看不到」可以同时成立——只重启 Core 不会重新读取
+    /// User 级变量，因为 Core 是 Desktop 的子进程。
+    /// </para>
+    /// <para>
+    /// 而数据根本身就是词表资产的语义归属（安装脚本就把它放进
+    /// <c>{DataRoot}/models/tokenizers</c>），引导期又已经算出了数据根。因此在这里把**进程级**
+    /// 变量指向它：不跨进程扩散、不改用户配置，且下一轮启动就能生效，不必重启整条 Desktop 进程树。
+    /// </para>
+    /// <para>
+    /// 三个克制：变量已有非空值时不覆盖（显式配置永远优先）；目录里没有资产时不设置（空目录
+    /// 不得冒充已配置，与 <see cref="TokenizerAssetDirectory"/> 共用同一份判据）；只设 Process 级，
+    /// 不写回 User/Machine。
+    /// </para>
+    /// </remarks>
+    internal static void EnsureTokenizerAssetsVisible(PuddingDataPaths paths)
+    {
+        var explicitValue = Environment.GetEnvironmentVariable(TokenizerAssetDirectory.EnvironmentVariableName);
+        if (!string.IsNullOrWhiteSpace(explicitValue))
+            return;
+
+        var assetDirectory = TokenizerAssetDirectory.DataRootAssetDirectory(paths.DataRoot);
+        if (!TokenizerAssetDirectory.ContainsAnyAsset(assetDirectory))
+            return;
+
+        Environment.SetEnvironmentVariable(
+            TokenizerAssetDirectory.EnvironmentVariableName,
+            assetDirectory,
+            EnvironmentVariableTarget.Process);
+
+        Serilog.Log.Information(
+            "[Bootstrap] 精确词表已接入：目录来自数据根 {Directory}（进程级变量，未覆盖用户配置）",
+            assetDirectory);
     }
 
     private static string? GetDataRoot(string[] args)

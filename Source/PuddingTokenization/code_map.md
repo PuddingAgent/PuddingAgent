@@ -83,6 +83,13 @@ SHA256  C90DFA01249DB1BE4245780A052EDE752E1361C612AC6D08E2BDADA7D599476B
 `TokenizerAssetDirectoryTests` 用一条用例把这个区别钉住（变异取红：把判据退回
 `Directory.Exists`，该用例与「只有无关文件」那条一起变红）。
 
+引导期还会把数据根接进来：`PuddingDataRootBootstrapper.EnsureTokenizerAssetsVisible` 在
+`{DataRoot}/models/tokenizers` **确有资产**、且 `PUDDING_TOKENIZER_ASSETS` 为空时，把
+**进程级**变量指向它。这么做的理由很具体：Windows 的环境块在进程创建时从父进程继承，
+Core 是 Desktop 的常驻子进程，所以「User 级变量已登记」与「本进程看不到」可以同时成立——
+只重启 Core 读不到新值，要连 Desktop 一起重启。引导期写入进程级变量后，下一轮 Core 启动
+就能生效，不必动整条进程树；用户显式配置仍然优先（非空时一律不覆盖）。
+
 ## 正确性判据
 
 `GoldenVectorTests` 与 `UnicodeRegressionTests` 分别使用 HuggingFace Node / Rust 引擎生成的
