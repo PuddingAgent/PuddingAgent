@@ -41,6 +41,16 @@ public class AgentPoolEntity
         [StatusIdle, StatusBusy, StatusSleeping, StatusDead];
 
     /// <summary>
+    /// 复位原因：这条曾被「重启前残留的 busy」恢复路径救回（见
+    /// <c>AgentPoolEntryStore.ResetStaleBusyAsync</c>）。
+    /// <para>
+    /// 状态与原因写在一起：诊断时只看 <c>status='sleeping'</c> 无法区分「正常休眠」与
+    /// 「从僵尸 busy 救回来」，而这两者的后续行为完全一样、来源却不同。
+    /// </para>
+    /// </summary>
+    public const string StatusReasonRecoveredBusy = "recovered_busy";
+
+    /// <summary>
     /// 索引名由实体声明，而不是由 bootstrapper 或 DbContext 各自写一遍：
     /// 新库走 EF 模型建索引、存量库走 raw DDL 建索引，同一张表上出现两个不同的名字就是重复索引。
     /// </summary>

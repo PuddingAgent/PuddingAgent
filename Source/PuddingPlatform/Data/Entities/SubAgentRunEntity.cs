@@ -55,6 +55,36 @@ public class SubAgentRunEntity
     /// <summary>非终态（运行中）状态值；创建运行时写入，终态由 UpdateDbIndexAsync 覆盖。</summary>
     public const string RunningStatus = "running";
 
+    /// <summary>
+    /// 终态状态值集合 —— 「这个 run 已经结束」的唯一真源。
+    /// <para>
+    /// <b>为什么放在实体上：</b>run 的状态取值是这张表的词表，散落在
+    /// <c>FileSubAgentRunStore</c>、GC 与池恢复三处的字面量列表必然漂移；
+    /// 漂移的后果不对称——池恢复把「还在跑」误判成终态会去重置一条正在被驱动的条目，
+    /// 两个执行同时驱动同一个子会话，而反过来只是少救一条。
+    /// </para>
+    /// <para>新增终态值时必须同时检查 <see cref="NonTerminalStatuses"/>：两者是同一词表的划分。</para>
+    /// </summary>
+    public static readonly IReadOnlyList<string> TerminalStatuses =
+    [
+        "completed",
+        "budget_exhausted",
+        "failed",
+        "cancelled",
+        "timed_out",
+        "interrupted",
+    ];
+
+    /// <summary>
+    /// 非终态（活动）状态值集合 —— 池恢复判据 <c>AgentPoolEntryStore.ResetStaleBusyAsync</c> 使用。
+    /// <para>
+    /// 现在只有一个取值（<see cref="RunningStatus"/>）：创建 run 时写它，收尾时由终态覆盖。
+    /// 之所以仍写成集合，是因为恢复判据是「有没有非终态 run」，而不是「status 是不是 running」；
+    /// 将来若引入 paused / waiting 之类的活动态，只改这里就能让池恢复自动跟上。
+    /// </para>
+    /// </summary>
+    public static readonly IReadOnlyList<string> NonTerminalStatuses = [RunningStatus];
+
     [Required, MaxLength(32), Column("started_at")]
     public string StartedAt { get; set; } = "";
 

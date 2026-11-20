@@ -1519,8 +1519,14 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         }
     }
 
+    /// <summary>
+    /// 终态判定：词表唯一真源在 <see cref="SubAgentRunEntity.TerminalStatuses"/>。
+    /// 池恢复（<c>AgentPoolEntryStore.ResetStaleBusyAsync</c>）用的是同一张表的非终态集合，
+    /// 两处必须同口径：否则「本类认为已结束」与「池认为还在跑」会同时成立，那正是
+    /// 僵尸 busy 与误杀 busy 两种缺陷的共同源头。
+    /// </summary>
     private static bool IsTerminalStatus(string status) =>
-        status is "completed" or "budget_exhausted" or "failed" or "cancelled" or "timed_out" or "interrupted";
+        SubAgentRunEntity.TerminalStatuses.Contains(status, StringComparer.Ordinal);
 
     private static string ToTerminalEventType(string status) =>
         status switch

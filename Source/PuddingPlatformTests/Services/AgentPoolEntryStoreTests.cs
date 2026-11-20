@@ -346,6 +346,37 @@ public sealed class AgentPoolEntryStoreTests
                 // 用生产同一条建表路径（raw DDL）而不是 EnsureCreated：
                 // 断言的列名/索引语义必须与线上存量库完全一致。
                 await AgentPoolSchemaBootstrapper.EnsureCreatedAsync(db);
+
+                // 但 ResetStaleBusyAsync 的判据要读 sub_agent_runs（「有没有非终态 run」），
+                // 所以那张表必须存在。这里刻意不用 EnsureCreated 补它：EnsureCreated 在
+                // 「库里已经有任何表」时什么都不做，并且会顺带把 agent_pool 改成由 EF 模型建，
+                // 本 fixture 想锁的 raw DDL 路径就没了。列名与 FileSubAgentRunStoreTests 的
+                // 已验证 fixture 保持一致（同一张表两种建法产出不同列集合时，查询会只在一条路径上炸）。
+                await db.Database.ExecuteSqlRawAsync("""
+                    CREATE TABLE IF NOT EXISTS "sub_agent_runs" (
+                        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                        run_id              TEXT    NOT NULL UNIQUE,
+                        parent_session_id   TEXT    NOT NULL,
+                        parent_turn_id      TEXT,
+                        parent_command_id   TEXT,
+                        parent_run_id       TEXT,
+                        sub_session_id      TEXT    NOT NULL,
+                        workspace_id        TEXT    NOT NULL,
+                        agent_instance_id   TEXT    NOT NULL,
+                        template_id         TEXT    NOT NULL,
+                        status              TEXT    NOT NULL DEFAULT 'running',
+                        started_at          TEXT    NOT NULL,
+                        completed_at        TEXT,
+                        archive_path        TEXT    NOT NULL,
+                        trace_id            TEXT,
+                        correlation_id      TEXT,
+                        error_message       TEXT,
+                        task_planning_metadata_json TEXT,
+                        total_rounds        INTEGER NOT NULL DEFAULT 0,
+                        total_tool_calls    INTEGER NOT NULL DEFAULT 0,
+                        total_duration_ms   INTEGER NOT NULL DEFAULT 0
+                    );
+                    """);
             }
 
             return new TestScope(directory, options);

@@ -273,19 +273,42 @@ public sealed class AgentPoolEntryStore(
         await using var db = await factory.CreateDbContextAsync(ct);
         var stamp = FormatTime(now);
 
+        // 「哪些 run 算还在跑」只从 SubAgentRunEntity 取（唯一真源），本文件不另写一份状态字面量：
+        // 池恢复与 run 归档对「还在跑」的口径必须一致。只改一侧的后果不对称——
+        // 把在跑的 run 误判成终态会去重置一条正在被驱动的条目（两个执行同时驱动一个子会话），
+        // 而反过来只是少救一条，下次重启还有机会。
+        var activeStatuses = SubAgentRunEntity.NonTerminalStatuses;
+
+        if (activeStatuses.Count == 0)
+        {
+            // 空集合的 Contains 恒为 false ⇒ 判据退化成「所有 busy 都是 stale」。
+            // 本函数是「救条目」的，误杀代价远大于不救，所以词表被改坏时宁可什么都不做，
+            // 把原因留在日志里，而不是把整个池重置成 sleeping。
+            logger.LogError(
+                "[AgentPool] ResetStaleBusy skipped: SubAgentRunEntity declares no non-terminal status; " +
+                "refusing to treat every busy entry as stale");
+            return 0;
+        }
+
+        // 判据是「库里还有没有非终态 run」，而不是「启动顺序走到哪一步」：
+        // 本函数在宿主启动期执行，而 run 恢复是否已完成只靠注册顺序无法保证
+        // （BackgroundService.StartAsync 不 await ExecuteAsync 主体）。把判据换成数据后，
+        // 即使执行得比 run 恢复更早，也不会误杀真正在跑的条目——顺序依赖换成了状态依赖。
+        //
         // 只动 busy → sleeping，不清 task_count：那次执行确实发生过。
         // last_used_at 推进到现在，是为了让刚救回来的条目不要立刻成为下一次 LRU 淘汰的首选
         // ——它刚才「忙」着，不代表它是最久没用的。
-        var affected = await db.Database.ExecuteSqlInterpolatedAsync($"""
-            UPDATE "agent_pool"
-               SET "status" = {AgentPoolEntity.StatusSleeping},
-                   "status_reason" = 'recovered_busy',
-                   "active_execution_id" = NULL,
-                   "last_used_at" = {stamp},
-                   "version" = "version" + 1
-             WHERE "status" = {AgentPoolEntity.StatusBusy}
-               AND "deleted_at" IS NULL;
-            """, ct);
+        var affected = await db.AgentPool
+            .Where(p => p.Status == AgentPoolEntity.StatusBusy && p.DeletedAt == null)
+            .Where(p => !db.SubAgentRuns.Any(r =>
+                r.SubSessionId == p.SubSessionId && activeStatuses.Contains(r.Status)))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(p => p.Status, AgentPoolEntity.StatusSleeping)
+                .SetProperty(p => p.StatusReason, AgentPoolEntity.StatusReasonRecoveredBusy)
+                .SetProperty(p => p.ActiveExecutionId, (string?)null)
+                .SetProperty(p => p.LastUsedAt, stamp)
+                .SetProperty(p => p.Version, p => p.Version + 1),
+                ct);
 
         if (affected > 0)
             logger.LogInformation("[AgentPool] Reset {Count} stale busy entr(y/ies) to sleeping", affected);

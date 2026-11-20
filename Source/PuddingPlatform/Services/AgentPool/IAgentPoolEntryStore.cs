@@ -141,6 +141,16 @@ public interface IAgentPoolEntryStore
     /// 不改 <c>task_count</c>：那次执行确实发生过，可能跑完了只是收尾没写回；
     /// 抹掉计数会让「复用价值」这一指标比实际偏低。
     /// </para>
+    /// <para>
+    /// <b>判据是「<c>sub_agent_runs</c> 里没有非终态 run」，不是「调用够早」：</b>
+    /// 宿主启动期调用时，run 恢复是否已完成只靠注册顺序无法保证，而误杀一条
+    /// 真正在跑的条目会让两个执行同时驱动同一个子会话。用 run 表做判据，
+    /// 即使调用得比 run 恢复更早也不会误杀——顺序依赖换成了状态依赖。
+    /// 非终态集合取自 <c>SubAgentRunEntity.NonTerminalStatuses</c>，实现侧不得另写一份。
+    /// </para>
+    /// <para>
+    /// <b>失败方向：</b>词表为空（判据会退化成「所有 busy 都是 stale」）时不重置并返回 0。
+    /// </para>
     /// </summary>
     Task<int> ResetStaleBusyAsync(DateTimeOffset now, CancellationToken ct);
 

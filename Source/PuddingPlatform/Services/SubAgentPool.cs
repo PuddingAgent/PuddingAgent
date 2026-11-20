@@ -275,6 +275,11 @@ public sealed class SubAgentPool : ISubAgentPool
                     activeExecutionId: snapshot.ActiveExecutionId));
             }
 
+            // S5c：先救「重启前残留的 busy」，再对外宣告就绪。
+            // 顺序上选在 Ready 之前：Ready 是「可以对外派活」的承诺，把唤醒提前到复位之前，
+            // 第一个调用方就会撞上一条尚未救回的 busy（报「当前忙」而不是真 busy）。
+            await TryRecoverStaleBusyAsync(ct);
+
             _readiness = PoolReadiness.Ready;
             _logger.LogInformation(
                 "[SubAgentPool] Restored {Count} pool entries from storage (readiness=Ready)", loaded.Count);
@@ -283,6 +288,101 @@ public sealed class SubAgentPool : ISubAgentPool
         {
             _readyGate.Release();
         }
+    }
+
+    /// <summary>
+    /// 重启恢复（S5c）：把「上一次进程崩溃 / 重启留下的 busy」复位成 sleeping，并同步内存视图。
+    /// <para>
+    /// <b>为什么需要这一步：</b><see cref="ExecuteAsync"/> 的内存前置检查要求状态不是 Busy，
+    /// 库侧 <c>TryAcquireAsync</c> 也只接受 idle/sleeping——一条残留的 busy 会让条目
+    /// 「在池里、但永远派不了活」，用户看到的是永远「忙」。
+    /// </para>
+    /// <para>
+    /// <b>为什么写库在前、改内存在后：</b>与 Execute/Sleep/Destroy 同一套口径——库是事实源，
+    /// 缓存跟随。复位后重读一次库而不是在内存里按状态自己推断「哪几条该改」，
+    /// 是为了不把「哪些算 stale」这个判据抄成 C# 的第二份（第二份迟早与 SQL 那份漂移，
+    /// 那时就会出现「库里已 sleeping、内存仍 busy」，而那正是本缺陷的变体重演）。
+    /// </para>
+    /// <para>
+    /// <b>为什么失败不让池整体 Failed：</b>复位只是一次「尽力而为的清理」，而池可用的前提是
+    /// 视图已加载（<c>LoadAllAsync</c> 才是硬依赖）。若把复位失败也当成 Failed，
+    /// 一次写失败就会让整个池化能力停摆（GC 跳过扫描、所有池调用报错），代价远大于
+    /// 「个别条目继续停在 busy」——后者仍有日志可查，且下次重启还会再试一次。
+    /// </para>
+    /// </summary>
+    private async Task TryRecoverStaleBusyAsync(CancellationToken ct)
+    {
+        if (_entryStore is null)
+            return;
+
+        int reset;
+        try
+        {
+            reset = await _entryStore.ResetStaleBusyAsync(DateTimeOffset.UtcNow, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 不设 Failed：加载已成功，池可用；只是这次的「救条目」没做成。
+            _logger.LogWarning(
+                ex,
+                "[SubAgentPool] Stale-busy recovery failed; pool still becomes Ready " +
+                "(loaded entries are usable, stale busy entries stay stuck until next restart)");
+            return;
+        }
+
+        if (reset <= 0)
+            return;
+
+        IReadOnlyList<AgentPoolEntrySnapshot> rows;
+        try
+        {
+            rows = await _entryStore.LoadAllAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 复位已在库里生效，内存没跟上只是缓存陈旧（下一次重启会重新加载）；不让池 Failed。
+            _logger.LogWarning(
+                ex,
+                "[SubAgentPool] Stale-busy reset applied ({Count}) but re-read failed; " +
+                "in-memory entries may still report Busy", reset);
+            return;
+        }
+
+        // 按 pool_id 对齐而不是按 name：name 可以被软删后复用，pool_id 才是稳定身份。
+        var byPoolId = rows.ToDictionary(row => row.PoolId, StringComparer.Ordinal);
+
+        // 取 _stateLock：List()/GetAsync() 不经就绪门，用同一把锁让它们不会读到写了一半的中间态。
+        // 锁序安全：本方法在 _readyGate 内调用，而其余路径都是先拿 _readyGate（EnsureReadyAsync）
+        // 再拿 _stateLock，不存在反向嵌套。
+        var synced = 0;
+        await _stateLock.WaitAsync(ct);
+        try
+        {
+            foreach (var entry in _pool.Values)
+            {
+                if (entry.Status != PooledSubAgentStatus.Busy)
+                    continue;
+                if (!byPoolId.TryGetValue(entry.PoolId, out var row))
+                    continue;
+
+                var status = MapStatus(row.Status);
+                if (status == PooledSubAgentStatus.Busy)
+                    continue; // 库里有非终态 run，复位没有动它：内存也得继续显示 busy
+
+                entry.Status = status;
+                entry.ActiveExecutionId = row.ActiveExecutionId;
+                entry.LastUsedAt = row.LastUsedAt;
+                synced++;
+            }
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+
+        _logger.LogInformation(
+            "[SubAgentPool] Recovered {Reset} stale busy entr(y/ies); synced {Synced} in-memory",
+            reset, synced);
     }
 
     /// <summary>
