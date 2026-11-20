@@ -5133,3 +5133,49 @@ export async function getExecutionReviewByGoal(
     { method: 'GET', signal: options?.signal },
   );
 }
+
+// ─── 子代理委派配置（需求 3「配置界面」）─────────────────────────
+//
+// 后端：Source/PuddingHost/Controllers/SubAgentDelegationAdminController.cs
+// 四个键由 SubAgentTool 每次派发实时读取，而 system.json 以 reloadOnChange:true
+// 接入配置链 ⇒ 保存后**下一次派发即生效，不需要重启 Core**。
+// 但重载是异步的：PUT 的响应体是「已落盘的目标值」，紧接着 GET 可能仍是旧快照，
+// 因此界面一律以 PUT 响应更新本地状态，不在保存后立刻回读。
+
+export interface SubAgentDelegationSnapshotDto {
+  /** 委派深度上限；0 = 不限制。默认 1（仅主 Agent 可创建子代理）。 */
+  maxDepth: number;
+  /** 同一主 Agent 下所有层级存活子代理上限；0 = 不限制。 */
+  maxConcurrentSubAgents: number;
+  /** 是否允许 Agent 为子代理选择模型。 */
+  allowModelSelection: boolean;
+  /** 模型选择关闭时使用的路由（providerId/modelId）；未设置为 null。 */
+  defaultModelRoute?: string | null;
+  /** 配置文件绝对路径（告诉用户改到哪去了）。 */
+  configFile: string;
+  /** 该值是否来自配置文件；false = 取的是代码默认值。 */
+  maxDepthFromConfigFile: boolean;
+  maxConcurrentSubAgentsFromConfigFile: boolean;
+  allowModelSelectionFromConfigFile: boolean;
+  defaultModelRouteFromConfigFile: boolean;
+  /** 可写但当前不生效 / 有副作用的组合提示。 */
+  warnings: string[];
+}
+
+/** 部分更新：未提供的字段保持原值；defaultModelRoute 传空串表示清除。 */
+export interface SubAgentDelegationUpdateRequest {
+  maxDepth?: number;
+  maxConcurrentSubAgents?: number;
+  allowModelSelection?: boolean;
+  defaultModelRoute?: string;
+}
+
+export async function getSubAgentDelegation(): Promise<SubAgentDelegationSnapshotDto> {
+  return request('/api/admin/sub-agent-delegation', { method: 'GET' });
+}
+
+export async function updateSubAgentDelegation(
+  req: SubAgentDelegationUpdateRequest,
+): Promise<SubAgentDelegationSnapshotDto> {
+  return request('/api/admin/sub-agent-delegation', { method: 'PUT', data: req });
+}

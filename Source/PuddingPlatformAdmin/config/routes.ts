@@ -218,6 +218,15 @@ const routeCatalog = [
         icon: 'key',
         component: './access-token-management',
       },
+      {
+        // 需求 3（2026-11-20）：子代理委派策略（深度 / 并发上限 / 模型选择）。
+        // 与上面的 team-management 不是同一回事：那个管用户与团队 RBAC，
+        // 这个管子代理的委派开关。
+        path: '/system-config/subagent-delegation',
+        name: 'subagentDelegation',
+        icon: 'branches',
+        component: './subagent-team',
+      },
     ],
   },
   {
