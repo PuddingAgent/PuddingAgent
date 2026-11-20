@@ -224,6 +224,60 @@ public sealed class SubAgentPoolTests
     }
 
     [TestMethod]
+    public async Task ExecuteAsync_WhenOwnerSessionDiffers_ThrowsAndKeepsEntryIdle()
+    {
+        // D-P0-1 回归：归属校验必须在进入执行链之前拒绝，且不得改变条目状态。
+        var manager = new TestSubAgentManager();
+        var pool = CreatePool(manager);
+        await pool.CreateAsync("dev-agent", CreateSpawnRequest());
+
+        var foreignRequest = CreateSpawnRequest("cross-parent") with
+        {
+            ParentSessionId = "another-parent-session",
+        };
+
+        PoolOwnershipMismatchException? caught = null;
+        try { await pool.ExecuteAsync("dev-agent", foreignRequest); }
+        catch (PoolOwnershipMismatchException ex) { caught = ex; }
+
+        Assert.IsNotNull(caught, "跨父会话执行必须被拒绝");
+        Assert.AreEqual(PoolOwnershipMismatchException.OwnerSessionReason, caught!.ReasonCode);
+        Assert.IsNull(manager.LastExecuteRequest, "归属不符时不得进入执行链（不得建 run）");
+
+        var snapshot = await pool.GetAsync("dev-agent");
+        Assert.IsNotNull(snapshot);
+        Assert.AreEqual(PooledSubAgentStatus.Idle, snapshot!.Status, "被拒后条目必须仍是 Idle");
+        Assert.AreEqual(0, snapshot.TaskCount, "被拒后不得累加 task_count");
+        Assert.IsNull(snapshot.LastSuccess);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_WhenOwnerWorkspaceDiffers_ThrowsAndKeepsEntryIdle()
+    {
+        var manager = new TestSubAgentManager();
+        var pool = CreatePool(manager);
+        await pool.CreateAsync("dev-agent", CreateSpawnRequest());
+
+        var foreignRequest = CreateSpawnRequest("cross-workspace") with
+        {
+            WorkspaceId = "another-workspace",
+        };
+
+        PoolOwnershipMismatchException? caught = null;
+        try { await pool.ExecuteAsync("dev-agent", foreignRequest); }
+        catch (PoolOwnershipMismatchException ex) { caught = ex; }
+
+        Assert.IsNotNull(caught, "跨工作区执行必须被拒绝");
+        Assert.AreEqual(PoolOwnershipMismatchException.OwnerWorkspaceReason, caught!.ReasonCode);
+        Assert.IsNull(manager.LastExecuteRequest);
+
+        var snapshot = await pool.GetAsync("dev-agent");
+        Assert.IsNotNull(snapshot);
+        Assert.AreEqual(PooledSubAgentStatus.Idle, snapshot!.Status);
+        Assert.AreEqual(0, snapshot.TaskCount);
+    }
+
+    [TestMethod]
     public async Task ExecuteAsync_ThrowsWhenAgentBusy()
     {
         var manager = new TestSubAgentManager { DelayMs = 2000 };

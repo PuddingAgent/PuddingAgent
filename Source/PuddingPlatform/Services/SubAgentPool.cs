@@ -43,12 +43,20 @@ public sealed class SubAgentPool : ISubAgentPool
         /// </summary>
         public string? ActiveExecutionId { get; set; }
 
-        public PoolEntry(string name, string subSessionId, string templateId, string? role)
+        /// <summary>创建者父会话。持久化后条目会活过创建它的那次执行，归属必须落在这里。</summary>
+        public string? OwnerSessionId { get; }
+
+        /// <summary>创建者工作区。跨工作区复用同样会污染投影，故一并记录。</summary>
+        public string? OwnerWorkspaceId { get; }
+
+        public PoolEntry(string name, string subSessionId, string templateId, string? role, string? ownerSessionId, string? ownerWorkspaceId)
         {
             Name = name;
             SubSessionId = subSessionId;
             TemplateId = templateId;
             Role = role;
+            OwnerSessionId = ownerSessionId;
+            OwnerWorkspaceId = ownerWorkspaceId;
             CreatedAt = DateTimeOffset.UtcNow;
             LastUsedAt = CreatedAt;
             Status = PooledSubAgentStatus.Idle;
@@ -142,7 +150,9 @@ public sealed class SubAgentPool : ISubAgentPool
                 name: name,
                 subSessionId: SubAgentSessionId.Create(request.ParentSessionId),
                 templateId: request.TemplateId,
-                role: request.RoleInPlan);
+                role: request.RoleInPlan,
+                ownerSessionId: request.ParentSessionId,
+                ownerWorkspaceId: request.WorkspaceId);
             _pool[name] = entry;
         }
         finally
@@ -183,6 +193,10 @@ public sealed class SubAgentPool : ISubAgentPool
     /// status 被打回 Sleeping）。引用相等 + 令牌双判，任一不符即丢弃并记一条 warning。
     /// </para>
     /// </summary>
+    /// <summary>异常与日志文案里只展示会话 id 前 8 位，避免整串 id 刷屏。</summary>
+    private static string Shorten(string value) =>
+        value.Length <= 8 ? value : value[..8];
+
     private async Task FinishAsync(
         string name,
         PoolEntry executedEntry,
@@ -252,6 +266,31 @@ public sealed class SubAgentPool : ISubAgentPool
                         $"Sub-agent '{name}' has been destroyed and cannot be reused.");
                 }
 
+                // 归属校验（D-P0-1）：只允许创建者父会话在同一工作区驱动该条目。
+                // 必须放在置 Busy 之前——跨父复用会先建 run、再在会话投影上抛错，
+                // 那时只能把 run 终结成 failed 并污染池计数，无法撤回。
+                var ownerSession = existing.OwnerSessionId;
+                if (!string.IsNullOrEmpty(ownerSession) &&
+                    !string.Equals(ownerSession, request.ParentSessionId, StringComparison.Ordinal))
+                {
+                    throw new PoolOwnershipMismatchException(
+                        $"Sub-agent '{name}' belongs to parent session '{Shorten(ownerSession)}' " +
+                        $"but was requested by '{Shorten(request.ParentSessionId)}'.",
+                        name, ownerSession, request.ParentSessionId,
+                        PoolOwnershipMismatchException.OwnerSessionReason);
+                }
+
+                var ownerWorkspace = existing.OwnerWorkspaceId;
+                if (!string.IsNullOrEmpty(ownerWorkspace) &&
+                    !string.Equals(ownerWorkspace, request.WorkspaceId, StringComparison.Ordinal))
+                {
+                    throw new PoolOwnershipMismatchException(
+                        $"Sub-agent '{name}' belongs to workspace '{ownerWorkspace}' " +
+                        $"but was requested from '{request.WorkspaceId}'.",
+                        name, ownerSession, request.ParentSessionId,
+                        PoolOwnershipMismatchException.OwnerWorkspaceReason);
+                }
+
                 // 标记为 Busy（在锁内，确保状态变更原子性）
                 existing.Status = PooledSubAgentStatus.Busy;
                 existing.LastUsedAt = DateTimeOffset.UtcNow;
@@ -270,7 +309,9 @@ public sealed class SubAgentPool : ISubAgentPool
                     name: name,
                     subSessionId: SubAgentSessionId.Create(request.ParentSessionId),
                     templateId: request.TemplateId,
-                    role: request.RoleInPlan)
+                    role: request.RoleInPlan,
+                    ownerSessionId: request.ParentSessionId,
+                    ownerWorkspaceId: request.WorkspaceId)
                 {
                     Status = PooledSubAgentStatus.Busy,
                     LastUsedAt = DateTimeOffset.UtcNow,
