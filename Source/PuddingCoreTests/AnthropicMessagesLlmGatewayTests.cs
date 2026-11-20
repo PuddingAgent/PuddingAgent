@@ -37,9 +37,55 @@ public sealed class AnthropicMessagesLlmGatewayTests
         Assert.IsNull(headers.AuthorizationScheme);
         Assert.AreEqual("qwen3.8-max", body["model"]!.GetValue<string>());
         Assert.AreEqual(131072, body["max_tokens"]!.GetValue<int>());
-        Assert.AreEqual("be concise", body["system"]!.GetValue<string>());
+        Assert.AreEqual("be concise", body["system"]![0]!["text"]!.GetValue<string>());
+        Assert.AreEqual("ephemeral", body["system"]![0]!["cache_control"]!["type"]!.GetValue<string>());
         Assert.AreEqual("user", body["messages"]![0]!["role"]!.GetValue<string>());
         Assert.AreEqual("hello", body["messages"]![0]!["content"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_SystemAndTools_CarryPromptCacheBreakpoints()
+    {
+        string? requestBody = null;
+        var gateway = CreateGateway(request =>
+        {
+            requestBody = ReadBody(request);
+            return OkResponse();
+        });
+        var tools = new ITool[]
+        {
+            new StubTool(
+                "first",
+                "First tool",
+                new ToolParameterSchema(
+                    [new ToolParameter("query", "string", "Query")],
+                    ["query"])),
+            new StubTool(
+                "last",
+                "Last tool",
+                new ToolParameterSchema(
+                    [new ToolParameter("query", "string", "Query")],
+                    ["query"])),
+        };
+
+        await gateway.ChatAsync(
+            [new ChatMessage(ChatRole.System, "stable system prefix"), new ChatMessage(ChatRole.User, "hello")],
+            tools);
+
+        var body = JsonNode.Parse(requestBody!)!.AsObject();
+
+        // system 必须是 block 数组且首元素带 cache_control：纯字符串 = Claude 端 0 缓存。
+        var systemBlocks = body["system"]!.AsArray();
+        Assert.AreEqual(1, systemBlocks.Count);
+        Assert.AreEqual("text", systemBlocks[0]!["type"]!.GetValue<string>());
+        Assert.AreEqual("stable system prefix", systemBlocks[0]!["text"]!.GetValue<string>());
+        Assert.AreEqual("ephemeral", systemBlocks[0]!["cache_control"]!["type"]!.GetValue<string>());
+
+        // tools 只在最后一个元素上打断点（上限 4，本实现只用 2 个：tools 末尾 + system）。
+        var toolNodes = body["tools"]!.AsArray();
+        Assert.AreEqual(2, toolNodes.Count);
+        Assert.IsNull(toolNodes[0]!["cache_control"]);
+        Assert.AreEqual("ephemeral", toolNodes[1]!["cache_control"]!["type"]!.GetValue<string>());
     }
 
     [TestMethod]

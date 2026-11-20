@@ -187,7 +187,19 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
                 .Select(message => message.Content)
                 .Where(content => !string.IsNullOrWhiteSpace(content)));
         if (!string.IsNullOrWhiteSpace(system))
-            root["system"] = system;
+        {
+            // Claude 路由的 prompt caching 是显式 opt-in：system 必须以 block 数组下发并带
+            // cache_control 断点，纯字符串等价于 0 缓存。这里只用 system 整块这一个断点。
+            root["system"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["type"] = "text",
+                    ["text"] = system,
+                    ["cache_control"] = new JsonObject { ["type"] = "ephemeral" },
+                },
+            };
+        }
 
         var messageNodes = new JsonArray();
         // V5 切片二：一次 payload 构造一个请求级预算账本（Anthropic 无图片型工具结果，
@@ -230,6 +242,11 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
                     ["input_schema"] = BuildParametersNode(tool),
                 });
             }
+            // 第二个缓存断点放在工具定义末尾：Anthropic 上限 4 个断点，前缀命中即缓存，
+            // 只标记最后一个工具即可覆盖整段 tools；给每个工具都加会浪费断点且无额外收益。
+            if (toolNodes.Count > 0 && toolNodes[toolNodes.Count - 1] is JsonObject lastTool)
+                lastTool["cache_control"] = new JsonObject { ["type"] = "ephemeral" };
+
             root["tools"] = toolNodes;
         }
 
