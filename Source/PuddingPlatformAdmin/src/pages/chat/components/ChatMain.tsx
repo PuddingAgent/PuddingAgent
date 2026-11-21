@@ -7,6 +7,7 @@ import {
   HistoryOutlined,
   MenuUnfoldOutlined,
   MoreOutlined,
+  RobotOutlined,
   SoundOutlined,
 } from '@ant-design/icons';
 import { Alert, Button, Divider, Dropdown, Select, Tooltip } from 'antd';
@@ -56,6 +57,8 @@ const loadTaskBoardModal = async () => {
   const module = await import('@/pages/workspace-tasks');
   return { default: module.TaskBoardModal };
 };
+const loadSubAgentPoolModal = () =>
+  import('./subagent-pool/SubAgentPoolPanel');
 
 const CheckpointTimelinePanel =
   process.env.NODE_ENV === 'test'
@@ -82,6 +85,11 @@ const TaskBoardModal =
     ? (require('@/pages/workspace-tasks')
         .TaskBoardModal as typeof import('@/pages/workspace-tasks').TaskBoardModal)
     : React.lazy(loadTaskBoardModal);
+const SubAgentPoolModal =
+  process.env.NODE_ENV === 'test'
+    ? (require('./subagent-pool/SubAgentPoolPanel')
+        .default as typeof import('./subagent-pool/SubAgentPoolPanel').default)
+    : React.lazy(loadSubAgentPoolModal);
 
 import { useDevRuntimeEvents } from './useDevRuntimeEvents';
 
@@ -324,6 +332,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
   );
   // 任务看板模态窗口（原独立路由改为弹窗）
   const [taskBoardOpen, setTaskBoardOpen] = useState(false);
+  // 子代理池模态窗口（管理视图骨架；关闭即卸载，下次打开重新取数）
+  const [subAgentPoolOpen, setSubAgentPoolOpen] = useState(false);
   /** P0#2：转录视图分级（normal | verbose | summary） */
   const [transcriptMode, setTranscriptMode] =
     useState<TranscriptMode>('normal');
@@ -600,6 +610,18 @@ const ChatMain: React.FC<ChatMainProps> = ({
                 }}
               >
                 任务看板
+              </Button>
+              <Button
+                type="text"
+                size="small"
+                icon={<RobotOutlined />}
+                className={styles.taskBoardButton}
+                aria-label="子代理"
+                onMouseEnter={() => void loadSubAgentPoolModal()}
+                onFocus={() => void loadSubAgentPoolModal()}
+                onClick={() => setSubAgentPoolOpen(true)}
+              >
+                子代理
               </Button>
               <GoalBanner
                 goal={goalState.goal}
@@ -882,6 +904,12 @@ const ChatMain: React.FC<ChatMainProps> = ({
             workspaceId={workspaceId}
             onClose={() => setTaskBoardOpen(false)}
           />
+        </React.Suspense>
+      )}
+
+      {subAgentPoolOpen && (
+        <React.Suspense fallback={null}>
+          <SubAgentPoolModal open onClose={() => setSubAgentPoolOpen(false)} />
         </React.Suspense>
       )}
 

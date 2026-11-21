@@ -101,6 +101,7 @@
 | `src/services/platform/api.ts` | 调度 status/policy/actions/evaluate API；Goal 与 Task 继续使用服务端结构化命令，不在浏览器复制状态机 |
 | `src/pages/chat/components/ChatMain.tsx` | Goal 状态控件挂到 WorkspaceNavigationHeader 的「任务看板」旁；消息首屏不再被 Goal 长正文下推；其余余额/推断辅助请求继续 idle 后启动 |
 | `src/services/platform/api.ts` | `getLlmProviderBalance` → `GET /api/llm/providers/{id}/balance`；`LlmProviderBalanceDto`/`LlmBalanceInfoDto` 类型 |
+| `src/pages/chat/components/subagent-pool/` + `ChatMain.tsx` | 子代理池**只读**骨架：顶栏「子代理」按钮开 80% 宽高模态（关闭即卸载重取）；左树 320px + 右详情；`useSubAgentPool` 三态互斥（加载中 / 失败+重试 / 空池「暂无子代理」），取数 `GET /api/admin/sub-agent-pool`；`avatarKey` 空时按 name+poolId 确定性生成头像（不引图形库）；徽标 idle/busy/sleeping/dead 四态各自独立，`lastSuccess` 三态（从未执行/上次失败/上次成功）不伪造时间 |
 
 **关键语义**
 

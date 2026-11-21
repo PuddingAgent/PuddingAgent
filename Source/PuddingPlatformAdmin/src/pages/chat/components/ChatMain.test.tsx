@@ -109,6 +109,17 @@ jest.mock('@/pages/workspace-tasks', () => ({
       </div>
     ) : null,
 }));
+jest.mock('./subagent-pool/SubAgentPoolPanel', () => ({
+  __esModule: true,
+  default: (props: any) =>
+    props.open ? (
+      <div data-testid="subagent-pool-modal">
+        <button type="button" aria-label="关闭子代理" onClick={props.onClose}>
+          关闭子代理
+        </button>
+      </div>
+    ) : null,
+}));
 
 const workspace = {
   workspaceId: 'default',
@@ -262,6 +273,20 @@ describe('ChatMain workbench header', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '关闭任务看板' }));
     expect(screen.queryByTestId('task-board-modal')).toBeNull();
+  });
+
+  it('opens and closes the sub-agent pool modal from the header entry', () => {
+    renderChatMain();
+
+    expect(screen.queryByTestId('subagent-pool-modal')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '子代理' }));
+
+    expect(mockHistoryPush).not.toHaveBeenCalled();
+    expect(screen.getByTestId('subagent-pool-modal')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭子代理' }));
+    expect(screen.queryByTestId('subagent-pool-modal')).toBeNull();
   });
 
   it('renders the Agent Workbench with timeline and intent console without a side presence rail', () => {
