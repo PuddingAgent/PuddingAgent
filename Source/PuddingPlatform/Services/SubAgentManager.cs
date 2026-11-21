@@ -132,6 +132,15 @@ public sealed class SubAgentManager : ISubAgentManager
                     ? request.TaskDescription[..200] + "..."
                     : request.TaskDescription,
                 run_id = runHandle.RunId,
+                // 人类可读身份三字段（2026-11-21）：浮坞/检查器此前只能显示来源工具名
+                // （spawn_sub_agent），用户无法定位「这是哪一个子代理」。这三个字段是
+                // **纯附加**（EventSchemaRegistry 声明为 OptionalFields，不升版本）。
+                // 为空时语义是「父代理没给名」，由会话状态层在 session_sub_agents 里
+                // 生成并持久化；事件侧不编造名字——展示层按
+                // displayName → task 首句 → <template>-<id 后 6 位> 确定性兜底。
+                display_name = request.DisplayName,
+                avatar_key = request.AvatarKey,
+                responsibility = request.Responsibility,
             },
             Metadata = new Dictionary<string, string>
             {

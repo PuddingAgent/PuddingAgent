@@ -2071,6 +2071,14 @@ export interface SubAgentStatusDto {
   templateId?: string;
   modelId?: string;
   taskSummary: string;
+  /**
+   * 人读身份三字段（2026-11-21）。会话状态端点一直返回它们
+   * （PuddingCore/Abstractions/ISessionStateManager.cs 的 SubAgentStatus），
+   * 之前只是 DTO 没声明、前端没映射 ⇒ 刷新后名字丢。旧行为 null。
+   */
+  displayName?: string | null;
+  avatarKey?: string | null;
+  responsibility?: string | null;
   spawnedAt: string;
   completedAt?: string;
   resultSummary?: string;

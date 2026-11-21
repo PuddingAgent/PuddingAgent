@@ -240,8 +240,18 @@ public static class EventSchemaRegistry
             "连接器已断开", ["channel_id", "channel_type"]);
 
         // 子代理运行事件（ADR-021-D: subagent.run.* 前缀）
+        //
+        // subagent.run.created 的可选字段里，display_name / avatar_key / responsibility
+        // 是 2026-11-21 追加的人读身份（浮坞与检查器要靠它们显示「是哪一个子代理」，
+        // 此前只有来源工具名 spawn_sub_agent）。这是**只增不改**的附加字段：
+        //  - RequiredFields 未变 ⇒ 不构成破坏性变更；
+        //  - 注册表与 EventDispatcher 从不校验字段集合（只比较版本号），
+        //    因此不为纯附加字段升版本——升了只会让同一版本的旧事件多点噪声，
+        //    换不来任何校验；
+        //  - 旧消费方按既有约定忽略未知字段，前端对缺失字段做非空兜底。
         yield return new EventSchemaDefinition("subagent.run.created", 1, "subagent",
-            "子代理已创建", ["parent_session_id", "sub_agent_id", "template"]);
+            "子代理已创建", ["parent_session_id", "sub_agent_id", "template"],
+            ["run_id", "task", "display_name", "avatar_key", "responsibility"]);
         yield return new EventSchemaDefinition("subagent.run.started", 1, "subagent",
             "子代理开始执行", ["parent_session_id", "sub_agent_id"]);
         yield return new EventSchemaDefinition("subagent.run.context_assembled", 1, "subagent",

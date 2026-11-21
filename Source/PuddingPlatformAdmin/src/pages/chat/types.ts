@@ -491,6 +491,16 @@ export interface SubAgentCard {
   invocationMode?: string;
   blocksParentTurn?: boolean;
   role?: string;
+  /**
+   * 人读名（父代理给出或会话状态层生成）。
+   * 旧事件（功能上线前写入）没有该字段 ⇒ `undefined`，展示层必须兜底成非空名，
+   * 不得把 `spawn_sub_agent` 这类来源工具名当标题。
+   */
+  displayName?: string | null;
+  /** 预设图形键；为空时展示层按名字确定性生成（不用随机色）。 */
+  avatarKey?: string | null;
+  /** 一句话职责；为空时整行不渲染（不用占位符凑高度）。 */
+  responsibility?: string | null;
   taskSummary: string;
   status: SubAgentCardStatus;
   phase?: string;

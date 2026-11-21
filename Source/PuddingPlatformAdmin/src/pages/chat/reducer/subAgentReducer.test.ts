@@ -560,3 +560,133 @@ describe('subAgentReducer — 工具失败与运行级错误分层', () => {
     ).toBe('runner crashed after tool failure');
   });
 });
+
+// ── 2026-11-21：子代理身份三字段（名字 / 头像 / 职责）────────────────────
+// 背景：用户反馈「浮坞与检查器里看不到名字，标题只显示 spawn_sub_agent」。
+// 实测三层断点：DB 写入通（session_sub_agents 有 display_name），事件 payload 断，
+// 前端类型/投影断。这组用例只钉住**投影层**的契约：
+//   ① 有身份 → 逐字段映射到卡片；
+//   ② 没有身份（功能上线前的 1635 条历史）→ 事件**不得被丢弃**，其余字段不受影响；
+//   ③ 会话状态端点快照补名字（刷新后不丢），后续缺字段的事件不得把它清空。
+describe('subAgentReducer — 子代理身份三字段', () => {
+  it('created 事件带 display_name / avatar_key / responsibility → 卡片逐字段映射', () => {
+    const state = reduceSubAgentRunEvent(
+      {},
+      {
+        eventId: 'event-created-identity',
+        type: 'subagent.run.created',
+        occurredAt: '2026-11-21T00:00:00Z',
+        run_id: 'run-identity',
+        sub_agent_id: 'sub-identity',
+        parent_session_id: 'conversation-1',
+        template: 'workspace-task-agent',
+        task: '修复浮坞与检查器的身份展示',
+        display_name: 'dock-fix',
+        avatar_key: 'coder',
+        responsibility: '修复子代理身份展示链路',
+      },
+    );
+
+    expect(state['run-identity']).toMatchObject({
+      displayName: 'dock-fix',
+      avatarKey: 'coder',
+      responsibility: '修复子代理身份展示链路',
+    });
+
+    expect(projectSubAgentRunsToCards(state)['sa-run-identity']).toMatchObject({
+      displayName: 'dock-fix',
+      avatarKey: 'coder',
+      responsibility: '修复子代理身份展示链路',
+      taskSummary: '修复浮坞与检查器的身份展示',
+    });
+  });
+
+  it('旧事件（不带身份三字段）不会被丢弃，其余字段照常折叠', () => {
+    const state = reduceSubAgentRunEvent(
+      {},
+      {
+        eventId: 'event-created-legacy',
+        type: 'subagent.run.created',
+        occurredAt: '2026-11-21T00:00:00Z',
+        run_id: 'run-legacy',
+        sub_agent_id: 'sub-legacy',
+        template: 'workspace-task-agent',
+        task: '功能上线前的旧任务',
+      },
+    );
+
+    // 整条事件必须留下：运行视图是运行事实，不因缺展示字段而消失。
+    expect(Object.keys(state)).toEqual(['run-legacy']);
+    const run = state['run-legacy'];
+    expect(run.displayName).toBeUndefined();
+    expect(run.avatarKey).toBeUndefined();
+    expect(run.responsibility).toBeUndefined();
+    expect(run.taskSummary).toBe('功能上线前的旧任务');
+    expect(run.templateId).toBe('workspace-task-agent');
+
+    const card = projectSubAgentRunsToCards(state)['sa-run-legacy'];
+    expect(card.status).toBe('spawning');
+    expect(card.displayName).toBeUndefined();
+  });
+
+  it('会话状态端点快照补上名字（刷新后不丢），后续缺字段事件不清空', () => {
+    const reconciled = reconcileSubAgentRunStatuses({}, [
+      {
+        runId: 'run-refresh',
+        parentSessionId: 'parent-session',
+        subSessionId: 'parent-session-sub-refresh',
+        status: 'running',
+        templateId: 'workspace-task-agent',
+        taskSummary: '刷新后仍要有名字',
+        displayName: 'usage-api',
+        avatarKey: 'coder',
+        responsibility: '统计用量接口',
+        spawnedAt: '2026-11-21T00:00:00Z',
+      },
+    ]);
+
+    expect(
+      projectSubAgentRunsToCards(reconciled)['sa-run-refresh'],
+    ).toMatchObject({
+      displayName: 'usage-api',
+      avatarKey: 'coder',
+      responsibility: '统计用量接口',
+    });
+
+    const afterEvent = reduceSubAgentRunEvent(reconciled, {
+      eventId: 'event-round-after-refresh',
+      type: 'subagent.round.started',
+      occurredAt: '2026-11-21T00:00:05Z',
+      run_id: 'run-refresh',
+      sub_agent_id: 'parent-session-sub-refresh',
+      round: 1,
+    });
+
+    // 事件本身没有身份字段 ⇒ 必须保留快照给出的名字，而不是被 undefined 覆盖。
+    expect(afterEvent['run-refresh'].displayName).toBe('usage-api');
+  });
+
+  it('created 缺身份、started 补上时，名字落到同一个运行上', () => {
+    const created = reduceSubAgentRunEvent(
+      {},
+      {
+        eventId: 'event-created-late-identity',
+        type: 'subagent.run.created',
+        occurredAt: '2026-11-21T00:00:00Z',
+        run_id: 'run-late-identity',
+        sub_agent_id: 'sub-late-identity',
+        task: '稍后补名字',
+      },
+    );
+    const started = reduceSubAgentRunEvent(created, {
+      eventId: 'event-started-late-identity',
+      type: 'subagent.run.started',
+      occurredAt: '2026-11-21T00:00:01Z',
+      run_id: 'run-late-identity',
+      sub_agent_id: 'sub-late-identity',
+      display_name: 'probe-reasoning',
+    });
+
+    expect(started['run-late-identity'].displayName).toBe('probe-reasoning');
+  });
+});

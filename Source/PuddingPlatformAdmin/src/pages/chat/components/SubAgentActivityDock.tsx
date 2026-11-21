@@ -49,6 +49,7 @@ import type {
   SubAgentCardMap,
   SubAgentCardStatus,
 } from '../types';
+import { stringToColor } from '../utils/chatStateUtils';
 
 const { Paragraph, Text } = Typography;
 
@@ -249,11 +250,59 @@ const useStyles = createStyles(() => ({
   popover: {
     width: 300,
   },
-  previewTitle: {
+  // ── 身份区（名字 + 短 ID + 头像）：浮坞弹窗与检查器头部共用一套样式 ──
+  // 用户要求「名字与短 ID 必须同屏」，因此它们是同一行的兄弟节点，
+  // 不靠折叠/悬停/滚动才出现。
+  identity: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 8,
+    minWidth: 0,
+  },
+  identityCopy: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    minWidth: 0,
+    flex: 1,
+    gap: 2,
+  },
+  identityName: {
+    overflow: 'hidden',
+    whiteSpace: 'nowrap' as const,
+    textOverflow: 'ellipsis',
+    fontSize: 13,
+    fontWeight: 650,
+    lineHeight: '18px',
+  },
+  avatarChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: '0 0 auto',
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#fff',
+    lineHeight: 1,
+  },
+  shortId: {
+    fontSize: 10,
+    lineHeight: '14px',
+    color: 'var(--pudding-chat-text-subtle)',
+  },
+  identitySource: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+  },
+  responsibility: {
+    marginTop: 8,
+    fontSize: 12,
+    lineHeight: '18px',
+    color: 'var(--pudding-chat-text)',
   },
   previewTask: {
     margin: '8px 0',
@@ -513,11 +562,6 @@ const formatTokens = (tokens?: number): string => {
   return `${(tokens / 1_000_000).toFixed(2)}M`;
 };
 
-const shortRole = (run: SubAgentCard): string => {
-  const source = run.role ?? run.originToolId?.replace(/^smart_/, '') ?? 'sub';
-  return source.slice(0, 3);
-};
-
 const taskSummary = (run: SubAgentCard): string => {
   const raw = run.taskSummary?.replace(/\r/g, '').trim();
   if (!raw) return `${run.role ?? run.originToolId ?? '子代理'}任务`;
@@ -534,6 +578,70 @@ const taskSummary = (run: SubAgentCard): string => {
     raw;
   const compact = firstLine.replace(/\s+/g, ' ');
   return compact.length > 220 ? `${compact.slice(0, 217)}...` : compact;
+};
+
+const shortSubAgentId = (subSessionId?: string | null): string => {
+  const value = subSessionId?.trim();
+  if (!value) return '…——';
+  return `…${value.length > 6 ? value.slice(-6) : value}`;
+};
+
+/**
+ * 子代理身份三要素（名字 / 头像 / 短 ID）——用户 2026-11-21 原话：
+ * 「既没有 displayName 也没有 id，我怎么定位这个子代理究竟是谁」。
+ *
+ * 因此三者必须同屏：名字回答「是谁」，短 ID 回答「是哪一次的哪一个」，
+ * 头像只是快速区分。`spawn_sub_agent` 是**来源工具**，不是身份，只能作为 Tag 出现。
+ */
+const SPAWN_TOOL_ID = 'spawn_sub_agent';
+
+/** 预设图形键 → 图形。未登记的键不猜语义，落到名字首字。 */
+const avatarPresets: Record<string, string> = {
+  robot: '🤖',
+  planner: '🧭',
+  coder: '💻',
+  researcher: '🔍',
+  reviewer: '🧪',
+  writer: '✍️',
+  ops: '🛠️',
+};
+
+/** 中文取首字，英文取前两字母大写；其它（代码点）取首个字符。 */
+const avatarInitial = (name: string): string => {
+  const trimmed = name.trim();
+  if (!trimmed) return '🤖';
+  const first = Array.from(trimmed)[0];
+  if (/[\u3400-\u4dbf\u4e00-\u9fff]/.test(first)) return first;
+  const letters = trimmed.match(/[A-Za-z]{1,2}/)?.[0];
+  return (letters ?? first).toUpperCase();
+};
+
+/**
+ * 无 displayName 时的确定性兜底名：task 首句 → `<template>-<id 后 6 位>`。
+ * 永不返回空串，也永不返回来源工具名（那正是本次要修的误导）。
+ */
+const subAgentName = (run: SubAgentCard): string => {
+  const explicit = run.displayName?.trim();
+  if (explicit && explicit !== SPAWN_TOOL_ID) return explicit;
+  const summary = taskSummary(run);
+  if (summary && summary !== SPAWN_TOOL_ID && summary !== run.originToolId)
+    return summary;
+  const id = (run.subSessionId ?? run.runId ?? '').trim();
+  const tail = id.length > 6 ? id.slice(-6) : id || 'unknown';
+  const template = run.templateId?.trim();
+  return template ? `${template}-${tail}` : `子代理-${tail}`;
+};
+
+const subAgentAvatar = (run: SubAgentCard): { emoji: string; color: string } => {
+  const preset = run.avatarKey
+    ? avatarPresets[run.avatarKey.trim().toLowerCase()]
+    : undefined;
+  return {
+    emoji: preset ?? avatarInitial(subAgentName(run)),
+    // 颜色由名字（无名字则 subSessionId）确定性导出：同一个子代理在浮坞 /
+    // 检查器 / 消息区颜色一致，不引入任何随机或外部依赖。
+    color: stringToColor(run.displayName?.trim() || run.subSessionId || 'sub'),
+  };
 };
 
 const currentActivity = (run: SubAgentCard): string => {
@@ -841,14 +949,52 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
       now - (run.lastActivityAt ?? run.spawnedAt),
     );
     const syncPending = isEventSyncPending(run);
+    const name = subAgentName(run);
+    const avatar = subAgentAvatar(run);
     return (
       <div className={styles.popover}>
-        <div className={styles.previewTitle}>
-          <Space size={6}>
-            <span style={{ color: cfg.color }}>{cfg.icon}</span>
-            <Text strong>{run.originToolId ?? run.role ?? '子代理'}</Text>
-            <Tag color={cfg.color}>{cfg.label}</Tag>
-          </Space>
+        {/* 第一屏三要素：头像 + 名字 + 短 ID（用户 2026-11-21：名字与 id 必须同屏） */}
+        <div
+          className={styles.identity}
+          data-testid="subagent-popover-identity"
+        >
+          <span
+            className={styles.avatarChip}
+            style={{ background: avatar.color }}
+            aria-hidden
+          >
+            {avatar.emoji}
+          </span>
+          <div className={styles.identityCopy}>
+            <span
+              className={styles.identityName}
+              data-testid="subagent-popover-name"
+              title={name}
+            >
+              {name}
+            </span>
+            <Text
+              code
+              copyable={{ text: run.subSessionId }}
+              className={styles.shortId}
+              data-testid="subagent-popover-short-id"
+            >
+              {shortSubAgentId(run.subSessionId)}
+            </Text>
+          </div>
+          <span style={{ color: cfg.color }}>{cfg.icon}</span>
+        </div>
+        <div className={styles.identitySource}>
+          <Tag color={cfg.color} style={{ margin: 0 }}>
+            {cfg.label}
+          </Tag>
+          {/* 来源工具不是身份：降级为小号 Tag，不再占标题位置。 */}
+          {run.originToolId && (
+            <Tag color="geekblue" style={{ margin: 0 }}>
+              {run.originToolId}
+            </Tag>
+          )}
+          {run.role && <Tag style={{ margin: 0 }}>{run.role}</Tag>}
         </div>
         <div className={styles.previewTask}>{taskSummary(run)}</div>
         <div className={styles.previewActivity}>
@@ -972,7 +1118,17 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
                 <Tag color="geekblue">{run.originToolId}</Tag>
               )}
               {run.role && <Tag color="cyan">{run.role}</Tag>}
+              {run.templateId && <Tag>{run.templateId}</Tag>}
             </Space>
+            {/* 职责：有则显示；没有整行不渲染（不用 “—” 占位凑高度）。 */}
+            {run.responsibility?.trim() && (
+              <div
+                className={styles.responsibility}
+                data-testid="subagent-responsibility"
+              >
+                {run.responsibility.trim()}
+              </div>
+            )}
             <Paragraph style={{ margin: '10px 0 0' }}>
               {taskSummary(run)}
             </Paragraph>
@@ -1198,6 +1354,16 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
     );
   };
 
+  // 检查器头部要用的身份三要素（选中具体运行时才算）。抽到 return 之前，
+  // 是为了让 Drawer 头部与右侧浮坞用同一份确定性结果（名字/头像/短 ID）。
+  const selectedIdentity = selectedRun
+    ? {
+        name: subAgentName(selectedRun),
+        avatar: subAgentAvatar(selectedRun),
+        shortId: shortSubAgentId(selectedRun.subSessionId),
+      }
+    : undefined;
+
   return (
     <>
       <aside
@@ -1214,6 +1380,8 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
           {dockRuns.slice(0, DOCK_VISIBLE_LIMIT).map((run) => {
             const runId = run.runId ?? run.subSessionId;
             const cfg = statusConfig[run.status];
+            const name = subAgentName(run);
+            const avatar = subAgentAvatar(run);
             return (
               <Popover
                 key={runId}
@@ -1229,10 +1397,13 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
                     activeStatuses.has(run.status) && styles.itemRunning,
                   )}
                   onClick={() => openRun(runId)}
-                  aria-label={`${run.originToolId ?? run.role ?? '子代理'} ${cfg.label}，${currentActivity(run)}`}
+                  // 浮坞按钮只容得下 1–2 个字符：显示头像（名字首字），不是工具名缩写。
+                  aria-label={`${name} ${cfg.label}，${shortSubAgentId(run.subSessionId)}，${currentActivity(run)}`}
                   data-testid={`subagent-dock-item-${runId}`}
                 >
-                  <span className={styles.itemLabel}>{shortRole(run)}</span>
+                  <span className={styles.itemLabel}>
+                    {avatar.emoji}
+                  </span>
                   <span
                     className={styles.statusDot}
                     style={{ background: cfg.color }}
@@ -1262,29 +1433,75 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
 
       <Drawer
         title={
-          <Space>
-            <RobotOutlined style={{ color: 'var(--pudding-chat-accent)' }} />
-            <span>子代理运行检查器</span>
-            <Tag
-              color={
-                activeRuns.length
-                  ? 'green'
-                  : awaitingRunCount
-                    ? 'gold'
-                    : reconnectCount > 0
-                      ? 'orange'
-                      : 'default'
-              }
+          // 头部（不需滚动就能看到）必须能回答「是哪一个子代理」：
+          // 选中具体运行时 = 头像 + 名字 + 短 ID + 状态/来源工具；
+          // 未选中 = 检查器聚合概览（保持原位，不抢身份语义）。
+          selectedRun && selectedIdentity ? (
+            <div
+              className={styles.identity}
+              data-testid="subagent-drawer-identity"
             >
-              {activeRuns.length
-                ? `${activeRuns.length} 运行中`
-                : awaitingRunCount
-                  ? `${awaitingRunCount} 个运行正在同步事件`
-                  : reconnectCount > 0
-                    ? `事件通道重连中（第 ${reconnectCount} 次）`
-                    : '实时事件已连接'}
-            </Tag>
-          </Space>
+              <span
+                className={styles.avatarChip}
+                style={{ background: selectedIdentity.avatar.color }}
+                aria-hidden
+              >
+                {selectedIdentity.avatar.emoji}
+              </span>
+              <div className={styles.identityCopy}>
+                <span
+                  className={styles.identityName}
+                  data-testid="subagent-drawer-name"
+                  title={selectedIdentity.name}
+                >
+                  {selectedIdentity.name}
+                </span>
+                <Text
+                  code
+                  copyable={{ text: selectedRun.subSessionId }}
+                  className={styles.shortId}
+                  data-testid="subagent-drawer-short-id"
+                >
+                  {selectedIdentity.shortId}
+                </Text>
+              </div>
+              <Tag
+                color={statusConfig[selectedRun.status].color}
+                style={{ margin: 0 }}
+              >
+                {statusConfig[selectedRun.status].label}
+              </Tag>
+              {selectedRun.originToolId && (
+                <Tag color="geekblue" style={{ margin: 0 }}>
+                  {selectedRun.originToolId}
+                </Tag>
+              )}
+            </div>
+          ) : (
+            <Space>
+              <RobotOutlined style={{ color: 'var(--pudding-chat-accent)' }} />
+              <span>子代理运行检查器</span>
+              <Tag
+                color={
+                  activeRuns.length
+                    ? 'green'
+                    : awaitingRunCount
+                      ? 'gold'
+                      : reconnectCount > 0
+                        ? 'orange'
+                        : 'default'
+                }
+              >
+                {activeRuns.length
+                  ? `${activeRuns.length} 运行中`
+                  : awaitingRunCount
+                    ? `${awaitingRunCount} 个运行正在同步事件`
+                    : reconnectCount > 0
+                      ? `事件通道重连中（第 ${reconnectCount} 次）`
+                      : '实时事件已连接'}
+              </Tag>
+            </Space>
+          )
         }
         open={inspectorOpen}
         onClose={() => onInspectorOpenChange(false)}
@@ -1333,9 +1550,15 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
                         <span style={{ color: cfg.color }}>{cfg.icon}</span>
                         <span className={styles.runRowCopy}>
                           <span className={styles.runRowTitle}>
-                            <span>
-                              {run.originToolId ?? run.role ?? '子代理'}
-                            </span>
+                            {/* 列表行的标题是**身份**，不是来源工具 */}
+                            <span>{subAgentName(run)}</span>
+                            <Text
+                              code
+                              type="secondary"
+                              style={{ fontSize: 10 }}
+                            >
+                              {shortSubAgentId(run.subSessionId)}
+                            </Text>
                             <Tag color={cfg.color} style={{ margin: 0 }}>
                               {cfg.label}
                             </Tag>

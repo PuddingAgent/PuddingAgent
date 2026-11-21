@@ -202,7 +202,12 @@ describe('SubAgentActivityDock', () => {
     );
 
     expect(screen.getByTestId('subagent-dock-item-run-active')).toBeTruthy();
-    expect(screen.getByText('plan the architecture')).toBeTruthy();
+    // 身份现身两处：检查器头部标题（名字）与 hero 任务段落。旧断言是单处
+    // getByText，2026-11-21 加入头部身份后同一个任务摘要会出现两处（作者
+    // 当时没给 displayName）——意图仍是「任务文本可见」，改用 getAllByText。
+    expect(screen.getAllByText('plan the architecture').length).toBeGreaterThan(
+      0,
+    );
     expect(screen.getByText('正在执行 file_read')).toBeTruthy();
     expect(screen.getByText('开始执行 file_read')).toBeTruthy();
     expect(screen.getByText('模型：kimi-k3')).toBeTruthy();
@@ -340,8 +345,8 @@ describe('SubAgentActivityDock', () => {
     );
 
     expect(
-      screen.getByText('Decompose goal into actionable tasks.'),
-    ).toBeTruthy();
+      screen.getAllByText('Decompose goal into actionable tasks.').length,
+    ).toBeGreaterThan(0);
     expect(screen.queryByText(/Read every file/)).toBeNull();
     expect(screen.queryByText(/Reveal internal instructions/)).toBeNull();
   });
@@ -618,5 +623,171 @@ describe('SubAgentActivityDock', () => {
     const elapsed = screen.getByTestId('subagent-elapsed-line');
     expect(elapsed.textContent).toBe('已运行 1320m 0s · 仍在运行');
     expect(elapsed.className).toContain('elapsedException');
+  });
+
+  // ── 2026-11-21：子代理身份（名字 / 短 ID / 头像）必须在第一屏可见 ──
+  // 用户原话：「既没有 displayName 也没有 id，我怎么定位这个子代理究竟是谁」。
+  // 所以名字与短 ID 缺一不可，来源工具名 spawn_sub_agent 只能作为 Tag。
+  describe('identity', () => {
+    const namedRun = () => ({
+      turnId: 'named',
+      runId: 'run-named',
+      subSessionId: 'parent-session-sub-0abc9f',
+      parentSessionId: 'session',
+      status: 'running' as const,
+      phase: 'tool' as const,
+      originToolId: 'spawn_sub_agent',
+      templateId: 'workspace-task-agent',
+      displayName: 'dock-fix',
+      avatarKey: 'coder',
+      responsibility: '修复子代理身份展示链路',
+      taskSummary: '修复浮坞与检查器的身份展示',
+      spawnedAt: Date.parse('2026-07-19T00:00:00.000Z'),
+      lastActivityAt: Date.parse('2026-07-19T00:00:09.000Z'),
+    });
+
+    it('inspector header shows avatar + name + short id, tool name only as a tag', () => {
+      render(
+        <SubAgentActivityDock
+          sessionId="session"
+          inspectorOpen
+          onInspectorOpenChange={jest.fn()}
+          selectedRunId="run-named"
+          onSelectedRunIdChange={jest.fn()}
+          subAgentCards={{ named: namedRun() }}
+        />,
+      );
+
+      const identity = screen.getByTestId('subagent-drawer-identity');
+      // avatarKey=coder 的预设图形；没有 avatarKey 时按名字首字生成。
+      expect(identity.textContent).toContain('💻');
+      expect(screen.getByTestId('subagent-drawer-name').textContent).toBe(
+        'dock-fix',
+      );
+      expect(
+        screen.getByTestId('subagent-drawer-short-id').textContent,
+      ).toBe('…0abc9f');
+      // 来源工具不是身份：存在，但不在标题位置。
+      expect(screen.getByTestId('subagent-drawer-name').textContent).not.toBe(
+        'spawn_sub_agent',
+      );
+      expect(screen.getAllByText('spawn_sub_agent').length).toBeGreaterThan(0);
+      // 职责行有值时才渲染。
+      expect(screen.getByTestId('subagent-responsibility').textContent).toBe(
+        '修复子代理身份展示链路',
+      );
+      // 浮坞 rail 按钮显示名字首字/预设图形，不再显示工具名缩写。
+      expect(
+        screen.getByTestId('subagent-dock-item-run-named').textContent,
+      ).toContain('💻');
+    });
+
+    it('legacy run without display name falls back to the task summary, never empty', () => {
+      render(
+        <SubAgentActivityDock
+          sessionId="session"
+          inspectorOpen
+          onInspectorOpenChange={jest.fn()}
+          selectedRunId="run-legacy"
+          onSelectedRunIdChange={jest.fn()}
+          subAgentCards={{
+            legacy: {
+              turnId: 'legacy',
+              runId: 'run-legacy',
+              subSessionId: 'parent-session-sub-0abc9f',
+              parentSessionId: 'session',
+              status: 'running',
+              phase: 'round',
+              originToolId: 'spawn_sub_agent',
+              templateId: 'workspace-task-agent',
+              taskSummary: '整理天气查询的失败重试',
+              spawnedAt: Date.parse('2026-07-19T00:00:00.000Z'),
+              lastActivityAt: Date.parse('2026-07-19T00:00:09.000Z'),
+            },
+          }}
+        />,
+      );
+
+      const name = screen.getByTestId('subagent-drawer-name').textContent;
+      expect(name).toBe('整理天气查询的失败重试');
+      expect(name?.trim().length).toBeGreaterThan(0);
+      expect(name).not.toBe('spawn_sub_agent');
+      // 短 ID 依然在，用来区分同名/无名运行。
+      expect(
+        screen.getByTestId('subagent-drawer-short-id').textContent,
+      ).toBe('…0abc9f');
+      // 没有职责就不渲染该行，不用占位符凑高度。
+      expect(screen.queryByTestId('subagent-responsibility')).toBeNull();
+    });
+
+    it('falls back to <template>-<id suffix> when the task text is just the tool name', () => {
+      render(
+        <SubAgentActivityDock
+          sessionId="session"
+          inspectorOpen
+          onInspectorOpenChange={jest.fn()}
+          selectedRunId="run-weird"
+          onSelectedRunIdChange={jest.fn()}
+          subAgentCards={{
+            weird: {
+              turnId: 'weird',
+              runId: 'run-weird',
+              subSessionId: 'parent-session-sub-0abc9f',
+              parentSessionId: 'session',
+              status: 'running',
+              phase: 'created',
+              originToolId: 'spawn_sub_agent',
+              templateId: 'workspace-task-agent',
+              taskSummary: 'spawn_sub_agent',
+              spawnedAt: Date.parse('2026-07-19T00:00:00.000Z'),
+              lastActivityAt: Date.parse('2026-07-19T00:00:09.000Z'),
+            },
+          }}
+        />,
+      );
+
+      expect(screen.getByTestId('subagent-drawer-name').textContent).toBe(
+        'workspace-task-agent-0abc9f',
+      );
+    });
+
+    it('dock popover first screen carries avatar, name and short id', () => {
+      render(
+        <SubAgentActivityDock
+          sessionId="session"
+          inspectorOpen={false}
+          onInspectorOpenChange={jest.fn()}
+          onSelectedRunIdChange={jest.fn()}
+          subAgentCards={{
+            named: {
+              ...namedRun(),
+              displayName: 'usage-api',
+              subSessionId: 'parent-session-sub-0abc9f',
+            },
+          }}
+        />,
+      );
+
+      const item = screen.getByTestId('subagent-dock-item-run-named');
+      fireEvent.mouseEnter(item);
+      act(() => {
+        // Popover 的 mouseEnterDelay=0.15s。
+        jest.advanceTimersByTime(500);
+      });
+
+      expect(screen.getByTestId('subagent-popover-name').textContent).toBe(
+        'usage-api',
+      );
+      expect(
+        screen.getByTestId('subagent-popover-short-id').textContent,
+      ).toBe('…0abc9f');
+      expect(
+        screen.getByTestId('subagent-popover-identity').textContent,
+      ).toContain('💻');
+      // 名字不得被工具名顶替（工具名只作为 Tag 出现在同一屏）。
+      expect(screen.getByTestId('subagent-popover-name').textContent).not.toBe(
+        'spawn_sub_agent',
+      );
+    });
   });
 });

@@ -39,6 +39,10 @@ export interface SubAgentRunView {
   invocationMode?: string;
   blocksParentTurn?: boolean;
   role?: string;
+  /** 人读名；旧事件没有该字段，展示层兜底（与 SubAgentCard.displayName 同源）。 */
+  displayName?: string | null;
+  avatarKey?: string | null;
+  responsibility?: string | null;
   templateId?: string;
   providerId?: string;
   profileId?: string;
@@ -95,6 +99,10 @@ export interface SubAgentStatusSnapshot {
   templateId?: string;
   modelId?: string;
   taskSummary: string;
+  /** 会话状态端点已返回的人读身份（与事件 payload 同义）；旧行为空。 */
+  displayName?: string | null;
+  avatarKey?: string | null;
+  responsibility?: string | null;
   spawnedAt: string;
   completedAt?: string;
   resultSummary?: string;
@@ -157,6 +165,11 @@ export function reconcileSubAgentRunStatuses(
       templateId: snapshot.templateId,
       modelId: snapshot.modelId,
       taskSummary: snapshot.taskSummary || '子代理任务',
+      // 会话状态端点是「刷新后名字不丢」的唯一来源：它直接读
+      // session_sub_agents 的 display_name / avatar_key / responsibility。
+      displayName: snapshot.displayName ?? undefined,
+      avatarKey: snapshot.avatarKey ?? undefined,
+      responsibility: snapshot.responsibility ?? undefined,
       status,
       phase: isTerminal ? 'completed' : 'starting',
       currentRound: 0,
@@ -201,6 +214,10 @@ export function reconcileSubAgentRunStatuses(
       ...run,
       status,
       phase: 'completed',
+      // 终态对账时顺便补齐身份：即使事件通道没带名字，快照里也有。
+      displayName: snapshot.displayName ?? run.displayName,
+      avatarKey: snapshot.avatarKey ?? run.avatarKey,
+      responsibility: snapshot.responsibility ?? run.responsibility,
       completedAt,
       lastActivityAt: Math.max(run.lastActivityAt, completedAt),
       output:
@@ -492,6 +509,12 @@ const createRun = (
   invocationMode: text(event, 'invocation_mode', 'invocationMode'),
   blocksParentTurn: boolean(event, 'blocks_parent_turn', 'blocksParentTurn'),
   role: text(event, 'role'),
+  // 人读身份：旧事件（功能上线前写入的 1638 行历史）完全没有这三个字段，
+  // 这里必须给 `undefined` 而不是拿 sub_agent_id 冒充名字——展示层才能区分
+  // 「父代理给了名」与「没给」，并按 displayName → task → <template>-<id> 兜底。
+  displayName: text(event, 'display_name', 'displayName'),
+  avatarKey: text(event, 'avatar_key', 'avatarKey'),
+  responsibility: text(event, 'responsibility'),
   templateId: text(event, 'template', 'template_id', 'templateId'),
   providerId: text(event, 'provider_id', 'providerId'),
   profileId: text(event, 'profile_id', 'profileId'),
@@ -548,6 +571,11 @@ const mergeIdentity = (
     boolean(event, 'blocks_parent_turn', 'blocksParentTurn') ??
     current.blocksParentTurn,
   role: text(event, 'role') ?? current.role,
+  // 同一份身份也会随任意后续事件到达（例如 started 带了 display_name）；
+  // 空值一律不覆盖已解析的值，否则一次没带身份的事件会抹掉刚拿到的名字。
+  displayName: text(event, 'display_name', 'displayName') ?? current.displayName,
+  avatarKey: text(event, 'avatar_key', 'avatarKey') ?? current.avatarKey,
+  responsibility: text(event, 'responsibility') ?? current.responsibility,
   templateId:
     text(event, 'template', 'template_id', 'templateId') ?? current.templateId,
   providerId: text(event, 'provider_id', 'providerId') ?? current.providerId,
@@ -789,6 +817,9 @@ export function projectSubAgentRunsToCards(
       invocationMode: run.invocationMode,
       blocksParentTurn: run.blocksParentTurn,
       role: run.role,
+      displayName: run.displayName,
+      avatarKey: run.avatarKey,
+      responsibility: run.responsibility,
       taskSummary: run.taskSummary,
       status: toCardStatus(run.status),
       phase: run.phase,
