@@ -85,8 +85,8 @@ public static partial class HostShellExecutor
             if (process is null)
                 return Fail($"Failed to start shell '{shell}'.");
 
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(cts.Token);
-            var stderrTask = process.StandardError.ReadToEndAsync(cts.Token);
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
 
             try
             {
@@ -95,12 +95,19 @@ public static partial class HostShellExecutor
             catch (OperationCanceledException)
             {
                 try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
-                return Fail($"Command timed out after {timeoutSeconds} seconds.", exitCode: -1, shell, workingDirectory);
+                var partial = await CollectPartialOutputAsync(stdoutTask, stderrTask, shell, workingDirectory);
+                return Fail(
+                    BuildTimeoutError(timeoutSeconds, partial),
+                    exitCode: -1, shell, workingDirectory, output: partial);
             }
 
-            var stdout = TruncateOutput(StripAnsiEscape((await stdoutTask).TrimEnd()));
-            var stderr = TruncateOutput(StripAnsiEscape((await stderrTask).TrimEnd()));
-            var output = PrependExecutionMetadata(MergeOutput(stdout, stderr), shell, workingDirectory);
+            var streams = await ReadStreamsAsync(stdoutTask, stderrTask, OutputReadGraceMs);
+            var stdout = TruncateOutput(StripAnsiEscape(streams.Stdout.TrimEnd()));
+            var stderr = TruncateOutput(StripAnsiEscape(streams.Stderr.TrimEnd()));
+            var merged = MergeOutput(stdout, stderr);
+            if (streams.TimedOut)
+                merged = AppendReadTimeoutNotice(merged);
+            var output = PrependExecutionMetadata(merged, shell, workingDirectory);
             return new HostShellResult
             {
                 Success = process.ExitCode == 0,
@@ -287,6 +294,88 @@ public static partial class HostShellExecutor
         }
     }
 
+    /// <summary>
+    /// 超时/取消后尽力取回进程已经产生的输出。
+    /// 读取任务不再持有取消令牌，因此进程被杀、管道关闭后它们会正常完成；
+    /// 仍用 grace 超时兜底，避免 kill 失败时把调用方挂死。
+    /// 合并口径与成功路径完全一致（StripAnsiEscape → TruncateOutput → MergeOutput → PrependExecutionMetadata），
+    /// 让「超时的输出」与「正常结束的输出」格式相同，消费方无需特判。
+    /// </summary>
+    private static async Task<string> CollectPartialOutputAsync(
+        Task<string> stdoutTask,
+        Task<string> stderrTask,
+        string shell,
+        string workingDirectory,
+        int graceMs = 2_000)
+    {
+        var streams = await ReadStreamsAsync(stdoutTask, stderrTask, graceMs);
+
+        var stdout = TruncateOutput(StripAnsiEscape(streams.Stdout.TrimEnd()));
+        var stderr = TruncateOutput(StripAnsiEscape(streams.Stderr.TrimEnd()));
+        var merged = MergeOutput(stdout, stderr);
+
+        return string.IsNullOrWhiteSpace(merged)
+            ? string.Empty
+            : PrependExecutionMetadata(merged, shell, workingDirectory);
+    }
+
+    private const int OutputReadGraceMs = 2_000;
+
+    /// <summary>stdout/stderr 的读取结果；TimedOut 表示至少一路没能在 grace 内读完。</summary>
+    private readonly record struct StreamRead(string Stdout, string Stderr, bool TimedOut);
+
+    /// <summary>
+    /// 并行读取两路输出，各自最多等 graceMs。
+    /// 正常路径毫秒级完成；只有「子进程仍持有管道」时才会用满 grace。
+    /// </summary>
+    private static async Task<StreamRead> ReadStreamsAsync(
+        Task<string> stdoutTask,
+        Task<string> stderrTask,
+        int graceMs)
+    {
+        var reads = await Task.WhenAll(
+            TryReadAsync(stdoutTask, graceMs),
+            TryReadAsync(stderrTask, graceMs)).ConfigureAwait(false);
+
+        return new StreamRead(
+            reads[0] ?? string.Empty,
+            reads[1] ?? string.Empty,
+            reads[0] is null || reads[1] is null);
+    }
+
+    /// <summary>
+    /// 读取超时时追加明确标记。
+    /// 宁可写「可能不完整」，也不让消费方把「没读到」当成「进程没有输出」。
+    /// </summary>
+    private static string AppendReadTimeoutNotice(string merged)
+    {
+        const string notice =
+            "[stream read timed out: a child process still holds the output pipe; the output above may be incomplete]";
+        return string.IsNullOrWhiteSpace(merged) ? notice : merged + Environment.NewLine + notice;
+    }
+
+    /// <summary>读取任务的最长等待；超时或异常都返回 null，由调用方按「没有输出」处理。</summary>
+    private static async Task<string?> TryReadAsync(Task<string> task, int graceMs)
+    {
+        try
+        {
+            return await task.WaitAsync(TimeSpan.FromMilliseconds(graceMs)).ConfigureAwait(false);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 超时错误文本：明确告知已产生的输出被保留在 output 字段里。
+    /// 不写「无输出」——那会把「真的没来得及输出」和「我们没去取」混为一谈。
+    /// </summary>
+    private static string BuildTimeoutError(int timeoutSeconds, string partialOutput) =>
+        string.IsNullOrEmpty(partialOutput)
+            ? $"Command timed out after {timeoutSeconds} seconds."
+            : $"Command timed out after {timeoutSeconds} seconds. Output produced before the timeout is preserved in output.";
+
     private static string MergeOutput(string stdout, string stderr)
     {
         if (string.IsNullOrWhiteSpace(stderr))
@@ -314,11 +403,12 @@ public static partial class HostShellExecutor
         string error,
         int exitCode = 1,
         string shell = "",
-        string workingDirectory = "") =>
+        string workingDirectory = "",
+        string output = "") =>
         new()
         {
             Success = false,
-            Output = string.Empty,
+            Output = output,
             Error = error,
             ExitCode = exitCode,
             Shell = shell,
