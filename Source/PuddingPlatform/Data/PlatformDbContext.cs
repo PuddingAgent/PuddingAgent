@@ -175,6 +175,7 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // External Access Token（ADR-075 第三方任务看板认证）
     public DbSet<ExternalAccessTokenEntity> ExternalAccessTokens => Set<ExternalAccessTokenEntity>();
     public DbSet<ExternalAgentAdapterEntity> ExternalAgentAdapters => Set<ExternalAgentAdapterEntity>();
+    public DbSet<ExternalAgentDelegationResultEntity> ExternalAgentDelegationResults => Set<ExternalAgentDelegationResultEntity>();
     public DbSet<ExternalAccessTokenScopeEntity> ExternalAccessTokenScopes => Set<ExternalAccessTokenScopeEntity>();
     public DbSet<ExternalAccessTokenWorkspaceEntity> ExternalAccessTokenWorkspaces => Set<ExternalAccessTokenWorkspaceEntity>();
     public DbSet<ExternalAccessTokenAuditEventEntity> ExternalAccessTokenAuditEvents => Set<ExternalAccessTokenAuditEventEntity>();

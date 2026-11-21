@@ -8,6 +8,8 @@ test('copies registration and inbox instructions without including the secret', 
   expect(prompt).toContain('/agent-adapters/register');
   expect(prompt).toContain('/agent-adapters/inbox');
   expect(prompt).toContain('nextCursor');
+  expect(prompt).toContain('/agent-adapters/delegations');
+  expect(prompt).toContain('/delegations/<messageId>/result');
   expect(agentApiDocumentation('http://127.0.0.1:8080/'))
     .toBe('http://127.0.0.1:8080/agent-adapters/docs/agent-adapters-v1.json');
 });

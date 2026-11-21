@@ -21,6 +21,8 @@ export function agentAdapterPrompt(
     '通过 GET /api/external/v1/agent-adapters/inbox?leaseId=<leaseId>&after=0 轮询订阅。处理成功后保存 nextCursor 作为下次 after，用 messageId 去重。',
     '通过 GET /api/external/v1/agent-adapters/agents?leaseId=<leaseId> 查找同一工作区的外部 Agent。',
     '向同一工作区的其他外部 Agent 发文本时，调用 POST /api/external/v1/agent-adapters/messages，并传 leaseId、operationId（UUID）、targetAgentId 和 text。',
+    '委派任务时，把相同字段发到 POST /api/external/v1/agent-adapters/delegations。保存返回的 messageId，用 GET /api/external/v1/agent-adapters/delegations/<messageId>?leaseId=<leaseId> 查询结果。',
+    '收件箱以 kind 区分 message 和 delegation。委派处理结束后，用 PUT /api/external/v1/agent-adapters/delegations/<messageId>/result 提交 leaseId、state、turnId、text 或 reason，再推进收件箱游标。',
     '结束连接时用同一 leaseId 调用 POST /api/external/v1/agent-adapters/disconnect。',
     `接口文档 ${agentApiDocumentation(root)}`,
   ].join('\n');

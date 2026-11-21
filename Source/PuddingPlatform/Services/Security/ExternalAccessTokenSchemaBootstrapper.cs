@@ -42,6 +42,16 @@ public static class ExternalAccessTokenSchemaBootstrapper
             registered_at_utc TEXT
         );
         """,
+        """
+        CREATE TABLE IF NOT EXISTS external_agent_delegation_results (
+            message_id TEXT NOT NULL PRIMARY KEY,
+            state TEXT NOT NULL,
+            turn_id TEXT NOT NULL,
+            result_text TEXT,
+            reason_code TEXT,
+            reported_at INTEGER NOT NULL
+        );
+        """,
 
         // ── external_access_token_scopes（联合主键）─────────────────
         """

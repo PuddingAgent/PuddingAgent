@@ -72,7 +72,7 @@
 | `src/pages/access-token-management/index.tsx` | External Token 管理页（见下「关键语义」） |
 | `src/pages/access-token-management/index.test.tsx` | 一次性 Secret、撤销/CAS 与最小 scope UI 回归；验证 `messages.send` 可见且默认不选中 |
 | `src/pages/agent-adapters/index.tsx` · `src/services/platform/agentAdapters.ts` | 系统配置中的外部 Agent 管理页，显示绑定和在线状态，签发及撤销 AK/SK |
-| `src/pages/agent-adapters/onboarding.ts` | 使用实际 HTTP 路径生成可复制提示词和 OpenAPI 文档地址，提示词只包含 AK |
+| `src/pages/agent-adapters/onboarding.ts` | 生成可复制的注册、订阅、消息和委派接入提示词与 OpenAPI 文档地址，提示词只包含 AK |
 
 **关键语义**
 
