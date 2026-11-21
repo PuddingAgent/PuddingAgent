@@ -170,4 +170,44 @@ public class ToolFailureSummaryTests
             summary.IndexOf("TimeoutException", StringComparison.Ordinal),
             $"异常类型必须在 output 之前。实际: {summary}");
     }
+    /// <summary>
+    /// 判据 6：事件 / 审计出口的异常文本同样必须带类型名。
+    ///
+    /// 这两个出口此前是 <c>Truncate(ex.Message, 500)</c>，与失败摘要口径不一致：
+    /// 摘要说 <c>InvalidOperationException: boom</c>，事件说 <c>boom</c>。
+    /// </summary>
+    [TestMethod]
+    public void ExceptionDetail_KeepsTypeNameForShortMessage()
+    {
+        var detail = AgentExecutionService.BuildToolExceptionDetail(new InvalidOperationException("boom"), 500);
+
+        Assert.AreEqual("InvalidOperationException: boom", detail);
+    }
+
+    /// <summary>
+    /// 长消息被截断时类型名必须留在头部——它是区分「退出码」与「工具异常」的唯一依据。
+    /// </summary>
+    [TestMethod]
+    public void ExceptionDetail_LongMessage_KeepsTypeNameAtHead()
+    {
+        var detail = AgentExecutionService.BuildToolExceptionDetail(
+            new ArgumentException(new string('x', 2000)),
+            500);
+
+        StringAssert.StartsWith(detail, "ArgumentException: ");
+        Assert.IsLessThanOrEqualTo(detail.Length, 501);
+    }
+
+    /// <summary>
+    /// 空消息只给类型名，不补空冒号——与 <see cref="AgentExecutionService.BuildExceptionError"/> 同口径。
+    /// </summary>
+    [TestMethod]
+    [DataRow("")]
+    [DataRow("   ")]
+    public void ExceptionDetail_BlankMessage_ReturnsTypeNameOnly(string message)
+    {
+        var detail = AgentExecutionService.BuildToolExceptionDetail(new InvalidOperationException(message), 500);
+
+        Assert.AreEqual("InvalidOperationException", detail);
+    }
 }

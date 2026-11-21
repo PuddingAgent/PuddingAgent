@@ -1779,6 +1779,19 @@ public sealed partial class AgentExecutionService
     }
 
     /// <summary>
+    /// 工具异常在「事件 / 审计」出口的文本形态。
+    ///
+    /// 与 <see cref="BuildExceptionError"/> 同一口径（类型名 + 消息），只按出口预算截断。
+    /// 这两个出口此前各自写着 <c>Truncate(ex.Message, 500)</c>，于是同一次异常在失败摘要里
+    /// 带类型名、在事件载荷里却没有——同一事实两种说法，消费方无从对齐。
+    ///
+    /// 类型名位于头部，截断取头部，因此不会被截掉：它是区分「进程退出码」与
+    /// 「工具实现抛异常」的唯一依据。
+    /// </summary>
+    internal static string BuildToolExceptionDetail(System.Exception ex, int maxLen)
+        => Truncate(BuildExceptionError(ex), maxLen);
+
+    /// <summary>
     /// 构造失败工具的一句话摘要，交给父代理与归档诊断使用。
     ///
     /// 设计要点：<paramref name="error"/> 仍是第一顺位（它表达「失败原因」的语义），但

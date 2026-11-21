@@ -1384,7 +1384,7 @@ if (effectiveLlmConfig is not null)
                                         ["tool_args_length"] = (toolArgsJson?.Length ?? 0).ToString(),
                                         ["tool_duration_ms"] = toolSw.ElapsedMilliseconds.ToString(),
                                         ["error_code"] = ex.GetType().Name,
-                                        ["error_message"] = Truncate(ex.Message, 500),
+                                        ["error_message"] = BuildToolExceptionDetail(ex, 500),
                                         ["session_id"] = request.SessionId,
                                     },
                                     error: ex,
@@ -1428,7 +1428,7 @@ if (effectiveLlmConfig is not null)
                                     duration_ms = subAgentToolSw.ElapsedMilliseconds,
                                     args_hash = subAgentToolArgsHash,
                                     output_length = 0,
-                                    error = Truncate(ex.Message, 500),
+                                    error = BuildToolExceptionDetail(ex, 500),
                                     tool_call_index = totalToolCalls,
                                 });
                                 if (_subAgentRunStore is not null && subAgentRunId is not null)
@@ -1443,7 +1443,7 @@ if (effectiveLlmConfig is not null)
                                             Success = false,
                                             DurationMs = subAgentToolSw.ElapsedMilliseconds,
                                             OutputLength = 0,
-                                            ErrorMessage = Truncate(ex.Message, 500),
+                                            ErrorMessage = BuildToolExceptionDetail(ex, 500),
                                         },
                                         CancellationToken.None);
                                 }
@@ -2138,7 +2138,7 @@ if (effectiveLlmConfig is not null)
                             success = false,
                             duration_ms = toolSw2.ElapsedMilliseconds,
                             args_hash = toolArgsHash2,
-                            error = Truncate(ex.Message, 500),
+                            error = BuildToolExceptionDetail(ex, 500),
                             tool_call_index = totalToolCalls,
                         });
                         await RecordActivityAsync(
@@ -2157,7 +2157,7 @@ if (effectiveLlmConfig is not null)
                                 ["tool_args_length"] = (toolArgsJson?.Length ?? 0).ToString(),
                                 ["tool_duration_ms"] = toolSw2.ElapsedMilliseconds.ToString(),
                                 ["error_code"] = ex.GetType().Name,
-                                ["error_message"] = Truncate(ex.Message, 500),
+                                ["error_message"] = BuildToolExceptionDetail(ex, 500),
                                 ["session_id"] = request.SessionId,
                             },
                             error: ex,
