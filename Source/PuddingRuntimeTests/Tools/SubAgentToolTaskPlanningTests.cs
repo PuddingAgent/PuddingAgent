@@ -2,10 +2,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
 using PuddingRuntime.Services.Skills;
+using System.Threading.Channels;
 
 namespace PuddingRuntimeTests.Tools;
 
@@ -491,14 +493,17 @@ public sealed class SubAgentToolTaskPlanningTests
         RecordingSubAgentInvocationService invocation,
         ITaskDelegationPolicy policy,
         ITaskPlanStore store,
-        ILlmResolver? resolver = null)
+        ILlmResolver? resolver = null,
+        ISessionStateManager? sessionState = null)
     {
-        return new ServiceCollection()
+        var services = new ServiceCollection()
             .AddSingleton<ILlmResolver>(resolver ?? new FakeLlmResolver())
             .AddSingleton<ISubAgentInvocationService>(invocation)
             .AddSingleton<ITaskDelegationPolicy>(policy)
-            .AddSingleton<ITaskPlanStore>(store)
-            .BuildServiceProvider();
+            .AddSingleton<ITaskPlanStore>(store);
+        if (sessionState is not null)
+            services.AddSingleton(sessionState);
+        return services.BuildServiceProvider();
     }
 
     private static ToolExecutionRequest CreateRequest(string input) => new()
@@ -608,6 +613,151 @@ public sealed class SubAgentToolTaskPlanningTests
                 },
             });
         }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // 续跑继承原模型路由（P1，2026-11-21）
+    // ════════════════════════════════════════════════════════════
+
+    [TestMethod]
+    public async Task ExecuteAsync_ResumeWithoutModel_InheritsOriginalSubAgentModelRoute()
+    {
+        var invocation = new RecordingSubAgentInvocationService();
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2),
+            sessionState: new StubSessionStateManager([
+                CreateStatus("session_parent-sub-child", "gpt-6.2-sol"),
+            ]));
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+
+        var result = await tool.ExecuteAsync(CreateRequest(
+            """{"task":"Continue implementation","sync":false,"resume_sub_agent_id":"session_parent-sub-child"}"""));
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsNotNull(invocation.LastRequest);
+        Assert.AreEqual(
+            "gpt-6.2-sol",
+            invocation.LastRequest!.LlmProfile.ModelId,
+            "续跑未显式指定 model 时必须继承原子代理的模型，而不是回到平台默认。");
+        Assert.AreEqual("gpt-6.2-sol", invocation.LastRequest.LlmConfig.ModelId);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_ResumeWithExplicitModel_DoesNotInheritAndExplicitWins()
+    {
+        var invocation = new RecordingSubAgentInvocationService();
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2),
+            sessionState: new StubSessionStateManager([
+                CreateStatus("session_parent-sub-child", "gpt-6.2-sol"),
+            ]));
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+
+        var result = await tool.ExecuteAsync(CreateRequest("""
+        {
+          "task": "Continue implementation",
+          "sync": false,
+          "resume_sub_agent_id": "session_parent-sub-child",
+          "model": "deepseek/deepseek-flash"
+        }
+        """));
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsNotNull(invocation.LastRequest);
+        Assert.AreEqual(
+            "deepseek-flash",
+            invocation.LastRequest!.LlmProfile.ModelId,
+            "显式传 model 是调用方明确意图，不得被继承逻辑覆盖。");
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_ResumeWithUnknownOriginalModel_WarnsInsteadOfSilentSwitch()
+    {
+        var invocation = new RecordingSubAgentInvocationService
+        {
+            NextStatus = "completed",
+            NextReply = "SUMMARY: resumed\nBLOCKERS: none",
+        };
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2),
+            sessionState: new StubSessionStateManager([]));
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+
+        var result = await tool.ExecuteAsync(CreateRequest(
+            """{"task":"Continue implementation","sync":true,"resume_sub_agent_id":"session_parent-sub-child"}"""));
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("test-model", invocation.LastRequest?.LlmProfile.ModelId);
+        StringAssert.Contains(
+            result.Output,
+            "续跑未能继承原模型路由",
+            "查不到原模型时必顶必须显式告警 —— 「静默换模型」正是本缺陷本体。");
+    }
+
+    private static SubAgentStatus CreateStatus(string subSessionId, string? modelId) => new()
+    {
+        RunId = "run-1",
+        ParentSessionId = "session_parent",
+        SubSessionId = subSessionId,
+        Status = "completed",
+        ModelId = modelId,
+        TaskSummary = "stub",
+        SpawnedAt = DateTimeOffset.UnixEpoch,
+    };
+
+    /// <summary>
+    /// 只实现 <see cref="GetSubAgentsAsync"/> 与运行计数；其余成员一律抛 NotSupportedException，
+    /// 以免测试静默依赖未预期的调用路径。
+    /// </summary>
+    private sealed class StubSessionStateManager(IReadOnlyList<SubAgentStatus> subAgents) : ISessionStateManager
+    {
+        public Task<IReadOnlyList<SubAgentStatus>> GetSubAgentsAsync(
+            string sessionId, CancellationToken ct = default) => Task.FromResult(subAgents);
+
+        public Task<int> GetRunningSubAgentDescendantCountAsync(
+            string rootSessionId, CancellationToken ct = default) => Task.FromResult(0);
+
+        public Task<int> GetRunningSubAgentCountAsync(
+            string parentSessionId, CancellationToken ct = default) => Task.FromResult(0);
+
+        public Task<long> AppendAsync(
+            string sessionId, string workspaceId, ServerSentEventFrame frame,
+            CancellationToken ct = default, RuntimeTraceContext? trace = null,
+            string? component = null, string? operation = null) => throw new NotSupportedException();
+
+        public ChannelReader<ServerSentEventFrame>? Subscribe(string sessionId) => throw new NotSupportedException();
+
+        public void Unsubscribe(string sessionId, ChannelReader<ServerSentEventFrame> reader) => throw new NotSupportedException();
+
+        public ChannelReader<SessionNotification> SubscribeWorkspace(string workspaceId) => throw new NotSupportedException();
+
+        public void UnsubscribeWorkspace(string workspaceId, ChannelReader<SessionNotification> reader) => throw new NotSupportedException();
+
+        public Task<SessionState> GetSessionStateAsync(string sessionId, CancellationToken ct = default) => throw new NotSupportedException();
+
+        public void Restore(string sessionId, SessionState state) => throw new NotSupportedException();
+
+        public Task TrackSubAgentStartAsync(
+            string parentSessionId, SubAgentSpawnInfo info, CancellationToken ct = default) => throw new NotSupportedException();
+
+        public Task TrackSubAgentCompleteAsync(
+            string subSessionId, SubAgentResult result, CancellationToken ct = default) => throw new NotSupportedException();
+
+        public Task<int> RecoverInterruptedSubAgentsAsync(
+            DateTimeOffset startedBeforeUtc, int maxRows, CancellationToken ct = default) => throw new NotSupportedException();
+
+        public Task MarkStreamCompleteAsync(string sessionId, CancellationToken ct = default) => throw new NotSupportedException();
+
+        public Task MarkSessionClosedAsync(string sessionId, CancellationToken ct = default) => throw new NotSupportedException();
+
+        public Task<SessionTraceReport> GetTraceReportAsync(
+            string sessionId, bool includeSubAgents = false, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeLlmResolver : ILlmResolver

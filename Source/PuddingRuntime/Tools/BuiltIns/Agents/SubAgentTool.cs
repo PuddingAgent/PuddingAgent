@@ -248,6 +248,32 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
                 var modelId = GetStringProp(json, "model")
                    ?? request.Parameters.GetValueOrDefault("model");
+        // 2026-11-21 (P1)：续跑必须继承原子代理的模型路由。
+        // 旧行为：resume 不带 model 时直接走平台默认 —— 实测被解析为 deepseek-flash，
+        // 于是「续跑」变成「换模型续跑」：结果不可比、用量归因错位、跨 provider 复用零缓存收益。
+        // 只覆盖「未显式指定 model」且「允许模型选择」的情形；显式 model 视为调用方明确意图。
+        // 刻意不 fail-closed：历史行 model_id 可能为空，宿主也可能未注册 ISessionStateManager，
+        // 硬失败会打断合法续跑。改为「能继承就继承 + 无法继承必须显式告警」，把静默换成可见。
+        var inheritedModelRoute = false;
+        if (!string.IsNullOrWhiteSpace(resumeSubAgentId)
+            && string.IsNullOrWhiteSpace(modelId)
+            && ResolveAllowModelSelection())
+        {
+            var originalModelRoute = await TryFindResumedModelRouteAsync(resumeSubAgentId, request.SessionId, ct);
+            if (string.IsNullOrWhiteSpace(originalModelRoute))
+            {
+                routeAdvisories.Add(
+                    $"⚠️ [spawn_sub_agent] 续跑未能继承原模型路由（子代理 '{resumeSubAgentId}' 没有记录 model_id，" +
+                    "或会话状态层不可用），本次将使用平台默认路由 —— 续跑结果可能与首轮不可比。" +
+                    "需要确定性请显式传 model。");
+            }
+            else
+            {
+                modelId = originalModelRoute;
+                inheritedModelRoute = true;
+            }
+        }
+
         var fallbackModel = GetStringProp(json, "fallback_model")
                         ?? GetStringProp(json, "fallbackModel")
                         ?? request.Parameters.GetValueOrDefault("fallback_model");
@@ -338,6 +364,13 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 fallbackRoute,
                 ex.Message);
         }
+        if (inheritedModelRoute)
+        {
+            routeAdvisories.Add(
+                $"ℹ️ [spawn_sub_agent] 续跑已继承原模型路由 " +
+                $"'{childLlmRoute.Profile.ProviderId}/{childLlmRoute.Profile.ModelId}'（未显式指定 model）。");
+        }
+
         var taskPlanning = ReadTaskPlanningContext(json, request, task ?? batchTasksResult.Tasks![0].Task);
         var policyDeny = await CheckTaskPlanningPolicyAsync(taskPlanning, ct);
         if (policyDeny is not null)
@@ -1417,6 +1450,38 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             Role = "conscious",
         };
         return new ResolvedChildLlmRoute(profile, resolved.Config);
+    }
+
+    /// <summary>
+    /// 查被续跑子代理上一轮记录的模型标识，供「续跑继承原模型路由」使用。
+    /// 返回 null 表示无法确定（历史行 model_id 为空 / 会话状态层未注册 / 查询异常），
+    /// 由调用方决定如何告警 —— 本方法自身不抛异常，避免把「查不到」升级成「不能续跑」。
+    /// </summary>
+    private async Task<string?> TryFindResumedModelRouteAsync(
+        string resumeSubSessionId,
+        string parentSessionId,
+        CancellationToken ct)
+    {
+        var sessionState = _services.GetService<ISessionStateManager>();
+        if (sessionState is null || string.IsNullOrWhiteSpace(parentSessionId))
+            return null;
+
+        try
+        {
+            var agents = await sessionState.GetSubAgentsAsync(parentSessionId, ct);
+            var original = agents.FirstOrDefault(a =>
+                string.Equals(a.SubSessionId, resumeSubSessionId, StringComparison.Ordinal));
+            var model = original?.ModelId?.Trim();
+            return string.IsNullOrWhiteSpace(model) ? null : model;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[SubAgent] 续跑继承模型路由查询失败 sub={Sub} parent={Parent}",
+                resumeSubSessionId,
+                parentSessionId);
+            return null;
+        }
     }
 
     private static string TruncateForLog(string text, int maxLen)
