@@ -2079,8 +2079,7 @@ public sealed partial class AgentExecutionService
         }
         else if (!isPermissionError)
         {
-            sb.AppendLine($"   💡 Suggestion: Check the tool's parameter constraints. " +
-                "If the tool has access restrictions, try an alternative approach.");
+            sb.AppendLine(BuildFailureSuggestion(result.Error));
         }
 
         return sb.ToString();
@@ -2109,8 +2108,33 @@ public sealed partial class AgentExecutionService
         sb.AppendLine($"❌ Tool '{toolName}' FAILED (exit={result.ExitCode})");
         sb.AppendLine($"   Error: {result.Error}");
         AppendFailureOutput(sb, result.Output);
-        sb.AppendLine("   💡 Suggestion: Try an alternative approach or use a different tool if this one has access restrictions.");
+        sb.AppendLine(BuildFailureSuggestion(result.Error));
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// 按失败原因给出可执行的下一步建议。
+    /// 对每类失败都回同一句「检查参数约束」会让超时后的 Agent 继续去改参数——方向
+    /// 完全错误，白费一轮；路径误用同理。只有无法归因的失败才回落到通用建议。
+    /// </summary>
+    internal static string BuildFailureSuggestion(string? error)
+    {
+        const string TimedOutSuggestion =
+            "   💡 Suggestion: This tool enforces a hard timeout. For long-running work use " +
+            "terminal_start + terminal_wait (wait up to 600s), or pass a larger timeout_seconds.";
+
+        const string DirectoryMisuseSuggestion =
+            "   💡 Suggestion: 'directory' must be a folder, not a file. Pass the containing folder, " +
+            "or use 'pattern' to match content inside it.";
+
+        const string FallbackSuggestion =
+            "   💡 Suggestion: Check the tool's parameter constraints. " +
+            "If the tool has access restrictions, try an alternative approach.";
+
+        if (string.IsNullOrWhiteSpace(error)) return FallbackSuggestion;
+        if (error.Contains("timed out", StringComparison.OrdinalIgnoreCase)) return TimedOutSuggestion;
+        if (error.Contains("is a file, not a directory", StringComparison.OrdinalIgnoreCase)) return DirectoryMisuseSuggestion;
+        return FallbackSuggestion;
     }
 
     /// <summary>计算字符串的 SHA256 哈希（小写十六进制），用于审计日志中脱敏参数。</summary>
