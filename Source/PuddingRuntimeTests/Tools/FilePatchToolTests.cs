@@ -938,6 +938,57 @@ public sealed class FilePatchToolTests
             "a missing target is runtime state, not a malformed request");
     }
 
+    // ── P2-4 回归：CSS 宽容匹配只对样式表类文件开放 ──
+    // 现场实测 2026-11-22：给 .py 文件写的锚点行尾多一个 `:`，仍被 css-aware 策略接受并原样落盘，
+    // 产生 SyntaxError。宽容策略删掉的正是 `{ } ; , :` —— 对代码文件这是把锚点差异抹平。
+
+    [TestMethod]
+    public async Task Replace_CssFile_StillUsesCssAwareTolerance()
+    {
+        // 原始内容与锚点差在 `;` 与空白：只有 css-aware（删 ; {} , :）能匹配上。
+        WriteFile("style.css", ".card { color : red }\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "style.css",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["oldText"] = ".card{color:red;}", ["newText"] = ".card{color:blue}" }
+            }
+        });
+
+        // 断言不变量：容差命中且已改写（归一化匹配的 span 到锚点末字符为止，尾部空白与 `}` 会保留，
+        // 这是宽容策略与 whitespace-tolerant 路径共同的行为，不属本次修的范围）。
+        StringAssert.StartsWith(
+            ReadFile("style.css"),
+            ".card{color:blue}",
+            "stylesheet tolerance must keep working: dropping ; { } is the intended CSS courtesy");
+        Assert.IsFalse(
+            result.Output.Contains("not found", StringComparison.Ordinal),
+            "the stylesheet anchor must match, not be reported as missing");
+        Assert.IsTrue(result.Success, result.Error);
+    }
+
+    [TestMethod]
+    public async Task Replace_CodeFile_DoesNotUseCssAwareTolerance()
+    {
+        // 完全相同的内容与锚点，只换扩展名：容差必须关闭，文件必须原封不动。
+        WriteFile("module.py", ".card { color : red }\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "module.py",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["oldText"] = ".card{color:red;}", ["newText"] = ".card{color:blue}" }
+            }
+        });
+
+        Assert.AreEqual(
+            ".card { color : red }\n",
+            ReadFile("module.py"),
+            "a code file must never be rewritten through CSS tolerance: the extra ';' is content here");
+        StringAssert.Contains(result.Output, "not found", "the caller must be told the anchor did not match");
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> parameters)
     {
         var tool = new FilePatchTool();

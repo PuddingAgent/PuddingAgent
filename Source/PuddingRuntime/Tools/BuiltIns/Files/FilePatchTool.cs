@@ -375,7 +375,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 continue;
             }
 
-            var candidates = FindReplacementCandidates(original, oldText, newText)
+            var candidates = FindReplacementCandidates(original, oldText, newText, IsCssFamilyPath(relPath))
                 .Where(match => match.Index >= scopeStart && match.Index + match.Length <= scopeEnd)
                 .Where(match => !usedRanges.Any(r => match.Index < r.End && match.Index + match.Length > r.Start))
                 .ToList();
@@ -489,7 +489,8 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         return crlfCount > lfOnlyCount ? normalized.Replace("\n", "\r\n") : normalized;
     }
 
-    private static IReadOnlyList<TextMatch> FindReplacementCandidates(string original, string oldText, string newText)
+    private static IReadOnlyList<TextMatch> FindReplacementCandidates(
+        string original, string oldText, string newText, bool allowCssAwareNormalization)
     {
         var exact = FindLiteralMatches(original, oldText, "exact");
         if (exact.Count > 0)
@@ -519,8 +520,11 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             static c => char.IsWhiteSpace(c) ? null : c.ToString());
         if (candidates.Count == 0)
         {
-            // P2-4: CSS-aware normalization
-            if (LooksLikeCssSource(oldText) || LooksLikeCssSource(original))
+            // P2-4: CSS-aware normalization — only for stylesheet-family files. It deletes `{ } ; , :`,
+            // which are exactly the characters that make a code anchor unambiguous: measured in the
+            // field on 2026-11-22, an old_text carrying one extra ':' was still accepted for a .py file
+            // through this path and wrote a SyntaxError to disk.
+            if (allowCssAwareNormalization && (LooksLikeCssSource(oldText) || LooksLikeCssSource(original)))
             {
                 candidates = FindNormalizedMatches(
                     original,
@@ -790,6 +794,18 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         if (Regex.IsMatch(text, @"[.#]?[-\w]+\s*\{", RegexOptions.None)) hits++;
         if (Regex.IsMatch(text, @"-webkit-|-moz-|-ms-|-o-")) hits++;
         return hits >= 2;
+    }
+
+    // CSS-family extensions are the only place where dropping { } ; , : is a courtesy rather than
+    // data loss. Everything else (C#, Python, JSON, Markdown, XAML) treats those characters as
+    // content, so the tolerant strategy must not be reachable there.
+    private static bool IsCssFamilyPath(string? path)
+    {
+        var ext = Path.GetExtension(path ?? string.Empty);
+        return ext.Equals(".css", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".scss", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".sass", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".less", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string ApplyReplacements(string original, List<(int Index, int Length, string NewText)> replacements)
