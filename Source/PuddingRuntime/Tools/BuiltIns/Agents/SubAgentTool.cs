@@ -205,6 +205,21 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                             ?? GetStringProp(json, "resumeSubAgentId")
                             ?? args.ResumeSubAgentId;
 
+        // 人类可读身份：name / avatar / responsibility 三个参数都是可选的。
+        // 这里只负责取值，不做"没给就编一个"——默认名与重名去重必须发生在写入点
+        // （SessionStateManager 同一次查询、同一次 UPSERT），否则池化复用会把已设名字冲掉。
+        var displayName = GetStringProp(json, "name")
+                       ?? GetStringProp(json, "display_name")
+                       ?? request.Parameters.GetValueOrDefault("name")
+                       ?? args.Name;
+        var avatarKey = GetStringProp(json, "avatar")
+                     ?? GetStringProp(json, "avatar_key")
+                     ?? request.Parameters.GetValueOrDefault("avatar")
+                     ?? args.Avatar;
+        var responsibility = GetStringProp(json, "responsibility")
+                          ?? request.Parameters.GetValueOrDefault("responsibility")
+                          ?? args.Responsibility;
+
         var hasBatchTasksArgument = json.TryGetPropertyValue("tasks", out var tasksNode)
                                     && tasksNode is not null;
         if (!string.IsNullOrWhiteSpace(resumeSubAgentId) && hasBatchTasksArgument)
@@ -618,6 +633,9 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 TemplateId = template.TemplateId,
                 Task = task!,
                 ResumeSubSessionId = resumeSubAgentId,
+                DisplayName = displayName,
+                AvatarKey = avatarKey,
+                Responsibility = responsibility,
                 DelegationProtocol = DelegationProtocolVersion,
                 Question = delegation.Question,
                 Scope = delegation.Scope,
@@ -1225,6 +1243,11 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             DelegationDepth = (taskPlanning.DelegationDepth ?? 0) + 1,
             MaxDelegationDepth = taskPlanning.MaxDelegationDepth,
             RoleInPlan = args.PoolRole ?? taskPlanning.RoleInPlan,
+            // 池化路径的默认人读名就是池名（它已经是一个人给的名字，且跨轮次稳定）；
+            // 显式 name 优先于池名。
+            DisplayName = args.Name ?? args.PoolName,
+            AvatarKey = args.Avatar,
+            Responsibility = args.Responsibility,
             AllowSubDelegation = taskPlanning.AllowSubDelegation == true,
             AllowAgentCreation = taskPlanning.AllowAgentCreation,
             AssignedObjective = taskPlanning.AssignedObjective,
@@ -1644,6 +1667,9 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 ["fallback_model"] = args.FallbackModel,
                 ["reuse_parent_context"] = args.ReuseParentContext,
                 ["resume_sub_agent_id"] = args.ResumeSubAgentId,
+                ["name"] = args.Name,
+                ["avatar"] = args.Avatar,
+                ["responsibility"] = args.Responsibility,
                 ["tools"] = args.Tools,
                 ["permission_mode"] = args.PermissionMode,
                 ["working_directory"] = args.WorkingDirectory,
@@ -1862,6 +1888,15 @@ public sealed record SubAgentToolArgs
 
     [ToolParam("Existing sub-agent id to resume with preserved context and a fresh Pudding-managed budget. Do not combine with tasks or pool_name.")]
     public string? ResumeSubAgentId { get; init; }
+
+    [ToolParam("Human-readable sub-agent name shown in the UI (2-16 chars recommended). Unique among ACTIVE sub-agents of the same parent session; a duplicate gets -2/-3 ... appended. Omit to auto-generate <role>-<n>.")]
+    public string? Name { get; init; }
+
+    [ToolParam("Optional preset avatar key (<=32 chars). Omit to let the UI derive a stable avatar from name + sub-agent id.")]
+    public string? Avatar { get; init; }
+
+    [ToolParam("One-line responsibility shown on the sub-agent card (<=200 chars). Omit to fall back to the first sentence of the task summary.")]
+    public string? Responsibility { get; init; }
 
     [ToolParam("Optional comma-separated allowed tool id subset for the child agent.")]
     public string? Tools { get; init; }

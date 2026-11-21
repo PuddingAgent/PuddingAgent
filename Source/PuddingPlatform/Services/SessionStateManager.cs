@@ -541,6 +541,9 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var spawnedAt = info.SpawnedAt.ToString("O");
+        // 名字必须在写入之前定下来：本表没有 display_name 唯一索引，撞名不会抛异常，
+        // 只能靠"先查再定"保证同一父会话下活跃子代理不重名。
+        var displayName = await ResolveDisplayNameAsync(db, info, ct);
 
         // session_sub_agents 是“每个子会话的当前状态投影”，不是每次调用的历史表。
         // 池化子代理复用 SubSessionId 时必须把上一轮终态重新置为 running；
@@ -548,15 +551,20 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         //
         // 使用 SQLite 原子 UPSERT，避免 query-then-insert 在多实例/并发启动时再次触发
         // SubSessionId UNIQUE 约束。WHERE 禁止同一 SubSessionId 被重绑定到其他父会话。
+        //
+        // 身份三列全部用 COALESCE(excluded.x, x)：复用路径上父代理往往不传身份，
+        // 直接覆盖会把已设的名字/头像/职责清空（"每次重跑都丢名片"）。
         var affected = await db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO "session_sub_agents"
                 ("parent_session_id", "parent_agent_id", "sub_session_id", "Status",
                  "template_id", "model_id", "task_summary", "spawned_at",
-                 "completed_at", "Success", "reply_summary", "error_summary", "full_result_json")
+                 "completed_at", "Success", "reply_summary", "error_summary", "full_result_json",
+                 "display_name", "avatar_key", "responsibility")
             VALUES
                 ({info.ParentSessionId}, {info.ParentAgentId}, {info.SubSessionId}, {"running"},
                  {info.TemplateId}, {info.ModelId}, {info.TaskSummary}, {spawnedAt},
-                 NULL, NULL, NULL, NULL, NULL)
+                 NULL, NULL, NULL, NULL, NULL,
+                 {displayName}, {info.AvatarKey}, {info.Responsibility})
             ON CONFLICT("sub_session_id") DO UPDATE SET
                 "parent_agent_id" = excluded."parent_agent_id",
                 "Status" = excluded."Status",
@@ -568,7 +576,10 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
                 "Success" = NULL,
                 "reply_summary" = NULL,
                 "error_summary" = NULL,
-                "full_result_json" = NULL
+                "full_result_json" = NULL,
+                "display_name" = COALESCE(excluded."display_name", "display_name"),
+                "avatar_key" = COALESCE(excluded."avatar_key", "avatar_key"),
+                "responsibility" = COALESCE(excluded."responsibility", "responsibility")
             WHERE "session_sub_agents"."parent_session_id" = excluded."parent_session_id";
             """, ct);
 
@@ -585,6 +596,127 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             "[SSM] Sub-agent current state set to running parent={Parent} sub={Sub} template={Template}",
             parentSessionId, info.SubSessionId, info.TemplateId ?? "default");
     }
+
+    /// <summary>display_name 列的字符上限（与实体 <c>MaxLength(64)</c> 一致）。</summary>
+    private const int MaxDisplayNameLength = 64;
+
+    /// <summary>
+    /// 解析本次要写入的人读名。三种情形（与 UPSERT 里的 COALESCE 配合）：
+    /// <list type="number">
+    /// <item>父显式给名 → 在同父会话的活跃子代理间去重后写入；</item>
+    /// <item>父没给名、本行已有名 → 返回 <c>null</c>，COALESCE 保留旧值
+    ///       （池化复用不能把用户看到的名字偷偷换成角色名）；</item>
+    /// <item>父没给名、本行没有名 → 按 <c>&lt;role&gt;-&lt;序号&gt;</c> 生成并去重后写入。</item>
+    /// </list>
+    /// 去重一律在写入前完成：本表没有 display_name 唯一索引，靠异常兜底是无效的。
+    /// </summary>
+    private static async Task<string?> ResolveDisplayNameAsync(
+        PlatformDbContext db,
+        SubAgentSpawnInfo info,
+        CancellationToken ct)
+    {
+        var requested = NormalizeDisplayName(info.DisplayName);
+
+        if (requested is null)
+        {
+            var existing = await db.SessionSubAgents
+                .AsNoTracking()
+                .Where(e => e.SubSessionId == info.SubSessionId)
+                .Select(e => e.DisplayName)
+                .FirstOrDefaultAsync(ct);
+
+            if (!string.IsNullOrWhiteSpace(existing))
+                return null;
+
+            // 自动名必须带序号（"reviewer-1"），所以从 1 开始追加；
+            // 显式名优先保留原名，从 2 开始追加。
+            return await AllocateUniqueDisplayNameAsync(
+                db, info, BuildDisplayNameSeed(info), appendFirstSuffix: true, ct);
+        }
+
+        return await AllocateUniqueDisplayNameAsync(
+            db, info, requested, appendFirstSuffix: false, ct);
+    }
+
+    /// <summary>
+    /// 在同父会话的 <b>活跃</b>（running）子代理中取一个未被占用的名字。
+    /// 终态行不参与去重：名字是“当前在场的人”的区分，不是历史主键；
+    /// 已完成子代理的名字被新子代理沿用，正是期望行为。
+    /// </summary>
+    private static async Task<string> AllocateUniqueDisplayNameAsync(
+        PlatformDbContext db,
+        SubAgentSpawnInfo info,
+        string seed,
+        bool appendFirstSuffix,
+        CancellationToken ct)
+    {
+        var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var activeNames = await db.SessionSubAgents
+            .AsNoTracking()
+            .Where(e => e.ParentSessionId == info.ParentSessionId
+                        && e.SubSessionId != info.SubSessionId
+                        && e.Status == "running"
+                        && e.DisplayName != null)
+            .Select(e => e.DisplayName!)
+            .ToListAsync(ct);
+        foreach (var name in activeNames)
+            taken.Add(name);
+
+        // 扣掉 "-99" 两位给序号，保证追加后仍不超列宽。
+        var baseName = ClampDisplayName(seed, MaxDisplayNameLength - 3);
+        if (!appendFirstSuffix && !taken.Contains(baseName))
+            return baseName;
+
+        for (var index = appendFirstSuffix ? 1 : 2; index <= 99; index++)
+        {
+            var candidate = $"{baseName}-{index}";
+            if (!taken.Contains(candidate))
+                return candidate;
+        }
+
+        // 同名 100 个以上属异常场景，但不能因此让启动失败、也不能静默撞名：
+        // 用子会话 id 尾段做确定性后缀（尾段本身已经是唯一 hash）。
+        var suffix = info.SubSessionId.Length > 6 ? info.SubSessionId[^6..] : info.SubSessionId;
+        return ClampDisplayName($"{baseName}-{suffix}", MaxDisplayNameLength);
+    }
+
+    /// <summary>无人读名时的名字种子：优先任务规划角色，其次模板 id（去掉 -agent 尾缀），最后 agent。</summary>
+    private static string BuildDisplayNameSeed(SubAgentSpawnInfo info)
+    {
+        var role = NormalizeDisplayName(info.RoleInPlan);
+        if (role is not null)
+            return role;
+
+        var template = NormalizeDisplayName(info.TemplateId);
+        if (template is not null)
+        {
+            const string agentSuffix = "-agent";
+            if (template.Length > agentSuffix.Length
+                && template.EndsWith(agentSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                template = template[..^agentSuffix.Length];
+            }
+
+            return template;
+        }
+
+        return "agent";
+    }
+
+    private static string? NormalizeDisplayName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        return ClampDisplayName(value.Trim(), MaxDisplayNameLength);
+    }
+
+    /// <summary>
+    /// 按 UTF-16 长度裁剪。显示名不是主键，过长只影响列宽 / 排版；
+    /// 为它拒掉一次委派得不偿失，所以采用“截断”而非“报错”。
+    /// </summary>
+    private static string ClampDisplayName(string value, int maxLength)
+        => value.Length <= maxLength ? value : value[..maxLength];
 
     public async Task TrackSubAgentCompleteAsync(
         string subSessionId, SubAgentResult result,
@@ -749,6 +881,9 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             TemplateId = e.TemplateId,
             ModelId = e.ModelId,
             TaskSummary = e.TaskSummary,
+            DisplayName = e.DisplayName,
+            AvatarKey = e.AvatarKey,
+            Responsibility = e.Responsibility,
             SpawnedAt = DateTimeOffset.Parse(e.SpawnedAt),
             CompletedAt = e.CompletedAt != null ? DateTimeOffset.Parse(e.CompletedAt) : null,
             ResultSummary = e.ReplySummary,

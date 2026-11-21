@@ -52,4 +52,19 @@ public class SessionSubAgentEntity
 
     [Column("full_result_json")]
     public string? FullResultJson { get; set; }
+
+    // ── 人类可读身份（显示层用，不是主键）─────────────────────────
+    // 三列全部可空：存量行没有它们，写入点用 COALESCE 保证"不传就不清空"。
+
+    /// <summary>人读名（同一父会话下活跃子代理间唯一）。</summary>
+    [MaxLength(64), Column("display_name")]
+    public string? DisplayName { get; set; }
+
+    /// <summary>预设图形键；为空时展示层按 (DisplayName + SubSessionId) 确定性生成。</summary>
+    [MaxLength(32), Column("avatar_key")]
+    public string? AvatarKey { get; set; }
+
+    /// <summary>一句话职责；为空时展示层回退 task_summary 首句。</summary>
+    [MaxLength(200), Column("responsibility")]
+    public string? Responsibility { get; set; }
 }

@@ -263,6 +263,15 @@ public sealed record SubAgentSpawnInfo
     public string? ModelId { get; init; }
     public required string TaskSummary { get; init; }
     public required DateTimeOffset SpawnedAt { get; init; }
+
+    /// <summary>父代理显式给出的人读名；为空时由状态层按 <c>&lt;role&gt;-&lt;序号&gt;</c> 生成。</summary>
+    public string? DisplayName { get; init; }
+    /// <summary>预设图形键；为空时展示层确定性生成。不会清空已有值。</summary>
+    public string? AvatarKey { get; init; }
+    /// <summary>一句话职责；为空时展示层回退任务摘要首句。不会清空已有值。</summary>
+    public string? Responsibility { get; init; }
+    /// <summary>任务规划角色，仅用于无人读名时生成 <c>&lt;role&gt;-&lt;序号&gt;</c> 的种子。</summary>
+    public string? RoleInPlan { get; init; }
 }
 
 /// <summary>子代理完成结果。</summary>
@@ -305,6 +314,12 @@ public sealed record SubAgentStatus
     public string? TemplateId { get; init; }
     public string? ModelId { get; init; }
     public required string TaskSummary { get; init; }
+    /// <summary>人读名（同一父会话下活跃子代理间唯一）；旧行可能为空。</summary>
+    public string? DisplayName { get; init; }
+    /// <summary>预设图形键；为空时展示层确定性生成。</summary>
+    public string? AvatarKey { get; init; }
+    /// <summary>一句话职责；为空时展示层回退任务摘要首句。</summary>
+    public string? Responsibility { get; init; }
     public required DateTimeOffset SpawnedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public string? ResultSummary { get; init; }

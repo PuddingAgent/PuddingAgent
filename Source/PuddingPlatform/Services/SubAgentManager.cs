@@ -1286,6 +1286,12 @@ public sealed class SubAgentManager : ISubAgentManager
                 TaskSummary = request.TaskDescription.Length > 200
                     ? request.TaskDescription[..200] + "..."
                     : request.TaskDescription,
+                // 身份三字段原样下传；为空时由 SessionStateManager 推导/保留已有值，
+                // 这里不得自己编造名字（重名去重必须与写入点在同一处读同一张表）。
+                DisplayName = request.DisplayName,
+                AvatarKey = request.AvatarKey,
+                Responsibility = request.Responsibility,
+                RoleInPlan = request.RoleInPlan,
                 SpawnedAt = startedAt,
             }, ct);
         }

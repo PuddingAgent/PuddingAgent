@@ -234,6 +234,11 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         AllowAgentCreation = request.AllowAgentCreation,
         AssignedObjective = request.AssignedObjective,
         ExpectedOutputContract = request.OutputContract ?? request.ExpectedOutputContract,
+        // 人类可读身份：调用入口已经解析完毕，这里只做透传，不在这里推导默认值
+        // （默认名与重名去重属于状态层，与写入操作同步进行）。
+        DisplayName = request.DisplayName,
+        AvatarKey = request.AvatarKey,
+        Responsibility = request.Responsibility,
         TimeoutSeconds = timeoutSeconds,
         ParentExecutionDeadlineUtc = request.ParentExecutionDeadlineUtc,
         InvocationId = request.InvocationId,

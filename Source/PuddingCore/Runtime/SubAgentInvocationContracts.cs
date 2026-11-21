@@ -67,6 +67,12 @@ public sealed record SubAgentInvocationRequest
     public string? Effort { get; init; }
     public string? StopCondition { get; init; }
     public string? OutputContract { get; init; }
+    /// <summary>父代理给出的人读名；为空时状态层按角色生成。</summary>
+    public string? DisplayName { get; init; }
+    /// <summary>预设图形键；为空时展示层确定性生成。</summary>
+    public string? AvatarKey { get; init; }
+    /// <summary>一句话职责；为空时展示层回退任务摘要首句。</summary>
+    public string? Responsibility { get; init; }
     public bool IsAsync { get; init; }
     /// <summary>
     /// 调用模式（sync/async）。缺省按 IsAsync 推导（571fb2fa）：

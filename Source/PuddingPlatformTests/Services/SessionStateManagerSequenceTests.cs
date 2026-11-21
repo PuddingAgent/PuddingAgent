@@ -451,6 +451,174 @@ public sealed class SessionStateManagerSequenceTests
     }
 
     [TestMethod]
+    public async Task TrackSubAgentStartAsync_PersistsExplicitIdentityFields()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"test_{Guid.NewGuid():N}.db");
+        try
+        {
+            var ssm = CreateSsm(dbPath);
+            const string parentSessionId = "parent-session";
+            const string subSessionId = "parent-session-sub-identity";
+
+            await ssm.TrackSubAgentStartAsync(parentSessionId, new SubAgentSpawnInfo
+            {
+                ParentSessionId = parentSessionId,
+                ParentAgentId = "agent-a",
+                SubSessionId = subSessionId,
+                TemplateId = "workspace-task-agent",
+                TaskSummary = "review the uncommitted diff",
+                DisplayName = "审查员",
+                AvatarKey = "owl",
+                Responsibility = "审阅改动并给出结论",
+                SpawnedAt = DateTimeOffset.Parse("2026-11-21T01:00:00+00:00"),
+            });
+
+            var entity = await LoadSubAgentAsync(dbPath, subSessionId);
+            Assert.AreEqual("审查员", entity.DisplayName);
+            Assert.AreEqual("owl", entity.AvatarKey);
+            Assert.AreEqual("审阅改动并给出结论", entity.Responsibility);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [TestMethod]
+    public async Task TrackSubAgentStartAsync_WithoutDisplayName_GeneratesRoleSuffixedName()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"test_{Guid.NewGuid():N}.db");
+        try
+        {
+            var ssm = CreateSsm(dbPath);
+            const string parentSessionId = "parent-session";
+
+            // 两个子代理都没给人读名，但给了同一个任务规划角色：
+            // 名字必须是 <role>-1 / <role>-2，而不是两条一模一样的 reviewer。
+            await ssm.TrackSubAgentStartAsync(parentSessionId, new SubAgentSpawnInfo
+            {
+                ParentSessionId = parentSessionId,
+                SubSessionId = "parent-session-sub-auto-1",
+                TemplateId = "workspace-task-agent",
+                RoleInPlan = "reviewer",
+                TaskSummary = "first",
+                SpawnedAt = DateTimeOffset.Parse("2026-11-21T01:00:00+00:00"),
+            });
+            await ssm.TrackSubAgentStartAsync(parentSessionId, new SubAgentSpawnInfo
+            {
+                ParentSessionId = parentSessionId,
+                SubSessionId = "parent-session-sub-auto-2",
+                TemplateId = "workspace-task-agent",
+                RoleInPlan = "reviewer",
+                TaskSummary = "second",
+                SpawnedAt = DateTimeOffset.Parse("2026-11-21T01:01:00+00:00"),
+            });
+
+            Assert.AreEqual("reviewer-1", (await LoadSubAgentAsync(dbPath, "parent-session-sub-auto-1")).DisplayName);
+            Assert.AreEqual("reviewer-2", (await LoadSubAgentAsync(dbPath, "parent-session-sub-auto-2")).DisplayName);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [TestMethod]
+    public async Task TrackSubAgentStartAsync_DuplicateActiveName_AppendsIndexBeforeWrite()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"test_{Guid.NewGuid():N}.db");
+        try
+        {
+            var ssm = CreateSsm(dbPath);
+            const string parentSessionId = "parent-session";
+
+            for (var index = 1; index <= 3; index++)
+            {
+                await ssm.TrackSubAgentStartAsync(parentSessionId, new SubAgentSpawnInfo
+                {
+                    ParentSessionId = parentSessionId,
+                    SubSessionId = $"parent-session-sub-dup-{index}",
+                    TemplateId = "workspace-task-agent",
+                    TaskSummary = $"task {index}",
+                    DisplayName = "writer",
+                    SpawnedAt = DateTimeOffset.Parse("2026-11-21T01:0" + index + ":00+00:00"),
+                });
+            }
+
+            // 写之前就已经定名：本表没有 display_name 唯一索引，抛异常兜底是无效的。
+            Assert.AreEqual("writer", (await LoadSubAgentAsync(dbPath, "parent-session-sub-dup-1")).DisplayName);
+            Assert.AreEqual("writer-2", (await LoadSubAgentAsync(dbPath, "parent-session-sub-dup-2")).DisplayName);
+            Assert.AreEqual("writer-3", (await LoadSubAgentAsync(dbPath, "parent-session-sub-dup-3")).DisplayName);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [TestMethod]
+    public async Task TrackSubAgentStartAsync_RestartWithoutIdentity_DoesNotClearExistingIdentity()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"test_{Guid.NewGuid():N}.db");
+        try
+        {
+            var ssm = CreateSsm(dbPath);
+            const string parentSessionId = "parent-session";
+            const string subSessionId = "parent-session-sub-resume";
+
+            await ssm.TrackSubAgentStartAsync(parentSessionId, new SubAgentSpawnInfo
+            {
+                ParentSessionId = parentSessionId,
+                SubSessionId = subSessionId,
+                TemplateId = "workspace-task-agent",
+                TaskSummary = "first run",
+                DisplayName = "审查员",
+                AvatarKey = "owl",
+                Responsibility = "审阅改动并给出结论",
+                SpawnedAt = DateTimeOffset.Parse("2026-11-21T01:00:00+00:00"),
+            });
+
+            // 池化复用 / 重跑：父代理往往不再传身份，只给新任务。
+            // 若 UPSERT 不用 COALESCE，这一步会把已设的名字/头像/职责全部清空。
+            await ssm.TrackSubAgentStartAsync(parentSessionId, new SubAgentSpawnInfo
+            {
+                ParentSessionId = parentSessionId,
+                SubSessionId = subSessionId,
+                TemplateId = "reviewer",
+                TaskSummary = "second run",
+                SpawnedAt = DateTimeOffset.Parse("2026-11-21T01:05:00+00:00"),
+            });
+
+            var entity = await LoadSubAgentAsync(dbPath, subSessionId);
+            Assert.AreEqual("审查员", entity.DisplayName, "不传 display_name 不得清空已有名字（COALESCE 语义）。");
+            Assert.AreEqual("owl", entity.AvatarKey, "不传 avatar_key 不得清空已有头像。");
+            Assert.AreEqual("审阅改动并给出结论", entity.Responsibility, "不传 responsibility 不得清空已有职责。");
+
+            // 同时证明这一轮确实走的是 UPDATE（其余状态被刷新），而不是 “什么都没写”。
+            Assert.AreEqual("reviewer", entity.TemplateId);
+            Assert.AreEqual("second run", entity.TaskSummary);
+            Assert.AreEqual("running", entity.Status);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    private async Task<SessionSubAgentEntity> LoadSubAgentAsync(string dbPath, string subSessionId)
+    {
+        using var scope = CreateScopeFactory(dbPath).CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        return await db.SessionSubAgents
+            .AsNoTracking()
+            .SingleAsync(e => e.SubSessionId == subSessionId);
+    }
+
+    [TestMethod]
     public async Task TrackSubAgentStartAsync_SameSubSessionDifferentParent_RejectsRebinding()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"test_{Guid.NewGuid():N}.db");

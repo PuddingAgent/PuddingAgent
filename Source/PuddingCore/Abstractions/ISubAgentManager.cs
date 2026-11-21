@@ -145,6 +145,28 @@ public sealed record SubAgentSpawnRequest
     public string? WorkingDirectory { get; init; }
     public required string TaskDescription { get; init; }
     public string TemplateId { get; init; } = "workspace-task-agent";
+
+    // ── 人类可读身份（显示用，不是主键）──────────────────────────────────────
+    // 稳定标识仍是 SubSessionId / RunId；这三项只用于界面显示与同级区分。
+    // 三者全部可空：为空时由写入点推导/回退，绝不因此改变既有行已设的值。
+
+    /// <summary>
+    /// 人读名（2–16 字符，同一父会话下活跃子代理之间唯一）。
+    /// 为空时由写入点按 <c>&lt;role&gt;-&lt;序号&gt;</c> 生成，同父会话内重名会自动追加序号。
+    /// </summary>
+    public string? DisplayName { get; init; }
+
+    /// <summary>
+    /// 预设图形键。为空时展示层按 <c>(DisplayName + SubSessionId)</c> 确定性生成，
+    /// 使同一子代理的头像在多次刷新间保持不变。
+    /// </summary>
+    public string? AvatarKey { get; init; }
+
+    /// <summary>
+    /// 一句话职责（名片用）。为空时展示层回退 <c>task_summary</c> 首句；写入点不替调用方编造。
+    /// </summary>
+    public string? Responsibility { get; init; }
+
     /// <summary>调用入口解析出的不可变 LLM 配置快照。</summary>
     public required LlmConfig LlmConfig { get; init; }
     /// <summary>调用入口已解析的不可变 Provider/Profile/Model 路由身份。</summary>
