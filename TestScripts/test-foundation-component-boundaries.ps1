@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 <#
 .SYNOPSIS
   DS-A2-01：九个基础设施实现工程的 MSBuild 反向引用边界探针。

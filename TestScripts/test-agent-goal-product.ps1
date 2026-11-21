@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   PA-08C 真实模型/插件 smoke 的显式门禁脚本（默认 NotRun）。
   本脚本不会猜测配置、不会读取 D:\data 的 LLM secret、不会自动部署或重启宿主。
