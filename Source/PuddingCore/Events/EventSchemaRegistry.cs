@@ -262,6 +262,12 @@ public static class EventSchemaRegistry
             "子代理已完成", ["parent_session_id", "sub_agent_id", "success"], ["reply", "error"]);
         yield return new EventSchemaDefinition("subagent.run.budget_exhausted", 1, "subagent",
             "子代理预算已耗尽且可续跑", ["parent_session_id", "sub_agent_id", "status"], ["reply", "error", "resumable"]);
+        // paused 与 budget_exhausted 并列（Docs/07_architecture/子代理生命周期护栏-2026-11-21.md §五）。
+        // 2026-11-21 探测结论：未注册时 GetSchemaVersion 返回默认 1、不抛异常，但 IsValidEventType=false；
+        // 本条目按相邻格式注册（版本仍为 1，不构成兼容性变更），使类型可被校验器与文档找到。
+        // reason / signal / window_stats 属 P0-b2 接线时的 payload 字段，纯附加字段不改必填集合。
+        yield return new EventSchemaDefinition("subagent.run.paused", 1, "subagent",
+            "子代理被异常检测器暂停且可续跑", ["parent_session_id", "sub_agent_id", "status"], ["reply", "error", "resumable"]);
         yield return new EventSchemaDefinition("subagent.run.failed", 1, "subagent",
             "子代理已失败", ["parent_session_id", "sub_agent_id", "error"]);
         yield return new EventSchemaDefinition("subagent.run.cancelled", 1, "subagent",

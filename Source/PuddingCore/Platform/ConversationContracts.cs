@@ -148,6 +148,11 @@ public static class ConversationEventTypes
     public const string SubAgentToolFailed = "subagent.tool.failed";
     public const string SubAgentRunCompleted = "subagent.run.completed";
     public const string SubAgentRunBudgetExhausted = "subagent.run.budget_exhausted";
+    /// <summary>
+    /// 异常暂停：检测器判定「原地打转」后停止调度（见 Docs/07_architecture/子代理生命周期护栏-2026-11-21.md §五）。
+    /// 与 <see cref="SubAgentRunBudgetExhausted"/> 并列：停止原因不同，但都是「执行已停、上下文仍热」的可续跑终态。
+    /// </summary>
+    public const string SubAgentRunPaused = "subagent.run.paused";
     public const string SubAgentRunFailed = "subagent.run.failed";
     public const string SubAgentRunCancelled = "subagent.run.cancelled";
     public const string SubAgentRunTimedOut = "subagent.run.timed_out";

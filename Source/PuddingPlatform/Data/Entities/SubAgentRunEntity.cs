@@ -48,7 +48,7 @@ public class SubAgentRunEntity
     [Required, MaxLength(64), Column("template_id")]
     public string TemplateId { get; set; } = "";
 
-    /// <summary>运行状态：running / completed / failed / cancelled</summary>
+    /// <summary>运行状态；取值词表见 <see cref="TerminalStatuses"/> / <see cref="NonTerminalStatuses"/>。</summary>
     [Required, MaxLength(16)]
     public string Status { get; set; } = "running";
 
@@ -68,7 +68,9 @@ public class SubAgentRunEntity
     public static readonly IReadOnlyList<string> TerminalStatuses =
     [
         "completed",
+        // 预算耗尽与异常暂停并列：两者都是「执行已停止、上下文仍热」的可续跑终态。
         "budget_exhausted",
+        "paused",
         "failed",
         "cancelled",
         "timed_out",
@@ -80,10 +82,37 @@ public class SubAgentRunEntity
     /// <para>
     /// 现在只有一个取值（<see cref="RunningStatus"/>）：创建 run 时写它，收尾时由终态覆盖。
     /// 之所以仍写成集合，是因为恢复判据是「有没有非终态 run」，而不是「status 是不是 running」；
-    /// 将来若引入 paused / waiting 之类的活动态，只改这里就能让池恢复自动跟上。
+    /// 将来若引入 waiting 之类**真的还在被调度**的活动态，只改这里就能让池恢复自动跟上。
+    /// </para>
+    /// <para>
+    /// <b>paused 不在本集合：</b>它在 2026-11-21 被裁定为「终态 + 可续跑」（见 <see cref="ResumableStatuses"/>）——
+    /// 检测器叫停后已无轮次在跑，池若把它当活动态就会去重置一条暂停中的条目。
     /// </para>
     /// </summary>
     public static readonly IReadOnlyList<string> NonTerminalStatuses = [RunningStatus];
+
+    /// <summary>
+    /// 可续跑状态集合 —— 「终态，但可以直接 resume 继续同一个会话」的唯一真源。
+    /// <para>
+    /// <b>为什么 paused 与 budget_exhausted 并列：</b>两者停止的原因不同（预算用尽 / 重复输出被检测器叫停），
+    /// 但对调度而言一样——执行已停、无新轮次；对使用方而言也一样——上下文是热的，恢复靠 resume 而不是继续跑。
+    /// 字面量散落在 Manager / 状态投影各处时，新增一个可续态就会漏掉某一处，
+    /// 表现正是本词表要防的那类缺陷：界面把「暂停等裁决」显示成「失败」。
+    /// </para>
+    /// <para>本集合必须是 <see cref="TerminalStatuses"/> 的子集：可续跑的前提是先已停止。</para>
+    /// </summary>
+    public static readonly IReadOnlyList<string> ResumableStatuses = ["budget_exhausted", "paused"];
+
+    /// <summary>
+    /// 终态判定（Ordinal 精确比较）。不用大小写宽容：状态值是代码写入的内部词表，
+    /// 宽容只会让一个拼错的状态值静默通过判定，而不是尽早暴露。
+    /// </summary>
+    public static bool IsTerminalStatus(string? status) =>
+        status is not null && TerminalStatuses.Contains(status, StringComparer.Ordinal);
+
+    /// <summary>可续跑判定 —— 终态中能直接 resume 的那些。</summary>
+    public static bool IsResumableStatus(string? status) =>
+        status is not null && ResumableStatuses.Contains(status, StringComparer.Ordinal);
 
     [Required, MaxLength(32), Column("started_at")]
     public string StartedAt { get; set; } = "";

@@ -733,7 +733,9 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
             return;
         }
 
-        if (entity.Status is "completed" or "budget_exhausted" or "failed" or "cancelled" or "timed_out")
+        // 终态判定走词表单一真源（SubAgentRunEntity.TerminalStatuses）：
+        // 这里原先写死五个字面量，新增终态（paused）就会漏掉，让第二次完成写入覆盖暂停标记。
+        if (SubAgentRunEntity.IsTerminalStatus(entity.Status))
         {
             _logger.LogInformation(
                 "[SSM] Ignoring duplicate terminal sub-agent state sub={Sub} status={Status}",
@@ -773,7 +775,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
                 {
                     subSessionId,
                     status = entity.Status,
-                    resumable = entity.Status == "budget_exhausted",
+                    resumable = SubAgentRunEntity.IsResumableStatus(entity.Status),
                     success = result.Success,
                     summary = entity.ReplySummary,
                     toolFailureCount = result.ToolFailureCount,
@@ -796,12 +798,22 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         }
     }
 
+    /// <summary>
+    /// 把 Runtime 报上来的终态规整为投影词表内的值。
+    /// <para>
+    /// 白名单必须与 <see cref="SubAgentRunEntity.TerminalStatuses"/> 同口径（缺一个值，该终态就会被
+    /// 静默改写成 failed —— 对 paused 而言正是「暂停等裁决」被显示成「失败」这类缺陷的来源），
+    /// 但 <c>interrupted</c> <b>例外</b>：它是恢复路径自己写的状态，Runtime 无权上报。
+    /// 若放行，一个上报 interrupted 的调用方就能伪造「上次进程崩了」的假象；
+    /// 保持 2026-11-21 之前的既有行为（落回 completed/failed）而不是扩宽语义。
+    /// </para>
+    /// </summary>
     private static string NormalizeSubAgentTerminalStatus(string? requestedStatus, bool success)
     {
         if (requestedStatus is not null)
         {
             var normalized = requestedStatus.Trim().ToLowerInvariant();
-            if (normalized is "completed" or "budget_exhausted" or "failed" or "cancelled" or "timed_out")
+            if (SubAgentRunEntity.IsTerminalStatus(normalized) && normalized != "interrupted")
                 return normalized;
         }
 
@@ -1095,7 +1107,15 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         string? error,
         bool success)
     {
-        entity.Status = status == "completed" ? "completed" : status == "cancelled" ? "cancelled" : "failed";
+        // paused 是终态但可续跑：投影成 failed 会把「等裁决的热暂停」显示成失败，并丢掉 resume 入口。
+        // 其余未知状态仍按 failed 收口（宁可误报失败，也不留一个永远停在非终态的僵尸）。
+        entity.Status = status switch
+        {
+            "completed" => "completed",
+            "cancelled" => "cancelled",
+            "paused" => "paused",
+            _ => "failed",
+        };
         entity.CompletedAt = completedAt;
         entity.Success = success;
         if (!success)

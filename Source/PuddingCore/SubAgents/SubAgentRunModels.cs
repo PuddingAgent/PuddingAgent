@@ -102,7 +102,7 @@ public sealed record SubAgentRunCreateRequest
 // 完成信息
 public sealed record SubAgentRunCompletion
 {
-    public required string Status { get; init; }  // completed, budget_exhausted, failed, cancelled, timed_out, interrupted
+    public required string Status { get; init; }  // completed, budget_exhausted, paused, failed, cancelled, timed_out, interrupted
     public string? Output { get; init; }
     public string? ErrorMessage { get; init; }
     public int TotalRounds { get; init; }

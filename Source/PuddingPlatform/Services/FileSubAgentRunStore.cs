@@ -1526,13 +1526,22 @@ public class FileSubAgentRunStore : ISubAgentRunStore
     /// 僵尸 busy 与误杀 busy 两种缺陷的共同源头。
     /// </summary>
     private static bool IsTerminalStatus(string status) =>
-        SubAgentRunEntity.TerminalStatuses.Contains(status, StringComparer.Ordinal);
+        SubAgentRunEntity.IsTerminalStatus(status);
 
+    /// <summary>
+    /// 终态 → canonical 事件类型。
+    /// <para>
+    /// <b>未知状态 fail-fast：</b>这里默认分支抛异常是故意的——调用方（<see cref="CompleteRunAsync"/>）
+    /// 写入的是本表词表内的值，落进未知状态说明上游自己造了新词。返回一个默认事件类型会把这个错误
+    /// 写成一条「看起来正常的终态事件」，之后再也查不出是哪一步走偏；直接抛则当场暴露。
+    /// </para>
+    /// </summary>
     private static string ToTerminalEventType(string status) =>
         status switch
         {
             "completed" => ConversationEventTypes.SubAgentRunCompleted,
             "budget_exhausted" => ConversationEventTypes.SubAgentRunBudgetExhausted,
+            "paused" => ConversationEventTypes.SubAgentRunPaused,
             "failed" => ConversationEventTypes.SubAgentRunFailed,
             "cancelled" => ConversationEventTypes.SubAgentRunCancelled,
             "timed_out" => ConversationEventTypes.SubAgentRunTimedOut,

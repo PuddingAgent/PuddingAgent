@@ -24,6 +24,9 @@ public sealed partial class SubAgentTransientDirectoryGcService : BackgroundServ
         WriteIndented = true,
     };
 
+    // 回收判据刻意不收 paused：它是「热暂停」——可续跑，现场要留着；本集合的含义是
+    // 「已结束、可回收」。两者都在 SubAgentRunEntity.TerminalStatuses 里，但这里的口径更窄。
+    // 改动前先读 Docs/07_architecture/子代理生命周期护栏-2026-11-21.md §五（paused vs sleeping）。
     private static readonly HashSet<string> TerminalRunStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
         "completed",

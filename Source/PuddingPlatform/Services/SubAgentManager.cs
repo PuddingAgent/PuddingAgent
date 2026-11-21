@@ -11,6 +11,7 @@ using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Services;
 using PuddingCode.SubAgents;
+using PuddingPlatform.Data.Entities;
 
 namespace PuddingPlatform.Services;
 
@@ -220,11 +221,12 @@ public sealed class SubAgentManager : ISubAgentManager
                     _logger.LogWarning("[SubAgentMgr] No runId found for sub={Sub} during async completion cleanup", subSessionId);
                 }
 
-                // Publish the canonical terminal event, including resumable budget exhaustion.
+                // Publish the canonical terminal event, including resumable budget exhaustion and anomaly pause.
                 var completedEventType = terminalStatus switch
                 {
                     "completed" => ConversationEventTypes.SubAgentRunCompleted,
                     "budget_exhausted" => ConversationEventTypes.SubAgentRunBudgetExhausted,
+                    "paused" => ConversationEventTypes.SubAgentRunPaused,
                     "cancelled" => ConversationEventTypes.SubAgentRunCancelled,
                     "timed_out" => ConversationEventTypes.SubAgentRunTimedOut,
                     _ => ConversationEventTypes.SubAgentRunFailed,
@@ -242,7 +244,7 @@ public sealed class SubAgentManager : ISubAgentManager
                     {
                         sub_agent_id = subSessionId,
                         status = terminalStatus,
-                        resumable = terminalStatus == "budget_exhausted",
+                        resumable = SubAgentRunEntity.IsResumableStatus(terminalStatus),
                         success,
                         reply = replyText,
                         error = errorMsg,
@@ -279,16 +281,8 @@ public sealed class SubAgentManager : ISubAgentManager
                 await RecordActivityAsync(
                     trace,
                     "complete",
-                    terminalStatus == "completed"
-                        ? RuntimeActivityStatuses.Succeeded
-                        : terminalStatus == "budget_exhausted"
-                            ? RuntimeActivityStatuses.Deferred
-                            : RuntimeActivityStatuses.Failed,
-                    terminalStatus == "completed"
-                        ? $"Sub-agent {subSessionId} completed"
-                        : terminalStatus == "budget_exhausted"
-                            ? $"Sub-agent {subSessionId} saved a resumable budget checkpoint"
-                            : errorMsg,
+                    ToActivityStatus(terminalStatus),
+                    ToActivitySummary(terminalStatus, subSessionId, errorMsg, sync: false),
                     CancellationToken.None);
 
                 _logger.LogInformation("[SubAgentMgr] Async completed sub={Sub} parent={Parent} success={Success}",
@@ -447,16 +441,8 @@ public sealed class SubAgentManager : ISubAgentManager
         await RecordActivityAsync(
             trace,
             "execute_sync",
-            syncTerminalStatus == "completed"
-                ? RuntimeActivityStatuses.Succeeded
-                : syncTerminalStatus == "budget_exhausted"
-                    ? RuntimeActivityStatuses.Deferred
-                    : RuntimeActivityStatuses.Failed,
-            syncTerminalStatus == "completed"
-                ? $"Sync sub-agent {subSessionId} completed"
-                : syncTerminalStatus == "budget_exhausted"
-                    ? $"Sync sub-agent {subSessionId} saved a resumable budget checkpoint"
-                    : r.ErrorMessage,
+            ToActivityStatus(syncTerminalStatus),
+            ToActivitySummary(syncTerminalStatus, subSessionId, r.ErrorMessage, sync: true),
             ct);
 
         await _ssm.TrackSubAgentCompleteAsync(subSessionId, new SubAgentResult
@@ -1025,7 +1011,7 @@ public sealed class SubAgentManager : ISubAgentManager
         string? toolFailureSummary)
     {
         var completed = status.Equals("completed", StringComparison.OrdinalIgnoreCase);
-        var resumable = status.Equals("budget_exhausted", StringComparison.OrdinalIgnoreCase);
+        var resumable = SubAgentRunEntity.IsResumableStatus(status);
         var deliveredResult = completed || resumable;
         var contextText = deliveredResult
             ? reply ?? string.Empty
@@ -1134,6 +1120,41 @@ public sealed class SubAgentManager : ISubAgentManager
         };
 
         return await dispatcher.DispatchAsync(childReq, ct);
+    }
+
+    /// <summary>
+    /// 终态 run 的 <b>活动状态</b>投影。
+    /// <para>
+    /// 可续跑终态（budget_exhausted / paused）必须投影为 <see cref="RuntimeActivityStatuses.Deferred"/> 而不是 Failed：
+    /// 它们意味着「停在可恢复的地方、等父代理裁决」。投影成 Failed 会让界面与告警
+    /// 把「暂停等裁决」当成执行失败，也会让父代理误判为不该 resume。
+    /// </para>
+    /// </summary>
+    internal static string ToActivityStatus(string terminalStatus) =>
+        terminalStatus == "completed"
+            ? RuntimeActivityStatuses.Succeeded
+            : SubAgentRunEntity.IsResumableStatus(terminalStatus)
+                ? RuntimeActivityStatuses.Deferred
+                : RuntimeActivityStatuses.Failed;
+
+    /// <summary>
+    /// 活动摘要。可续跑的两种原因<b>必须分开写</b>：预算耗尽要「补预算后 resume」，
+    /// 异常暂停要「裁决 resume / sleep / destroy」。合并成一句话，裁决者就不知道自己该做什么。
+    /// </summary>
+    internal static string? ToActivitySummary(
+        string terminalStatus,
+        string subSessionId,
+        string? failureMessage,
+        bool sync)
+    {
+        var prefix = sync ? "Sync sub-agent" : "Sub-agent";
+        return terminalStatus switch
+        {
+            "completed" => $"{prefix} {subSessionId} completed",
+            "budget_exhausted" => $"{prefix} {subSessionId} saved a resumable budget checkpoint",
+            "paused" => $"{prefix} {subSessionId} paused by the run anomaly detector; awaiting parent decision (resume / sleep / destroy)",
+            _ => failureMessage,
+        };
     }
 
     private static string ResolveRuntimeTerminalStatus(RuntimeDispatchResult result)
