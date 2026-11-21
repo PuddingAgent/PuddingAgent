@@ -146,6 +146,21 @@ function Get-ScriptLoadState {
     return Get-LoadStateFromBytes -Bytes ([System.IO.File]::ReadAllBytes($Path))
 }
 
+# Classification order matters. A script that declares an engine this machine does not
+# have is rejected by the engine BEFORE it is parsed (see (2) above), so its parse result
+# under the CURRENT engine is not a loadability defect -- it is the expected consequence of
+# targeting another engine. Testing parse errors first reported every PowerShell 7 script
+# that uses PowerShell 7 syntax as BROKEN, and it also defeated -AllowUnrunnable: that switch
+# is supposed to downgrade "targets another engine" to INFO, yet the same files kept failing
+# as BROKEN.
+function Get-LoadTag {
+    param($State)
+    if ($State.ReqUnsatisfiable) { return 'UNRUNNABLE' }
+    if ($State.ErrorCount -gt 0) { return 'BROKEN' }
+    if ($State.HasNonAscii -and -not $State.HasBom) { return 'MOJIBAKE' }
+    return 'OK'
+}
+
 if ($SelfTest) {
     $failures = @()
 
@@ -183,6 +198,11 @@ if ($SelfTest) {
     $sD = Get-LoadStateFromBytes -Bytes $reqFuture
     $sE = Get-LoadStateFromBytes -Bytes $reqCurrent
 
+    # Control G: declares a future engine AND does not parse on this engine. The engine
+    # rejects the file before parsing it, so the verdict must be UNRUNNABLE, not BROKEN.
+    $reqFutureBroken = [System.Text.Encoding]::ASCII.GetBytes('#requires -Version ' + $futureMajor + '.0' + [char]10 + '$x = (' + [char]10)
+    $sG = Get-LoadStateFromBytes -Bytes $reqFutureBroken
+
     if ($sA.ErrorCount -lt 1) { $failures += 'no-BOM + non-ASCII control was NOT detected' }
     if (-not $sA.HasNonAscii) { $failures += 'no-BOM control: non-ASCII flag not set' }
     if ($sA.HasBom) { $failures += 'no-BOM control reported a BOM' }
@@ -196,6 +216,9 @@ if ($SelfTest) {
     if ($sF.ErrorCount -ne 0) { $failures += 'quiet no-BOM control did not parse clean' }
     if (-not $sF.HasNonAscii) { $failures += 'quiet no-BOM control: non-ASCII flag not set' }
     if ($sF.HasBom) { $failures += 'quiet no-BOM control reported a BOM' }
+    if (-not $sG.ReqUnsatisfiable) { $failures += 'control G: future engine requirement not flagged unsatisfiable' }
+    if ($sG.ErrorCount -lt 1) { $failures += 'control G fixture was expected to fail parsing on this engine' }
+    if ((Get-LoadTag -State $sG) -ne 'UNRUNNABLE') { $failures += 'engine-required script with parse errors must classify as UNRUNNABLE, not BROKEN' }
 
     Write-Output ('POSCTRL   errors={0} first={1}' -f $sA.ErrorCount, $sA.FirstError)
     Write-Output ('BOMCTRL   errors={0}' -f $sB.ErrorCount)
@@ -203,6 +226,7 @@ if ($SelfTest) {
     Write-Output ('REQFUTURE req={0} unsat={1}' -f $sD.RequiredVersion, $sD.ReqUnsatisfiable)
     Write-Output ('REQCURRENT req={0} unsat={1}' -f $sE.RequiredVersion, $sE.ReqUnsatisfiable)
     Write-Output ('QUIETCTRL  errors={0} nonascii={1} bom={2}' -f $sF.ErrorCount, $sF.HasNonAscii, $sF.HasBom)
+    Write-Output ('REQBROKEN  errors={0} unsat={1} tag={2}' -f $sG.ErrorCount, $sG.ReqUnsatisfiable, (Get-LoadTag -State $sG))
 
     if ($failures.Count -gt 0) {
         foreach ($f in $failures) { Write-Output ('SELFTEST FAIL: ' + $f) }
@@ -259,18 +283,19 @@ foreach ($f in $files) {
         if ($state.ErrorCount -eq 0 -and -not $state.ReqUnsatisfiable) { $mojiBakeRisk += $rel }
     }
 
-    $tag = 'OK'
-    if ($state.ErrorCount -gt 0) {
-        $tag = 'BROKEN'
+    $tag = Get-LoadTag -State $state
+    if ($tag -eq 'BROKEN') {
         $broken += $rel
     }
-    elseif ($state.ReqUnsatisfiable) {
-        $tag = 'UNRUNNABLE'
-        $unrunnable += ($rel + ' (requires PS ' + $state.RequiredVersion + ')')
+    elseif ($tag -eq 'UNRUNNABLE') {
+        $note = ''
+        if ($state.ErrorCount -gt 0) {
+            $note = '; current engine parse: ' + $state.FirstError + ' (informational - this engine never loads the file)'
+        }
+        $unrunnable += ($rel + ' (requires PS ' + $state.RequiredVersion + $note + ')')
     }
     else {
         $parseClean++
-        if ($state.HasNonAscii -and -not $state.HasBom) { $tag = 'MOJIBAKE' }
     }
 
     $req = '-'
