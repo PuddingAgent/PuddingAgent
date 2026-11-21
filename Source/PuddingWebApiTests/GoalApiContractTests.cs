@@ -3,9 +3,11 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using PuddingCode.Goals;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services.Goals;
 
 namespace PuddingWebApiTests;
 
@@ -27,7 +29,15 @@ public sealed class GoalApiContractTests
     [ClassInitialize]
     public static void ClassInit(TestContext _)
     {
-        _factory = new CustomWebApplicationFactory();
+        _factory = new CustomWebApplicationFactory(services =>
+        {
+            // The command can queue an intent. Keep the worker from turning that intent into a Turn during the assertion.
+            var worker = services.SingleOrDefault(descriptor =>
+                descriptor.ServiceType == typeof(IHostedService) &&
+                descriptor.ImplementationType == typeof(GoalContinuationWorker));
+            if (worker is not null)
+                services.Remove(worker);
+        });
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
