@@ -69,6 +69,7 @@ export default {
   'menu.systemConfig.teamManagement': 'Team Management',
   'menu.systemConfig.roleManagement': 'Role Management',
   'menu.systemConfig.accessTokenManagement': 'Access Tokens',
+  'menu.systemConfig.agentAdapters': 'External Agents',
   'menu.userManagement': 'User Management',
   'menu.roleManagement': 'Role Management',
   'menu.teamManagement': 'Team Management',

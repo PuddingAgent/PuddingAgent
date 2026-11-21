@@ -173,6 +173,7 @@ HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 St
 | `Hosting/PuddingHostOptionsFactory.cs` | DesktopChild 固定 `0.0.0.0:<port>` 启动约束 |
 | `Hosting/PuddingServerAddressAccessor.cs` | 全网卡监听地址投影为同端口 Loopback 控制地址 |
 | `Hosting/PuddingApplicationHost.cs` | 组合根与 Kestrel 地址绑定（见下「关键语义」） |
+| `Hosting/AgentAdapterApiDocumentation.cs` | 用 Microsoft.AspNetCore.OpenApi 生成外部 Agent 接口 JSON，包含专用端点和 Bearer 鉴权，沿用外部 API 暴露策略 |
 | `Hosting/PuddingDataRootBootstrapper.cs` | DataRoot 解析与引导（见下「关键语义」） |
 | `Config/` | 默认配置 |
 | `default-data/config/voice/providers.json` | 语音默认目录：Qwen Message ASR 与 Qwen3 TTS；不含真实凭据 |

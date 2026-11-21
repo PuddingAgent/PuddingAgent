@@ -23,6 +23,7 @@ public static class ExternalAccessTokenPolicyNames
     public const string ExternalWorkspaceRead = "ExternalWorkspaceRead";
     public const string ExternalAgentsRead = "ExternalAgentsRead";
     public const string ExternalMessagesSend = "ExternalMessagesSend";
+    public const string ExternalAgentAdaptersConnect = "ExternalAgentAdaptersConnect";
 }
 
 /// <summary>要求 principal 拥有指定 scope（AND 语义，无通配符）。</summary>

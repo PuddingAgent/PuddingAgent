@@ -219,6 +219,12 @@ const routeCatalog = [
         component: './access-token-management',
       },
       {
+        path: '/system-config/agent-adapters',
+        name: 'agentAdapters',
+        icon: 'api',
+        component: './agent-adapters',
+      },
+      {
         // 需求 3（2026-11-20）：子代理委派策略（深度 / 并发上限 / 模型选择）。
         // 与上面的 team-management 不是同一回事：那个管用户与团队 RBAC，
         // 这个管子代理的委派开关。

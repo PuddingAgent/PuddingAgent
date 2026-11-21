@@ -121,7 +121,10 @@ public sealed class ExternalAccessTokenStore(IDbContextFactory<PlatformDbContext
         return ToRecord(entity, ownerEnabled);
     }
 
-    public async Task CreateAsync(ExternalAccessTokenRecord record, CancellationToken ct = default)
+    public Task CreateAsync(ExternalAccessTokenRecord record, CancellationToken ct = default) =>
+        CreateAsync(record, null, ct);
+
+    internal async Task CreateAsync(ExternalAccessTokenRecord record, ExternalAgentAdapterEntity? adapter, CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -151,6 +154,8 @@ public sealed class ExternalAccessTokenStore(IDbContextFactory<PlatformDbContext
         db.ExternalAccessTokenAuditEvents.Add(CreateAudit(record.TokenId, record.KeyId,
             ExternalAccessTokenAuditEventType.Created, actor: record.OwnerUserId,
             occurredAtUtc: record.CreatedAtUtc));
+        if (adapter is not null)
+            db.ExternalAgentAdapters.Add(adapter);
 
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);

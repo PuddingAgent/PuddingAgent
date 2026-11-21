@@ -17,6 +17,7 @@ export default {
   'menu.systemConfig.teamManagement': '团队管理',
   'menu.systemConfig.roleManagement': '权限角色',
   'menu.systemConfig.accessTokenManagement': '访问令牌',
+  'menu.systemConfig.agentAdapters': '外部 Agent',
   'menu.userManagement': '用户管理',
   'menu.roleManagement': '权限角色',
   'menu.teamManagement': '团队管理',

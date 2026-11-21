@@ -34,6 +34,14 @@ public static class ExternalAccessTokenSchemaBootstrapper
         """,
         "CREATE UNIQUE INDEX IF NOT EXISTS UX_external_access_tokens_key_id ON external_access_tokens(key_id);",
         "CREATE INDEX IF NOT EXISTS IX_external_access_tokens_owner ON external_access_tokens(owner_user_id);",
+        """
+        CREATE TABLE IF NOT EXISTS external_agent_adapters (
+            token_id TEXT NOT NULL PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
+            agent_id TEXT NOT NULL,
+            registered_at_utc TEXT
+        );
+        """,
 
         // ── external_access_token_scopes（联合主键）─────────────────
         """

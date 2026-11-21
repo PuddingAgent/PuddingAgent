@@ -46,6 +46,7 @@ public static class PuddingWebApplicationExtensions
         app.UseSession();
 
         app.UseAuthorization();
+        AgentAdapterApiDocumentation.Map(app);
 
         // ── 请求诊断（Auth 之后）─ 记录到达控制器管线的请求 ──
         app.Use(async (ctx, next) =>

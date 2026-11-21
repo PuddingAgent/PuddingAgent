@@ -52,12 +52,16 @@ public sealed record ExternalAccessTokenCreateCommand
     /// <summary>null = 使用配置默认；1..MaxTokenLifetimeDays。</summary>
     public int? LifetimeDays { get; init; }
     public required string OwnerUserId { get; init; }
+    internal bool IssueForAgentAdapter { get; init; }
 }
 
 public sealed record ExternalAccessTokenCreateResult(
     ExternalAccessTokenListItem Item,
     /// <summary>canonical token 明文；仅出现在创建响应一次，此后不可恢复。</summary>
-    string AccessToken);
+    string AccessToken)
+{
+    internal string? AdapterAgentId { get; init; }
+}
 
 public enum ExternalAccessTokenCreateError
 {
@@ -133,10 +137,15 @@ public sealed class ExternalAccessTokenService(
         if (workspaceIds.Count == 0)
             return Result<ExternalAccessTokenCreateResult, ExternalAccessTokenCreateError>.Failure(ExternalAccessTokenCreateError.NoWorkspaces);
 
+        if (command.IssueForAgentAdapter != scopes.Contains(ExternalTaskApiScopes.AgentAdaptersConnect, StringComparer.Ordinal)
+            || (command.IssueForAgentAdapter && (scopes.Count != 1 || workspaceIds.Count != 1)))
+            return Result<ExternalAccessTokenCreateResult, ExternalAccessTokenCreateError>.Failure(ExternalAccessTokenCreateError.UnknownScope);
+
         await using (var db = await dbFactory.CreateDbContextAsync(ct))
         {
             var known = await db.Workspaces.AsNoTracking()
-                .Where(w => workspaceIds.Contains(w.WorkspaceId))
+                .Where(w => workspaceIds.Contains(w.WorkspaceId) &&
+                    (!command.IssueForAgentAdapter || (w.IsEnabled && !w.IsFrozen)))
                 .Select(w => w.WorkspaceId)
                 .ToListAsync(ct);
             if (known.Count != workspaceIds.Count)
@@ -152,7 +161,10 @@ public sealed class ExternalAccessTokenService(
             return Result<ExternalAccessTokenCreateResult, ExternalAccessTokenCreateError>.Failure(ExternalAccessTokenCreateError.TooManyActiveTokens);
 
         var (canonicalToken, record) = GenerateToken(name, command.OwnerUserId, scopes, workspaceIds, lifetimeDays);
-        await store.CreateAsync(record, ct);
+        var adapter = command.IssueForAgentAdapter
+            ? new ExternalAgentAdapterEntity { TokenId = record.TokenId, WorkspaceId = workspaceIds[0], AgentId = $"external-{record.TokenId}" }
+            : null;
+        await store.CreateAsync(record, adapter, ct);
 
         logger.LogInformation(
             "[ExternalAccessToken] Created tokenId={TokenId} keyId={KeyId} owner={Owner} scopes={Scopes} workspaces={Workspaces} expires={Expires}",
@@ -178,7 +190,7 @@ public sealed class ExternalAccessTokenService(
             Status = ExternalAccessTokenStatus.Active,
         };
         return Result<ExternalAccessTokenCreateResult, ExternalAccessTokenCreateError>.Success(
-            new ExternalAccessTokenCreateResult(item, canonicalToken));
+            new ExternalAccessTokenCreateResult(item, canonicalToken) { AdapterAgentId = adapter?.AgentId });
     }
 
     /// <summary>

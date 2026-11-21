@@ -215,6 +215,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | **Agent 自建工具插件** | `plugin_import/load/unload` → `ExecutablePluginService` → `PluginManager` → Windows Worker | 会话/实际 Agent 作用域；代号工具名；下轮模型清单刷新；建议 Hook 保留执行事实；[使用与编写](Docs/04_tools_and_skills/运行时工具插件.md) |
 | **Chat 前端投影与虚拟化** | `Source/PuddingPlatformAdmin/`（`src/pages/chat/`） | 服务端出 canonical 事件；`TurnSurfaceStore` → `ExecutionFlowProjectionIndex` → `MessageViewportRuntime` → `TurnContentStream`；快照消息顺序按共享身份锚点合并，实时归属优先 window.turnId，同回合仅最新助手消息接收完整投影；用户行空占位不代表助手完成，终态按 messageId 保留回复再切换活动 Turn |
 | **认证与外部 API** | `Source/PuddingPlatform/Security/` | 看板 Access Token（`pdt_v1_` opaque、摘要存储）、External API v1（ETag/幂等/`202 + Location`）、Loopback ControlToken 双通道鉴权 |
+| **外部 Agent 接入** | [平台 API](Source/PuddingPlatform/code_map.md) · [HTTP 宿主](Source/PuddingHost/code_map.md) · [管理页](Source/PuddingPlatformAdmin/code_map.md) | AK/SK 绑定工作区和逻辑 Agent，在线租约授权目录及收件箱。文本投递复用 Message Fabric，接口由 Microsoft.AspNetCore.OpenApi 生成 JSON |
 | **外部 Agent 消息客户端** | [.pudding/skills/puddingagent-message/SKILL.md](.pudding/skills/puddingagent-message/SKILL.md) | Codex / 外部客户端向 PuddingAgent Agent 投递；凭据在仓库外，幂等请求与回执落盘，区分接单、会话 ACK 和终态回复 |
 | **Codex 会话 HTTP 插件** | [插件与接口](Tools/CodexPlugins/plugins/chat-http/README.md) · [隔离测试](TestScripts/test-codex-chat-http.mjs) | 本机客户端通过回环 HTTP 管理 Codex 聊天、投递消息和读取可见历史 |
 | **前端构建与版本** | `Source/PuddingPlatformAdmin/package.json` | 版本号以 `version` 字段为准，构建期注入 `__PUDDING_FRONTEND__`；改前端必须递增版本并重新构建部署 `wwwroot/admin` |

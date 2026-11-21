@@ -16,6 +16,7 @@ public static class ExternalTaskApiScopes
     public const string WorkspacesRead = "workspaces.read";
     public const string AgentsRead = "agents.read";
     public const string MessagesSend = "messages.send";
+    public const string AgentAdaptersConnect = "agent-adapters.connect";
 
     public static readonly IReadOnlyList<string> All =
     [
@@ -27,6 +28,7 @@ public static class ExternalTaskApiScopes
         WorkspacesRead,
         AgentsRead,
         MessagesSend,
+        AgentAdaptersConnect,
     ];
 
     private static readonly IReadOnlySet<string> ValidScopes =

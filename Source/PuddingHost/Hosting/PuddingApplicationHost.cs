@@ -161,6 +161,7 @@ public static class PuddingApplicationHost
             .AddApplicationPart(typeof(PuddingHostAssemblyMarker).Assembly)
             .AddApplicationPart(typeof(BootstrapApiController).Assembly)
             .AddApplicationPart(typeof(PuddingRuntime.Controllers.RuntimeSessionController).Assembly);
+        AgentAdapterApiDocumentation.AddServices(builder.Services);
 
         // ── JWT ──────────────────────────────────────────────
         // 签名密钥与有效期只来自配置链（<DataRoot>/config/security.json 的 jwt 段，
@@ -263,6 +264,11 @@ public static class PuddingApplicationHost
                 ExternalAccessTokenPolicyNames.ExternalMessagesSend,
                 ExternalTaskApiScopes.MessagesSend,
                 requireWorkspace: true);
+            AddExternalTaskApiPolicy(
+                authorization,
+                ExternalAccessTokenPolicyNames.ExternalAgentAdaptersConnect,
+                ExternalTaskApiScopes.AgentAdaptersConnect,
+                requireWorkspace: false);
 
             // ── SKILL Hub 机器凭据策略（api/skill-hub 专用）──────
             // JwtBearer（现有管理界面，行为零变化）+ SkillHubApiKey（机器凭据）双通道；

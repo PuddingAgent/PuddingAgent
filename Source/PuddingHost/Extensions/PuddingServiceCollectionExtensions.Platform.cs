@@ -461,6 +461,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ExternalTaskApiOptionsProvider>();
         builder.Services.AddSingleton<ExternalAccessTokenStore>();
         builder.Services.AddSingleton<ExternalAccessTokenService>();
+        builder.Services.AddSingleton(sp => new PuddingAgents.AgentAdapterRegistry(
+            sp.GetRequiredService<TimeProvider>(), TimeSpan.FromSeconds(90)));
         // AddHostedService 同时注册 Singleton 实例；认证 Handler 通过
         // RequestServices.GetService 获取并投递 last-used 合并写。
         builder.Services.AddHostedService<ExternalAccessTokenUsageCoalescer>();
