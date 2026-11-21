@@ -1,5 +1,6 @@
 using System.Text;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using PuddingCode.Tools;
 using PuddingDeepSeekWeb;
 using PuddingRuntime.Services.DeepSeekWeb;
@@ -36,18 +37,27 @@ namespace PuddingRuntime.Services.Tools;
     SortOrder = 57)]
 public sealed class DeepSeekFetchTool : PuddingToolBase<DeepSeekFetchArgs>
 {
+    /// <summary>
+    /// 计费计量指标名。与 Search 分开（两者各自 5 QPS、各自计费），也不复用本地检索的 <c>search_attempt</c>。
+    /// </summary>
+    private const string DeepSeekFetchAttemptMetricName = "deepseek_fetch_attempt";
+
     private readonly IDeepSeekWebService _service;
     private readonly DeepSeekWebSettingsProvider _settingsProvider;
     private readonly ILogger<DeepSeekFetchTool> _logger;
+    // 计费计量接缝（可选）。未注册/未传入时保持 null ⇒ 输出与未加埋点时不变。
+    private readonly ITelemetryMetricSink? _telemetry;
 
     public DeepSeekFetchTool(
         IDeepSeekWebService service,
         DeepSeekWebSettingsProvider settingsProvider,
-        ILogger<DeepSeekFetchTool> logger)
+        ILogger<DeepSeekFetchTool> logger,
+        ITelemetryMetricSink? telemetry = null)
     {
         _service = service ?? throw new ArgumentNullException(nameof(service));
         _settingsProvider = settingsProvider ?? throw new ArgumentNullException(nameof(settingsProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _telemetry = telemetry;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -90,12 +100,37 @@ public sealed class DeepSeekFetchTool : PuddingToolBase<DeepSeekFetchArgs>
         {
             _logger.LogWarning(
                 ex, "[DeepSeekFetchTool] fetch request failed agent={Agent}", context.AgentInstanceId);
+            // 请求已发出（上游可能已计费）⇒ 与成功路径一样按一次计费尝试上报，只把状态记为 Failed。
+            ReportTelemetry(
+                TelemetryMetricStatuses.Failed,
+                "transport",
+                uri.Host,
+                url.Length,
+                settings.Source,
+                context);
             return ToolExecutionResult.Fail(DescribeTransportFailure(ex));
         }
 
         if (!result.IsSuccess || result.Value is null)
+        {
+            // 已发出计费请求但上游判失败（403/404/限速等）：同样是一次计费尝试。
+            ReportTelemetry(
+                TelemetryMetricStatuses.Failed,
+                result.Error?.Kind.ToString() ?? "no_result",
+                uri.Host,
+                url.Length,
+                settings.Source,
+                context);
             return DeepSeekWebToolErrors.ToToolFailure(result.Error, "DeepSeek Fetch");
+        }
 
+        ReportTelemetry(
+            TelemetryMetricStatuses.Succeeded,
+            null,
+            uri.Host,
+            url.Length,
+            settings.Source,
+            context);
         return ToolExecutionResult.Ok(RenderFetchResponse(url, result.Value));
     }
 
@@ -123,6 +158,52 @@ public sealed class DeepSeekFetchTool : PuddingToolBase<DeepSeekFetchArgs>
         };
 
         return $"DeepSeek Fetch: {failure.Summary} | {hint}";
+    }
+
+    /// <summary>
+    /// 上报一次 DeepSeek Fetch 的<b>计费尝试</b>（官方按成功请求计费：每 1000 次 5 元）。
+    /// <para>只在「请求真的发出去了」之后调用。凭据缺失与 URL 非法两类失败在发请求之前就返回，一律不上报——
+    /// 否则用量报表会虚高（把没花钱的失败算成付费调用）。</para>
+    /// <para>best-effort 骨架与 <c>SearchGrepTool.ReportTelemetry</c> 同构：未接入 sink 直接返回；
+    /// <c>RecordAsync</c> 的任何异常都被吞掉，telemetry 失败绝不影响工具结果。</para>
+    /// <para>维度只记 <c>host</c> 与 URL 长度，<b>绝不记完整 URL</b>（可能带查询串/令牌）：与本文件日志同一约束。</para>
+    /// </summary>
+    private void ReportTelemetry(
+        string status,
+        string? errorCode,
+        string host,
+        int urlLength,
+        string source,
+        ToolExecutionContext context)
+    {
+        if (_telemetry is null)
+            return;
+
+        try
+        {
+            var trace = context.Trace ?? RuntimeTraceContext.CreateNew(context.SessionId, context.WorkspaceId);
+            _ = _telemetry.RecordAsync(new TelemetryMetric
+            {
+                Trace = trace,
+                Source = "deepseek_fetch",
+                Category = TelemetryMetricCategories.Tool,
+                Name = DeepSeekFetchAttemptMetricName,
+                Status = status,
+                Severity = status == TelemetryMetricStatuses.Failed ? "error" : "info",
+                Summary = DeepSeekFetchAttemptMetricName,
+                ErrorCode = errorCode,
+                Dimensions = new Dictionary<string, string>
+                {
+                    ["host"] = host,
+                    ["url_length"] = urlLength.ToString(),
+                    ["source"] = source,
+                },
+            });
+        }
+        catch
+        {
+            // telemetry is best-effort and must never affect the fetch result
+        }
     }
 
     private static string RenderFetchResponse(string url, DeepSeekFetchResponse response)

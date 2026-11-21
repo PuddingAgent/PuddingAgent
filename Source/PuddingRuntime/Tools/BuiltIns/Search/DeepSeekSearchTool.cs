@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using PuddingCode.Tools;
 using PuddingDeepSeekWeb;
 using PuddingRuntime.Services.DeepSeekWeb;
@@ -37,18 +38,28 @@ namespace PuddingRuntime.Services.Tools;
     SortOrder = 56)]
 public sealed class DeepSeekSearchTool : PuddingToolBase<DeepSeekSearchArgs>
 {
+    /// <summary>
+    /// 计费计量指标名。刻意不复用本地检索的 <c>search_attempt</c>：那是工作区文件检索（不计费），
+    /// 这是 DeepSeek 官方付费 API 调用（每 1000 次成功请求 5 元），混在同一指标名下就无法再分开统计。
+    /// </summary>
+    private const string DeepSeekSearchAttemptMetricName = "deepseek_search_attempt";
+
     private readonly IDeepSeekWebService _service;
     private readonly DeepSeekWebSettingsProvider _settingsProvider;
     private readonly ILogger<DeepSeekSearchTool> _logger;
+    // 计费计量接缝（可选）。未注册/未传入时保持 null ⇒ 输出与未加埋点时不变。
+    private readonly ITelemetryMetricSink? _telemetry;
 
     public DeepSeekSearchTool(
         IDeepSeekWebService service,
         DeepSeekWebSettingsProvider settingsProvider,
-        ILogger<DeepSeekSearchTool> logger)
+        ILogger<DeepSeekSearchTool> logger,
+        ITelemetryMetricSink? telemetry = null)
     {
         _service = service ?? throw new ArgumentNullException(nameof(service));
         _settingsProvider = settingsProvider ?? throw new ArgumentNullException(nameof(settingsProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _telemetry = telemetry;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -107,13 +118,89 @@ public sealed class DeepSeekSearchTool : PuddingToolBase<DeepSeekSearchArgs>
         {
             _logger.LogWarning(
                 ex, "[DeepSeekSearchTool] search request failed agent={Agent}", context.AgentInstanceId);
+            // 请求已发出（上游可能已计费）⇒ 与成功路径一样按一次计费尝试上报，只把状态记为 Failed。
+            ReportTelemetry(
+                TelemetryMetricStatuses.Failed,
+                "transport",
+                query.Length,
+                count,
+                needContent,
+                settings.Source,
+                context);
             return ToolExecutionResult.Fail($"DeepSeek Search request failed: {ex.Message}");
         }
 
         if (!result.IsSuccess || result.Value is null)
+        {
+            // 已发出计费请求但上游判失败（鉴权/余额/限速等）：同样是一次计费尝试。
+            ReportTelemetry(
+                TelemetryMetricStatuses.Failed,
+                result.Error?.Kind.ToString() ?? "no_result",
+                query.Length,
+                count,
+                needContent,
+                settings.Source,
+                context);
             return DeepSeekWebToolErrors.ToToolFailure(result.Error, "DeepSeek Search");
+        }
 
+        ReportTelemetry(
+            TelemetryMetricStatuses.Succeeded,
+            null,
+            query.Length,
+            count,
+            needContent,
+            settings.Source,
+            context);
         return ToolExecutionResult.Ok(RenderSearchResponse(query, result.Value));
+    }
+
+    /// <summary>
+    /// 上报一次 DeepSeek Search 的<b>计费尝试</b>（官方按成功请求计费：每 1000 次 5 元）。
+    /// <para>只在「请求真的发出去了」之后调用。凭据缺失与参数非法两类失败在发请求之前就返回，一律不上报——
+    /// 否则用量报表会虚高（把没花钱的失败算成付费调用）。</para>
+    /// <para>best-effort 骨架与 <c>SearchGrepTool.ReportTelemetry</c> 同构：未接入 sink 直接返回；
+    /// <c>RecordAsync</c> 的任何异常都被吞掉，telemetry 失败绝不影响工具结果。</para>
+    /// <para>维度只记请求形状（query 长度/条数/是否取正文/配置来源），不记 query 正文（可能含隐私）。</para>
+    /// </summary>
+    private void ReportTelemetry(
+        string status,
+        string? errorCode,
+        int queryLength,
+        int count,
+        bool needContent,
+        string source,
+        ToolExecutionContext context)
+    {
+        if (_telemetry is null)
+            return;
+
+        try
+        {
+            var trace = context.Trace ?? RuntimeTraceContext.CreateNew(context.SessionId, context.WorkspaceId);
+            _ = _telemetry.RecordAsync(new TelemetryMetric
+            {
+                Trace = trace,
+                Source = "deepseek_search",
+                Category = TelemetryMetricCategories.Tool,
+                Name = DeepSeekSearchAttemptMetricName,
+                Status = status,
+                Severity = status == TelemetryMetricStatuses.Failed ? "error" : "info",
+                Summary = DeepSeekSearchAttemptMetricName,
+                ErrorCode = errorCode,
+                Dimensions = new Dictionary<string, string>
+                {
+                    ["query_length"] = queryLength.ToString(),
+                    ["count"] = count.ToString(),
+                    ["need_content"] = needContent ? "true" : "false",
+                    ["source"] = source,
+                },
+            });
+        }
+        catch
+        {
+            // telemetry is best-effort and must never affect the search result
+        }
     }
 
     private static string RenderSearchResponse(string query, DeepSeekSearchResponse response)
