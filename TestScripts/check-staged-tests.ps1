@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Pre-commit gate: run the tests that actually reference the C# types you staged, and block the commit
     when a NEW test fails or a selected project does not produce a complete run.
@@ -127,10 +127,26 @@ try {
         # 测试工程分布在两个根：`Tests/`（宿主级集成测试）与 `Source/*Tests`（各组件单体测试）。
         # 只扫 `Tests/` 会漏掉 Source/PuddingRuntimeTests 这类工程 —— 2026-10-27 实测踩过：
         # 新增 Source/PuddingRuntimeTests/Tools/... 时本门禁选不到任何测试工程，静默放行。
-        $roots = @("Tests", "Source") | Where-Object { Test-Path $_ }
-        @($roots | ForEach-Object {
-                Get-ChildItem -Path $_ -Recurse -Filter "*Tests.csproj" -File -ErrorAction SilentlyContinue
-            } | Sort-Object FullName -Unique)
+        #
+        # 2026-11-21 修复（实测事故）：本函数在真实运行时枚举出 419 个工程（= 全仓递归数量，
+        # 而两个根下实际只有 102 个），选出了 3 份 `.work\*\release-source\Source\*\*Tests.csproj`
+        # 陈旧快照，其中一份 Testhost 因权限被拒，“整轮 BLOCKED”把提交卡死，真实工程反排在后面。
+        # 现按路径片段排除快照 / 构建 / 依赖目录：`-Recurse` 会跟随 reparse point，
+        # 所以不能只排顶层，必须按片段匹配。
+        $roots = @()
+        foreach ($candidate in @("Tests", "Source")) {
+            if (Test-Path -LiteralPath $candidate -PathType Container) { $roots += $candidate }
+        }
+        if ($roots.Count -eq 0) { return @() }
+
+        $excluded = '(?i)[\\/](\.work|\.tmp-build|\.tmp-test-out|node_modules|bin|obj|dist|\.pnpm-store|\.pudding)([\\/]|$)'
+        $collected = New-Object 'System.Collections.Generic.List[object]'
+        foreach ($root in $roots) {
+            foreach ($project in @(Get-ChildItem -LiteralPath $root -Recurse -Filter "*Tests.csproj" -File -ErrorAction SilentlyContinue)) {
+                if ($project.FullName -notmatch $excluded) { $collected.Add($project) }
+            }
+        }
+        return @($collected | Sort-Object FullName -Unique)
     }
 
     function Test-ProjectMentionsAny {
