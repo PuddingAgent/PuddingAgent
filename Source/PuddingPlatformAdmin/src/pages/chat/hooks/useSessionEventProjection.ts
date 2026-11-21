@@ -33,14 +33,17 @@ import {
   canBindUnknownMetadataToTurn,
   confirmOptimisticTurn,
   createAssistant,
+  createTurnStartedRow,
   formatCompactSuccessMessage,
   getStepMessage,
   getStepTone,
   getTrackedActiveMessageIds,
   isSubAgentConversationEvent,
   isActiveAssistantTurn,
+  isFreshTurnStarted,
   isReasoningStep,
   isStaleCompactionStarted,
+  isStaleTurnStarted,
   normalizeUsage,
   removeTrackedActiveMessageIdsForTurn,
   resolveTerminalAssistantMarkdown,
@@ -1178,6 +1181,64 @@ export function useSessionEventProjection({
         return;
       }
 
+      // ── 后台 Turn 的运行行（非 projection-owned 路径）─────────────────
+      // projection-owned 会话靠 ChatClientStore 的 `ensureActiveRun()` 合成运行行；
+      // 这条路径不经过 Store，而运行指示只能挂在**消息气泡内部**（`agentRunMonitor`），
+      // 子代理结果/心跳触发的后台 Turn 没有消息行 ⇒ 界面从头到尾静默。
+      //
+      // 只补「身份可确认 + 确实还不存在」的那一条，其余一律走原逻辑：
+      //  · 行身份用 canonical turnId ⇒ 后续正文/工具/终态事件全部落在同一行（幂等）；
+      //  · 行已存在（含已终态）就不动 ⇒ 回放/重连不会把终态轮次重新点亮；
+      //  · 陈旧的 turn.started 不建行 ⇒ 全量重放不会凭空点亮历史轮次。
+      if (eventType === 'turn.started') {
+        const startedTurnId =
+          typeof anyEv.turnId === 'string' && anyEv.turnId.trim()
+            ? anyEv.turnId.trim()
+            : null;
+        const startedIsStale = startedTurnId
+          ? options?.replay === true
+            ? !isFreshTurnStarted(anyEv)
+            : isStaleTurnStarted(anyEv)
+          : true;
+        if (
+          startedTurnId &&
+          !startedIsStale &&
+          !completedTurnsRef.current.has(startedTurnId) &&
+          !turnsRef.current.some((turn) => turn.turnId === startedTurnId)
+        ) {
+          const startedRow = createTurnStartedRow({
+            turnId: startedTurnId,
+            occurredAtMs: getCanonicalOccurredAtMs(ev) ?? undefined,
+            sourceId:
+              typeof anyEv.agentId === 'string' ? anyEv.agentId : agentId,
+            sourceName: selectedAgent?.displayName ?? selectedAgent?.name,
+            avatarEmoji: selectedAgent?.avatarEmoji,
+            avatarUrl: selectedAgent?.avatarUrl,
+          });
+          turnsRef.current = [...turnsRef.current, startedRow];
+          latestTurnIdRef.current = startedTurnId;
+          // updater 内再查一次 turnId：ref 写入与 setState 基线可能不同步
+          // （批处理中 state 落后于 ref 时，`current` 里还没有这一行）。
+          // 缺这一层，同一条 turn.started 会被追加两次 —— 两行同 turnId 的空轮次。
+          setTurns((current) =>
+            current.some((turn) => turn.turnId === startedTurnId)
+              ? current
+              : [...current, startedRow],
+          );
+          setLoading(true);
+          recordPerfEvent(
+            'chat.turn.startedRow.created',
+            {
+              turnId: startedTurnId,
+              sessionId: projectionOwnedSessionId,
+              sequenceNum: (ev as { sequenceNum?: number }).sequenceNum,
+              replay: options?.replay === true,
+            },
+            { throttleMs: 1_000 },
+          );
+        }
+      }
+
       if (!subagentOnly && isExecutionFlowProjectionEnabled()) {
         const collected = collectExecutionEvents([ev]);
         const accepted = executionFlowProjectionIndexRef.current.enqueue(
@@ -1812,6 +1873,7 @@ export function useSessionEventProjection({
       handleCompactionLifecycleEvent,
       scheduleExecutionFlowProjection,
       isProjectionOwnedSession,
+      selectedAgent,
     ],
   );
 

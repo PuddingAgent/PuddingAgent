@@ -245,6 +245,88 @@ export const createAssistant = (
   renderMode,
 });
 
+/**
+ * 「运行行」的最大可信年龄。
+ *
+ * 为什么必须有（与 `COMPACTION_STARTED_MAX_AGE_MS` 同一类已实测缺陷）：
+ * SSE 端点在无游标时从 sequence 0 全量重放历史（见 `isStaleCompactionStarted` 注释），
+ * 历史 `turn.started` 会逐条到达。若对每条都补建运行行，界面会凭空点亮一堆早已结束的
+ * 空轮次，且「最新轮次」指针会被指到远古事件上，后续无主元数据全部错绑。
+ * 30 分钟与压缩 started 取同一量级：跨机时钟偏差留足余量，而真实后台 Turn 极少超过它。
+ */
+export const TURN_STARTED_ROW_MAX_AGE_MS = 30 * 60 * 1000;
+
+/**
+ * 陈旧判定（live 口径）：只有**可证实陈旧**才拒绝点亮，取不到时间戳时不误杀。
+ */
+export function isStaleTurnStarted(
+  raw: Record<string, unknown> | null | undefined,
+  now: number = Date.now(),
+): boolean {
+  const occurredAt = resolveEventOccurredAtMs(raw);
+  if (occurredAt === undefined) return false;
+  return now - occurredAt > TURN_STARTED_ROW_MAX_AGE_MS;
+}
+
+/**
+ * 新鲜判定（replay 口径）：replay 帧上无法证实新鲜的事件一律视为可疑（fail-safe 不点亮）。
+ */
+export function isFreshTurnStarted(
+  raw: Record<string, unknown> | null | undefined,
+  now: number = Date.now(),
+): boolean {
+  const occurredAt = resolveEventOccurredAtMs(raw);
+  if (occurredAt === undefined) return false;
+  return now - occurredAt <= TURN_STARTED_ROW_MAX_AGE_MS;
+}
+
+/**
+ * 后台 Turn 的「运行行」：没有用户输入、也没有可挂载助手消息气泡时的运行指示承载者。
+ *
+ * 为什么需要：`agentRunMonitor` 挂在消息气泡内部（`AgentMessageBubble`），而子代理结果/
+ * 心跳触发的后台 Turn 没有消息行 ⇒ 界面上完全没有运行指示。
+ *
+ * 纪律：
+ *  - **不伪造用户消息**：`userMessage.text` 留空，`buildMessageBlocks` 对空正文不产用户块；
+ *  - 身份用 canonical `turnId`，因此后续正文/工具/终态事件与它收敛到同一行，
+ *    历史对账（按 turnId 合并）也能把真实行替换进来；
+ *  - assistant 置 `thinking + isStreaming`：本仓 `AssistantStatus` 没有 `running`，
+ *    这就是既有「运行中」的表达（`metadata` 恢复路径同一写法），阶段文案由 `TurnStatus` 负责。
+ */
+export function createTurnStartedRow(input: {
+  turnId: string;
+  occurredAtMs?: number;
+  sourceId?: string;
+  sourceName?: string;
+  avatarEmoji?: string;
+  avatarUrl?: string;
+}): ChatTurn {
+  const sourceId = input.sourceId?.trim() || 'agent';
+  return {
+    turnId: input.turnId,
+    source: {
+      sourceId,
+      sourceType: 'agent',
+      displayName: input.sourceName?.trim() || 'AI 助手',
+      avatarEmoji: input.avatarEmoji || '🤖',
+      avatarColor: stringToColor(sourceId),
+      avatarUrl: input.avatarUrl,
+    },
+    userMessage: {
+      id: `umsg:turn-started:${input.turnId}`,
+      text: '',
+      timestamp: input.occurredAtMs ?? Date.now(),
+      status: 'success',
+    },
+    assistant: createAssistant(
+      `amsg:turn-started:${input.turnId}`,
+      'structured',
+      'thinking',
+      true,
+    ),
+  };
+}
+
 export const normalizeUsage = (
   usage?: TokenUsageDto,
 ): TokenUsageDto | undefined =>

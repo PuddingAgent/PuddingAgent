@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import type { MutableRefObject } from 'react';
 import type { AdminChatStreamEvent } from '@/services/platform/api';
+import { buildMessageBlocks } from '../types';
 import type { ChatTurn, TimelineItem } from '../types';
 import { useSessionEventProjection } from './useSessionEventProjection';
 import {
@@ -558,5 +559,171 @@ describe('useSessionEventProjection — 会话域（projection-owned）', () => 
     expect(plain.turnsRef.current[0].assistant.answerMarkdown).toBe(
       '主消息正文',
     );
+  });
+});
+
+// ── 后台 Turn 可见性（2026-11-21）───────────────────────────────────
+// 非 projection-owned 会话走本地 event→turn 投影，而运行指示只能挂在**消息气泡内部**
+// （`AgentMessageBubble` 的 `agentRunMonitor`）。子代理结果/心跳触发的后台 Turn 没有消息行，
+// 于是从 `turn.started` 到终态全程静默。修复：按 canonical `turnId` 补一条运行行。
+//
+// 三条验收（缺一不算完成）：
+//  a. 后台 `turn.started` ⇒ 产生可见运行行；
+//  b. 同一条 `turn.started` 重放 ⇒ 仍只有一行（幂等）；
+//  c. 已终态轮次重放 `turn.started` ⇒ 不得复活成运行中。
+describe('useSessionEventProjection — 后台 turn.started 运行行', () => {
+  /** 当前时刻的 ISO 串（新鲜度判定按真实时钟，不能复用陈旧固定日期）。 */
+  const freshIso = (ageMs = 0) =>
+    new Date(Date.now() - ageMs).toISOString();
+
+  const startedEvent = (overrides: Record<string, unknown> = {}) =>
+    event({
+      type: 'turn.started',
+      turnId: 'turn-bg-1',
+      eventId: 'evt-start-1',
+      sequenceNum: 10,
+      occurredAt: freshIso(),
+      ...overrides,
+    });
+
+  const blocksOf = (turns: ChatTurn[]) =>
+    buildMessageBlocks(turns, 'Pudding').map((block) => ({
+      role: block.role,
+      turnId: block.turnId,
+      content: block.content,
+      isStreaming: block.isStreaming,
+    }));
+
+  it('a. 非 projection-owned 会话的后台 turn.started ⇒ 补出可见运行行', () => {
+    const { result, turnsRef } = setup(undefined, () => false);
+
+    act(() => {
+      result.current.applySessionEvent(startedEvent());
+    });
+
+    expect(turnsRef.current.map((turn) => turn.turnId)).toEqual([
+      'turn-1',
+      'turn-bg-1',
+    ]);
+    const row = turnsRef.current[1];
+    // 运行中：AssistantStatus 无 running，thinking + isStreaming 是既有表达。
+    expect(row.assistant).toMatchObject({
+      status: 'thinking',
+      isStreaming: true,
+      answerMarkdown: '',
+    });
+    // 不伪造用户输入。
+    expect(row.userMessage.text).toBe('');
+
+    // 渲染层事实：运行行只产出一条 agent 块（isRunActive 承载者），
+    // 不应产生空用户气泡。逐项列全 —— turn-1 带用户正文，因此它是 2 块。
+    expect(blocksOf(turnsRef.current)).toEqual([
+      { role: 'user', turnId: 'turn-1', content: 'hi', isStreaming: undefined },
+      { role: 'agent', turnId: 'turn-1', content: '', isStreaming: true },
+      { role: 'agent', turnId: 'turn-bg-1', content: '', isStreaming: true },
+    ]);
+  });
+
+  it('a2. 补出的行是后续正文的承载者（正文继续走现有本地投影）', () => {
+    const { result, turnsRef } = setup(undefined, () => false);
+    result.current.hydrateSessionReplayRef.current = true;
+
+    act(() => {
+      result.current.applySessionEvent(startedEvent());
+      result.current.applySessionEvent(
+        makeTurnEvent('message.content.appended', {
+          eventId: 'evt-body-1',
+          turnId: 'turn-bg-1',
+          sequenceNum: 11,
+          delta: '后台回复',
+        }),
+      );
+    });
+
+    const row = turnsRef.current.find((turn) => turn.turnId === 'turn-bg-1');
+    expect(row?.assistant.answerMarkdown).toBe('后台回复');
+    expect(row?.assistant.status).toBe('streaming');
+    expect(turnsRef.current).toHaveLength(2);
+  });
+
+  it('b. 同一条 turn.started 重放两次（不同 eventId）⇒ 仍然只有一行', () => {
+    const { result, turnsRef } = setup(undefined, () => false);
+
+    act(() => {
+      result.current.applySessionEvent(startedEvent());
+      // 断线重连：同一轮次的 started 以新 eventId / 新 sequence 再送达。
+      result.current.applySessionEvent(
+        startedEvent({ eventId: 'evt-start-2', sequenceNum: 11 }),
+      );
+    });
+
+    expect(
+      turnsRef.current.filter((turn) => turn.turnId === 'turn-bg-1'),
+    ).toHaveLength(1);
+    expect(turnsRef.current).toHaveLength(2);
+  });
+
+  it('c. 该轮已终态后重放 turn.started ⇒ 不得复活成运行中', () => {
+    const { result, turnsRef, completedTurnsRef } = setup(undefined, () => false);
+
+    act(() => {
+      result.current.applySessionEvent(startedEvent());
+      result.current.applySessionEvent(
+        event({
+          type: 'turn.completed',
+          turnId: 'turn-bg-1',
+          messageId: 'amsg-bg-1',
+          eventId: 'evt-done-1',
+          sequenceNum: 11,
+          occurredAt: freshIso(),
+          reply: '最终答复',
+        }),
+      );
+    });
+
+    const completed = turnsRef.current.find(
+      (turn) => turn.turnId === 'turn-bg-1',
+    );
+    expect(completed?.assistant.status).toBe('success');
+    expect(completed?.assistant.isStreaming).toBe(false);
+    expect(completedTurnsRef.current.has('turn-bg-1')).toBe(true);
+
+    // 回放安全：终态后重放 started（新 eventId），不得建第二行、不得回退状态。
+    act(() => {
+      result.current.applySessionEvent(
+        startedEvent({ eventId: 'evt-start-replay', sequenceNum: 12 }),
+      );
+    });
+    const replayed = turnsRef.current.filter(
+      (turn) => turn.turnId === 'turn-bg-1',
+    );
+    expect(replayed).toHaveLength(1);
+    expect(replayed[0].assistant.status).toBe('success');
+    expect(replayed[0].assistant.isStreaming).toBe(false);
+  });
+
+  it('d. 陈旧 turn.started（无游标全量重放的旧帧）不建运行行', () => {
+    const { result, turnsRef } = setup(undefined, () => false);
+
+    act(() => {
+      // 3 小时前的 started：早已不该有运行指示。
+      result.current.applySessionEvent(
+        startedEvent({ occurredAt: freshIso(3 * 60 * 60 * 1000) }),
+      );
+    });
+
+    expect(turnsRef.current.map((turn) => turn.turnId)).toEqual(['turn-1']);
+  });
+
+  it('e. projection-owned 会话不建本地行（运行行由 ChatClientStore 合成）', () => {
+    const forward = jest.fn();
+    const { result, turnsRef } = setup(undefined, () => true, forward);
+
+    act(() => {
+      result.current.applySessionEvent(startedEvent());
+    });
+
+    expect(turnsRef.current.map((turn) => turn.turnId)).toEqual(['turn-1']);
+    expect(forward).toHaveBeenCalledTimes(1);
   });
 });
