@@ -28,6 +28,30 @@ async function config() {
   return JSON.parse(await readFile(connectionFile, 'utf8'));
 }
 
+async function prepareStateDirectory() {
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  if (process.platform !== 'win32') return;
+  // Use Windows ACL APIs on the private state directory, including when
+  // the installed plugin bundle has a Windows download marker.
+  const setPrivateAcl = [
+    "$ErrorActionPreference = 'Stop'",
+    '$directory = Get-Item -LiteralPath $env:CODEX_CHAT_HTTP_STATE_DIRECTORY -Force',
+    "if ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'State directory is a reparse point' }",
+    '$owner = [Security.Principal.WindowsIdentity]::GetCurrent().User',
+    '$acl = [Security.AccessControl.DirectorySecurity]::new()',
+    '$acl.SetAccessRuleProtection($true, $false)',
+    "[Security.AccessControl.InheritanceFlags]$inherit = 'ContainerInherit, ObjectInherit'",
+    "$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($owner, 'FullControl', $inherit, 'None', 'Allow'))",
+    '$directory.SetAccessControl($acl)',
+  ].join('\n');
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', setPrivateAcl], {
+    env: { ...process.env, CODEX_CHAT_HTTP_STATE_DIRECTORY: directory },
+    windowsHide: true,
+    stdio: 'pipe',
+    timeout: 10000,
+  });
+}
+
 async function control(method, path) {
   const { token } = await config();
   const res = await fetch(baseUrl + path, { method, headers: { Authorization: 'Bearer ' + token },
@@ -140,12 +164,7 @@ async function serve() {
   }
   try {
     await new Promise((ok, fail) => { server.once('error', fail); server.listen(port, '127.0.0.1', ok); });
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    if (process.platform === 'win32') {
-      execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-File',
-        fileURLToPath(new URL('./private-directory.ps1', import.meta.url)), directory],
-        { windowsHide: true, stdio: 'pipe', timeout: 10000 });
-    }
+    await prepareStateDirectory();
     const tmp = connectionFile + '.' + process.pid + '.tmp';
     await writeFile(tmp, JSON.stringify({ baseUrl, token }) + '\n', { flag: 'wx', mode: 0o600 });
     try { await rename(tmp, connectionFile); } finally { await unlink(tmp).catch(() => {}); }
