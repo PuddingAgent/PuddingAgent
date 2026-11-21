@@ -1760,6 +1760,25 @@ public sealed partial class AgentExecutionService
     }
 
     /// <summary>
+    /// 把异常折叠成「类型名: 消息」的一行文本，供失败摘要使用。
+    ///
+    /// 只取类型名与消息这两个**已确证的事实**，不拼接堆栈：调用点手里有异常对象，
+    /// 但堆栈字面量对父代理是不可执行的噪声，而「没有堆栈」也不应被写成「无堆栈」。
+    ///
+    /// 区分异常与退出码对父代理是可执行信息：退出码意味着「换命令/换参数重试」，
+    /// 异常类型意味着「工具实现本身有问题」。改动前两者在摘要里是无法区分的。
+    /// </summary>
+    internal static string BuildExceptionError(System.Exception ex)
+    {
+        var typeName = ex.GetType().Name;
+        var message = ex.Message;
+        if (string.IsNullOrWhiteSpace(message))
+            return typeName;
+
+        return $"{typeName}: {message}";
+    }
+
+    /// <summary>
     /// 构造失败工具的一句话摘要，交给父代理与归档诊断使用。
     ///
     /// 设计要点：<paramref name="error"/> 仍是第一顺位（它表达「失败原因」的语义），但

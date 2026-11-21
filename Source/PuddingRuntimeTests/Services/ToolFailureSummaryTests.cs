@@ -122,4 +122,52 @@ public class ToolFailureSummaryTests
 
         StringAssert.Contains(summary, "输出尾部: error: 权限不足");
     }
+
+    /// <summary>
+    /// 判据 5：异常路径必须带上异常**类型名**。
+    ///
+    /// 背景：有两个调用点把异常折叠成 <c>ex.Message</c>，导致父代理看到的摘要
+    /// 与「工具自己报的失败」长得一模一样。而对父代理来说这两类失败的行动完全不同：
+    /// 退出码意味着换命令/换参数重试，异常类型意味着工具实现本身有问题。
+    /// </summary>
+    [TestMethod]
+    public void ExceptionError_PrefixesTypeName()
+    {
+        var error = AgentExecutionService.BuildExceptionError(new InvalidOperationException("boom"));
+
+        Assert.AreEqual("InvalidOperationException: boom", error);
+    }
+
+    /// <summary>
+    /// 消息为空时只给类型名，不补一个空冒号——否则摘要会多出一个无意义的 ": "。
+    /// </summary>
+    [TestMethod]
+    [DataRow("")]
+    [DataRow("   ")]
+    public void ExceptionError_BlankMessage_ReturnsTypeNameOnly(string message)
+    {
+        var error = AgentExecutionService.BuildExceptionError(new InvalidOperationException(message));
+
+        Assert.AreEqual("InvalidOperationException", error);
+    }
+
+    /// <summary>
+    /// 类型名必须真的进到最终摘要里，而不是只在辅助方法里对。
+    /// 注意：本用例锁的是「类型名 → 摘要」这条组合，不覆盖两个调用点本身
+    /// （调用点需要真实抛异常的集成环境，本轮未做）。
+    /// </summary>
+    [TestMethod]
+    public void ExceptionError_FlowsIntoSummaryBeforeOutputTail()
+    {
+        var error = AgentExecutionService.BuildExceptionError(new TimeoutException("timed out after 30s"));
+        var summary = AgentExecutionService.BuildToolFailureSummary("shell", error, "partial-out");
+
+        StringAssert.Contains(summary, "TimeoutException");
+        StringAssert.Contains(summary, "timed out after 30s");
+        StringAssert.Contains(summary, "partial-out");
+        Assert.IsLessThan(
+            summary.IndexOf("partial-out", StringComparison.Ordinal),
+            summary.IndexOf("TimeoutException", StringComparison.Ordinal),
+            $"异常类型必须在 output 之前。实际: {summary}");
+    }
 }
