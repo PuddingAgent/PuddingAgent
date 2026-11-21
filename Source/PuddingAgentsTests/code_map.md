@@ -7,3 +7,5 @@
 `AgentWorkControlTests.cs`: event mapping with terminal status, retention `snapshot_required`, cancel requested once with replay returning the original receipt, same-operation/different-content conflict, AlreadyTerminal passthrough, foreign-workspace cancel rejected before the gateway.
 
 `DelegationOwnershipTests.cs`: bound parent injection, forged parent rejection, child limit/capability denial, atomic concurrent acquire (exactly one lease), idempotent acquire replay, owner/generation-fenced release, duplicate release rejection, generation advance on reacquire, foreign-workspace acquire rejection.
+
+`AgentAdapterRegistryTests.cs`: logical Agent routing, workspace separation, concurrent connection registration, re-registration fencing, and lease expiry and renewal.
