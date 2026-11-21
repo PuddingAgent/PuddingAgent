@@ -444,7 +444,12 @@ def main() -> int:
 
     root = repo_root()
     os.chdir(root)
-    explicit_paths = None if args.paths is None else list(args.paths)
+    # Windows 风格前缀（`Docs\00_changelog\...`）在本机是自然写法，但 iter_md 比较的是正斜杠
+    # 相对路径（`Docs/00_changelog/...`），逐字 startswith 恒不命中 ⇒ 显式前缀永远报“未匹配到
+    # 任何 .md”。把分隔符归一化后再比较（2026-11-22 实测：反斜杠路径此前必错）。
+    explicit_paths = None if args.paths is None else [p.replace('\\', '/') for p in args.paths]
+    if explicit_paths is not None:
+        args.paths = explicit_paths
     if args.paths is None and not args.all_repo:
         args.paths = ['Docs/']
     default_author = args.default_author or subprocess.run(

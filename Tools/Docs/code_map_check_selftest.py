@@ -734,7 +734,7 @@ def main():
             dirnames[:] = [d for d in dirnames
                            if d not in {".git", "bin", "obj", "node_modules", ".pudding",
                                         "temp", "dist", "dist-dev", "__pycache__",
-                                        ".venv", ".vs", ".idea"}]
+                                        ".venv", ".vs", ".idea", ".work"}]
             rel = os.path.relpath(dirpath, REPO_ROOT).replace("\\", "/")
             if rel.lower().startswith("external/references"):
                 dirnames[:] = []

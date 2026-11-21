@@ -90,7 +90,7 @@ L2（子工程）与 L1（根）的项目表均使用**固定列序**（列序�
 |---|---|---|
 `index` | 产品代码、入口、契约、对外可依赖的稳定面 | ✅ 需要一行语义条目 |
 `observe` | 生成物、测试夹具/基准语料、大资源、供应商冻结件 —— **只登记路径**，不写语义 | ❌ 不占条目行（可在附录列路径） |
-`exclude` | `bin/` `obj/` `node_modules/` `.pudding/` `temp/` `dist/` `dist-dev/` `external/references/` | ❌ 不读不写 |
+`exclude` | `bin/` `obj/` `node_modules/` `.pudding/` `temp/` `.work/` `dist/` `dist-dev/` `external/references/` | ❌ 不读不写 |
 
 **成本判据**：一条条目约 **100~250 token**。当某对象的语义价值低于这个成本（例如"再来一个 markdown 夹具"），它属于 `observe`。
 依据：AOCI `AGENTS.md` *"at roughly 110 tokens per Entry, indexing them would more than double the Whole-Index and buy nothing"*。

@@ -74,7 +74,7 @@ LIMITS = {
     # --- §4 exclude 目录名（唯一真源；按目录名匹配，不限层级）---
     "EXCLUDE_DIR_NAMES": [
         "bin", "obj", "node_modules", ".pudding", "temp", "dist", "dist-dev",
-        ".git", "__pycache__", ".venv", ".vs", ".idea",
+        ".git", "__pycache__", ".venv", ".vs", ".idea", ".work",
     ],
     # --- §4 exclude 的相对路径前缀（仓库相对、大小写不敏感）---
     "EXCLUDE_PATH_PREFIXES": ["external/references"],
