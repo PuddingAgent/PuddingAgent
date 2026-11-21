@@ -9,16 +9,12 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import test from 'node:test';
+import { listenLoopback as listen } from './lib/listen-loopback.mjs';
 
 const entry = fileURLToPath(new URL('../Tools/CodexPlugins/plugins/chat-http/bridge.mjs', import.meta.url));
 const busEntry = fileURLToPath(new URL('../Tools/CodexPlugins/plugins/chat-http/pudding-bus.mjs', import.meta.url));
 const coreDll = process.env.PUDDING_BUS_TEST_CORE && resolve(process.env.PUDDING_BUS_TEST_CORE);
 const run = promisify(execFile);
-
-async function listen(server) {
-  await new Promise((ok, fail) => { server.once('error', fail); server.listen(0, '127.0.0.1', ok); });
-  return server.address().port;
-}
 
 async function until(check) {
   for (let i = 0; i < 100; i++) {

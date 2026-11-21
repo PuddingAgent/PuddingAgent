@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import test from 'node:test';
+import { listenLoopback } from './lib/listen-loopback.mjs';
 import { busClient, deliverToChat } from '../Tools/CodexPlugins/plugins/chat-http/pudding-bus-client.mjs';
 
 const baseItem = { messageId: 'stable-bus-id', fromAgentId: 'sender', text: 'unique task marker' };
@@ -65,17 +66,20 @@ test('unknown local receipt leaves the cursor behind until history proves accept
 test('credentials are rejected for plain HTTP to a remote host and are not sent through redirects', async t => {
   const config = { ak: 'A'.repeat(22), sk: 's'.repeat(43), baseUrl: 'http://example.invalid' };
   assert.throws(() => busClient(config), /HTTPS/);
+  let received = false;
   let redirected = false;
   const server = createServer((request, reply) => {
     if (request.url === '/redirect') {
       redirected = true;
       reply.end();
     } else {
+      received = true;
       reply.writeHead(307, { Location: '/redirect' }).end();
     }
   });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = await listenLoopback(server);
   t.after(() => server.close());
-  await assert.rejects(busClient({ ...config, baseUrl: 'http://127.0.0.1:' + server.address().port }).register());
+  await assert.rejects(busClient({ ...config, baseUrl: 'http://127.0.0.1:' + port }).register());
+  assert.equal(received, true);
   assert.equal(redirected, false);
 });
