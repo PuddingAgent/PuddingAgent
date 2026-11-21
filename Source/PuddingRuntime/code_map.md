@@ -83,6 +83,7 @@
 | `Services/AgentFirewall.cs` | 八道闸门的顺序准入 | `AgentFirewall` | `Classification/AgentFullAccessGrantService.cs` | 完全访问授予只放宽授权与审批闸门 |
 | `Services/AgentInvocationDispatchFactory.cs` | 由消息元数据构造执行请求 | `IAgentInvocationDispatchFactory` | `Services/RuntimeAgentDispatcher.cs` | 父身份解析失败即报错，不伪造会话 id |
 | `Services/AgentLoop/AgentExecutionGuardrails.cs` | Agent Loop 的执行预算与护栏配置 | `AgentExecutionGuardrails` | `Services/RuntimeExecutionConfigService.cs` | — |
+| `Services/AgentLoop/RunAnomalyDetector.cs` | Run 级滑动窗口异常检测：重复输出 / 重复动作 / 频率尖峰 → Notice/Pause 判定 | `RunAnomalyDetector` | `Services/AgentLoop/AgentExecutionGuardrails.cs` | 纯函数，无 I/O 无时钟；P0-b 待接线 |
 | `Services/AgentLoop/AgentExecutionOutcomePolicy.cs` | 名义成功转降级判定的启发式 | `AgentExecutionOutcomePolicy` | `Services/AgentLoop/CompletionPolicy.cs` | — |
 | `Services/AgentLoop/AgentLoopResponse.cs` | Agent Loop 单轮响应的模型 | `AgentLoopResponse` | `Services/AgentExecution/AgentExecutionResponseHandler.cs` | — |
 | `Services/AgentLoop/AgentOutputTruncationPolicy.cs` | provider 截断输出的有界恢复策略 | `AgentOutputTruncationPolicy` | `Services/AgentExecution/AgentExecutionService.Streaming.cs` | 只允许一次立即行动恢复，再次截断即显式失败 |
