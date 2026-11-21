@@ -109,7 +109,8 @@ try {
         [void]$md.AppendLine("（SkipBuild：本次未构建，未生成程序集指纹）")
     } else {
         foreach ($pair in $assemblies.GetEnumerator()) {
-            [void]$md.AppendLine("- ``$($pair.Key)``: ``$($pair.Value ?? 'missing')``")
+            $val = if ($null -eq $pair.Value) { 'missing' } else { $pair.Value }
+            [void]$md.AppendLine("- ``$($pair.Key)``: ``$val``")
         }
     }
     [void]$md.AppendLine("")
