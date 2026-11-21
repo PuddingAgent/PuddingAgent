@@ -20,14 +20,56 @@ namespace PuddingPlatformTests.Services;
 [TestClass]
 public sealed class AgentPoolSchemaBootstrapperTests
 {
-    /// <summary>任务书定稿的 18 列，顺序与实体属性声明一致。</summary>
+    /// <summary>当前定稿的 21 列，顺序与实体属性声明一致（三列身份信息追加在末尾）。</summary>
     private static readonly string[] ExpectedColumns =
     [
         "Id", "pool_id", "owner_workspace_id", "name", "sub_session_id", "template_id",
         "role", "owner_session_id", "owner_agent_id", "active_execution_id",
         "status", "status_reason", "task_count", "last_success",
         "created_at", "last_used_at", "version", "deleted_at",
+        "model_id", "avatar_key", "responsibility",
     ];
+
+    /// <summary>
+    /// 存量库的 18 列（本表首次上线时的形态）。新加的三列不在其中，
+    /// 用来证明「补列」这条路径真实存在，而不是被 CREATE TABLE 顺手带出来的。
+    /// </summary>
+    private static readonly string[] LegacyColumns =
+    [
+        "Id", "pool_id", "owner_workspace_id", "name", "sub_session_id", "template_id",
+        "role", "owner_session_id", "owner_agent_id", "active_execution_id",
+        "status", "status_reason", "task_count", "last_success",
+        "created_at", "last_used_at", "version", "deleted_at",
+    ];
+
+    /// <summary>
+    /// 18 列旧表的建表语句（逐字复制自补列之前的 <c>CreateTableSql</c>）。
+    /// 必须手写、不能复用 <see cref="AgentPoolSchemaBootstrapper.CreateTableSql"/>：
+    /// 后者现在已含三列，用它建出来的表根本不需要补列，用例会变成空跑。
+    /// </summary>
+    private const string LegacyCreateTableSql =
+        """
+        CREATE TABLE "agent_pool" (
+            "Id"                  INTEGER NOT NULL CONSTRAINT "PK_agent_pool" PRIMARY KEY AUTOINCREMENT,
+            "pool_id"             TEXT    NOT NULL,
+            "owner_workspace_id"  TEXT    NOT NULL,
+            "name"                TEXT    NOT NULL,
+            "sub_session_id"      TEXT    NOT NULL,
+            "template_id"         TEXT    NOT NULL,
+            "role"                TEXT    NULL,
+            "owner_session_id"    TEXT    NULL,
+            "owner_agent_id"      TEXT    NULL,
+            "active_execution_id" TEXT    NULL,
+            "status"              TEXT    NOT NULL,
+            "status_reason"       TEXT    NULL,
+            "task_count"          INTEGER NOT NULL DEFAULT 0,
+            "last_success"        INTEGER NULL,
+            "created_at"          TEXT    NOT NULL,
+            "last_used_at"        TEXT    NOT NULL,
+            "version"             INTEGER NOT NULL DEFAULT 0,
+            "deleted_at"          TEXT    NULL
+        );
+        """;
 
     private static readonly string[] ExpectedIndexes =
     [
@@ -85,6 +127,61 @@ public sealed class AgentPoolSchemaBootstrapperTests
             "重复 bootstrap 后索引集合必须不变（不得叠出第二套索引）");
     }
 
+    /// <summary>
+    /// 存量库路径：库里已经有 18 列的 agent_pool（正是本表首次上线后的真实状态），
+    /// 启动时 bootstrapper 必须补出三列，且第二次启动不得报 duplicate column name。
+    /// <para>
+    /// 这条用例的变异靶点就是 <c>EnsureColumnAsync</c> 里的 <c>PRAGMA table_info</c> 守卫：
+    /// 改成无条件 ALTER 后，第二遍 bootstrap 会抛 “duplicate column name: model_id”，
+    /// 用例立刻变红。SQLite 不支持 ADD COLUMN IF NOT EXISTS，所以守卫不是防御性代码，是必需条件。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task ExistingLegacyTable_With18Columns_BootstrapperAddsThreeColumns_Idempotently()
+    {
+        await using var scope = await CreateEmptyDatabaseAsync();
+
+        // 夹具：手工建 18 列旧表（不走 bootstrapper，否则就没有「缺列」这个前提了）。
+        await ExecuteAsync(scope.Db, LegacyCreateTableSql);
+        var before = await ReadColumnsAsync(scope.Db, AgentPoolSchemaBootstrapper.TableName);
+        Console.WriteLine($"[evidence] legacy columns before = {string.Join(", ", before)}");
+        CollectionAssert.AreEquivalent(
+            LegacyColumns,
+            before,
+            $"夹具必须是 18 列旧表；实际: [{string.Join(", ", before)}]");
+
+        await AgentPoolSchemaBootstrapper.EnsureCreatedAsync(scope.Db);
+
+        var after = await ReadColumnsAsync(scope.Db, AgentPoolSchemaBootstrapper.TableName);
+        Console.WriteLine($"[evidence] columns after bootstrap = {string.Join(", ", after)}");
+        CollectionAssert.AreEquivalent(
+            ExpectedColumns,
+            after,
+            $"存量库补列后必须是 21 列；实际: [{string.Join(", ", after)}]");
+
+        // 幂等：第二次启动不得抛错（无条件 ALTER 会在这里抛 duplicate column name）。
+        await AgentPoolSchemaBootstrapper.EnsureCreatedAsync(scope.Db);
+        CollectionAssert.AreEquivalent(
+            after,
+            await ReadColumnsAsync(scope.Db, AgentPoolSchemaBootstrapper.TableName),
+            "重复 bootstrap 后列集合必须不变");
+
+        // 两路一致：ALTER 补出来的三列与 EF 新库建出来的三列，列定义必须逐列相同
+        // （名 / 类型 / NOT NULL / DEFAULT / PK）。类型写成 TEXT(64) 或带默认值都会在这里变红。
+        await using var freshScope = await CreateEmptyDatabaseAsync();
+        await freshScope.Db.Database.EnsureCreatedAsync();
+        await AgentPoolSchemaBootstrapper.EnsureCreatedAsync(freshScope.Db);
+
+        var efDetails = await ReadColumnDetailsAsync(freshScope.Db, AgentPoolSchemaBootstrapper.TableName);
+        var alteredDetails = await ReadColumnDetailsAsync(scope.Db, AgentPoolSchemaBootstrapper.TableName);
+        Console.WriteLine($"[evidence] EF columns = {string.Join("; ", efDetails)}");
+        Console.WriteLine($"[evidence] ALTERed legacy columns = {string.Join("; ", alteredDetails)}");
+        CollectionAssert.AreEquivalent(
+            efDetails,
+            alteredDetails,
+            "EF 新库与「旧表 + 补列」的列定义必须逐列一致");
+    }
+
     [TestMethod]
     public async Task EfEnsuredTable_AndRawDdlTable_HaveIdenticalColumnsAndIndexes()
     {
@@ -130,6 +227,9 @@ public sealed class AgentPoolSchemaBootstrapperTests
             efIndexes.Select(x => x.Name).ToList(),
             "两条路径都必须只有这三条索引");
     }
+
+    private static async Task ExecuteAsync(DbContext db, string sql)
+        => await db.Database.ExecuteSqlRawAsync(sql);
 
     private static async Task<TestDatabaseScope> CreateEmptyDatabaseAsync()
     {

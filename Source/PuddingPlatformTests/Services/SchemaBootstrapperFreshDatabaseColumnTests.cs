@@ -69,12 +69,13 @@ public sealed class SchemaBootstrapperFreshDatabaseColumnTests
             "error_message", "task_planning_metadata_json", "total_rounds", "total_tool_calls",
             "total_duration_ms");
 
-        // ── agent_pool：18 列（列声明在 EF 实体，存量库由 AgentPoolSchemaBootstrapper 建）──
+        // ── agent_pool：21 列（列声明在 EF 实体，存量库由 AgentPoolSchemaBootstrapper 建 + 补列）──
         await AssertColumnsAsync(db, "agent_pool",
             "Id", "pool_id", "owner_workspace_id", "name", "sub_session_id", "template_id",
             "role", "owner_session_id", "owner_agent_id", "active_execution_id",
             "status", "status_reason", "task_count", "last_success",
-            "created_at", "last_used_at", "version", "deleted_at");
+            "created_at", "last_used_at", "version", "deleted_at",
+            "model_id", "avatar_key", "responsibility");
 
         // ── orchestration_node_runs：19 列（outputs_json 已在 CREATE TABLE）──────────
         await AssertColumnsAsync(db, "orchestration_node_runs",

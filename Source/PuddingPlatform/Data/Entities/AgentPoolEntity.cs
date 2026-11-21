@@ -133,4 +133,26 @@ public class AgentPoolEntity
     /// <summary>墓碑时间：软删后保留行供诊断与去重；非空即视为不可复用。</summary>
     [MaxLength(32), Column("deleted_at")]
     public string? DeletedAt { get; set; }
+
+    /// <summary>
+    /// 该条目默认使用的模型路由（<c>providerId/modelId</c>）。为空表示跟随派发方，
+    /// 前端应展示「默认」而不是把它当成缺失值。
+    /// </summary>
+    [MaxLength(64), Column("model_id")]
+    public string? ModelId { get; set; }
+
+    /// <summary>
+    /// 预设图形键（前端头像）。为空不是「缺数据」而是一种展示策略：
+    /// 前端按 <see cref="Name"/> + <see cref="PoolId"/> 确定性生成同一个图形，
+    /// 于是重启、换设备之后看到的头像仍然一致。
+    /// </summary>
+    [MaxLength(32), Column("avatar_key")]
+    public string? AvatarKey { get; set; }
+
+    /// <summary>
+    /// 一句话职责（人读）。与 <see cref="Role"/> 分工不同：role 是能力分类（可枚举），
+    /// 本列是自由文本，前端在条目卡片上直出。
+    /// </summary>
+    [MaxLength(200), Column("responsibility")]
+    public string? Responsibility { get; set; }
 }

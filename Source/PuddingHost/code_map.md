@@ -58,6 +58,7 @@ Agent 单轮执行 API：`Extensions/PuddingServiceCollectionExtensions.cs` 调�
 | `Services/CodeIndexStatusProbe.cs` | codeIndex 状态只读探针（见下「关键语义」） |
 | `Services/FullTextIndexStatusProbe.cs` | S-A：`fullText` 块探针（只产块，不再产响应根对象）；响应根对象 `IndexAdminStatusSnapshot` 由控制器组装 |
 | `Controllers/TransportStatusController.cs` | 传输用量只读 API（退役判据证据面）（见下「关键语义」） |
+| `Controllers/SubAgentPoolAdminController.cs` | `GET /api/admin/sub-agent-pool` 池条目只读列表（Admin JWT；空池必须 200 + []，不得用 404 表示空列表；直接查 `agent_pool`，不复用带就绪门的 `SubAgentPool` 单例） |
 
 **关键语义**
 

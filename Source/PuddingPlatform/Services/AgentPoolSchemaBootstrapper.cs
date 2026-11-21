@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingPlatform.Data;
@@ -15,8 +16,11 @@ namespace PuddingPlatform.Services;
 /// <c>CREATE TABLE IF NOT EXISTS</c>。
 /// </para>
 /// <para>
-/// <b>为什么只写 CREATE，不写 ALTER / 回填：</b>产品未发布，不存在需要升级的旧库；
-/// 而且池在此之前只存在于内存，从未落库，<c>agent_pool</c> 建出来必然是空表，没有历史数据可回填。
+/// <b>为什么现在有 ALTER，且只补列不回填：</b>本表先以 18 列上线（S1），随后前端管理视图需要
+/// model_id / avatar_key / responsibility 三列。已经落库的 <c>agent_pool</c> 不会被
+/// <c>CREATE TABLE IF NOT EXISTS</c> 改列，也无法走 EF migration（全仓 <c>Migrate()</c> 零调用），
+/// 所以这三列只能在这里补。三列均可空、无默认值：旧行的 NULL 就是合法语义（「未设置」），
+/// 不需要任何回填。
 /// </para>
 /// <para>
 /// <b>幂等性：</b>建表与三处索引全部带 <c>IF NOT EXISTS</c>，启动多少次结果都一样。
@@ -62,7 +66,10 @@ public static class AgentPoolSchemaBootstrapper
             "created_at"          TEXT    NOT NULL,
             "last_used_at"        TEXT    NOT NULL,
             "version"             INTEGER NOT NULL DEFAULT 0,
-            "deleted_at"          TEXT    NULL
+            "deleted_at"          TEXT    NULL,
+            "model_id"            TEXT    NULL,
+            "avatar_key"          TEXT    NULL,
+            "responsibility"      TEXT    NULL
         );
         """;
 
@@ -90,6 +97,37 @@ public static class AgentPoolSchemaBootstrapper
             ON "agent_pool" ("status", "last_used_at");
         """;
 
+    /// <summary>默认模型路由列（存量库由本类 ALTER 补）。</summary>
+    public const string ModelIdColumn = "model_id";
+
+    /// <summary>预设图形键列（存量库由本类 ALTER 补）。</summary>
+    public const string AvatarKeyColumn = "avatar_key";
+
+    /// <summary>一句话职责列（存量库由本类 ALTER 补）。</summary>
+    public const string ResponsibilityColumn = "responsibility";
+
+    /// <summary>
+    /// 补列语句。类型只用 TEXT（与 EF 为 <c>MaxLength</c> 生成的一致）：SQLite 不执行长度约束，
+    /// 写成 TEXT(64) 只会让「EF 新库」与「存量库 ALTER」的 PRAGMA type 不同，徒增比对噪声。
+    /// </summary>
+    private const string AddModelIdSql =
+        """
+        ALTER TABLE "agent_pool"
+        ADD COLUMN "model_id" TEXT NULL;
+        """;
+
+    private const string AddAvatarKeySql =
+        """
+        ALTER TABLE "agent_pool"
+        ADD COLUMN "avatar_key" TEXT NULL;
+        """;
+
+    private const string AddResponsibilitySql =
+        """
+        ALTER TABLE "agent_pool"
+        ADD COLUMN "responsibility" TEXT NULL;
+        """;
+
     public static async Task EnsureCreatedAsync(
         PlatformDbContext db,
         ILogger? logger = null,
@@ -103,6 +141,71 @@ public static class AgentPoolSchemaBootstrapper
         await db.Database.ExecuteSqlRawAsync(CreateSubSessionIndexSql, ct);
         await db.Database.ExecuteSqlRawAsync(CreateStatusLastUsedIndexSql, ct);
 
-        logger?.LogDebug("[AgentPoolSchema] Ensured table {Table} and its indexes", TableName);
+        // 存量库补列：CREATE TABLE IF NOT EXISTS 对「已经存在」的表是空操作，
+        // 所以新增的三列只能逐列 PRAGMA 守卫后再 ALTER（SQLite 没有 ADD COLUMN IF NOT EXISTS）。
+        await EnsureColumnAsync(db, ModelIdColumn, AddModelIdSql, logger, ct);
+        await EnsureColumnAsync(db, AvatarKeyColumn, AddAvatarKeySql, logger, ct);
+        await EnsureColumnAsync(db, ResponsibilityColumn, AddResponsibilitySql, logger, ct);
+
+        logger?.LogDebug("[AgentPoolSchema] Ensured table {Table}, its indexes and the identity columns", TableName);
     }
+
+    /// <summary>
+    /// 缺列才 ALTER。守卫不可省：SQLite 不支持 <c>ADD COLUMN IF NOT EXISTS</c>，
+    /// 重复执行会直接报 “duplicate column name”，启动第二次就失败。
+    /// </summary>
+    private static async Task EnsureColumnAsync(
+        PlatformDbContext db,
+        string columnName,
+        string addColumnSql,
+        ILogger? logger,
+        CancellationToken ct)
+    {
+        if (await ColumnExistsAsync(db, columnName, ct))
+            return;
+
+        await db.Database.ExecuteSqlRawAsync(addColumnSql, ct);
+
+        logger?.LogInformation(
+            "[AgentPoolSchema] Added {Table}.{Column}",
+            TableName,
+            columnName);
+    }
+
+    private static async Task<bool> ColumnExistsAsync(
+        PlatformDbContext db,
+        string columnName,
+        CancellationToken ct)
+    {
+        var connection = db.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+            await connection.OpenAsync(ct);
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"PRAGMA table_info({QuoteIdentifier(TableName)});";
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                // PRAGMA table_info 的第 1 列（0 基）是列名。
+                if (reader.FieldCount > 1
+                    && string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        finally
+        {
+            if (shouldClose)
+                await connection.CloseAsync();
+        }
+    }
+
+    private static string QuoteIdentifier(string identifier)
+        => $"\"{identifier.Replace("\"", "\"\"")}\"";
 }
