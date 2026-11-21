@@ -8,8 +8,10 @@ $ErrorActionPreference = 'Stop'
 # Never pass tokens in command arguments, environment variables, errors or output.
 try {
     $credentials = Get-Content -LiteralPath $CredentialFile -Raw | ConvertFrom-Json
-    if ([string]::IsNullOrWhiteSpace($credentials.botToken) -or [string]::IsNullOrWhiteSpace($credentials.appToken)
-        -or $credentials.botToken -match '\s' -or $credentials.appToken -match '\s') {
+    if ([string]::IsNullOrWhiteSpace($credentials.botToken) -or
+        [string]::IsNullOrWhiteSpace($credentials.appToken) -or
+        $credentials.botToken -match '\s' -or
+        $credentials.appToken -match '\s') {
         throw 'Invalid credential values'
     }
 } catch {
