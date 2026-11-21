@@ -276,6 +276,8 @@ public sealed class SubAgentManager : ISubAgentManager
                     toolOutputTruncatedCount,
                     toolOutputChars,
                     toolFailureSummary,
+                    CountToolCalls(r.TurnSteps),
+                    SumStepDurationMs(r.TurnSteps),
                     CancellationToken.None);
 
                 await RecordActivityAsync(
@@ -339,6 +341,8 @@ public sealed class SubAgentManager : ISubAgentManager
                     toolOutputTruncatedCount: 0,
                     toolOutputChars: 0,
                     toolFailureSummary: null,
+                    toolCallCount: 0,
+                    elapsedMs: null,
                     ct: CancellationToken.None);
 
                                 _ = _ssm.TrackSubAgentCompleteAsync(subSessionId, new SubAgentResult
@@ -867,6 +871,8 @@ public sealed class SubAgentManager : ISubAgentManager
         int toolOutputTruncatedCount,
         long toolOutputChars,
         string? toolFailureSummary,
+        int toolCallCount,
+        long? elapsedMs,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.ParentAgentId))
@@ -931,6 +937,8 @@ public sealed class SubAgentManager : ISubAgentManager
             var contextEnvelope = BuildSubAgentResultEnvelope(
                 baseEnvelope,
                 subSessionId,
+                request.DisplayName,
+                request.TemplateId,
                 status,
                 request.TaskDescription,
                 reply,
@@ -938,7 +946,9 @@ public sealed class SubAgentManager : ISubAgentManager
                 toolFailureCount,
                 toolOutputTruncatedCount,
                 toolOutputChars,
-                toolFailureSummary);
+                toolFailureSummary,
+                toolCallCount,
+                elapsedMs);
             var metadata = AgentContextEnvelopeRenderer.FlattenMetadata(contextEnvelope);
             metadata["parent_session"] = request.ParentSessionId;
             metadata["parent_agent"] = request.ParentAgentId!;
@@ -998,9 +1008,13 @@ public sealed class SubAgentManager : ISubAgentManager
         }
     }
 
-    private static AgentContextEnvelope BuildSubAgentResultEnvelope(
+    // internal 而非 private：正文三段式必须能被「信封装配」这一层取红（只测纯函数证明不了
+    // 调用方真的用了它）。见 SubAgentResultBodyTests 的 wiring 用例。
+    internal static AgentContextEnvelope BuildSubAgentResultEnvelope(
         MessageEnvelope baseEnvelope,
         string subSessionId,
+        string? displayName,
+        string templateId,
         string status,
         string task,
         string? reply,
@@ -1008,14 +1022,28 @@ public sealed class SubAgentManager : ISubAgentManager
         int toolFailureCount,
         int toolOutputTruncatedCount,
         long toolOutputChars,
-        string? toolFailureSummary)
+        string? toolFailureSummary,
+        int toolCallCount,
+        long? elapsedMs)
     {
         var completed = status.Equals("completed", StringComparison.OrdinalIgnoreCase);
         var resumable = SubAgentRunEntity.IsResumableStatus(status);
         var deliveredResult = completed || resumable;
-        var contextText = deliveredResult
-            ? reply ?? string.Empty
-            : error ?? "unknown error";
+        // A 期：正文改为三段式（标题 → reply 正文 → 错误诊断附注）。
+        // 旧写法在非 delivered 状态下把 reply 整条丢弃，正文只剩 error——实测是一个
+        // "shell: exit code 1" 这样的退出码片段，于是交付物在气泡里整体消失。
+        // 现在无论什么状态都先给 reply，错误只作附注。
+        var contextText = BuildSubAgentResultBody(
+            displayName,
+            templateId,
+            subSessionId,
+            status,
+            reply,
+            error,
+            toolFailureCount,
+            toolFailureSummary,
+            toolCallCount,
+            elapsedMs);
         var metadata = new Dictionary<string, string>
         {
             ["source"] = "subagent",
@@ -1155,6 +1183,191 @@ public sealed class SubAgentManager : ISubAgentManager
             "paused" => $"{prefix} {subSessionId} paused by the run anomaly detector; awaiting parent decision (resume / sleep / destroy)",
             _ => failureMessage,
         };
+    }
+
+    // ════════════════════════════════════════════════════════
+    // 子代理结果正文（A 期：标题 → reply → 错误诊断附注）
+    // ════════════════════════════════════════════════════════
+
+    /// <summary>reply 为空时的固定句：宁可显式说「没有交付文本」，也不要留一段空白。</summary>
+    internal const string SubAgentResultNoReplyText = "（没有产生可读的交付文本）";
+
+    private const string SubAgentResultErrorSeparator = "---";
+    private const string SubAgentResultMissingFailureSummaryText = "未记录失败摘要";
+    private const string SubAgentResultMissingErrorText = "未记录错误文本";
+
+    /// <summary>
+    /// 堆栈说明的唯一口径。子代理的失败几乎都发生在工具层（shell / file / http），
+    /// 平台上拿到的只是一个退出码或超时串，<b>没有异常对象</b>；所以既不许留空，
+    /// 也不许凭猜写成 runtime_exception 或伪造一段堆栈。
+    /// </summary>
+    internal const string SubAgentResultNoStackTraceText = "无堆栈，工具退出码路径";
+
+    /// <summary>结果正文里「工具调用次数」的口径：TurnSteps 中记录了工具名的轮次数。</summary>
+    internal static int CountToolCalls(IReadOnlyList<TurnStepDto>? turnSteps) =>
+        turnSteps?.Count(step => !string.IsNullOrWhiteSpace(step.ToolName)) ?? 0;
+
+    /// <summary>
+    /// 结果正文里「用时」的口径：TurnSteps 各轮耗时之和。
+    /// 全部缺失时返回 null，正文写「未记录」——不拿墙钟时间凑数。
+    /// </summary>
+    internal static long? SumStepDurationMs(IReadOnlyList<TurnStepDto>? turnSteps)
+    {
+        if (turnSteps is null) return null;
+
+        long total = 0;
+        var measured = false;
+        foreach (var step in turnSteps)
+        {
+            if (step.DurationMs is not { } durationMs) continue;
+            total += durationMs;
+            measured = true;
+        }
+
+        return measured ? total : null;
+    }
+
+    /// <summary>
+    /// 终态 → 结果气泡里的中文状态词。
+    /// 与 <see cref="ToActivityStatus"/> 的分工：那个投影给活动流（Succeeded / Failed / Deferred），
+    /// 这个给人读，必须保留「可续跑」与「等裁决」的差别，不能都压成失败。
+    /// </summary>
+    internal static string FormatResultStatusWord(string status) => status switch
+    {
+        "completed" => "已完成",
+        "paused" => "已暂停待裁决",
+        "budget_exhausted" => "预算耗尽可续跑",
+        "failed" => "失败",
+        "cancelled" => "已取消",
+        "timed_out" => "超时",
+        "interrupted" => "已中断",
+        _ => string.IsNullOrWhiteSpace(status) ? "状态未知" : status.Trim(),
+    };
+
+    /// <summary>
+    /// 结果气泡里的子代理名字。优先用派发时登记的人读名；没有就用
+    /// <c>&lt;templateId&gt;-&lt;短 ID&gt;</c> 确定性回退。短 ID 取会话 ID 最后一个 '-' 之后的段
+    /// （即 <see cref="SubAgentSessionId"/> 生成的 8 位随机段），
+    /// 这样同一个子代理在崩溃重投时拿到的名字完全一致。
+    /// </summary>
+    internal static string ResolveDisplayNameForResult(
+        string? displayName, string templateId, string subSessionId)
+    {
+        if (!string.IsNullOrWhiteSpace(displayName)) return displayName.Trim();
+
+        var template = string.IsNullOrWhiteSpace(templateId) ? "sub-agent" : templateId.Trim();
+        var shortId = ExtractSubSessionShortId(subSessionId);
+        return shortId.Length == 0 ? template : $"{template}-{shortId}";
+    }
+
+    private static string ExtractSubSessionShortId(string? subSessionId)
+    {
+        var sessionId = subSessionId?.Trim();
+        if (string.IsNullOrEmpty(sessionId)) return string.Empty;
+
+        var separator = sessionId.LastIndexOf('-');
+        var tail = separator >= 0 && separator < sessionId.Length - 1
+            ? sessionId[(separator + 1)..]
+            : sessionId;
+        return tail.Length <= 8 ? tail : tail[^8..];
+    }
+
+    /// <summary>
+    /// 子代理结果消息正文。顺序固定：<b>标题 → reply 正文 → 错误诊断附注</b>。
+    /// <para>
+    /// 错误永不占据正文位置：第一个非空行必须是标题，错误只允许出现在 <c>---</c> 之后。
+    /// 依据是一次实测事故——子代理交付 9 个文件、22/22 测试通过，气泡里却只有
+    /// 「shell: exit code 1」，因为失败分支把 reply 整条丢了。
+    /// </para>
+    /// </summary>
+    internal static string BuildSubAgentResultBody(
+        string? displayName,
+        string templateId,
+        string subSessionId,
+        string status,
+        string? reply,
+        string? error,
+        int toolFailureCount,
+        string? toolFailureSummary,
+        int toolCallCount,
+        long? elapsedMs)
+    {
+        var lines = new List<string>
+        {
+            BuildSubAgentResultHeader(
+                displayName, templateId, subSessionId, status, toolFailureCount, toolCallCount, elapsedMs),
+            string.Empty,
+            string.IsNullOrWhiteSpace(reply) ? SubAgentResultNoReplyText : reply!,
+        };
+
+        // 错误附注只在「确实有错误事实」时出现：没有错误也没有工具失败时，
+        // 正文不该凭空多出一段「没有错误的错误诊断」。
+        if (toolFailureCount > 0 || !string.IsNullOrWhiteSpace(error))
+        {
+            lines.Add(string.Empty);
+            lines.Add(SubAgentResultErrorSeparator);
+            lines.Add(BuildSubAgentResultErrorDiagnostic(toolFailureCount, toolFailureSummary, error));
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    private static string BuildSubAgentResultHeader(
+        string? displayName,
+        string templateId,
+        string subSessionId,
+        string status,
+        int toolFailureCount,
+        int toolCallCount,
+        long? elapsedMs)
+    {
+        var invariant = System.Globalization.CultureInfo.InvariantCulture;
+        var header = new StringBuilder();
+        header.Append("**子代理 ")
+            .Append(ResolveDisplayNameForResult(displayName, templateId, subSessionId))
+            .Append(' ')
+            .Append(FormatResultStatusWord(status))
+            .Append("**");
+        if (!string.IsNullOrWhiteSpace(templateId))
+            header.Append(" · 模板 ").Append(templateId.Trim());
+        header.Append(" · 工具 ").Append(toolCallCount.ToString(invariant)).Append(" 次")
+            .Append("（失败 ").Append(toolFailureCount.ToString(invariant)).Append(" 次）")
+            .Append(" · 用时 ").Append(FormatSubAgentResultDuration(elapsedMs));
+        return header.ToString();
+    }
+
+    private static string FormatSubAgentResultDuration(long? elapsedMs)
+    {
+        if (elapsedMs is not { } durationMs || durationMs < 0) return "未记录";
+        if (durationMs < 1000)
+            return durationMs.ToString(System.Globalization.CultureInfo.InvariantCulture) + "ms";
+        if (durationMs < 60_000)
+            return (durationMs / 1000d).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "s";
+
+        var seconds = durationMs / 1000;
+        return $"{seconds / 60}m{seconds % 60}s";
+    }
+
+    /// <summary>
+    /// 错误附注。缺失项必须显式写出（未记录失败摘要 / 未记录错误文本），
+    /// category 只按手里的事实判定：有工具失败计数就是 tool_failure，否则 unknown。
+    /// </summary>
+    private static string BuildSubAgentResultErrorDiagnostic(
+        int toolFailureCount, string? toolFailureSummary, string? error)
+    {
+        var category = toolFailureCount > 0 ? "tool_failure" : "unknown";
+        var failureSummary = string.IsNullOrWhiteSpace(toolFailureSummary)
+            ? SubAgentResultMissingFailureSummaryText
+            : toolFailureSummary.Trim();
+        var errorText = string.IsNullOrWhiteSpace(error)
+            ? SubAgentResultMissingErrorText
+            : error.Trim();
+
+        var sentence = toolFailureCount > 0
+            ? $"工具调用失败 {toolFailureCount} 次，最近一次：{failureSummary}；最后一次错误：{errorText}（{SubAgentResultNoStackTraceText}）"
+            : $"运行未正常结束，最后一次错误：{errorText}（{SubAgentResultNoStackTraceText}）";
+
+        return $"⚠ 错误诊断（{category}）：{sentence}";
     }
 
     private static string ResolveRuntimeTerminalStatus(RuntimeDispatchResult result)
