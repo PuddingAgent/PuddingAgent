@@ -342,7 +342,7 @@
 | `Tools/BuiltIns/Agents/GoalReadTool.cs` | `goal_read`：读取调用方私有的目标文件 | `GoalReadTool` | `Services/GoalMode/GoalModeService.cs` | — |
 | `Tools/BuiltIns/Agents/GoalUpdateTool.cs` | `goal_update`：追加或整体覆盖目标文件 | `GoalUpdateTool` | `Tools/BuiltIns/Agents/GoalReadTool.cs` | — |
 | `Tools/BuiltIns/Agents/QuerySubAgentsTool.cs` | `query_sub_agents`：查询子代理状态 | `QuerySubAgentsTool` | `Services/SubAgentInvocationService.cs` | — |
-| `Tools/BuiltIns/Agents/SubAgentTool.cs` | `spawn_sub_agent`：派生子代理执行任务 | `SubAgentTool` | `Services/SubAgentInvocationService.cs` | 模型须写全 providerId 与 modelId；大交付物写外部文件 |
+| `Tools/BuiltIns/Agents/SubAgentTool.cs` | `spawn_sub_agent`：派生子代理执行任务 | `SubAgentTool` | `Services/SubAgentInvocationService.cs` | 模型须写全 providerId 与 modelId；大交付物写外部文件；`pool_action` 用 `PoolFailureKind`/`ClassifyPoolFailure` 把五类失败（未就绪/归属/忙/池满/不存在）分别渲染，未就绪绝不输出「池为空」 |
 | `Tools/BuiltIns/CodeIntelligence/CodeOutlineTool.cs` | `code_outline`：文件顶层结构的树形输出 | `CodeOutlineTool` | `Tools/BuiltIns/CodeIntelligence/OutlineSyntaxVisitor.cs` | — |
 | `Tools/BuiltIns/CodeIntelligence/CodeProjectManagementTools.cs` | 代码索引项目的注册与查询工具 | `CodeProjectAddTool` | `Services/Tools/ToolExposurePlanner.cs` | — |
 | `Tools/BuiltIns/CodeIntelligence/CodeQueryTools.cs` | 符号检索与调用关系查询工具集 | `CodeQueryToolHelper` / `ReadIndexFreshness` | `Tools/BuiltIns/CodeIntelligence/CodeSummaryTool.cs` | 新鲜度只有一处口径：四工具共用 `ReadIndexFreshness`；`status` 是注册记录，运行时真相看 `index_freshness.state` |
