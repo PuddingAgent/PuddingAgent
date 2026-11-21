@@ -1759,14 +1759,45 @@ public sealed partial class AgentExecutionService
             toolOutputTruncatedCount++;
     }
 
-    private static string BuildToolFailureSummary(string? toolName, string? error, string? output)
+    /// <summary>
+    /// 构造失败工具的一句话摘要，交给父代理与归档诊断使用。
+    ///
+    /// 设计要点：<paramref name="error"/> 仍是第一顺位（它表达「失败原因」的语义），但
+    /// <paramref name="output"/> 不再被丢弃。原因是很多工具把错误细节合并进了 output ——
+    /// 例如 <c>HostShellExecutor</c> 的 Error 只有裸退出码 <c>exit code 1</c>，
+    /// 真正的 stderr 在 Output 里。只取 error 会让摘要退化成仅剩退出码，父代理据此无从判断。
+    ///
+    /// 取 output 的**尾部**：命令行错误的现场通常在输出末尾。
+    /// output 为空时输出与改动前逐字相同（零行为变化）。
+    /// </summary>
+    internal static string BuildToolFailureSummary(string? toolName, string? error, string? output)
     {
-        var reason = !string.IsNullOrWhiteSpace(error)
-            ? error!
-            : !string.IsNullOrWhiteSpace(output)
-                ? output!
-                : "unknown tool failure";
-        return $"{toolName ?? "tool"}: {Truncate(reason, 512)}";
+        var name = toolName ?? "tool";
+
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            if (string.IsNullOrWhiteSpace(output))
+                return $"{name}: {Truncate(error!, 512)}";
+
+            return Truncate($"{name}: {error} | 输出尾部: {Tail(output!, 400)}", 512);
+        }
+
+        if (!string.IsNullOrWhiteSpace(output))
+            return $"{name}: {Truncate(output!, 512)}";
+
+        return $"{name}: unknown tool failure";
+    }
+
+    /// <summary>
+    /// 取字符串尾部 <paramref name="maxLen"/> 个字符，超长时前置省略标记。
+    /// 与 <see cref="Truncate"/>（取头部）互补；两者都不改变入参对象。
+    /// </summary>
+    private static string Tail(string s, int maxLen)
+    {
+        if (maxLen <= 0)
+            return string.Empty;
+
+        return s.Length <= maxLen ? s : "…" + s[^maxLen..];
     }
 
     private static bool LooksLikeTruncatedToolOutput(string? value)
