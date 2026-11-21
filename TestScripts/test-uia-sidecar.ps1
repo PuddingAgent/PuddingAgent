@@ -1,4 +1,4 @@
-# UIA sidecar 冒烟测试。
+﻿# UIA sidecar 冒烟测试。
 #
 # 目的：Tools/UiaSidecar/observe.ps1 是「唯一已知能读到完整 UIA 树」的观察通道
 # （见 Docs/14_reports/2026-11-11-UIA观察层可读性核查-actionable恒0定案.md §11）。

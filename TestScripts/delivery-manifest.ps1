@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Delivery manifest collection (B7, internal side): run tests -> gather facts -> emit a SELF-CHECKED manifest.
 

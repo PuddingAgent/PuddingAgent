@@ -1,4 +1,4 @@
-# Post-deployment acceptance for the retrieval work landed on 2026-10-28.
+﻿# Post-deployment acceptance for the retrieval work landed on 2026-10-28.
 #
 # Why this exists: 11 commits are pending a single restart. Verifying them by hand
 # across several tool rounds is slow and easy to half-do. This script turns the

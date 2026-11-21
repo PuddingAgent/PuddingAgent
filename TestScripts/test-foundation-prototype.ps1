@@ -1,4 +1,4 @@
-param([string]$RunId = (Get-Date -Format 'yyyyMMdd-HHmmss'), [switch]$VerifyCore)
+﻿param([string]$RunId = (Get-Date -Format 'yyyyMMdd-HHmmss'), [switch]$VerifyCore)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 if ($RunId -notmatch '^[a-zA-Z0-9_-]+$') { throw 'RunId must be a simple directory name.' }

@@ -1,3 +1,4 @@
+#requires -Version 7.0
 # Read-only verifier: does the source manifest's fingerprint still match the disk?
 #
 # Why this exists (2026-10-28): a full calibration re-extracted 2540 files while reusing 4229.

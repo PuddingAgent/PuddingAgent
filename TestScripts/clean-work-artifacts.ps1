@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 <#
 .SYNOPSIS
     Reclaim disk space consumed by per-task build artifacts under .work/ and by

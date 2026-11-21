@@ -1,4 +1,4 @@
-param()
+﻿param()
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $manifestPath = Join-Path $repoRoot 'Docs/12_features/插件Agent配置API-核心文件指纹.json'
