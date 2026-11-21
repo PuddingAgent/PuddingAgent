@@ -1,5 +1,6 @@
 using PuddingCode.Abstractions;
 using PuddingPlatform.Data.Dtos;
+using PuddingPlatform.Services.MessageFabric;
 
 namespace PuddingPlatform.Services;
 
@@ -9,10 +10,12 @@ namespace PuddingPlatform.Services;
 public sealed class WorkspaceAgentRosterProvider : IAgentRosterProvider
 {
     private readonly IWorkspaceAgentCatalog _agentCatalog;
+    private readonly ExternalAgentDirectory? _externalAgents;
 
-    public WorkspaceAgentRosterProvider(IWorkspaceAgentCatalog agentCatalog)
+    public WorkspaceAgentRosterProvider(IWorkspaceAgentCatalog agentCatalog, ExternalAgentDirectory? externalAgents = null)
     {
         _agentCatalog = agentCatalog;
+        _externalAgents = externalAgents;
     }
 
     /// <inheritdoc />
@@ -29,12 +32,16 @@ public sealed class WorkspaceAgentRosterProvider : IAgentRosterProvider
         }
 
         var agents = await _agentCatalog.ListAgentsAsync(workspaceId, ct);
-        return agents
+        var native = agents
             .Where(agent => agent.IsEnabled)
             .Where(agent => includeFrozen || !agent.IsFrozen)
-            .OrderBy(agent => agent.DisplayName ?? agent.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(MapAgent);
+        var adapters = _externalAgents is null ? [] : await _externalAgents.ListAsync(workspaceId, ct);
+        return native.Concat(adapters.Select(adapter => new AgentRosterItem(
+                adapter.AgentId, adapter.Name, $"agent:{adapter.AgentId}", adapter.Online ? "idle" : "offline",
+                true, ["external-adapter"], null)))
+            .OrderBy(agent => agent.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(agent => agent.AgentId, StringComparer.OrdinalIgnoreCase)
-            .Select(MapAgent)
             .ToArray();
     }
 

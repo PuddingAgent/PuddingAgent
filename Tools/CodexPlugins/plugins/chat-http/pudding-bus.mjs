@@ -104,8 +104,8 @@ async function run(config, checkpointFile) {
 }
 
 async function main() {
-  if (!configFile || !['run', 'status', 'agents', 'send', 'delegate', 'result'].includes(command)) {
-    throw new Error('用法：node pudding-bus.mjs <run|status|agents|send|delegate|result> <配置文件> [参数]');
+  if (!configFile || !['run', 'status', 'agents', 'send', 'delivery', 'delegate', 'result'].includes(command)) {
+    throw new Error('用法：node pudding-bus.mjs <run|status|agents|send|delivery|delegate|result> <配置文件> [参数]');
   }
   const config = await readJson(resolve(configFile));
   config.sessionId = sessionId(config.sessionId);
@@ -138,6 +138,10 @@ async function main() {
     console.log(JSON.stringify(await bus.receipt(state.leaseId, args[0])));
     return;
   }
+  if (command === 'delivery' && args.length === 1) {
+    console.log(JSON.stringify(await bus.delivery(state.leaseId, args[0])));
+    return;
+  }
   if ((command === 'send' || command === 'delegate') && args.length === 3) {
     const [targetAgentId, operationId, textFile] = args;
     const text = (await readFile(resolve(textFile), 'utf8')).replace(/^\uFEFF/, '');
@@ -145,7 +149,7 @@ async function main() {
     console.log(JSON.stringify(await bus[command](state.leaseId, sessionId(operationId), targetAgentId, text)));
     return;
   }
-  throw new Error('send/delegate 需要目标 Agent ID、操作 UUID、UTF-8 文本文件。result 需要 messageId。');
+  throw new Error('send/delegate 需要目标 Agent ID、操作 UUID、UTF-8 文本文件。delivery/result 需要 messageId。');
 }
 
 process.once('SIGINT', () => controller.abort());

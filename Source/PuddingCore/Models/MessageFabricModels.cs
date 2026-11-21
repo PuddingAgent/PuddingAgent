@@ -5,6 +5,7 @@ public static class MessageEndpointKinds
 {
     public const string User = "user";
     public const string Agent = "agent";
+    public const string ExternalAgent = "external_agent";
     public const string Room = "room";
     public const string Connector = "connector";
     public const string System = "system";

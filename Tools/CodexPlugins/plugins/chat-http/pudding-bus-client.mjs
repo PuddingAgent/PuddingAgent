@@ -50,6 +50,8 @@ export function busClient(config, signal) {
       call('/agents?' + new URLSearchParams(after ? { leaseId, after } : { leaseId })),
     send: (leaseId, operationId, targetAgentId, text) =>
       call('/messages', 'POST', { leaseId, operationId, targetAgentId, text }),
+    delivery: (leaseId, messageId) =>
+      call('/messages/' + encodeURIComponent(messageId) + '?' + new URLSearchParams({ leaseId })),
     delegate: (leaseId, operationId, targetAgentId, text) =>
       call('/delegations', 'POST', { leaseId, operationId, targetAgentId, text }),
     receipt: (leaseId, messageId) =>

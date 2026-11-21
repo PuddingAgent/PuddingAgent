@@ -11,7 +11,11 @@ using PuddingCode.Security;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services.ExternalApi;
+using PuddingPlatform.Services;
+using PuddingPlatform.Services.MessageFabric;
+using PuddingPlatform.Services.MessageGateway;
 using PuddingPlatform.Services.Security;
+using PuddingCode.Platform;
 
 namespace PuddingPlatform.Controllers.External.V1;
 
@@ -26,10 +30,12 @@ public sealed class ExternalAgentAdaptersController(
     IMessageSystem messages,
     ExternalApiIdempotencyStore idempotency,
     ExternalTaskApiOptionsProvider options,
+    IWorkspaceAgentCatalog nativeAgents,
+    ExternalAgentDirectory externalAgents,
     TimeProvider clock) : ControllerBase
 {
     public const string DocumentName = "agent-adapters-v1";
-    private const string ExternalEndpointKind = "external_agent";
+    private const string ExternalEndpointKind = MessageEndpointKinds.ExternalAgent;
     private const string MessagesRoom = "external-agent-adapters";
     private const string DelegationsRoom = "external-agent-delegations";
     private const string MessageRoute = "/api/external/v1/agent-adapters/messages";
@@ -102,24 +108,19 @@ public sealed class ExternalAgentAdaptersController(
         if (!OwnsLease(adapter, leaseId))
             return RejectedLease();
 
-        var rows = await (
-            from candidate in db.ExternalAgentAdapters.AsNoTracking()
-            join token in db.ExternalAccessTokens.AsNoTracking() on candidate.TokenId equals token.TokenId
-            where candidate.WorkspaceId == adapter.WorkspaceId && token.RevokedAtUtc == null &&
-                (after == null || string.Compare(candidate.AgentId, after) > 0) &&
-                db.AppUsers.Any(u => u.UserId == token.OwnerUserId && u.IsEnabled)
-            orderby candidate.AgentId
-            select new { candidate.AgentId, token.Name, token.ExpiresAtUtc })
-            .Take(limit).ToListAsync(ct);
+        var native = await nativeAgents.ListAgentsAsync(adapter.WorkspaceId, ct);
+        var adapters = await externalAgents.ListAsync(adapter.WorkspaceId, ct);
+        var rows = native.Where(agent => agent.IsEnabled && !agent.IsFrozen && !string.IsNullOrEmpty(agent.MainSessionId))
+            .Select(agent => new AgentAdapterDirectoryItem(agent.AgentId, agent.DisplayName ?? agent.Name, true, "native"))
+            .Concat(adapters.Select(agent => new AgentAdapterDirectoryItem(agent.AgentId, agent.Name, agent.Online, "adapter")))
+            .Where(agent => after == null || string.CompareOrdinal(agent.AgentId, after) > 0)
+            .OrderBy(agent => agent.AgentId, StringComparer.Ordinal)
+            .Take(limit + 1).ToArray();
         if (!OwnsLease(adapter, leaseId))
             return RejectedLease();
 
-        var now = clock.GetUtcNow();
-        return Ok(new AgentAdapterDirectoryResponse(
-            rows.Where(row => row.ExpiresAtUtc > now)
-                .Select(row => new AgentAdapterDirectoryItem(row.AgentId, row.Name,
-                    registry.Resolve(adapter.WorkspaceId, row.AgentId) is not null)).ToArray(),
-            rows.Count < limit ? null : rows[^1].AgentId));
+        return Ok(new AgentAdapterDirectoryResponse(rows.Take(limit).ToArray(),
+            rows.Length > limit ? rows[limit - 1].AgentId : null));
     }
 
     /// <summary>Polls this Agent's durable text inbox. Store nextCursor after processing the returned messages.</summary>
@@ -144,7 +145,9 @@ public sealed class ExternalAgentAdaptersController(
                 delivery.TargetId == adapter.AgentId && delivery.Id > after
             orderby delivery.Id
             select new AgentAdapterInboxMessage(delivery.Id, delivery.MessageId, message.FromId, message.Content,
-                message.RoomId == DelegationsRoom ? "delegation" : "message"))
+                message.RoomId == DelegationsRoom ||
+                (message.FromKind == MessageEndpointKinds.Agent && delivery.HandlingMode == MessageDeliveryHandlingModes.Execute)
+                    ? "delegation" : "message"))
             .Take(limit).ToListAsync(ct);
 
         if (!OwnsLease(adapter, leaseId))
@@ -152,17 +155,34 @@ public sealed class ExternalAgentAdaptersController(
         return Ok(new AgentAdapterInboxResponse(items, items.Count == 0 ? after : items[^1].Sequence));
     }
 
-    /// <summary>Queues a text notification for another registered adapter in the same workspace.</summary>
+    /// <summary>Queues a text notification for an Agent in the same workspace.</summary>
     [HttpPost("messages")]
     [ProducesResponseType<AgentAdapterMessageReceipt>(StatusCodes.Status202Accepted)]
     public Task<IActionResult> Send([FromBody] SendAgentAdapterMessageRequest request, CancellationToken ct)
         => EnqueueAsync(request, MessageRoute, MessagesRoom, MessageIntents.Inform, ct);
 
-    /// <summary>Delegates a task to another adapter in the same workspace. Use the returned messageId to read its result.</summary>
+    /// <summary>Reads the native recipient's durable message acknowledgement.</summary>
+    [HttpGet("messages/{messageId}")]
+    [ProducesResponseType<AgentAdapterDeliveryReceipt>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ReadMessage(string messageId, Guid leaseId, CancellationToken ct)
+    {
+        await using var db = await databaseFactory.CreateDbContextAsync(ct);
+        var adapter = await FindAdapterAsync(db, ct);
+        if (adapter is null)
+            return Forbid();
+        if (!OwnsLease(adapter, leaseId))
+            return RejectedLease();
+        var delivery = await OwnedDelivery(db, adapter, messageId, MessagesRoom).SingleOrDefaultAsync(ct);
+        if (!OwnsLease(adapter, leaseId))
+            return RejectedLease();
+        return delivery is null ? NotFound() : Ok(new AgentAdapterDeliveryReceipt(messageId, delivery.TargetId, delivery.Status));
+    }
+
+    /// <summary>Delegates a task to an Agent in the same workspace. Use the returned messageId to read its result.</summary>
     [HttpPost("delegations")]
     [ProducesResponseType<AgentAdapterMessageReceipt>(StatusCodes.Status202Accepted)]
     public Task<IActionResult> Delegate([FromBody] SendAgentAdapterMessageRequest request, CancellationToken ct)
-        => EnqueueAsync(request, DelegationRoute, DelegationsRoom, MessageIntents.Ask, ct);
+        => EnqueueAsync(request, DelegationRoute, DelegationsRoom, MessageIntents.Delegate, ct);
 
     /// <summary>Reads the current state and any terminal result of a delegation owned by the caller.</summary>
     [HttpGet("delegations/{messageId}")]
@@ -176,21 +196,16 @@ public sealed class ExternalAgentAdaptersController(
         if (!OwnsLease(adapter, leaseId))
             return RejectedLease();
 
-        var receipt = await (
-            from message in Delegations(db, adapter.WorkspaceId, messageId)
-            where message.FromId == adapter.AgentId
-            join delivery in db.MessageDeliveries.AsNoTracking() on message.MessageId equals delivery.MessageId
-            where delivery.WorkspaceId == adapter.WorkspaceId && delivery.TargetKind == ExternalEndpointKind
-            join terminal in db.ExternalAgentDelegationResults.AsNoTracking()
-                on message.MessageId equals terminal.MessageId into results
-            from terminal in results.DefaultIfEmpty()
-            select new { delivery.TargetId, Result = terminal }).SingleOrDefaultAsync(ct);
+        var delivery = await OwnedDelivery(db, adapter, messageId, DelegationsRoom).SingleOrDefaultAsync(ct);
+        if (delivery is null)
+            return NotFound();
+        var result = delivery.TargetKind == MessageEndpointKinds.Agent
+            ? await ReadNativeResultAsync(db, delivery, ct)
+            : await db.ExternalAgentDelegationResults.AsNoTracking().Where(x => x.MessageId == messageId)
+                .Select(x => ToResult(x)).SingleOrDefaultAsync(ct);
         if (!OwnsLease(adapter, leaseId))
             return RejectedLease();
-        if (receipt is null)
-            return NotFound();
-        return Ok(new AgentAdapterDelegationReceipt(messageId, receipt.TargetId,
-            receipt.Result?.State ?? "queued", receipt.Result is { } result ? ToResult(result) : null));
+        return Ok(new AgentAdapterDelegationReceipt(messageId, delivery.TargetId, result?.State ?? "queued", result));
     }
 
     /// <summary>Records the designated recipient's immutable terminal result. Exact retries are idempotent.</summary>
@@ -213,11 +228,16 @@ public sealed class ExternalAgentAdaptersController(
         if (!OwnsLease(adapter, request.LeaseId))
             return RejectedLease();
 
-        var ownsTask = await Delegations(db, adapter.WorkspaceId, messageId).AnyAsync(message =>
-            db.MessageDeliveries.Any(delivery => delivery.MessageId == message.MessageId &&
-                delivery.WorkspaceId == adapter.WorkspaceId && delivery.TargetKind == ExternalEndpointKind &&
-                delivery.TargetId == adapter.AgentId), ct);
-        if (!ownsTask)
+        var task = await (
+            from message in db.RoomMessages.AsNoTracking()
+            join delivery in db.MessageDeliveries.AsNoTracking() on message.MessageId equals delivery.MessageId
+            where message.WorkspaceId == adapter.WorkspaceId && message.MessageId == messageId
+                && delivery.WorkspaceId == adapter.WorkspaceId && delivery.TargetKind == ExternalEndpointKind
+                && delivery.TargetId == adapter.AgentId &&
+                ((message.FromKind == ExternalEndpointKind && message.RoomId == DelegationsRoom) ||
+                (message.FromKind == MessageEndpointKinds.Agent && delivery.HandlingMode == MessageDeliveryHandlingModes.Execute))
+            select message).SingleOrDefaultAsync(ct);
+        if (task is null)
             return NotFound();
         if (!OwnsLease(adapter, request.LeaseId))
             return RejectedLease();
@@ -230,15 +250,78 @@ public sealed class ExternalAgentAdaptersController(
             ON CONFLICT (message_id) DO NOTHING
             """, ct);
         var result = await db.ExternalAgentDelegationResults.AsNoTracking().SingleAsync(x => x.MessageId == messageId, ct);
-        return result.State == request.State && result.TurnId == request.TurnId &&
-            result.Text == request.Text && result.Reason == request.Reason
-            ? Ok(ToResult(result))
-            : Conflict(new ExternalErrorResponse { Code = "agent.adapter_result_conflict" });
+        if (result.State != request.State || result.TurnId != request.TurnId ||
+            result.Text != request.Text || result.Reason != request.Reason)
+            return Conflict(new ExternalErrorResponse { Code = "agent.adapter_result_conflict" });
+        if (task.FromKind == MessageEndpointKinds.Agent)
+            await ProjectToNativeSenderAsync(task, adapter.AgentId, result, ct);
+        return Ok(ToResult(result));
     }
 
-    private static IQueryable<RoomMessageEntity> Delegations(PlatformDbContext db, string workspaceId, string messageId) =>
-        db.RoomMessages.AsNoTracking().Where(message => message.WorkspaceId == workspaceId &&
-            message.MessageId == messageId && message.FromKind == ExternalEndpointKind && message.RoomId == DelegationsRoom);
+    private static IQueryable<MessageDeliveryEntity> OwnedDelivery(PlatformDbContext db,
+        ExternalAgentAdapterEntity adapter, string messageId, string room) =>
+        from message in db.RoomMessages.AsNoTracking()
+        join delivery in db.MessageDeliveries.AsNoTracking() on message.MessageId equals delivery.MessageId
+        where message.WorkspaceId == adapter.WorkspaceId && message.MessageId == messageId
+            && message.FromId == adapter.AgentId && message.FromKind == ExternalEndpointKind && message.RoomId == room
+            && delivery.WorkspaceId == adapter.WorkspaceId &&
+            (delivery.TargetKind == ExternalEndpointKind || delivery.TargetKind == MessageEndpointKinds.Agent)
+        select delivery;
+
+    private static async Task<AgentAdapterDelegationResult?> ReadNativeResultAsync(
+        PlatformDbContext db, MessageDeliveryEntity delivery, CancellationToken ct)
+    {
+        var commands = await db.ChatExecutionCommands.AsNoTracking().Where(command =>
+            command.WorkspaceId == delivery.WorkspaceId && command.AgentInstanceId == delivery.TargetId
+            && command.MetadataJson != null && command.MetadataJson.Contains(delivery.DeliveryId))
+            .OrderByDescending(command => command.Id).Take(20).ToListAsync(ct);
+        var command = commands.Find(item =>
+        {
+            var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(item.MetadataJson!);
+            return metadata?.GetValueOrDefault(MessageFabricTurnMetadata.DeliveryId) == delivery.DeliveryId
+                && metadata.GetValueOrDefault(MessageFabricTurnMetadata.MessageId) == delivery.MessageId;
+        });
+        if (command?.TerminalSequence is not long sequence)
+            return delivery.Status is MessageDeliveryStatuses.DeadLetter or MessageDeliveryStatuses.Failed
+                ? new("failed", null, null, "native.delivery_failed", DateTimeOffset.FromUnixTimeMilliseconds(delivery.UpdatedAt))
+                : null;
+        var terminal = await db.ConversationEvents.AsNoTracking().SingleOrDefaultAsync(evt =>
+            evt.ConversationId == command.SessionId && evt.Sequence == sequence
+            && evt.CommandId == command.CommandId && evt.TurnId == command.TurnId, ct);
+        if (terminal is null)
+            return null;
+        var reportedAt = DateTimeOffset.FromUnixTimeMilliseconds(command.CompletedAt ?? delivery.UpdatedAt);
+        var presentation = ConversationTerminalMessageFormatter.Parse(terminal.Payload);
+        return command.Status switch
+        {
+            "succeeded" when presentation is { IsError: false } && !string.IsNullOrWhiteSpace(presentation.Content)
+                => new("completed", command.TurnId, presentation.Content, null, reportedAt),
+            "succeeded" or "failed" => new("failed", command.TurnId, null, "native.execution_failed", reportedAt),
+            "cancelled" => new("cancelled", command.TurnId, null, "native.execution_cancelled", reportedAt),
+            _ => null,
+        };
+    }
+
+    private Task<MessageSendResult> ProjectToNativeSenderAsync(RoomMessageEntity task, string senderId,
+        ExternalAgentDelegationResultEntity result, CancellationToken ct)
+    {
+        var replyId = ExternalApiIdempotencyStore.ComputeRequestHash(
+            $"external-delegation-result\n{task.WorkspaceId}\n{task.FromId}\n{task.MessageId}");
+        return messages.SendAsync(new MessageEnvelope
+        {
+            MessageId = replyId,
+            From = new MessageAddress { Kind = ExternalEndpointKind, Id = senderId, WorkspaceId = task.WorkspaceId },
+            To = [new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = task.FromId, WorkspaceId = task.WorkspaceId }],
+            RoomId = task.RoomId,
+            ConversationId = task.ConversationId,
+            ReplyToMessageId = task.MessageId,
+            CorrelationId = task.CorrelationId ?? task.MessageId,
+            Audience = MessageAudiences.Direct,
+            Visibility = MessageVisibilities.Private,
+            Content = result.Text ?? $"委派执行结果 {result.State} ({result.Reason})",
+            Metadata = new Dictionary<string, string> { [MessageDeliveryPolicy.IntentMetadataKey] = MessageIntents.ReportResult },
+        }, ct);
+    }
 
     private static AgentAdapterDelegationResult ToResult(ExternalAgentDelegationResultEntity result) =>
         new(result.State, result.TurnId, result.Text, result.Reason, DateTimeOffset.FromUnixTimeMilliseconds(result.ReportedAt));
@@ -279,10 +362,14 @@ public sealed class ExternalAgentAdaptersController(
                           && token.RevokedAtUtc == null && db.AppUsers.Any(u => u.UserId == token.OwnerUserId && u.IsEnabled)
                       select (DateTimeOffset?)token.ExpiresAtUtc;
         var expiry = await targets.SingleOrDefaultAsync(ct);
-        if (expiry is null || expiry <= now || !OwnsLease(adapter, request.LeaseId))
+        var externalTarget = expiry is not null && expiry > now;
+        var nativeTarget = !externalTarget && (await nativeAgents.ListAgentsAsync(adapter.WorkspaceId, ct))
+            .Any(agent => agent.AgentId == request.TargetAgentId && agent.IsEnabled && !agent.IsFrozen
+                && !string.IsNullOrEmpty(agent.MainSessionId));
+        if ((!externalTarget && !nativeTarget) || !OwnsLease(adapter, request.LeaseId))
         {
             await idempotency.ReleaseAsync(adapter.TokenId, "POST", route, key, CancellationToken.None);
-            return expiry is null || expiry <= now
+            return !externalTarget && !nativeTarget
                 ? NotFound(new ExternalErrorResponse { Code = "agent.adapter_target_unavailable" })
                 : RejectedLease();
         }
@@ -293,13 +380,21 @@ public sealed class ExternalAgentAdaptersController(
             {
                 MessageId = messageId,
                 From = new MessageAddress { Kind = ExternalEndpointKind, Id = adapter.AgentId, WorkspaceId = adapter.WorkspaceId },
-                To = [new MessageAddress { Kind = ExternalEndpointKind, Id = request.TargetAgentId, WorkspaceId = adapter.WorkspaceId }],
+                To = [new MessageAddress
+                {
+                    Kind = externalTarget ? ExternalEndpointKind : MessageEndpointKinds.Agent,
+                    Id = request.TargetAgentId, WorkspaceId = adapter.WorkspaceId,
+                }],
                 RoomId = room,
                 Audience = MessageAudiences.Direct,
                 Visibility = MessageVisibilities.Private,
                 Content = request.Text,
                 CorrelationId = messageId,
-                Metadata = new Dictionary<string, string> { ["intent"] = intent },
+                Metadata = new Dictionary<string, string>
+                {
+                    [MessageDeliveryPolicy.IntentMetadataKey] = intent,
+                    [MessageDeliveryPolicy.CanonicalTurnMetadataKey] = nativeTarget && room == DelegationsRoom ? "true" : "false",
+                },
             }, ct);
         }
         catch
@@ -341,12 +436,13 @@ public sealed class ExternalAgentAdaptersController(
 public sealed record RegisterAgentAdapterRequest(Guid? ReplacesLeaseId);
 public sealed record AgentAdapterLeaseRequest(Guid LeaseId);
 public sealed record AgentAdapterConnectionResponse(string WorkspaceId, string AgentId, Guid LeaseId, DateTimeOffset ExpiresAtUtc);
-public sealed record AgentAdapterDirectoryItem(string AgentId, string Name, bool Online);
+public sealed record AgentAdapterDirectoryItem(string AgentId, string Name, bool Online, string Kind);
 public sealed record AgentAdapterDirectoryResponse(IReadOnlyList<AgentAdapterDirectoryItem> Items, string? NextCursor);
 public sealed record AgentAdapterInboxMessage(long Sequence, string MessageId, string FromAgentId, string Text, string Kind);
 public sealed record AgentAdapterInboxResponse(IReadOnlyList<AgentAdapterInboxMessage> Items, long NextCursor);
 public sealed record SendAgentAdapterMessageRequest(Guid LeaseId, Guid OperationId, string TargetAgentId, string Text);
 public sealed record AgentAdapterMessageReceipt(Guid OperationId, string MessageId, string Status);
+public sealed record AgentAdapterDeliveryReceipt(string MessageId, string TargetAgentId, string Status);
 public sealed record SettleAgentAdapterDelegationRequest(Guid LeaseId, string State, string TurnId, string? Text, string? Reason);
 public sealed record AgentAdapterDelegationReceipt(string MessageId, string TargetAgentId, string State, AgentAdapterDelegationResult? Result);
-public sealed record AgentAdapterDelegationResult(string State, string TurnId, string? Text, string? Reason, DateTimeOffset ReportedAtUtc);
+public sealed record AgentAdapterDelegationResult(string State, string? TurnId, string? Text, string? Reason, DateTimeOffset ReportedAtUtc);

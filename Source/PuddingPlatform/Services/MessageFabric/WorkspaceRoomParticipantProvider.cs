@@ -7,10 +7,12 @@ namespace PuddingPlatform.Services.MessageFabric;
 public sealed class WorkspaceRoomParticipantProvider
 {
     private readonly IWorkspaceAgentCatalog _agentCatalog;
+    private readonly ExternalAgentDirectory? _externalAgents;
 
-    public WorkspaceRoomParticipantProvider(IWorkspaceAgentCatalog agentCatalog)
+    public WorkspaceRoomParticipantProvider(IWorkspaceAgentCatalog agentCatalog, ExternalAgentDirectory? externalAgents = null)
     {
         _agentCatalog = agentCatalog;
+        _externalAgents = externalAgents;
     }
 
     public async Task<IReadOnlyList<RoomParticipant>> GetParticipantsAsync(
@@ -22,11 +24,24 @@ public sealed class WorkspaceRoomParticipantProvider
     {
         var agents = await _agentCatalog.ListAgentsAsync(workspaceId, ct);
 
-        return WorkspaceRoomParticipantResolver.Resolve(
+        var participants = WorkspaceRoomParticipantResolver.Resolve(
             workspaceId,
             roomId,
             userId,
             userDisplayName,
             agents);
+        if (_externalAgents is null)
+            return participants;
+
+        var adapters = await _externalAgents.ListAsync(workspaceId, ct);
+        return [..participants, ..adapters.Select(adapter => new RoomParticipant
+        {
+            ParticipantId = adapter.AgentId,
+            RoomId = roomId,
+            Kind = MessageEndpointKinds.ExternalAgent,
+            EndpointId = adapter.AgentId,
+            DisplayName = adapter.Name,
+            Status = adapter.Online ? "available" : "offline",
+        })];
     }
 }

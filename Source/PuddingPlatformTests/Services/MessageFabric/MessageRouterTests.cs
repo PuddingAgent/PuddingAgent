@@ -7,6 +7,34 @@ namespace PuddingPlatformTests.Services.MessageFabric;
 public sealed class MessageRouterTests
 {
     [TestMethod]
+    [DataRow(MessageIntents.Inform, MessageDeliveryHandlingModes.Notify)]
+    [DataRow(MessageIntents.Delegate, MessageDeliveryHandlingModes.Execute)]
+    public async Task RouteAsync_DirectExternalAgent_PreservesIntent(string intent, string handlingMode)
+    {
+        var participants = Participants().Concat([new RoomParticipant
+        {
+            ParticipantId = "external-test",
+            RoomId = "room-default",
+            Kind = MessageEndpointKinds.ExternalAgent,
+            EndpointId = "external-test",
+            Status = "offline",
+        }]).ToArray();
+        var plan = await new MessageRouter().RouteAsync(new MessageEnvelope
+        {
+            RoomId = "room-default",
+            From = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "assistant", WorkspaceId = "default" },
+            To = [new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "external-test" }],
+            Audience = MessageAudiences.Direct,
+            Visibility = MessageVisibilities.Private,
+            Content = "probe",
+            Metadata = new Dictionary<string, string> { [MessageDeliveryPolicy.IntentMetadataKey] = intent },
+        }, participants);
+
+        Assert.AreEqual(MessageEndpointKinds.ExternalAgent, plan.Deliveries.Single().Target.Kind);
+        Assert.AreEqual(handlingMode, plan.Deliveries.Single().HandlingMode);
+    }
+
+    [TestMethod]
     public async Task RouteAsync_DirectToAgent_CreatesOneDelivery()
     {
         var router = new MessageRouter();

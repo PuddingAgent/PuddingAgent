@@ -29,10 +29,8 @@ public sealed class MessageRouter : IMessageRouter
             MessageId = envelope.MessageId,
             Target = target,
             Priority = envelope.Priority,
-            HandlingMode = string.Equals(
-                target.Kind,
-                MessageEndpointKinds.Agent,
-                StringComparison.OrdinalIgnoreCase)
+            HandlingMode = target.Kind.Equals(MessageEndpointKinds.Agent, StringComparison.OrdinalIgnoreCase)
+                || target.Kind == MessageEndpointKinds.ExternalAgent
                 ? handlingMode
                 : MessageDeliveryHandlingModes.Execute,
         }).ToList();
@@ -106,6 +104,12 @@ public sealed class MessageRouter : IMessageRouter
     {
         if (!string.Equals(target.Kind, MessageEndpointKinds.Agent, StringComparison.OrdinalIgnoreCase))
             return target;
+
+        var external = participants.FirstOrDefault(participant =>
+            participant.Kind == MessageEndpointKinds.ExternalAgent && participant.CanReceive
+            && string.Equals(participant.EndpointId, target.Id, StringComparison.Ordinal));
+        if (external is not null)
+            return target with { Kind = external.Kind, DisplayName = external.DisplayName };
 
         var matches = participants
             .Where(participant => string.Equals(participant.Kind, MessageEndpointKinds.Agent, StringComparison.OrdinalIgnoreCase))

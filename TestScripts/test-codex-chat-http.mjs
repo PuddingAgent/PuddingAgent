@@ -25,7 +25,7 @@ async function until(check) {
   assert.fail('Timed out waiting for Codex');
 }
 
-async function busIntegration(t, root, env, chat, chatPort) {
+async function busIntegration(t, root, env, chat, chatPort, modelPort, nativeRequests) {
   const dataRoot = join(root, 'pudding');
   await mkdir(join(dataRoot, 'config'), { recursive: true });
   await writeFile(join(dataRoot, 'config', 'system.json'), JSON.stringify({
@@ -37,7 +37,8 @@ async function busIntegration(t, root, env, chat, chatPort) {
   const baseUrl = 'http://127.0.0.1:' + port;
   const core = spawn('dotnet', [coreDll, '--data-root=' + dataRoot, '--urls=' + baseUrl], {
     cwd: dirname(coreDll), windowsHide: true,
-    env: { ...process.env, ASPNETCORE_URLS: baseUrl, Pudding__P2P__Port: String(port), PUDDING_DATA_ROOT: dataRoot },
+    env: { ...process.env, ASPNETCORE_URLS: baseUrl, Pudding__P2P__Port: String(port), PUDDING_DATA_ROOT: dataRoot,
+      Pudding__ControllerEndpoint: baseUrl },
     stdio: ['ignore', 'ignore', 'ignore'],
   });
   t.after(() => { core.kill(); });
@@ -53,11 +54,27 @@ async function busIntegration(t, root, env, chat, chatPort) {
     assert.equal(response.status, status, path);
     return response.json().catch(() => null);
   }
-  const { token } = await api('/api/bootstrap/admin', 'POST', {
-    userId: 'bus-test-admin',
-    email: 'bus-test@example.invalid',
-    password: 'FixtureA9-' + randomUUID(),
+  const { token } = await api('/api/bootstrap/complete', 'POST', {
+    admin: { userId: 'admin', email: 'bus-test@example.invalid', password: 'FixtureA9-' + randomUUID() },
+    provider: {
+      mode: 'custom', providerId: 'bus-fixture', name: 'Bus fixture',
+      baseUrl: 'http://127.0.0.1:' + modelPort + '/v1', apiKey: 'fixture-key',
+      chatModelId: 'bus-fixture', chatModelProtocol: 'responses',
+    },
   }, 200);
+  await api('/api/llm/providers/bus-fixture/models/bus-fixture', 'PUT', {
+    modelId: 'bus-fixture', name: 'Bus fixture', protocol: 'responses',
+    maxContextTokens: 131072, maxOutputTokens: 2048, isDefault: true,
+  }, 200, token);
+  const nativeList = await api('/api/workspaces/default/agents', 'GET', null, 200, token);
+  const native = nativeList.find(item => item.preferredProviderId === 'bus-fixture' && item.isEnabled && !item.isFrozen);
+  assert.ok(native?.agentId);
+  await api('/api/workspaces/default/agents/' + encodeURIComponent(native.agentId), 'PUT',
+    { ...native, selectedCapabilityIds: ['cap-send-message', 'cap-list-agents'] }, 200, token);
+  const nativeSession = await api('/api/sessions/main', 'POST', {
+    workspaceId: 'default', principalKind: 'agent', principalId: native.agentId, agentTemplateId: native.sourceTemplateId,
+  }, 200, token);
+  const nativeHistory = () => api('/api/sessions/' + nativeSession.sessionId + '/messages?limit=50', 'GET', null, 200, token);
   const doc = await api('/agent-adapters/docs/agent-adapters-v1.json', 'GET', null, 200);
   assert.ok(doc.paths['/api/external/v1/agent-adapters/delegations/{messageId}/result'].put);
   const adminVersion = process.env.PUDDING_BUS_TEST_ADMIN_VERSION;
@@ -93,7 +110,9 @@ async function busIntegration(t, root, env, chat, chatPort) {
     }
     const status = await command(sender, 'status');
     if (!status.expiresAtUtc) return false;
-    return (await command(sender, 'agents')).filter(agent => agent.online).length === 2;
+    const agents = await command(sender, 'agents');
+    return agents.filter(agent => agent.kind === 'adapter' && agent.online).length === 2 &&
+      agents.some(agent => agent.agentId === native.agentId && agent.kind === 'native');
   });
 
   const first = '总线文本 ' + randomUUID();
@@ -141,17 +160,76 @@ async function busIntegration(t, root, env, chat, chatPort) {
   const replay = await api(delegation + '/result', 'PUT', { ...fields, leaseId: recipientIdentity.leaseId }, 200, recipientIdentity.token);
   assert.deepEqual(replay, result.result);
   await api(delegation + '/result', 'PUT', { ...fields, text: 'conflicting', leaseId: recipientIdentity.leaseId }, 409, recipientIdentity.token);
+
+  const inbound = await send(sender, native, 'send', '发给内置 Agent 的消息 ' + randomUUID());
+  await until(async () => (await command(sender, 'delivery', inbound.messageId)).status === 'delivered');
+  const nativeWork = await send(sender, native, 'delegate', '内置 Agent 委派验收 ' + randomUUID());
+  const nativeReceipt = await until(async () => {
+    const receipt = await command(sender, 'result', nativeWork.messageId);
+    return receipt.state !== 'queued' && receipt;
+  });
+  assert.equal(nativeReceipt.state, 'completed');
+  assert.equal(nativeReceipt.result.text, '本机测试回复');
+  assert.ok(nativeReceipt.result.turnId);
+
+  const nativeWorkApi = '/api/workspaces/default/agents/' + encodeURIComponent(native.agentId) + '/work';
+  for (const intent of ['inform', 'delegate']) {
+    const marker = 'native-outbound-' + randomUUID();
+    const text = '内置 Agent 发出 ' + randomUUID();
+    nativeRequests.set(marker, { args: { to: 'agent:' + sender.agentId, content: text, intent }, called: false });
+    await api(nativeWorkApi, 'POST', { operationId: randomUUID(), text: marker + ' Call send_message.' }, 200, token);
+    const targetHistory = await until(async () => {
+      const current = await history(sender);
+      return current.messages.some(message => message.role === 'user' && message.text.endsWith(text)) && current;
+    });
+    const userItem = targetHistory.messages.find(message => message.role === 'user' && message.text.endsWith(text));
+    assert.match(userItem.text, intent === 'delegate' ? /委派任务/ : /通知/);
+    if (intent === 'delegate') {
+      const taskTurn = await until(async () => {
+        const current = await history(sender);
+        return current.turns.some(turn => turn.id === userItem.turnId && turn.status === 'completed');
+      });
+      assert.ok(taskTurn);
+      await until(async () => (await nativeHistory()).items.some(message => {
+        try {
+          const envelope = JSON.parse(message.content);
+          return envelope.from?.id === sender.agentId && envelope.metadata?.intent === 'report_result'
+            && !!envelope.reply_to_message_id && envelope.context?.text === '本机测试回复';
+        } catch { return false; }
+      }));
+    }
+    nativeRequests.delete(marker);
+  }
 }
 
 test('local HTTP with isolated Codex state and a loopback model fixture', { timeout: 90000 }, async t => {
   const parent = resolve('.work/chat-http');
   await mkdir(parent, { recursive: true });
   const root = await mkdtemp(join(parent, 'integration-'));
+  const nativeRequests = new Map();
   const fixture = createServer(async (req, res) => {
-    req.resume();
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
     if (!req.url.endsWith('/responses')) { res.writeHead(404).end(); return; }
     await delay(500); // leave enough time to enqueue another message during a turn
     const id = randomUUID();
+    const content = Buffer.concat(chunks).toString('utf8');
+    const tool = [...nativeRequests].find(([marker]) => content.includes(marker))?.[1];
+    if (tool && !tool.called) {
+      tool.called = true;
+      const call = { id: 'fc_' + id, call_id: 'call_' + id, type: 'function_call', name: 'send_message',
+        arguments: JSON.stringify(tool.args), status: 'completed' };
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      for (const event of [
+        { type: 'response.created', response: { id } },
+        { type: 'response.output_item.added', item: { ...call, arguments: '', status: 'in_progress' }, output_index: 0 },
+        { type: 'response.function_call_arguments.delta', delta: call.arguments, item_id: call.id, output_index: 0 },
+        { type: 'response.output_item.done', item: call, output_index: 0 },
+        { type: 'response.completed', response: { id, status: 'completed', output: [call] } },
+      ]) res.write('data: ' + JSON.stringify(event) + '\n\n');
+      res.end();
+      return;
+    }
     const item = { id: 'm_' + id, type: 'message', role: 'assistant', status: 'completed',
       content: [{ type: 'output_text', text: '本机测试回复', annotations: [] }] };
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -188,10 +266,16 @@ test('local HTTP with isolated Codex state and a loopback model fixture', { time
     });
     const { token, baseUrl } = JSON.parse(await readFile(join(root, 'CodexChatHttp', 'connection-' + port + '.json')));
     async function http(path, method = 'GET', body, status = 200, extra = {}) {
-      const res = await fetch(baseUrl + path, {
+      const request = {
         method, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', ...extra },
         body: body === undefined ? undefined : JSON.stringify(body),
-      });
+      };
+      let res = await fetch(baseUrl + path, request);
+      for (let retry = 0; retry < 4 && status === 200 && method === 'GET' && path.includes('/messages') && res.status === 502; retry++) {
+        await res.body.cancel();
+        await delay(100);
+        res = await fetch(baseUrl + path, request);
+      }
       const data = await res.json();
       assert.equal(res.status, status, path + ' ' + JSON.stringify(data));
       return data;
@@ -264,6 +348,6 @@ test('local HTTP with isolated Codex state and a loopback model fixture', { time
     });
     assert.equal(history.messages.filter(m => m.text === '接续同一会话').length, 1);
   });
-  if (coreDll) await t.test('Pudding bus: two Codex adapters register, subscribe, exchange messages and complete delegated work',
-    async subtest => busIntegration(subtest, root, env, observer, observerPort));
+  if (coreDll) await t.test('Pudding bus: Codex and native Agent exchange messages and settle delegated work',
+    async subtest => busIntegration(subtest, root, env, observer, observerPort, modelPort, nativeRequests));
 });

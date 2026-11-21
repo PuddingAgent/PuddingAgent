@@ -656,6 +656,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddScoped<MessageFabricStore>();
         builder.Services.AddScoped<IMessageInbox>(sp => sp.GetRequiredService<MessageFabricStore>());
         builder.Services.AddScoped<WorkspaceRoomParticipantProvider>();
+        builder.Services.AddSingleton<ExternalAgentDirectory>();
         builder.Services.AddScoped<MessageQueueProjectionService>();
         builder.Services.AddScoped<IMessageSystem, MessageSystem>();
         builder.Services.AddScoped<TaskPlanStore>();

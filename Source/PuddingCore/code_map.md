@@ -83,7 +83,7 @@
 | `AgentReplyImageDirective.cs` | 图片指令解析 | `AgentReplyImageDirective` | `AgentReplyImageGenerationDirective.cs` | — |
 | `AgentReplyImageGenerationDirective.cs` | ImageGeneration fence 解析 | `AgentReplyImageGenerationDirective` | `AgentReplyImageDirective.cs` | 含 StripBlocks |
 | `AgentReplyVoiceDirective.cs` | 语音指令解析 | `AgentReplyVoiceDirective` | `AgentReplyImageDirective.cs` | — |
-| `MessageFabricModels.cs` | 消息结构模型 | `MessageFabricModels` | `ChatMessage.cs` | — |
+| `MessageFabricModels.cs` | 消息结构模型 | `MessageEndpointKinds` · `MessageDeliveryPolicy` | `ChatMessage.cs` | 外部适配器有独立目标类型，由订阅进程消费 |
 | `MemoryMaintenancePlanModels.cs` | 记忆维护计划模型（12KB） | `MemoryMaintenancePlanModels` | `MemoryWriteCommandModels.cs` | — |
 | `MemoryWriteCommandModels.cs` | 记忆写入命令模型（10KB） | `MemoryWriteCommandModels` | `MemoryMaintenancePlanModels.cs` | — |
 | `TaskPlanningModels.cs` | 任务规划模型（12KB） | `TaskPlanningModels` | `ToolCall.cs` | — |
