@@ -1,4 +1,4 @@
-# 依赖方向门禁的常驻登记校验。
+﻿# 依赖方向门禁的常驻登记校验。
 #
 # 背景：根 Directory.Build.targets 的 EnforceReferenceDirection 是 **opt-in** 的——
 # 不声明 AllowedProjectReferences 就完全不检查。这带来一个天然漏洞：
