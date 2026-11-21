@@ -157,6 +157,34 @@ public sealed class SubAgentLatencyAggregatorTests
         Assert.AreEqual(90.0, breakdown.CacheHitPct, "命中率 = hit / (hit + miss)，不用 total 作分母");
     }
 
+    // 2026-11-21：真实 run 的 llm.completed 里存在 payload.cache_hit_tokens = null。
+    // JsonElement.TryGetInt64 对 null 元素不返回 false，而是经 JsonDocument.TryGetValue
+    // 抛 InvalidOperationException（"requires an element of type 'Number'"），
+    // 于是启动时的中断-run 恢复整轮失败。null 必须按 0 计，其余字段照常累加。
+    [TestMethod]
+    public void Aggregator_TreatsNullNumericPayloadAsZero()
+    {
+        var aggregator = new SubAgentLatencyAggregator();
+        foreach (var line in new[]
+        {
+            """{"eventType":"subagent.llm.started","timestamp":"2026-01-01T00:00:00+00:00"}""",
+            """{"eventType":"subagent.llm.completed","timestamp":"2026-01-01T00:00:01+00:00","payload":{"prompt_tokens":1000,"completion_tokens":100,"cache_hit_tokens":null,"cache_miss_tokens":100,"total_tokens":1100}}""",
+            """{"eventType":"subagent.tool.completed","timestamp":"2026-01-01T00:00:01.500+00:00","payload":{"duration_ms":null}}""",
+        })
+        {
+            aggregator.AddEventLine(line);
+        }
+
+        var breakdown = aggregator.Build("run_null");
+
+        Assert.AreEqual(1000, breakdown.PromptTokens, "非 null 字段照常累加");
+        Assert.AreEqual(100, breakdown.CompletionTokens);
+        Assert.AreEqual(0, breakdown.CacheHitTokens, "null 按 0 计，不得抛异常");
+        Assert.AreEqual(100, breakdown.CacheMissTokens);
+        Assert.AreEqual(1, breakdown.ToolCallCount, "null duration_ms 仍算一次工具调用");
+        Assert.AreEqual(0, breakdown.ToolDurationMs, "null duration_ms 按 0 计");
+    }
+
     // 2026-11-16：单次 LLM 耗时分位。只有总额无法区分“整体偏慢”与“单次卡死”（§46.3）。
     [TestMethod]
     public void Aggregator_ComputesLlmPercentiles_NearestRank()

@@ -129,15 +129,12 @@ public sealed class SubAgentLatencyAggregator
     private static long ReadDurationMs(JsonElement root)
     {
         if (root.TryGetProperty("payload", out var payload)
-            && payload.TryGetProperty("duration_ms", out var nested)
-            && nested.TryGetInt64(out var nestedValue))
+            && TryReadLong(payload, "duration_ms", out var nestedValue))
         {
             return nestedValue;
         }
 
-        return root.TryGetProperty("duration_ms", out var flat) && flat.TryGetInt64(out var flatValue)
-            ? flatValue
-            : 0L;
+        return TryReadLong(root, "duration_ms", out var flatValue) ? flatValue : 0L;
     }
 
     /// <summary>从 llm.completed 的 payload 累加 token 与缓存命中。字段缺失按 0 计。</summary>
@@ -154,7 +151,26 @@ public sealed class SubAgentLatencyAggregator
     }
 
     private static long ReadLong(JsonElement payload, string name) =>
-        payload.TryGetProperty(name, out var value) && value.TryGetInt64(out var parsed) ? parsed : 0L;
+        TryReadLong(payload, name, out var parsed) ? parsed : 0L;
+
+    /// <summary>
+    /// 读取数值字段；缺失 / null / 非数字一律按 0 计。
+    ///
+    /// <para>
+    /// 必须先判 <see cref="JsonValueKind.Number"/>：<c>JsonElement.TryGetInt64</c> 对 null 元素
+    /// **不返回 false**，而是经 <c>JsonDocument.TryGetValue</c> 抛 <c>InvalidOperationException</c>
+    /// （"requires an element of type 'Number'"）。方法名里的 Try 具有误导性。
+    /// 真实 run 的 <c>subagent.llm.completed</c> 就存在 null 的 <c>cache_hit_tokens</c>，
+    /// 曾使启动时的中断-run 恢复整轮抛异常，中断记录因此永远停在非终态。
+    /// </para>
+    /// </summary>
+    private static bool TryReadLong(JsonElement container, string name, out long value)
+    {
+        value = 0L;
+        return container.TryGetProperty(name, out var element)
+            && element.ValueKind == JsonValueKind.Number
+            && element.TryGetInt64(out value);
+    }
 
     /// <summary>
     /// 最近秩分位（nearest-rank）：排序后取 ceil(p/100 × n) 位（1 基）。

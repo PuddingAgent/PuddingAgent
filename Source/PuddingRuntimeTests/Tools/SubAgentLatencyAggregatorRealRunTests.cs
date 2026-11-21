@@ -104,6 +104,11 @@ public sealed class SubAgentLatencyAggregatorRealRunTests
             $"cache_pct={actual.CacheHitPct} prompt={actual.PromptTokens} total={actual.TotalTokens}");
     }
 
+    // 与产品代码同一条纪律：TryGetInt64 对 null 元素会抛，必须先判 ValueKind。
     private static long ReadLong(JsonElement payload, string name) =>
-        payload.TryGetProperty(name, out var value) && value.TryGetInt64(out var parsed) ? parsed : 0L;
+        payload.TryGetProperty(name, out var value)
+            && value.ValueKind == JsonValueKind.Number
+            && value.TryGetInt64(out var parsed)
+                ? parsed
+                : 0L;
 }
