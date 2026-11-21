@@ -19,7 +19,6 @@ import {
   Drawer,
   Empty,
   Popover,
-  Progress,
   Space,
   Tag,
   Timeline,
@@ -97,6 +96,11 @@ const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
  * 明确提示「同步未就绪」，而不是继续把未知渲染成 0（2026-10-06 诊断）。
  */
 const SUBAGENT_SYNC_STALL_MS = 20_000;
+/**
+ * 超过这个时长仍未结束的运行，提示「仍在运行」。
+ * 24h 是平台硬 deadline，不是工作进度，所以用固定时长提醒而不是百分比。
+ */
+const LONG_RUNNING_NOTICE_MS = 30 * 60 * 1000;
 /** 事件未送达时任何计数指标都是**未知**，不得用 0 冒充测量值。 */
 const UNKNOWN_METRIC = '—';
 /** 该运行视图是否只是「存在性占位」，过程与用量都还没被事件证实。 */
@@ -372,6 +376,15 @@ const useStyles = createStyles(() => ({
     marginTop: 12,
     paddingTop: 10,
     borderTop: '1px solid var(--pudding-chat-border)',
+  },
+  elapsedLine: {
+    marginTop: 10,
+    fontSize: 12,
+    color: 'var(--pudding-chat-text-subtle)',
+  },
+  /** 接近或超过运行硬 deadline 时的告警色（原 Progress 的 status='exception'）。 */
+  elapsedException: {
+    color: 'var(--ant-color-error)',
   },
   identifierRow: {
     display: 'flex',
@@ -910,10 +923,16 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
         ? (runArchive.totalDurationMs as number)
         : elapsedMs;
     const timeoutMs = (run.timeoutSeconds ?? 0) * 1000;
-    const timeoutPercent =
-      timeoutMs > 0 && activeStatuses.has(run.status)
-        ? Math.min(100, Math.round((elapsedMs / timeoutMs) * 100))
-        : undefined;
+    // 缺陷 B（2026-11-21）：`timeoutSeconds` 是**平台/父级折算的硬 deadline**，
+    // 不是这次运行的计划预算。后端 SubAgentManager.NormalizeExecutionBudget 取
+    // min(spawn 请求的 timeout_seconds, 父级剩余 deadline)，未显式指定时落到平台上限
+    // 24h —— 实测 run.json 与事件里就是 `timeout_seconds: 86383`（≈24h）。
+    // 拿它当分母画百分比，只会得到「1m 15s / 1437m 37s」这种 0.08% 的假进度，
+    // 让人误判「运行卡住了」。因此这里只报已耗时；「接近/超过时限转红」的能力
+    // 保留为 `deadlineException`（原 `status='exception'` 的语义）。
+    const deadlineExceeded = timeoutMs > 0 && elapsedMs >= timeoutMs;
+    const deadlineException =
+      deadlineExceeded || (timeoutMs > 0 && elapsedMs >= timeoutMs * 0.9);
     // 事件未送达的占位：过程与用量都是未知。归档**已加载**时以归档为准（终态才有）。
     // 注意：活动运行也会把 runArchive 置成 { runId, status: 'idle' }，
     // 因此判据必须是 loaded，而不是「runId 相同」。
@@ -999,18 +1018,38 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
                 </Text>
               </div>
             </div>
-            {timeoutPercent !== undefined && (
-              <Progress
-                style={{ marginTop: 10 }}
-                size="small"
-                percent={timeoutPercent}
-                status={timeoutPercent >= 90 ? 'exception' : 'active'}
-                format={() =>
-                  `${formatDuration(elapsedMs)} / ${formatDuration(timeoutMs)}`
-                }
-              />
+            {activeStatuses.has(run.status) && (
+              <div
+                className={cx(
+                  styles.elapsedLine,
+                  deadlineException && styles.elapsedException,
+                )}
+                data-testid="subagent-elapsed-line"
+              >
+                {deadlineExceeded ? '已超时限 ' : '已运行 '}
+                {formatDuration(elapsedMs)}
+                {!deadlineExceeded && elapsedMs >= LONG_RUNNING_NOTICE_MS
+                  ? ' · 仍在运行'
+                  : ''}
+              </div>
             )}
-            {run.error && <div className={styles.error}>{run.error}</div>}
+            {/* 缺陷 A（2026-11-21）：红色运行级错误横幅只在**终态错误**渲染。
+                工具失败是工具级事实（run.tools[i].error，时间线内的工具行展示），
+                不得升级为「这次运行失败了」。 */}
+            {run.error && errorStatuses.has(run.status) && (
+              <div className={styles.error} data-testid="subagent-run-error">
+                {run.error}
+              </div>
+            )}
+            {/* 运行中出现工具失败时只用中性提示表达次数，不用 error 样式。 */}
+            {!errorStatuses.has(run.status) && !!run.failedToolCount && (
+              <div
+                className={styles.resultHint}
+                data-testid="subagent-tool-failure-hint"
+              >
+                本次运行已有 {run.failedToolCount} 次工具失败（详情见时间线）
+              </div>
+            )}
           </div>
 
           <div className={styles.sectionTitle}>运行时间线</div>

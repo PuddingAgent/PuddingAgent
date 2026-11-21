@@ -479,4 +479,144 @@ describe('SubAgentActivityDock', () => {
     expect(screen.getByText('开始执行 shell')).toBeTruthy();
     expect(screen.getByText('Call ID: call-archive')).toBeTruthy();
   });
+
+  // ── 缺陷 A（2026-11-21）：运行中的工具失败不得渲染成运行级错误横幅 ──
+  it('does not escalate a tool failure into a running-level error banner', () => {
+    render(
+      <SubAgentActivityDock
+        sessionId="session"
+        inspectorOpen
+        onInspectorOpenChange={jest.fn()}
+        selectedRunId="run-toolfail"
+        onSelectedRunIdChange={jest.fn()}
+        subAgentCards={{
+          toolfail: {
+            turnId: 'toolfail',
+            runId: 'run-toolfail',
+            subSessionId: 'session-sub-toolfail',
+            parentSessionId: 'session',
+            status: 'running',
+            phase: 'tool',
+            taskSummary: 'inspect the workspace',
+            currentRound: 3,
+            toolCount: 36,
+            failedToolCount: 2,
+            // 旧 reducer 会把工具错误写进运行级 error；这里刻意注入它，
+            // 断言横幅的判据是 **运行状态**，而不是 error 字段是否为空。
+            error: 'exit code 1',
+            spawnedAt: Date.parse('2026-07-19T00:00:00.000Z'),
+            lastActivityAt: Date.parse('2026-07-19T00:00:09.000Z'),
+          },
+        }}
+      />,
+    );
+
+    expect(screen.queryByTestId('subagent-run-error')).toBeNull();
+    expect(screen.queryByText('exit code 1')).toBeNull();
+    const hint = screen.getByTestId('subagent-tool-failure-hint');
+    expect(hint.textContent).toContain('本次运行已有 2 次工具失败');
+    // 中性提示不得使用 error 样式。
+    expect(hint.className).toBe('resultHint');
+  });
+
+  it('renders the running-level error banner for a terminal failure', () => {
+    render(
+      <SubAgentActivityDock
+        sessionId="session"
+        inspectorOpen
+        onInspectorOpenChange={jest.fn()}
+        selectedRunId="run-crashed"
+        onSelectedRunIdChange={jest.fn()}
+        subAgentCards={{
+          crashed: {
+            turnId: 'crashed',
+            runId: 'run-crashed',
+            subSessionId: 'session-sub-crashed',
+            parentSessionId: 'session',
+            status: 'failed',
+            phase: 'completed',
+            taskSummary: 'crashed task',
+            toolCount: 5,
+            failedToolCount: 1,
+            error: 'spawn failed: provider unreachable',
+            spawnedAt: Date.parse('2026-07-19T00:00:00.000Z'),
+            completedAt: Date.parse('2026-07-19T00:00:09.000Z'),
+            lastActivityAt: Date.parse('2026-07-19T00:00:09.000Z'),
+          },
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByTestId('subagent-run-error').textContent,
+    ).toBe('spawn failed: provider unreachable');
+    // 终态错误已经由红色横幅表达，不再重复中性提示。
+    expect(screen.queryByTestId('subagent-tool-failure-hint')).toBeNull();
+  });
+
+  // ── 缺陷 B（2026-11-21）：24h 硬 deadline 不得画成百分比进度 ──
+  it('reports elapsed time instead of a percent bar for a 24h deadline', () => {
+    render(
+      <SubAgentActivityDock
+        sessionId="session"
+        inspectorOpen
+        onInspectorOpenChange={jest.fn()}
+        selectedRunId="run-deadline"
+        onSelectedRunIdChange={jest.fn()}
+        subAgentCards={{
+          deadline: {
+            turnId: 'deadline',
+            runId: 'run-deadline',
+            subSessionId: 'session-sub-deadline',
+            parentSessionId: 'session',
+            status: 'running',
+            phase: 'round',
+            taskSummary: 'compare claude vs gpt token usage',
+            currentRound: 4,
+            maxRounds: 600,
+            // 生产实测值：run.json / 事件里都是 `timeout_seconds: 86383`（≈24h）。
+            timeoutSeconds: 86383,
+            spawnedAt: Date.parse('2026-07-18T23:58:55.000Z'),
+            lastActivityAt: Date.parse('2026-07-19T00:00:09.000Z'),
+          },
+        }}
+      />,
+    );
+
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    const elapsed = screen.getByTestId('subagent-elapsed-line');
+    expect(elapsed.textContent).toBe('已运行 1m 15s');
+    expect(elapsed.className).toBe('elapsedLine');
+  });
+
+  it('keeps the near-deadline alert and the long-running hint', () => {
+    render(
+      <SubAgentActivityDock
+        sessionId="session"
+        inspectorOpen
+        onInspectorOpenChange={jest.fn()}
+        selectedRunId="run-longrun"
+        onSelectedRunIdChange={jest.fn()}
+        subAgentCards={{
+          longrun: {
+            turnId: 'longrun',
+            runId: 'run-longrun',
+            subSessionId: 'session-sub-longrun',
+            parentSessionId: 'session',
+            status: 'running',
+            phase: 'round',
+            taskSummary: 'long task',
+            timeoutSeconds: 86383,
+            // 22h elapsed / 24h deadline → 超过 90%，属于接近时限。
+            spawnedAt: Date.parse('2026-07-18T02:00:10.000Z'),
+            lastActivityAt: Date.parse('2026-07-19T00:00:09.000Z'),
+          },
+        }}
+      />,
+    );
+
+    const elapsed = screen.getByTestId('subagent-elapsed-line');
+    expect(elapsed.textContent).toBe('已运行 1320m 0s · 仍在运行');
+    expect(elapsed.className).toContain('elapsedException');
+  });
 });

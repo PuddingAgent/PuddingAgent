@@ -708,7 +708,11 @@ export function reduceSubAgentRunEvent(
         status: 'running',
         phase: 'round',
         toolDurationMs: next.toolDurationMs + durationMs,
-        error: failed ? (tool.error ?? next.error) : next.error,
+        // 缺陷 A（2026-11-21）：工具失败只写进 tool.error，**不得**升级为 run 级 error。
+        // 旧实现 `error: failed ? (tool.error ?? next.error) : next.error` 把一次
+        // `exit code 1` 的工具失败写成了「这次运行失败了」，检查器顶部于是同时出现
+        // 「运行中」徽标与红色错误横幅。run.error 只接受 run 级事件
+        // （subagent.run.failed / budget_exhausted / cancelled / timed_out / interrupted）。
         tools: [
           ...next.tools.filter((item) => item.toolCallId !== toolCallId),
           tool,

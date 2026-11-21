@@ -488,3 +488,75 @@ describe('subAgentReducer — 运行事实的同步状态', () => {
     expect(Object.keys(merged).sort()).toEqual(['run-local', 'run-snapshot']);
   });
 });
+
+// ── 缺陷 A（2026-11-21）：工具失败不得污染运行级错误 ──
+// 实机截图：检查器顶部徽标「运行中」，同屏却有红色横幅 `exit code 1`，
+// 卡片下方写着「工具: 36 / 失败 2」。根因就是 subagent.tool.failed 把
+// tool.error 写进了 run.error。工具级事实属于工具行，运行级错误只接受 run 级事件。
+describe('subAgentReducer — 工具失败与运行级错误分层', () => {
+  const runningWithFailedTool = () => {
+    const created = reduceSubAgentRunEvent(
+      {},
+      {
+        eventId: 'event-created-toolfail',
+        type: 'subagent.run.created',
+        occurredAt: '2026-11-21T00:00:00Z',
+        run_id: 'run-toolfail',
+        sub_agent_id: 'sub-toolfail',
+        task_summary: 'inspect the workspace',
+      },
+    );
+    return reduceSubAgentRunEvent(created, {
+      eventId: 'event-tool-failed',
+      type: 'subagent.tool.failed',
+      occurredAt: '2026-11-21T00:00:05Z',
+      run_id: 'run-toolfail',
+      sub_agent_id: 'sub-toolfail',
+      round: 1,
+      tool_call_id: 'call-shell',
+      tool_name: 'shell',
+      duration_ms: 1200,
+      error: 'exit code 1',
+    });
+  };
+
+  it('工具失败只落到工具行，run 仍为 running 且 run.error 保持为空', () => {
+    const state = runningWithFailedTool();
+    const run = state['run-toolfail'];
+
+    expect(run.status).toBe('running');
+    expect(run.error).toBeUndefined();
+    expect(
+      run.tools.find((tool) => tool.toolCallId === 'call-shell'),
+    ).toMatchObject({
+      toolName: 'shell',
+      status: 'failed',
+      error: 'exit code 1',
+    });
+
+    // 浮坞只会拿到「失败次数」（中性提示用），拿不到可当横幅用的错误文本。
+    const card = projectSubAgentRunsToCards(state)['sa-run-toolfail'];
+    expect(card.status).toBe('running');
+    expect(card.failedToolCount).toBe(1);
+    expect(card.error).toBeUndefined();
+  });
+
+  it('run 级失败事件仍然写入 run.error（不得修成永不报错）', () => {
+    const failed = reduceSubAgentRunEvent(runningWithFailedTool(), {
+      eventId: 'event-run-failed',
+      type: 'subagent.run.failed',
+      occurredAt: '2026-11-21T00:00:09Z',
+      run_id: 'run-toolfail',
+      sub_agent_id: 'sub-toolfail',
+      error: 'runner crashed after tool failure',
+    });
+
+    expect(failed['run-toolfail']).toMatchObject({
+      status: 'failed',
+      error: 'runner crashed after tool failure',
+    });
+    expect(
+      projectSubAgentRunsToCards(failed)['sa-run-toolfail'].error,
+    ).toBe('runner crashed after tool failure');
+  });
+});
