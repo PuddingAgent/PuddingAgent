@@ -1306,7 +1306,11 @@ public sealed class SubAgentManager : ISubAgentManager
         {
             lines.Add(string.Empty);
             lines.Add(SubAgentResultErrorSeparator);
-            lines.Add(BuildSubAgentResultErrorDiagnostic(toolFailureCount, toolFailureSummary, error));
+            lines.Add(BuildSubAgentResultErrorDiagnostic(
+                toolFailureCount,
+                toolFailureSummary,
+                error,
+                status.Equals("completed", StringComparison.OrdinalIgnoreCase)));
         }
 
         return string.Join("\n", lines);
@@ -1351,9 +1355,14 @@ public sealed class SubAgentManager : ISubAgentManager
     /// <summary>
     /// 错误附注。缺失项必须显式写出（未记录失败摘要 / 未记录错误文本），
     /// category 只按手里的事实判定：有工具失败计数就是 tool_failure，否则 unknown。
+    /// <para>
+    /// 「运行已经正常完成、只是有工具失败」这一种组合下 run 级错误本来就不存在，
+    /// 说「未记录错误文本」会让读者以为信息丢了 —— 此时明确写「运行本身未报错」。
+    /// </para>
     /// </summary>
+    /// <param name="runCompleted">该 run 的状态是否为 completed（判定口径由调用方决定，此处不重复判断）。</param>
     private static string BuildSubAgentResultErrorDiagnostic(
-        int toolFailureCount, string? toolFailureSummary, string? error)
+        int toolFailureCount, string? toolFailureSummary, string? error, bool runCompleted)
     {
         var category = toolFailureCount > 0 ? "tool_failure" : "unknown";
         var failureSummary = string.IsNullOrWhiteSpace(toolFailureSummary)
@@ -1364,7 +1373,9 @@ public sealed class SubAgentManager : ISubAgentManager
             : error.Trim();
 
         var sentence = toolFailureCount > 0
-            ? $"工具调用失败 {toolFailureCount} 次，最近一次：{failureSummary}；最后一次错误：{errorText}（{SubAgentResultNoStackTraceText}）"
+            ? string.IsNullOrWhiteSpace(error) && runCompleted
+                ? $"工具调用失败 {toolFailureCount} 次，最近一次：{failureSummary}；运行本身未报错（{SubAgentResultNoStackTraceText}）"
+                : $"工具调用失败 {toolFailureCount} 次，最近一次：{failureSummary}；最后一次错误：{errorText}（{SubAgentResultNoStackTraceText}）"
             : $"运行未正常结束，最后一次错误：{errorText}（{SubAgentResultNoStackTraceText}）";
 
         return $"⚠ 错误诊断（{category}）：{sentence}";

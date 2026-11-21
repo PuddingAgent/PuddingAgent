@@ -196,6 +196,56 @@ public sealed class SubAgentResultBodyTests
         StringAssert.Contains(BuildBody("completed", DeliveryReply, null, elapsedMs: null), "用时 未记录");
     }
 
+    // ── 判据 9：运行已完成 + 只有工具失败 → 说「运行本身未报错」，而非「未记录」 ──
+    [TestMethod]
+    public void BuildSubAgentResultBody_CompletedWithToolFailureAndNoRunError_SaysRunItselfDidNotFail()
+    {
+        var body = BuildBody(
+            "completed",
+            reply: DeliveryReply,
+            error: null,
+            toolFailureCount: 1,
+            toolFailureSummary: ShellError);
+
+        StringAssert.Contains(body, "运行本身未报错");
+        StringAssert.Contains(body, "错误诊断（tool_failure）", "category 仍按工具失败计数判定");
+        StringAssert.Contains(body, ShellError, "最近一次失败摘要不得丢");
+        StringAssert.Contains(body, "无堆栈", "堆栈口径不得弱化");
+        Assert.IsFalse(
+            body.Contains("未记录错误文本", StringComparison.Ordinal),
+            "运行已完成时 run 级错误本来就存在，不该说「未记录」\n" + body);
+    }
+
+    [TestMethod]
+    public void BuildSubAgentResultBody_FailedWithSameInput_StillSaysMissingErrorText()
+    {
+        var body = BuildBody(
+            "failed",
+            reply: DeliveryReply,
+            error: null,
+            toolFailureCount: 1,
+            toolFailureSummary: ShellError);
+
+        StringAssert.Contains(body, "最后一次错误：未记录错误文本");
+        Assert.IsFalse(
+            body.Contains("运行本身未报错", StringComparison.Ordinal),
+            "failed 不得声称运行未报错\n" + body);
+    }
+
+    [TestMethod]
+    public void BuildSubAgentResultBody_CompletedWithRunError_KeepsErrorText()
+    {
+        var body = BuildBody(
+            "completed",
+            reply: DeliveryReply,
+            error: "boom",
+            toolFailureCount: 1,
+            toolFailureSummary: ShellError);
+
+        StringAssert.Contains(body, "最后一次错误：boom");
+        Assert.IsFalse(body.Contains("运行本身未报错", StringComparison.Ordinal), body);
+    }
+
     // ── 全文金样本：锁死三段式版式（改格式必须先改这里，不能静默漂移） ────
     [TestMethod]
     public void BuildSubAgentResultBody_FailedWithMissingDiagnostics_MatchesExactLayout()
