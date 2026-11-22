@@ -316,7 +316,7 @@ messageId 原地更新与三源去重。**同一条回复只允许一张卡片**
 |------|------------|
 | `src/pages/workspace/index.tsx` | 工作空间列表；进入操作直接打开带 `workspaceId` 的 Chat，新建后进入管理设置，不再加载 2D Studio |
 | `src/utils/workspaceNavigation.ts` | 工作空间入口在最近访问或唯一工作空间时解析到 Chat；不再生成 Studio 深链 |
-| `public/assets/` | 只保留 Web 运行时实际需要的静态资源；`images/me.png` 是当前用户的 Pudding 默认头像，Agent 精灵素材已迁出到 `../PuddingDesktop/Assets/AgentSprites/` |
+| `public/assets/` | 只保留 Web 运行时实际需要的静态资源；`images/me.png` 是当前用户的 Pudding 默认头像，Agent 精灵素材已迁出到 `Source/PuddingDesktop.WpfArchive/Assets/AgentSprites/` |
 
 ## 工作区 Agent 编辑工作台（2026-10-01）
 

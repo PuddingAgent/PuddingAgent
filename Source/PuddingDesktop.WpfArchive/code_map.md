@@ -121,7 +121,7 @@
 
 | 目录 | 用途 |
 |------|------|
-| `Assets/AgentSprites/` | 角色精灵源素材（来自 Web Workspace Studio）；不进入 Desktop 发布包，仅由原生客户端显式引用 |
+| `Assets/AgentSprites/` | 角色精灵源素材（来自 Web Workspace Studio）；不进入 Desktop 发布包，当前仓内无代码引用方 |
 
 ## 存储 & 配置
 
