@@ -331,7 +331,7 @@ messageId 原地更新与三源去重。**同一条回复只允许一张卡片**
 | `src/pages/workspace/[id]/MarkdownPreview.tsx` | 只读 Markdown 预览：不启用 `rehype-raw`，文档内 HTML 按文本处理、不执行脚本；链接新窗口 + `noopener` |
 | `src/pages/workspace/[id]/workbenchStyles.ts` | 工作台专用样式与响应式断点（≥1440 近全屏、1024–1439 单列、<1024 顶部横向分区导航 + 文档选择器）。刻意与 `agent-template-settings/styles.ts` 分离，全局模板抽屉布局不受影响 |
 
-2026-10-01 复核修正（依运行态截图）：抽屉宽度改为**按分区分模式**——只有「角色与 Prompt」用 `94vw` 近全屏，其余分区收窄到 1040px，消除右侧 30–45% 的无内容死区；护栏三个数字改用 `fieldGrid`（`minmax(240px,280px)` 自动换行）而非各占一整行；模型与记忆分区加 `modelSectionHost` 作用域，把 antd 选择器长模型名从换行改为单行省略；身份栏补回可见关闭按钮（原先把抽屉头隐藏后只剩「返回列表」）；无修改时保存按钮降级为「已保存」次要按钮（长期停在灰紫禁用态会被误读成不能保存）；底部说明收敛为一行，
+抽屉宽度**按分区分模式**：只有「角色与 Prompt」用 `94vw` 近全屏，其余分区收窄到 1040px，右侧不再有 30–45% 的无内容死区；护栏三个数字用 `fieldGrid`（`minmax(240px,280px)` 自动换行），不各占一整行；模型与记忆分区由 `modelSectionHost` 作用域承载，antd 选择器的长模型名单行省略；身份栏保留可见关闭按钮（抽屉头隐藏时只剩「返回列表」会被误读成唯一出口）；无修改时保存按钮呈「已保存」次要按钮（长期停在灰紫禁用态会被误读成不能保存）；底部说明收敛为一行，
 避免与应用底部状态栏挤在同一行。另修 `CapabilitySkillSection.tsx` 的 `GrantChip`：能力目录里 `name` 常等于 `toolName`，无条件追加 code 会渲染成 `search_tools search_tools`，现在两者相同则只渲染一次。
 
 可验证性：`promptDocuments.test.ts`（目录、脏值、错误归类、查找）、`useFormSnapshot.test.tsx`（全量草稿）、`WorkspaceAgentSettingsDrawer.test.tsx`（编辑/新增的完整保存载荷、跨分区与空文档保留、保存状态、关闭确认）。
@@ -394,7 +394,7 @@ messageId 原地更新与三源去重。**同一条回复只允许一张卡片**
 | `src/pages/chat/hooks/useSessionEventReplay.ts` | bootstrap 重放与游标准备合同（见下「关键语义」） |
 | `src/pages/chat/hooks/useSessionEventProjection.ts` | replay 透传与会话域过滤；压缩 started/completed/failed/skipped 在主消息所有权过滤前路由到独立生命周期，按事件 ID 去重 |
 | `src/pages/chat/hooks/useSessionEventConnection.ts` | 显式游标、统一开流入口与 410 分流；`connectionState`（idle/connecting/connected/reconnecting）由 SSE onOpen/onClose 驱动，供健康期停轮询（见下「关键语义」） |
-| `src/services/platform/api.ts` | `subscribeSessionEvents` **任何** `afterSequence`（含 0）都下发 `Last-Event-ID`（S3，2026-09-19）——此前只在 `>0` 时发送，使「显式 0（有意全量回放）」与「无游标（客户端没有权威位置）」在协议上不可区分，而无游标已被服务端改为只推实时帧（fail-safe） |
+| `src/services/platform/api.ts` | `subscribeSessionEvents` **任何** `afterSequence`（含 0）都下发 `Last-Event-ID`：只认 `>0` 会让「显式 0（有意全量回放）」与「无游标（客户端没有权威位置）」在协议上不可区分，而无游标按协议只推实时帧（fail-safe） |
 | `PuddingRuntime/Services/ContextWindowManager.cs` | Auto 压缩三态携带同一 compactionId（failed 此前漏发）；见 `PuddingRuntime/code_map.md` 同主题章节 |
 
 **关键语义**

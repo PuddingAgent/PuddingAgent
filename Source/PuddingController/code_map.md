@@ -58,7 +58,7 @@
    **优先取认证上下文**（`ClaimTypes.NameIdentifier` → `User.Identity.Name`，2026-09-20 发现 Y 加固），请求体自填姓名仅作回退
 
 - `InMemoryApprovalService.cs`
-  审批服务——**进程内 `ConcurrentDictionary`** 实现（2026-09-20 起名副其实）。此前硬依赖**从未注册**的 `IConnectionMultiplexer`，使四个 `/api/approval/*` 端点在已认证请求下恒 500（死接口），现已改为进程内存储并在组合根注册。状态迁移经 `TryUpdate` 比较交换 ⇒ 并发确认只有一次成功；确认码生成/校
+  审批服务——**进程内 `ConcurrentDictionary`** 实现，在组合根注册。⛔ 不得依赖 `IConnectionMultiplexer`：该依赖在本仓**无注册**，硬依赖会让四个 `/api/approval/*` 端点在已认证请求下恒 500（死接口）。状态迁移经 `TryUpdate` 比较交换 ⇒ 并发确认只有一次成功；确认码生成/校
   验委托 `PuddingCode.Platform.ApprovalCode`；确认码失败累计达 `ApprovalCode.MaxFailedAttempts`（10）即把审批单置 `Expired` 作废，**作废后即使提交正确确认码也不放行**。过期记录在写入/查询路径**惰性回收**（避免字典随运行时长单调增长）。代价：状态不跨进程共享（当前单进程部署可接受）
 
 ## 测试

@@ -476,7 +476,7 @@
 - `CodeSummaryTool` 现在只有两个调用点引用它（`CodeSummaryDocCommentReader.ExtractDocCommentFast` /
   `.ExtractDocComment`），其余逻辑（摘要文本 `BuildSummaryText`、JSON 投影）仍在工具内。
 - **这段搬动起初没有测试覆盖（2026-10-29 08:15 已补，见 `CodeSummaryToolCharacterizationTests.ExistingFileWithXmlDocComment_EmitsDocumentationField`）**：4 条 `code_summary` 特征测试里符号文件并不存在，
-  `docComment` 走 null 分支。所以本次安全性靠「代码原样搬运 + 调用点唯一 + 4 条测试保持绿」，
+  `docComment` 走 null 分支。因此这段搬动的安全性只靠「代码原样搬运 + 调用点唯一 + 4 条测试保持绿」，
   而不是靠新断言 —— 将来抽 `ICodeSummaryService` 时应补一条"文件存在且带 `///` 注释"的用例。
 ### 代码智能：summary 已抽成服务（2026-10-29）
 
@@ -506,7 +506,7 @@
 - **2026-10-30 修（两处静默截断，ADR-089 §8.3 hollow negation）**：
   - `TotalFileCount` 曾被赋成「已截断后的条数」（`csFiles.Count`，而 `csFiles` 已被 `Take(MaxFilesPerDir)` 削过）
     ⇒ `ProjectMapTool` 那条 `node.TotalFileCount > MaxFilesPerDir` 的 `(showing 50/N files)` 分支**永远是死分支**，
-    调用方以为看到了全部文件。现改为 `allFiles.Length`（真实总数），截断由「`Files.Count < TotalFileCount`」可见。
+    调用方以为看到了全部文件。总数取 `allFiles.Length`（真实总数）；截断由「`Files.Count < TotalFileCount`」可见。
     回归守卫：`ProjectMapToolCharacterizationTests.MoreFilesThanLimit_ReportsTrueTotalInText`。
   - `MapFileEntry` 曾丢掉 `TotalTypeCount` ⇒ `workspace_open` 的 map 视图里，一个含 12 个类型的文件只列 3 个且**无任何截断提示**，
     读起来就是「这个文件只有 3 个类型」。现 `MapFileEntry(Name, Types, TotalTypeCount)`，
@@ -550,7 +550,7 @@
   `error=Deployment rejected: TimeoutException`。此前归因“复制段坏死”**是错的**：
   拷贝、重启、回滚三者都正常工作，坏的是候选包自身起不来。
 - 测试口径同步：`WorkspaceSearchToolCompositionTests` 原先用 `AddPuddingRuntime()` 组装，
-  **与生产组合根不同源**，所以全绿而宿主崩。现改为复用 `AddPuddingRetrievalPort()`，
+  **与生产组合根不同源**会让全绿掩盖宿主崩。组合根复用 `AddPuddingRetrievalPort()`，
   并新增 `ToolActivatesFromSharedCompositionExtension`（`ValidateOnBuild=true` 下解析工具本身）。
 - 残留缺口：宿主侧**是否调用**该扩展仍无测试看守（需宿主级组合冒烟），当前靠部署验收兜底。
 

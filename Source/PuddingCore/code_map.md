@@ -52,7 +52,7 @@
 | `Platform/RsiEventTimestamp.cs` | RSI-S3 时间戳契约 | `RsiEventTimestamp` | `Platform/IRsiTrajectoryDataAccess.cs` | 细节见后注 |
 
 **`Platform/ApprovalCode.cs`**：待审单确认码的生成与校验——PuddingController 审批流程的**唯一凭据**（`GET /api/approval/*` 只下发脱敏投影）。`Generate()` 用 CSPRNG 取 8 位十六进制（**32 bit**，对照 `ApprovalId` 的 128 bit）；`Matches()` 用 `CryptographicOperations.FixedTimeEquals` 恒时比较。
-2026-09-20 从 `InMemoryApprovalService` 抽出（原为 `Guid…[..8]` + 逐字节短路比较），使其可独立单测。`MaxFailedAttempts`=10：确认码失败累计达上限即把审批单置 `Expired` 作废（迭代 #16 实现——因审批服务已在迭代 #15 改为进程内实现，才首次可端到端测试）
+`ApprovalCode` 独立于 `InMemoryApprovalService`，只做凭据生成与恒时比较，故可独立单测；比较不走「取前 8 位 + 逐字节短路」。`MaxFailedAttempts`=10：确认码失败累计达上限即把审批单置 `Expired` 作废（端到端可测的前提是审批服务为进程内实现，无外部依赖）
 **`Platform/IRsiTrajectoryDataAccess.cs`**：RSI-S3 轨迹数据访问接缝；`RsiEventRowWithTurn`（TurnId/Type/Payload/Sequence/OccurredAtRaw）——**不复用** `ConversationEventRow`（后者无 TurnId / 无 OccurredAt，**类型层面**装不下 B1 的 `RsiToolStep`）。查询**只走已索引键 `(TurnId, Type)`**；
 ⛔ 禁用 `CommandId` 形状：`conversation_events` 上 `command_id` **无任何索引**（4 条索引为 ConversationId+Sequence / EventId / TurnId+Type / CommittedAt），按它过滤即全表扫描且随事件总量线性增长
 **`Platform/RsiEventTimestamp.cs`**：RSI-S3 时间戳契约：`DateTimeOffset.TryParse(raw, **InvariantCulture**, **AssumeUniversal**, out v) → v.ToUniversalTime()`。⛔ 禁用 `DateTimeStyles.None`（无偏移串会按本机时区解释 —— 本机 UTC+8 恰好错 8 小时，且**不会有断言失败**）；
@@ -294,7 +294,7 @@ S1a/S1b 已落地（`f577add` / `7cfc198`）。抽象在 PuddingCore，实现全
 
 ⚠️ **两条可执行边界**（不是口头约定）：① 契约层不得依赖任何具体供应商；② 契约层不得出现 `Rsi`/`Goal`/`ToolApproval` 等领域标识。二者由 `TestScripts/test-operators-architecture-gates.ps1` 强制，**已并入主门禁，违规即便主门禁非零**。
 
-> 注：本次同步补登了此前一直缺失的 `PuddingCode.Classification` 契约（Note 该命名空间与目录名 `PuddingCore` 不一致，是真实命名而非笔误）。
+> 注：`PuddingCode.Classification` 契约的命名空间与目录名 `PuddingCore` 不一致，是真实命名而非笔误。
 
 | 文件 | 用途 |
 |------|------|
