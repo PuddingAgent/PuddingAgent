@@ -121,7 +121,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/Pudding.DesktopSurface.Browser/` | 浏览器侧 Desktop 表面与目标注册表桥；不含 UI 代码，可脱 UI 测试 | [code_map](Source/Pudding.DesktopSurface.Browser/code_map.md) |
 | `Source/PuddingDesktop.Foundation/` | BCL-only 布局/外观偏好、启动面板文案与设计令牌（字号/圆角/颜色）+ XAML 字面量与 {ThemeResource} 键集门禁 | [code_map](Source/PuddingDesktop.Foundation/code_map.md) |
 | `Source/PuddingDesktop.WpfArchive/` | 旧 WPF 入口/验证基线；无 UI 的启动器与协议源文件由 WinUI 项目链接编译 | [code_map](Source/PuddingDesktop.WpfArchive/code_map.md) |
-| `Source/Pudding.Rpc.IpcProbe/` | 真实端点技术探针（Named Pipe / h2c 服务端替身，退出码 0/1） | — |
+| `Source/Pudding.Rpc.IpcProbe/` | 真实端点技术探针（Named Pipe / h2c 服务端替身，退出码 0/1） | [code_map](Source/Pudding.Rpc.IpcProbe/code_map.md) |
 | `Source/PuddingCodeIndex/` | 索引组件：契约与变更捕获管线及范围注册；不得引用 `PuddingCodeIntelligence` | [code_map](Source/PuddingCodeIndex/code_map.md) |
 | `Source/PuddingDomain.Contracts/` | 跨层共享值类型（BCL-only）：`CodeSymbolKind` / `CodeRelationKind`；命名空间刻意沿用旧名（零调用方改动） | [code_map](Source/PuddingDomain.Contracts/code_map.md) |
 | `Source/PuddingRetrieval.Contracts/` | 跨 provider 检索契约（请求 / 结果 / 覆盖声明 / 能力矩阵）；只依赖 `PuddingDomain.Contracts` | [code_map](Source/PuddingRetrieval.Contracts/code_map.md) |
@@ -145,7 +145,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingLlmUsage.Storage/` | 余额采样的 SQLite 存储适配器 | [code_map](Source/PuddingLlmUsage.Storage/code_map.md) |
 | `Source/PuddingLlmUsage/` | LLM 余额消耗判定（叶子，零依赖）：观测→区间状态机（消耗/充值/持平/缺口/无法判定）+ 窗口汇总；测试工程独立运行 | [code_map](Source/PuddingLlmUsage/code_map.md) |
 | `Source/PuddingRetrievalEval/` | 检索评测组件（叶子，只依赖 `ISearchProbe` 端口） | [code_map](Source/PuddingRetrievalEval/code_map.md) |
-| `Source/PuddingRetrievalEvalProbe/` | 检索评测探针入口：语料构建 + 混合检索可复现测量；`--mode production` 直驱生产 `IRetrievalPort`，快照与环境冻结 | — |
+| `Source/PuddingRetrievalEvalProbe/` | 检索评测探针入口：语料构建 + 混合检索可复现测量；`--mode production` 直驱生产 `IRetrievalPort`，快照与环境冻结 | [code_map](Source/PuddingRetrievalEvalProbe/code_map.md) |
 | `Source/PuddingBrowser.Abstractions/` | Browser 契约（驱动与 Agent 工具共用） | [code_map](Source/PuddingBrowser.Abstractions/code_map.md) |
 | `Source/PuddingBrowser.Protocol/` | Bridge 线协议 | [code_map](Source/PuddingBrowser.Protocol/code_map.md) |
 | `Source/PuddingBrowser.WebView2/` | WebView2 Driver（DOM/元素/页面操作） | [code_map](Source/PuddingBrowser.WebView2/code_map.md) |
