@@ -17,7 +17,7 @@ Windows Computer Use 平台组件。依赖方向：Windows → Automation → Co
 | `WindowsDpiEnforcer.cs` | 同步线程 Per-Monitor V2 作用域并恢复 | `WindowsDpiEnforcer` | `WindowsDesktopInput.cs` | 进程 DPI 声明只允许显式调用；加载程序集不改变宿主 DPI |
 | `WindowsInputSimulator.cs` | 图像点映射与鼠标派发，并在实际落点复核授权窗口根 | `WindowsInputSimulator`、`ClickResolution`、`ClickOutcome` | `WindowsMonitorEnumerator.cs` | 落点归属检查与分析窗口评分必须分开，混用会放行错窗口 |
 | `WindowsKeyboardSimulator.cs` | Unicode 文本、单键与组合键派发 | `WindowsKeyboardSimulator`、`VirtualKey` | `Win32InputPlatform.cs` | — |
-| `WindowsWindowManager.cs` | 窗口枚举、几何、前台控制与窗口命中查询 | `WindowsWindowManager`、`WindowInfo` | `WindowsInputSimulator.cs` | — |
+| `WindowsWindowManager.cs` | 顶层窗口的枚举与几何查询 | `WindowsWindowManager`、`WindowInfo` | `WindowsInputSimulator.cs` | — |
 
 测试入口：[WindowsTests](../PuddingComputer.WindowsTests/code_map.md)。
 

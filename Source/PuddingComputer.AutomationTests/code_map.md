@@ -6,7 +6,7 @@
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `ComputerActionMatrixTests.cs` | 动作矩阵：12 动作 × 2 后端全组合与空串语义 | `ComputerActionMatrixTests` | `ComputerActionMatrix` | 把 IsSupported 里 Drag 改为 true 则 2 条红（`Drag` 与 `SupportedBackend`） |
-| `ComputerCoordinateMapperTests.cs` | 坐标换算：一对一、半尺寸、双倍缩放与负原点副屏 | `ComputerCoordinateMapperTests` | `ComputerCoordinateMapper` | 去掉「采集方式优先」则 `Capture_mode_wins_even_if_the_flag_lies` 红 |
+| `ComputerCoordinateMapperTests.cs` | 图内坐标到屏幕坐标的换算回归 | `ComputerCoordinateMapperTests` | `ComputerCoordinateMapper` | 去掉「采集方式优先」则 `Capture_mode_wins_even_if_the_flag_lies` 红 |
 | `ComputerReceiptEvaluatorTests.cs` | 回执归约六种情况表与「只有 Blocked 可重试」 | `ComputerReceiptEvaluatorTests` | `ComputerReceiptEvaluator` | 部分提交从 Failed 改为 Dispatched 则 `Partial_input_is_failed_not_dispatched` 红 |
 
 ## 测试数字的来源

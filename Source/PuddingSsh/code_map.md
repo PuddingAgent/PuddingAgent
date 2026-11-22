@@ -57,12 +57,12 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | `Execution/SshIdentityOwner.cs` | 身份材料的所有权状态机（L2） | `SshIdentityOwner`、`SshIdentityOwnership` | — | （见下「关键语义」） |
 | `Execution/SshResourceLease.cs` | 单次操作的资源记账（L1/L2） | `SshResourceLease`、`SshCleanupOutcome` | `SshOperationCoordinator` | 业务计数与资源计数分离；`RegisterWork` 调度前登记、义务清零且集合为空才 `ResourcesCompleted`；有挂起工作不释放准入槽（除非隔离区原子预留成功）；身份只在此刻之后释放 |
 | `Execution/SshOperationLifetime.cs` | 单次操作的**时间与终止事实**（ADR-096 D2） | （见下「关键语义」） | `SshOperationCoordinator` | 预算在受理时算一次；阶段只拿剩余额度；到期同时检查单调剩余额度 |
-| `Execution/SshOperationCoordinator.cs` | `ISshClient` 实现：准入排队、deadline、凭据、建连、执行/传输、释放、停止 | （见下「关键语义」） | — | 执行与传输共用同一套准入/围栏/租约/关闭预算/隔离区；同步入口在有界 worker 上 |
-| `Transport/SshNetTransportFactory.cs` | 建连：密钥、认证方法、默认拒绝的主机密钥回调 | `SshNetTransportFactory` | `SshTrustSnapshot` | `RetryAttempts=1`（库默认 10）、`MaxSessions=1`（库默认 10）、`Timeout` 由 deadline 决定；回调在 `ConnectAsync` 之前安装；加密私钥 ⇒ `ssh.passphrase_required` |
+| `Execution/SshOperationCoordinator.cs` | 一次操作独占一条连接的准入与执行编排 | （见下「关键语义」） | — | 执行与传输共用同一套准入/围栏/租约/关闭预算/隔离区；同步入口在有界 worker 上 |
+| `Transport/SshNetTransportFactory.cs` | SSH 建连与默认拒绝的主机密钥校验 | `SshNetTransportFactory` | `SshTrustSnapshot` | `RetryAttempts=1`（库默认 10）、`MaxSessions=1`（库默认 10）、`Timeout` 由 deadline 决定；回调在 `ConnectAsync` 之前安装；加密私钥 ⇒ `ssh.passphrase_required` |
 | `Contracts/SshTransferPorts.cs` | 传输会话与 SFTP 通道端口（切片 B） | `ISshTransferSession`、`ISshSftpChannel`、`SshTransferCapabilities`、`SshTransferOutcome` | — | 能力必须**实测**；不支持即 `ssh.transfer_unsupported`；清理失败必须报告残留 |
 | `Transport/SshSftpChannel.cs` | SSH.NET 的 SFTP 通道（切片 B） | `SshSftpChannel` | `SshSftpTransferSession` | 排他创建、标准/posix rename、realpath（ChangeDirectory+WorkingDirectory）、64 KiB 流式复制与超限中止 |
 | `Transport/SshSftpTransferSession.cs`（复制循环 + 所有权回滚 + 带预算释放） | 传输会话与发布语义（切片 B） | `SshSftpTransferSession`、`SshTransferLimitExceededException`、`CopyAsync` | — | 上传/下载共用逐次字节上限；**只有本次成功创建的文件才回滚删除**（创建结果未知不删）；Fail=排他创建原子占位；Overwrite=临时文件+posix-rename；清理由实测能力支撑 |
-| `Transport/SshNetTransportSession.cs` | 独占连接的 Exec、退出证据、终止与释放 | `SshNetTransportSession` | `SshOperationCoordinator` | 取消/超时对 exec channel 发 TERM 后关连接；无退出码/信号 ⇒ `execution_state=unknown`；释放路径不抛新错误覆盖业务结果 |
+| `Transport/SshNetTransportSession.cs` | 独占连接会话的执行与单一关闭状态机 | `SshNetTransportSession` | `SshOperationCoordinator` | 取消/超时对 exec channel 发 TERM 后关连接；无退出码/信号 ⇒ `execution_state=unknown`；释放路径不抛新错误覆盖业务结果 |
 
 **关键语义**
 
@@ -151,7 +151,7 @@ identity 文件名解析（禁止 `..`/绝对路径/symlink 逃逸）、主机�
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `Source/PuddingSshTests/` | 289 个用例覆盖协议语义与 S4 边界断言 | `—` | `Source/PuddingSsh/code_map.md` | 多处变异取红；改协议语义前必须先跑它 |
-| `Source/PuddingSshTests/SshOperationCoordinatorFaultMatrixTests.cs` | 假传输故障矩阵：准入、队列满、取消与建连失败 | `SshOperationCoordinatorFaultMatrixTests` | `SshOperationCoordinator` | 每主机 2 与 Core 8 的准入数、`ssh.busy` 由它钉住 |
+| `Source/PuddingSshTests/SshOperationCoordinatorFaultMatrixTests.cs` | 假传输下的准入与建连故障矩阵回归 | `SshOperationCoordinatorFaultMatrixTests` | `SshOperationCoordinator` | 每主机 2 与 Core 8 的准入数、`ssh.busy` 由它钉住 |
 | `Source/PuddingSshTests/Fixtures/` | 真实 OpenSSH 产物：明文与哈希 known_hosts、`@revoked` 变体 | `—` | `SshKnownHostsParser` | 期望值必须来自 OpenSSH 而非本组件 |
 | `TestScripts/ssh-probe/make-known-hosts-fixtures.sh` | known_hosts fixture 生成器 | `—` | `Source/PuddingSshTests/Fixtures/` | 生成的 derived 记录必须标注来源，否则无法复核 |
 | `Source/PuddingSsh.Probe/` | 真实协议探针 24 个场景 | `—` | `TestScripts/ssh-probe/run-ssh-probe.ps1` | — |

@@ -23,7 +23,7 @@
 |---|---|---|---|---|
 | `GitWildcard.cs` | git `wildmatch` 的等价实现 | `GitWildcard` | `IgnoreRule.cs` | `*` 与 `?` 不跨 `/`；非边界 `**` 必须退化为 `*`；未闭合 `[` 判不匹配 |
 | `PathText.cs` | 分隔符归一与相对路径判定 | `PathText` | `WorkspacePathFilter.cs` | — |
-| `IgnoreRule.cs` | 一条已解析规则：取反、目录专属、锚定与基准目录 | `IgnoreRule` | `IgnoreFileParser.cs` | — |
+| `IgnoreRule.cs` | 一条已解析忽略规则的判定语义 | `IgnoreRule` | `IgnoreFileParser.cs` | — |
 | `IgnoreFileParser.cs` | .gitignore 的行级语义解析 | `IgnoreFileParser` | `IgnoreRule.cs` | 行尾空格要裁剪但转义空格保留；行首空格有意义 |
 | `IgnoreStack.cs` | 忽略栈：祖先目录剪枝优先，后命中者胜出 | `IgnoreStack` | `GitIgnoreFileLoader.cs` | 父目录被排除时取反救不回 |
 | `PathNoiseRules.cs` | 名字级噪声名单的 D2 canonical 定义 | `PathNoiseRules` | `WorkspacePathFilter.cs` | 绝对路径必须先折算再调 `IsNoisePathBelow`，否则宿主自身 `%TEMP%` 的 `temp` 段会命中 |
@@ -48,7 +48,7 @@
 | `IgnoreStackTests.cs` | 忽略栈的优先级逐条锁 | `IgnoreStackTests` | `IgnoreStack.cs` | — |
 | `GitIgnoreFileLoaderTests.cs` | 忽略文件装载与作用域 | `GitIgnoreFileLoaderTests` | `GitIgnoreFileLoader.cs` | — |
 | `PathNoiseRulesTests.cs` | 噪声名单的段名与大小写行为 | `PathNoiseRulesTests` | `PathNoiseRules.cs` | — |
-| `ComponentBoundaryTests.cs` | 零引用、判定链无 `System.IO`、叶子不 `using Pudding*` | `ComponentBoundaryTests` | `PuddingPathFiltering.csproj` | 判定链一旦引入 `System.IO` 必须取红 |
+| `ComponentBoundaryTests.cs` | 组件边界引用闭包的回归 | `ComponentBoundaryTests` | `PuddingPathFiltering.csproj` | 判定链一旦引入 `System.IO` 必须取红 |
 
 ### 关键语义
 

@@ -19,7 +19,7 @@ Home Assistant 的 **REST 叶子组件**：把「读状态 / 查历史 / 调动�
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
-| `Contracts/HaContracts.cs` | 实例、状态、动作请求/结果、分页视图的不可变合同 | `HaInstance`、`HaState`、`HaStateView`、`HaStatePage`、`HaServiceCall` | `HaDomainPolicy` | `Token` 标 `[JsonIgnore]` 且 `ToString()` 掩码；`HaStateView.Name` 恒填 `friendly_name` |
+| `Contracts/HaContracts.cs` | Home Assistant 的不可变数据合同 | `HaInstance`、`HaState`、`HaStateView`、`HaStatePage`、`HaServiceCall` | `HaDomainPolicy` | `Token` 标 `[JsonIgnore]` 且 `ToString()` 掩码；`HaStateView.Name` 恒填 `friendly_name` |
 | `Policy/HaDomainPolicy.cs` | 三档域策略：永久拒绝 / 默认允许 / 需 Admin 显式放开 | `HaDomainPolicy.Decide`、`HaDomainDecision` | `HaContracts` | 永久黑名单**不可**被 opt-in 解除；未知域仅在已 opt-in 时放行 |
 | `Policy/HaOutputBudget.cs` | 状态筛选、投影与字节预算 | `HaOutputBudget.Project/NormalizeLimit/ResolveName/ResolveDeviceClass/Measure` | `HaContracts` | 先按 domain/实体/device_class/名称过滤→按 entity_id 排序→游标→投影→按条回退；截断必须回报 `total/returned/truncated/nextAfter`（total 为过滤后全集，不随游标变） |
 | `Policy/HaHistoryBudget.cs` | 历史响应的结构化裁剪 | `HaHistoryBudget.Trim`、`HaHistoryTrim` | `HaContracts` | 裁剪结果**始终是合法 JSON**；按 entity→state 保序；回报丢弃计数 |
@@ -45,8 +45,8 @@ Home Assistant 的 **REST 叶子组件**：把「读状态 / 查历史 / 调动�
 |---|---|---|---|---|
 | `…/ComponentBoundaryTests.cs` | S4 边界断言：引用闭包只允许 BCL + `System.Text.Json`，**含控制组**（故意植入禁引用必须被检出） | — | — | — |
 | `…/HaDomainPolicyTests.cs` | 三档决策矩阵；永久黑名单写入 opt-in 后仍被拒（10 条 DataRow）；未知域仅在 opt-in 时放行 | — | — | — |
-| `…/HaOutputBudgetTests.cs` | 限额归一、域/实体过滤优先级、截断标志、attributes 默认剥离、**`friendly_name` 恒带**、畸形名称不误判、字节预算回退 | — | — | — |
-| `…/HaHistoryBudgetTests.cs` | 未超预算原样返回、超预算仍可解析、保序与丢弃计数、单实体前缀裁剪、非数组根不改写、极小预算仍合法 | — | — | — |
+| `…/HaOutputBudgetTests.cs` | 输出预算与域过滤优先级的回归 | — | — | — |
+| `…/HaHistoryBudgetTests.cs` | 历史预算裁剪的保序与计数回归 | — | — | — |
 | `…/HaErrorCodesTests.cs` | 错误码字符串稳定性（改名即取红） | — | — | — |
 | `…/HaRestClientTests.cs` | 用伪传输验证路径/查询串/授权头/错误映射；不触真实实例 | — | — | — |
 | `Source/PuddingHomeAssistant.Probe/` | S3 无宿主真实探针：对本机实例核对实体数与预算内字节数 | — | — | 必须验到 `lock` 域被策略拦截，否则探针只会证明连通 |

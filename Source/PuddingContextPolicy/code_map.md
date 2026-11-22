@@ -21,7 +21,7 @@
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `PrefixCompactionPolicy.cs` | 前缀缓存友好的分阶段调度与追加式候选校验 | `Decide/ValidateAppendOnly` | `ContextPolicyContracts` | 可配置比例乘注册模型窗口；默认 60% 准备、65% 提交就绪候选、70% 等待；上传轴独立等待阈值 95%；预测及实际输入上限优先；冻结历史逐位不变才允许追加 |
-| `ContextPolicyContracts.cs` | 输入/输出合同：消息策略视图、容量输入/结果、压力分类、来源常量、策略版本 | `ContextMessageShape` 等 6 型合同（消息/容量输入输出/压力/来源/版本）（见下「关键语义」） | `PrefixCompactionPolicy` | 只带整数与**稳定身份**，不带正文；来源取值与 Runtime 的 `ContextEffectiveWindowSources` 逐字对齐 |
+| `ContextPolicyContracts.cs` | 策略组件的不可变输入输出合同 | `ContextMessageShape` 等 6 型合同（消息/容量输入输出/压力/来源/版本）（见下「关键语义」） | `PrefixCompactionPolicy` | 只带整数与**稳定身份**，不带正文；来源取值与 Runtime 的 `ContextEffectiveWindowSources` 逐字对齐 |
 | `ContextCapacityArithmetic.cs` | 容量算术与压力分类 | `ContextCapacityArithmetic.Resolve/Classify` | `ContextPolicyContracts` | `effectiveInput = min(providerInputLimit, modelWindow − reservedOutput − safetyBuffer)`；回退预留必须记为 `fallback_output_reserve`，不得冒充用户预算；**先判硬边界再判软阈值** |
 | `ContextCandidateSelector.cs` | 候选边界选择与稳定指纹 | `ContextCandidateSelector.Select/ComputeFingerprint` + 选项/结果两型 | `ContextPolicyContracts` | 前导 System、当前 User 与最新完整执行单元不可移除；`ProjectedUsedTokensExcludingSummary` 不是提交后的值 |
 | `ContextCandidateApplicability.cs` | 严格适用校验（旧候选能否提交） | `ContextCandidateApplicability.Validate` + 冻结/当前描述符与判定（见下「关键语义」） | `PrefixCompactionPolicy` | 代次/revision/路由/工具/策略版本任一变化 ⇒ `stale_candidate`；保留后缀必须与当前历史**逐位一致**（新消息追加/中间插入/删改一律失效）；不做尾部拼接或自动 rebase |

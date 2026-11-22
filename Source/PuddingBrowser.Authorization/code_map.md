@@ -14,7 +14,7 @@
 |---|---|---|---|---|
 | `AgentTargetSession.cs` | 会话身份：目标页 + 桥世代 + 宿主注入的可信控制句柄 | `AgentTargetSessionId`、`AgentTargetOwnerId`、`AgentTargetControlHandle` | `AgentTargetSessionAuthority.cs` | 快照含 `PendingTarget`（用户已交出、归属待确认）；展示名仅诊断用，不得当身份 |
 | `AgentTargetAuthorization.cs` | 操作分类、九种稳定拒绝码与带写世代的唯一票据 | `AgentTargetOperation`、`AgentTargetErrorCodes`、`AgentTargetOperationExtensions` | `AgentTargetSessionAuthority.cs` | 票据释放后不可复用；推进写世代必须同时取消在途写 |
-| `AgentTargetSessionAuthority.cs` | 单目标会话状态机：交页确认、暂停接管、准入复检与精确释放 | `AgentTargetSessionAuthority` | `Source/Pudding.DesktopService/code_map.md` | 不同 owner 一律拒绝；重复或迟到的完成不得释放他人占用 |
+| `AgentTargetSessionAuthority.cs` | 单目标会话授权的唯一状态机 | `AgentTargetSessionAuthority` | `Source/Pudding.DesktopService/code_map.md` | 不同 owner 一律拒绝；重复或迟到的完成不得释放他人占用 |
 | `PuddingBrowser.Authorization.csproj` | 组件编译边界：仅允许引用 `Pudding.Contracts` | `—` | `Pudding.Contracts` | 禁止 PackageReference 与宿主/UI/驱动引用，越界由 `EnforceAgentTargetBoundary` 在 ResolveReferences 前拒绝 |
 | `../PuddingBrowser.AuthorizationTests/AgentTargetSessionAuthorityTests.cs` | 状态机 48 例：准入与归属、两轴控制及取消释放 | `AgentTargetSessionAuthorityTests` | `AgentTargetSessionAuthority.cs` | — |
 | `../PuddingBrowser.AuthorizationTests/ComponentBoundaryTests.cs` | 引用闭包检查：越界引用必须取红 | `ComponentBoundaryTests` | `PuddingBrowser.Authorization.csproj` | — |

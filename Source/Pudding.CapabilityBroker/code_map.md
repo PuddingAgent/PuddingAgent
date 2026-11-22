@@ -18,10 +18,10 @@
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `CapabilityBroker.cs` | 连接握手、能力授予与单活动传输的注册表维护 | `CapabilityBroker`、`CapabilityBrokerOptions` | `DesktopSession.cs` | 只授予「Desktop 声明 ∩ 本机允许」，越权声明不做部分接受；同一 Desktop 只允许一个活动传输 |
-| `DesktopSession.cs` | 会话生命周期：命令下发、结果关联、期限与断连收尾 | `DesktopSession` | `ICoreDesktopChannel.cs` | 未知 OperationId 与旧世代结果一律忽略；断连必须归还在途额度并从注册表移除 |
+| `DesktopSession.cs` | 维护桌面会话的命令下发与结果关联 | `DesktopSession` | `ICoreDesktopChannel.cs` | 未知 OperationId 与旧世代结果一律忽略；断连必须归还在途额度并从注册表移除 |
 | `WireMapping.cs` | 领域与 proto 之间的编解码 | `CoreCommandEncoder`、`DesktopResultDecoder` | `DesktopSession.cs` | payload 与命令能力不一致即 `internal_error`；指纹只覆盖能力与业务 payload |
 | `ICoreDesktopChannel.cs` | 服务端流接缝与桌面操作授权接缝 | `ICoreDesktopChannel`、`IDesktopCapabilityAuthorizer` | `CapabilityBroker.cs` | 授权默认 DenyAll：RPC 可达不等于获得桌面操作授权 |
-| `DesktopCapabilityPolicy.cs` | 本机可授予能力上限与在途、队列、心跳参数 | `DesktopCapabilityPolicy` | `CapabilityBroker.cs` | `ToWireLimits` 必须下发实际生效的限制，不接受对端自称 |
+| `DesktopCapabilityPolicy.cs` | 定义本机可授予能力的上限与在途预算 | `DesktopCapabilityPolicy` | `CapabilityBroker.cs` | `ToWireLimits` 必须下发实际生效的限制，不接受对端自称 |
 | `CapabilityEndpointNaming.cs` | 端点命名、管道名派生与端点描述发布 | `CapabilityEndpointNaming` | `DesktopCapabilityPolicy.cs` | 管道名用作用域哈希而非明文，否则系统工具里会泄漏作用域 |
 
 ## 关键语义（文件表溢出原文）

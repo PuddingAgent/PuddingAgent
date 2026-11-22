@@ -15,7 +15,7 @@
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `StubSearchProbe.cs` | 可编排的手工替身探针：命中列表、耗时与失败注入 | `StubSearchProbe`、`TestHits` | `EvalRunnerTests.cs` | 准确率断言只能喂已知期望值，不得依赖任何引擎行为 |
-| `RetrievalMetricsTests.cs` | recall@k 窗口与分母、MRR 位置、precision@k 与噪声率 | `RetrievalMetricsTests` | `RetrievalMetrics` | recall@k 分母改成 `expected.Count + 1` 取红 8 条；MRR 位置改成 `1d/(bestRank+2)` 取红 5 条 |
+| `RetrievalMetricsTests.cs` | 检索指标公式的定值回归 | `RetrievalMetricsTests` | `RetrievalMetrics` | recall@k 分母改成 `expected.Count + 1` 取红 8 条；MRR 位置改成 `1d/(bestRank+2)` 取红 5 条 |
 | `PathIdentityTests.cs` | 路径身份归一的匹配行为 | `PathIdentityTests` | `PathIdentity` | 引擎不报 symbol 时不得惩罚调用方期望 |
 | `NoiseDirectoryRulesTests.cs` | 噪声段名集合是三套规则的 46 项并集 | `NoiseDirectoryRulesTests` | `PathNoiseRules` | 段名必须精确匹配：`bin.cs` 不是噪声而 `bin` 是 |
 | `LatencyStatisticsTests.cs` | 最近秩百分位与亚毫秒分辨率 | `LatencyStatisticsTests` | `LatencySummary` | 空桶必须报 `LatencySummary.Empty`，不得报「很快」 |

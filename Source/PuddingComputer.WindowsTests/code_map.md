@@ -11,7 +11,7 @@ Windows 平台组件测试。纯规则与合成图像用例不派发输入；窗
 | `DetectorFocusRectTests.cs` | 合成图像中的参考区域轮廓恢复与尺寸过滤 | `DetectorFocusRectTests` | `OpenCvElementDetector` | 尺寸上限相对参考区域而非整屏 |
 | `ScreenAnalysisGeometryTests.cs` | 截图原点与尺寸映射，以及显式参考窗口的身份边界 | `ScreenAnalysisGeometryTests` | `ComputerScreenAnalyzer` | — |
 | `ScreenAnalyzerWindowResolutionTests.cs` | 无候选时失败、显式参考矩形与窗口外目标 | `ScreenAnalyzerWindowResolutionTests` | `ComputerScreenAnalyzer` | 依赖桌面截图，未检出目标时报 Inconclusive 而非失败 |
-| `WindowsInputSimulatorClickTests.cs` | 纯点击解析、采集方式限制、越界与负坐标 | `WindowsInputSimulatorClickTests` | `WindowsInputSimulator` | 不实际点击 |
+| `WindowsInputSimulatorClickTests.cs` | 点击坐标解析的映射约束回归 | `WindowsInputSimulatorClickTests` | `WindowsInputSimulator` | 不实际点击 |
 | `WindowOwnershipTests.cs` | 实际点击路径使用的授权根判定 | `WindowOwnershipTests` | `WindowsInputSimulator` | 不承担分析窗口排序 |
 
 被测组件：[Windows](../PuddingComputer.Windows/code_map.md)。
