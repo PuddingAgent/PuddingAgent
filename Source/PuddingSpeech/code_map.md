@@ -1,5 +1,7 @@
 # PuddingSpeech 代码地图
 
+
+> 源指纹: Source/PuddingSpeech/**=7-a7a0a5dcc89b · 条目数: 6 · 最近整理: 2026-11-22
 独立语音协议叶子，BCL-only，零 ProjectReference/PackageReference。上层提供冻结路由、凭据与音频；组件不读取配置，不引用宿主。
 
 | 文件 | 用途 |

@@ -1,5 +1,7 @@
 # PuddingSecretReferences
 
+
+> 源指纹: Source/PuddingSecretReferences/**=3-6dfda8368993 · 条目数: 2 · 最近整理: 2026-11-22
 | 文件 | 契约 |
 |---|---|
 | `CredentialReference.cs` | 凭据字段的环境变量与 vault 引用解析；未解析/解密失败明确拒绝，不回传占位符 |

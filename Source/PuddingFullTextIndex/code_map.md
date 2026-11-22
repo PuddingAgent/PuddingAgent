@@ -2,7 +2,7 @@
 
 基于 Lucene.Net + jieba.NET 的通用全文索引引擎：统一变更集、局部维护、索引供给与中文分词。
 
-> 源指纹: Source/PuddingFullTextIndex/**=pending · 条目数: 62 · 最近整理: 2026-11-22
+> 源指纹: Source/PuddingFullTextIndex/**=62-0aaa07ac1ee0 · 条目数: 62 · 最近整理: 2026-11-22
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|

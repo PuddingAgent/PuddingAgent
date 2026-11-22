@@ -2,7 +2,7 @@
 
 检索评测叶子组件：只测检索质量与耗时，不改变任何检索行为，通过 `ISearchProbe` 端口观察引擎。
 
-> 源指纹: Source/PuddingRetrievalEval/**=pending · 条目数: 13 · 最近整理: 2026-11-22
+> 源指纹: Source/PuddingRetrievalEval/**=98-1c54f1765cbe · 条目数: 13 · 最近整理: 2026-11-22
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|

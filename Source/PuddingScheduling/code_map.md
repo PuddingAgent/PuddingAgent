@@ -1,5 +1,7 @@
 # PuddingScheduling
 
+
+> 源指纹: Source/PuddingScheduling/**=8-6218db89de52 · 条目数: 7 · 最近整理: 2026-11-22
 | 文件 | 契约 |
 |---|---|
 | `CronExpression.cs` | 五段 cron（分 时 日 月 周）的解析与下一次触发计算；纯函数，时钟与时区由调用方传入 |
