@@ -310,7 +310,7 @@ per-key 连续 deferred 计数与退避档属 Agent 侧诊断（`classifier_stat
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `Services/ImageGenerationService.cs` | 图片生成 | `ImageGenerationService` | `Services/VisionArtifactStorageService.cs` | — |
-| `Services/VisionArtifactStorageService.cs` | Workspace 原图与派生缓存 | `VisionArtifactStorageService`、`.Preprocessing.cs`、`ImagePreprocessing.cs` | `Services/VisualArtifactObservationService.cs` | 64MiB 与实际格式/尺寸/EXIF；模型边界低分辨率副本与超尺寸概览；原图不覆盖，变换按源与版本化参数复用；解码串行限并发 |
+| `Services/VisionArtifactStorageService.cs` | Workspace 原图与派生缓存 | `VisionArtifactStorageService`、`.Preprocessing.cs`、`ImagePreprocessing.cs` | `Services/VisualArtifactResolverBridge.cs`、`Services/VisualArtifactReference.cs` | 64MiB 与实际格式/尺寸/EXIF；模型边界低分辨率副本与超尺寸概览；原图不覆盖，变换按源与版本化参数复用；解码串行限并发 |
 | `Services/DocumentPreviewPathPolicy.cs` | 文档预览路径策略（纯函数） | `DocumentPreviewPathPolicy`、`DocumentPreviewErrorCodes` | `Controllers/Api/WorkspaceFileApiController.cs` | 拒绝绝对路径/`..`/盘符/冒号；扩展名白名单；前缀复核必带分隔符 |
 | `Services/VisualArtifactObservationService.cs` | 视觉观察 | `VisualArtifactObservationService` | `Services/VisionArtifactStorageService.cs` | — |
 | `Services/AudioArtifactStorageService.cs` | 音频存储 | `AudioArtifactStorageService` | `Services/AudioTranscriptionService.cs` | — |
