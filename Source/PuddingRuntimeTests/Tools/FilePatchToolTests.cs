@@ -956,12 +956,12 @@ public sealed class FilePatchToolTests
             }
         });
 
-        // 断言不变量：容差命中且已改写（归一化匹配的 span 到锚点末字符为止，尾部空白与 `}` 会保留，
-        // 这是宽容策略与 whitespace-tolerant 路径共同的行为，不属本次修的范围）。
-        StringAssert.StartsWith(
+        // P2-4b 之后：容差命中，且文件里残留的 ` }` 一并被消费。修之前这里会落盘
+        // `.card{color:blue} }` —— 归一化跨度只到最后一个保留字符，尾部 `}` 被留下并重复。
+        Assert.AreEqual(
+            ".card{color:blue}\n",
             ReadFile("style.css"),
-            ".card{color:blue}",
-            "stylesheet tolerance must keep working: dropping ; { } is the intended CSS courtesy");
+            "stylesheet tolerance must keep working AND consume the file's trailing ' }'");
         Assert.IsFalse(
             result.Output.Contains("not found", StringComparison.Ordinal),
             "the stylesheet anchor must match, not be reported as missing");
@@ -987,6 +987,54 @@ public sealed class FilePatchToolTests
             ReadFile("module.py"),
             "a code file must never be rewritten through CSS tolerance: the extra ';' is content here");
         StringAssert.Contains(result.Output, "not found", "the caller must be told the anchor did not match");
+    }
+
+    // ── P2-4b 回归：css-aware 归一化跨度必须消费文件端的尾部结构字符 ──
+    // 现场实测（部署产物 2026-11-22）：文件 `.a { color: red }`、锚点 `.a { color: red };`
+    // 落盘为 `.a { color: blue } }` —— 多出一个 `}`，因为跨度停在最后一个保留字符 `d`，
+    // 文件里紧跟的 ` }` 不在跨度内，替换后就被重复了一遍。
+
+    [TestMethod]
+    public async Task Replace_CssFile_ConsumesTrailingStructuralRun()
+    {
+        WriteFile("dup.css", ".a { color: red }\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "dup.css",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["oldText"] = ".a { color: red };", ["newText"] = ".a { color: blue }" }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(
+            ".a { color: blue }\n",
+            ReadFile("dup.css"),
+            "the file's trailing ' }' must be inside the replaced span, not left behind");
+    }
+
+    [TestMethod]
+    public async Task Replace_CssFile_TrailingRunStopsAtNextKeptCharacter()
+    {
+        // 同一行有两条规则。锚点把 `;` 写到了 `}` 前面，whitespace-tolerant 因此匹配不上
+        // （少了空白差异这条捷径），这一局走的确实是 css-aware；尾部预算 `;}` 只有 2 个字符，
+        // 消费完必须停在 `.b`，不能把下一条规则一起吃进来。
+        WriteFile("two.css", ".a{color:red};.b{color:red}\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "two.css",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["oldText"] = ".a{color:red;}", ["newText"] = ".a{color:blue}" }
+            }
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(
+            ".a{color:blue}.b{color:red}\n",
+            ReadFile("two.css"),
+            "span growth is bounded by the anchor's droppable run and stops at the next kept character");
     }
 
     private static Task<ToolExecutionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> parameters)

@@ -531,6 +531,16 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                     oldText,
                     "css-aware",
                     NormalizeCssChar);
+
+                // P2-4b: a normalized span ends at the last *kept* character, so the surviving
+                // structural characters stay behind and a replacement duplicates them: measured on the
+                // deployed build 2026-11-22, ".a { color: red }" with anchor ".a { color: red };"
+                // produced ".a { color: blue } }". The anchor already states how many droppable
+                // characters follow its last kept character, so that run is the budget for what to
+                // consume from the file. An anchor ending in a kept character ("color: red") consumes
+                // nothing, which is what keeps a following "; background: blue" intact.
+                if (candidates.Count > 0)
+                    candidates = ExtendCssAwareSpans(original, oldText, candidates);
             }
 
             if (candidates.Count == 0)
@@ -783,6 +793,54 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         if (char.IsWhiteSpace(c)) return null;
         if (c is '{' or '}' or ';' or ',' or ':') return null;
         return c.ToString();
+    }
+
+    // True for every character the CSS normalizer drops except the line terminator: the structural set
+    // plus ordinary whitespace. '\n' never qualifies, so a span can never merge two lines.
+    private static bool IsCssDroppable(char c) => c != '\n' && NormalizeCssChar(c) is null;
+
+    // P2-4b: see the call site. The anchor's own leading and trailing droppable runs bound how far the
+    // span may grow; growth stops at any kept character and never crosses a line terminator.
+    private static List<TextMatch> ExtendCssAwareSpans(
+        string original, string oldText, List<TextMatch> matches)
+    {
+        var leadingBudget = CountLeadingCssDroppable(oldText);
+        var trailingBudget = CountTrailingCssDroppable(oldText);
+        if (leadingBudget == 0 && trailingBudget == 0)
+            return matches;
+
+        var adjusted = new List<TextMatch>(matches.Count);
+        foreach (var match in matches)
+        {
+            var start = match.Index;
+            var end = match.Index + match.Length;
+
+            for (var n = 0; n < leadingBudget && start > 0 && IsCssDroppable(original[start - 1]); n++)
+                start--;
+
+            for (var n = 0; n < trailingBudget && end < original.Length && IsCssDroppable(original[end]); n++)
+                end++;
+
+            adjusted.Add(new TextMatch(start, end - start, match.Strategy));
+        }
+
+        return adjusted;
+    }
+
+    private static int CountLeadingCssDroppable(string text)
+    {
+        var count = 0;
+        while (count < text.Length && IsCssDroppable(text[count]))
+            count++;
+        return count;
+    }
+
+    private static int CountTrailingCssDroppable(string text)
+    {
+        var count = 0;
+        while (count < text.Length && IsCssDroppable(text[text.Length - 1 - count]))
+            count++;
+        return count;
     }
 
     // P2-4: Heuristic — true when text contains CSS-like tokens
