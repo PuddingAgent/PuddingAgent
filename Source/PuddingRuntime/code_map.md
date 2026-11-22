@@ -1,6 +1,6 @@
 # PuddingRuntime CodeMAP
 
-> 源指纹: Source/PuddingRuntime/**=431-229ddc50ddf6 · 条目数: 353 · 最近整理: 2026-10-24
+> 源指纹: Source/PuddingRuntime/**=442-9f3c55127bfc · 条目数: 353 · 最近整理: 2026-10-24
 > 定位：Agent 运行时核心（Agent Loop / LLM 调用 / 工具系统 / 上下文管线 / 子代理 / 后台学习）；.NET 10 类库，唯一服务注册入口 `DependencyInjection.cs`。
 > 本文件只做本项目文件级索引；跨项目调用链、测试工程索引、架构文档索引、运行时目录与构建入口只在根 [`code_map.md`](../../code_map.md)。
 > 每对象一行；空字段写 `—`。角色 `observe` 的对象只在文末附录列路径。
@@ -263,7 +263,7 @@
 | `Services/TaskTools/TaskListTool.cs` | `task_list`：按范围列出任务 | `TaskListTool` | `Services/TaskTools/TaskToolModels.cs` | — |
 | `Services/TaskTools/TaskToolModels.cs` | 任务工具的共享参数模型与守卫 | `TaskToolGuard` | `Services/TaskTools/TaskUpdateTool.cs` | 上下文重建失败只附加非泄露诊断 |
 | `Services/TaskTools/TaskUpdateTool.cs` | `task_update`：提交状态迁移与处置 | `TaskUpdateTool` | `Services/TaskTools/TaskToolModels.cs` | 状态与处置合法性一律由服务端状态机裁决 |
-| `Services/TerminalProcessManager.cs` | OS 级进程的完整生命周期管理 | `ITerminalProcessManager` | `Tools/BuiltIns/Terminal/TerminalTools.cs` | 正常完成在输出排空后公布；状态与输出同锁取快照 |
+| `Services/TerminalProcessManager.cs` | OS 级进程的完整生命周期管理 | `ITerminalProcessManager` | `Tools/BuiltIns/Terminal/TerminalTools.cs` | 正常完成在输出排空后公布；状态与输出同锁取快照；引擎由 `HostShellResolver` 决定，Windows 默认 pwsh 7，可用 `shell` 参数覆盖 |
 | `Services/TerminalSecurity.cs` | 终端命令的白名单与危险模式拦截 | `ITerminalCommandPolicy` | `Tools/BuiltIns/Shell/HostShellTool.cs` | — |
 | `Services/TimeClusterAnalyzer.cs` | 会话间隔的时间聚类分析 | `TimeClusterAnalyzer` | `Services/ContextPipeline.cs` | — |
 | `Services/TodoTools/TodoCheckTool.cs` | `todo_check`：勾选单项待办状态 | `TodoCheckTool` | `Services/TodoTools/TodoToolModels.cs` | — |
@@ -424,7 +424,8 @@
 | `Tools/BuiltIns/Search/ZhihuSearchTool.cs` | `zhihu_search`：知乎站内检索 | `ZhihuSearchTool` | `Tools/BuiltIns/Search/ZhihuSearchShared.cs` | — |
 | `Tools/BuiltIns/Sessions/QuerySessionLogsTool.cs` | `query_session_logs`：原始转录、精确 Turn 和压缩来源回查 | `QuerySessionLogsTool` | `Services/CompactionEvidenceReader.cs` | 转录窗口保留筛选条件；归档原文需 diagnostic=true；强类型参数是各调用入口 schema 的共同来源 |
 | `Tools/BuiltIns/Sessions/QuerySessionsTool.cs` | `query_sessions`：会话消息转录查询 | `QuerySessionsTool` | `Tools/BuiltIns/Sessions/QuerySessionLogsTool.cs` | — |
-| `Tools/BuiltIns/Shell/HostShellExecutor.cs` | 宿主命令的直执行与输出收集 | `HostShellExecutor` | `Services/TerminalSecurity.cs` | CMD 保留原始引号；PowerShell 拒绝 cd /d 前缀并指明修正参数；`auto` 解析链 Windows pwsh7>ps5>cmd、非 Windows bash>sh，缺失时降级而非失败；结果含 `Shell`（方言）与 `Executable`（实际 exe） |
+| `Tools/BuiltIns/Shell/HostShellExecutor.cs` | 宿主命令的直执行与输出收集 | `HostShellExecutor` | `Services/TerminalSecurity.cs` | CMD 保留原始引号；PowerShell 拒绝 cd /d 前缀；解析链与 argv 传递委托 `HostShellResolver`；结果含 `Shell` 与 `Executable` |
+| `Tools/BuiltIns/Shell/HostShellResolver.cs` | shell 解析与启动参数的唯一真源 | `HostShellResolver` | `Services/TerminalProcessManager.cs` | Windows pwsh7>ps5>cmd 且恒优先 pwsh；cmd 走 `Arguments` 原样传递，其余走 `ArgumentList`；未知 shell fail-closed |
 | `Tools/BuiltIns/Shell/HostShellTool.cs` | `shell`：短命令的宿主执行 | `HostShellTool` | `Tools/BuiltIns/Shell/HostShellExecutor.cs` | — |
 | `Tools/BuiltIns/Skills/AgentSkillTool.cs` | `agent_skill`：技能文件的读取与增改 | `AgentSkillTool` | `Services/Skills/AgentSkillFileService.cs` | — |
 | `Tools/BuiltIns/Skills/SkillHubTool.cs` | `skill_hub`：技能市场清单与安装 | `SkillHubTool` | `Services/Skills/AgentSkillFileService.cs` | — |
@@ -437,7 +438,7 @@
 | `Tools/BuiltIns/SmartWorkflow/SmartTestTool.cs` | `smart_test`：测试角色入口 | `SmartTestTool` | `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | — |
 | `Tools/BuiltIns/SmartWorkflow/SmartWorkflowToolBase.cs` | 角色化工作流工具的公共基类 | `SmartWorkflowToolBase<TArgs>` | `Tools/BuiltIns/Agents/SubAgentTool.cs` | 校验失败时原样返回子代理产出并附说明 |
 | `Tools/BuiltIns/Terminal/TerminalSkill.cs` | 终端命令执行的技能封装 | `TerminalSkill` | `Tools/BuiltIns/Terminal/TerminalTools.cs` | — |
-| `Tools/BuiltIns/Terminal/TerminalTools.cs` | `terminal_*`：终端任务的完整工具集 | `TerminalToolJson` | `Services/TerminalProcessManager.cs` | start 默认收集 1000ms；完成无需 wait；运行中按游标阻塞等待 |
+| `Tools/BuiltIns/Terminal/TerminalTools.cs` | `terminal_*`：终端任务的完整工具集 | `TerminalToolJson` | `Services/TerminalProcessManager.cs` | start 默认收集 1000ms 且可传 `shell`（auto→pwsh 7）；完成无需 wait；运行中按游标阻塞等待 |
 
 ### 「约束」列·关键语义（逐字原文）
 
