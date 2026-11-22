@@ -37,6 +37,11 @@ import re
 import sys
 from urllib.parse import unquote
 
+# 噪声目录 / 路径前缀的唯一真源（与 check_md_links / front_matter 共用）。
+# 以 file 路径方式 import 本模块时 sys.path[0] 不一定是 Tools/Docs，故显式插入。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import path_noise  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # §2 全局硬上限 —— 唯一真源（规格 §8.1：本表是权威，文档表格是它的解释）
 # ---------------------------------------------------------------------------
@@ -71,13 +76,10 @@ LIMITS = {
     "ITEM_SEPARATORS": "、,，；;",
     # --- §6 空值写法：允许的写法；其余「占位」见 PLACEHOLDER_RE ---
     "PLACEHOLDER_ALLOWED": ["none", "n/a", "无", "-", "—", ""],
-    # --- §4 exclude 目录名（唯一真源；按目录名匹配，不限层级）---
-    "EXCLUDE_DIR_NAMES": [
-        "bin", "obj", "node_modules", ".pudding", "temp", "dist", "dist-dev",
-        ".git", "__pycache__", ".venv", ".vs", ".idea", ".work",
-    ],
+    # --- §4 exclude 目录名（唯一真源：Tools/Docs/path_noise.py；按目录名匹配，不限层级）---
+    "EXCLUDE_DIR_NAMES": sorted(path_noise.DIR_NAMES),
     # --- §4 exclude 的相对路径前缀（仓库相对、大小写不敏感）---
-    "EXCLUDE_PATH_PREFIXES": ["external/references"],
+    "EXCLUDE_PATH_PREFIXES": list(path_noise.PATH_PREFIXES),
 }
 
 # §7 规则表：规则 ID -> 等级（照 §7 逐字落地）

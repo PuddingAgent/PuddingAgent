@@ -28,12 +28,16 @@ import re
 import subprocess
 import sys
 
+# 噪声目录的唯一真源（与 code_map_check / check_md_links 共用）。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import path_noise  # noqa: E402
+
 REQUIRED = ['title', 'author', 'date', 'last_reviewed', 'status', 'description',
             'categories', 'tags', 'related_docs', 'related_files', 'slug', 'draft']
 LIST_FIELDS = {'categories', 'tags', 'related_docs', 'related_files'}
 VALID_STATUS = {'draft', 'active', 'proposed', 'deprecated', 'archived'}
 DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
-SKIP_DIR_NAMES = {'.git', '.pudding', 'bin', 'obj', 'node_modules', 'temp', 'tmp', '.venv', 'dist', 'dist-dev', 'pub'}
+SKIP_DIR_NAMES = set(path_noise.DIR_NAMES)
 SKIP_PATH_PREFIX = ('external/references/', 'external/github.hyfree.GM/')
 FM_DELIM = '---'
 CATEGORY_BY_DIR = {

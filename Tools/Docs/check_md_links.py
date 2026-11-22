@@ -18,11 +18,13 @@ import subprocess
 import sys
 from urllib.parse import unquote
 
-SKIP_DIRS = {'.git', 'bin', 'obj', 'node_modules', 'temp', 'tmp', '.venv', 'dist', 'dist-dev', 'pub', '.pudding',
-             # 以下与 code_map_check.py 的 LIMITS["EXCLUDE_DIR_NAMES"] 对齐（约定上的单一真源）。
-             # 漏掉 `.work` 的后果是实测出来的：--all-repo 会把三份整仓库归档快照也算进去，
-             # 失效目标从 134 虚增到 898（其中 764 条全在 .work/ 下，且锚点 29 条全部来自它）。
-             '.work', '__pycache__', '.vs', '.idea'}
+# 噪声目录 / 路径前缀的唯一真源（与 code_map_check / front_matter 共用）。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import path_noise  # noqa: E402
+
+SKIP_DIRS = set(path_noise.DIR_NAMES)
+# 路径前缀各工具语义不同（本工具把整个 external/ 子仓库视为范围外；
+# code_map_check 只排除 external/references），故不共享。
 SKIP_PREFIX = ('external/',)
 LINK_RE = re.compile(r'\]\(\s*([^)\s]+?)(\s+"[^"]*")?\s*\)')
 HEADING_RE = re.compile(r'^(#{1,6})\s+(.*?)\s*#*\s*$')
