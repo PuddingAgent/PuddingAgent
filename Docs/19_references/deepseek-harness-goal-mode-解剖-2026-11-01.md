@@ -1,9 +1,18 @@
 ---
 title: DeepSeek Harness goal 模式实现解剖与 PuddingAgent 对齐方案
-status: proposed
-date: 2026-11-01
 author: 鲸鲸
+date: 2026-11-01
+last_reviewed: 2026-11-01
+status: proposed
+description: "正确路径（用户 2026-11-01 19:12 提供，已实测）："
+categories: [docs, references]
+tags: [deepseek, harness, goal, mode, 解剖, references]
+related_docs: []
+related_files: []
+slug: references-deepseek-harness-goal-mode-解剖-2026-11-01
+draft: false
 ---
+
 
 # DeepSeek Harness goal 模式解剖
 

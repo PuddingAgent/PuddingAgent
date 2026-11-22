@@ -3,8 +3,17 @@ title: R2-A PuddingRetrieval 独立组件（S1–S4）
 author: 鲸鲸
 date: 2026-10-31
 last_reviewed: 2026-10-31
-status: delivered
+status: archived
+description: 新建 Source/PuddingRetrieval/（实现层）+ Source/PuddingRetrievalTests/（S2）， 把「检索端口的数据面抽象」从 PuddingCodeIndex 搬出：
+categories: [docs, changelog]
+tags: [r2, 独立组件]
+related_docs: []
+related_files: []
+slug: changelog-2026-10-31-r2-a-puddingretrieval独立组件
+draft: false
 ---
+
+
 
 # R2-A PuddingRetrieval 独立组件（S1–S4）
 

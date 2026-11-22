@@ -4,7 +4,15 @@ author: hyfree
 date: 2026-10-30
 last_reviewed: 2026-10-30
 status: draft
+description: Docs/12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md §8.3 对 ref 的规定只有两句，但每句都
+categories: [docs, features]
+tags: [symbol, ref, v1, 合同提案, features]
+related_docs: []
+related_files: [Docs/12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md]
+slug: features-symbol-ref-v1-合同提案-2026-10-30
+draft: false
 ---
+
 
 # symbol_ref v1 合同提案
 

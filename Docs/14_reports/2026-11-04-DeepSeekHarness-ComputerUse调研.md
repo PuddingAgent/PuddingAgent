@@ -3,7 +3,7 @@ title: DeepSeek Harness 的 computer use 实现调研
 author: 鲸鲸
 date: 2026-11-04
 last_reviewed: 2026-11-04
-status: accepted
+status: active
 description: 只读调研 DeepSeek harness：观察走平台无障碍树、输入走系统事件定向投递，Windows 侧尚未实现。
 categories: [docs, reports]
 tags: [computer-use, accessibility, chromium, research]
@@ -12,6 +12,7 @@ related_files: []
 slug: reports-deepseek-harness-computer-use-2026-11-04
 draft: false
 ---
+
 # DeepSeek Harness（DSH）的 computer use 实现方式
 
 > 调研对象：`F:\github\deepseek\deepseek-harness`（本地只读快照，HEAD 文件时间 2026-10-24）

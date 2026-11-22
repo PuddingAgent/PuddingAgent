@@ -1,3 +1,18 @@
+---
+title: Agent Harness 架构横向调研：dsh / Hermes / Codex / opencode
+author: hyfree
+date: 2026-10-23
+last_reviewed: 2026-10-23
+status: active
+description: 日期：2026-10-23 目的：对照四个主流 Agent harness 的架构设计，找出对 PuddingAgent 可借鉴与不可借鉴的部分 证据等级：一手（官方 README、本地实机目录）／二手（第三方实测文章）／未证实（仅有摘要）
+categories: [docs, reports]
+tags: [agent, 架构横向调研, reports]
+related_docs: []
+related_files: []
+slug: reports-2026-10-23-agent-harness架构横向调研
+draft: false
+---
+
 # Agent Harness 架构横向调研：dsh / Hermes / Codex / opencode
 
 - 日期：2026-10-23

@@ -1,9 +1,19 @@
 ---
 title: PuddingCoreTests 跑不完的根因：诊断分词把请求拖成分钟级
-status: fixed
-date: 2026-11-01
 author: 鲸鲸
+date: 2026-11-01
+last_reviewed: 2026-11-01
+status: active
+description: PuddingCoreTests 长期跑不完（20 分钟无任何结果）不是个别测试挂死，而是诊断代码在请求主链路上做了全量分词。
+categories: [docs, tasks]
+tags: [puddingcoretests, 挂起根因, 诊断分词, tasks]
+related_docs: []
+related_files: []
+slug: tasks-2026-11-01-puddingcoretests-挂起根因-诊断分词
+draft: false
 ---
+
+
 
 # 结论
 

@@ -1,9 +1,18 @@
 ---
 title: 2026-11-01 全仓构建口径：Desktop 锁 vs Core 可构建
-status: active
-date: 2026-11-01
 author: 鲸鲸
+date: 2026-11-01
+last_reviewed: 2026-11-01
+status: active
+description: MSB3027 / MSB3021：复制产物到 Source/Pudding.DesktopConnection/bin/Debug/... 失败，因为桌面端进程正在运行并锁住自己的 DLL。
+categories: [docs, tasks]
+tags: [全仓构建口径, 锁与, 可构建, tasks]
+related_docs: []
+related_files: [Source/PuddingAgent/PuddingAgent.csproj]
+slug: tasks-2026-11-01-全仓构建口径-desktop锁与core可构建
+draft: false
 ---
+
 # 2026-11-01 全仓构建口径：Desktop 锁 vs Core 可构建
 
 ## 结论（实测）

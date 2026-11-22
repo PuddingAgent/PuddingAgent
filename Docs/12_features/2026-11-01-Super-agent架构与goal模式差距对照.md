@@ -1,9 +1,18 @@
 ---
 title: Super-agent 架构与本仓 goal 模式的差距对照（2026-11-01）
-status: proposed
-date: 2026-11-01
 author: 鲸鲸
+date: 2026-11-01
+last_reviewed: 2026-11-01
+status: proposed
+description: 用户 2026-11-01 的表述，和 Super-agent 的四特征是同一件事：
+categories: [docs, features]
+tags: [super, 架构与, 模式差距对照, features]
+related_docs: []
+related_files: [Docs/19_references/动态图解-DeepSeek-Super-agent架构-2026-11-01.md, Docs/19_references/deepseek-harness-goal-mode-解剖-2026-11-01.md]
+slug: features-2026-11-01-super-agent架构与goal模式差距对照
+draft: false
 ---
+
 
 # Super-agent 架构 vs 本仓 goal 模式
 

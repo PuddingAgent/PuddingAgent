@@ -1,3 +1,18 @@
+---
+title: DeepSeek Tokenizer 在 .NET 的可用性调研（2026-10-24）
+author: hyfree
+date: 2026-10-24
+last_reviewed: 2026-10-24
+status: active
+description: "目的：判断「用真实 DeepSeek 词表替代 o200k_base 估算」是否可行，为上下文用量诊断报告 §13.4 的方案 A 提供决策依据。 方法：多引擎检索（deepseek_search / anysearch_search）+ 本地程序集反射（比文档可靠）+ 直接探测 HuggingFace 端点。 结论先行：方案 A 可行且不需要换库，但需要引入 5.5 MB 词表资源；建议「先上 "
+categories: [docs, reports]
+tags: [deepseek, 调研, reports]
+related_docs: []
+related_files: [Source/PuddingCore/PuddingCore.csproj, Source/PuddingTokenization/TokenizerProvider.cs, Source/PuddingCore/Platform/LlmOptions.cs]
+slug: reports-2026-10-24-deepseek-tokenizer调研
+draft: false
+---
+
 # DeepSeek Tokenizer 在 .NET 的可用性调研（2026-10-24）
 
 - **目的**：判断「用真实 DeepSeek 词表替代 `o200k_base` 估算」是否可行，为上下文用量诊断报告 §13.4 的方案 A 提供决策依据。

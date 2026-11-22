@@ -1,3 +1,18 @@
+---
+title: 2026-10-31 R2-00 起步：PuddingGrep 独立匹配内核（S1–S4）
+author: hyfree
+date: 2026-10-31
+last_reviewed: 2026-10-31
+status: archived
+description: Source/PuddingGrep/（新组件）：GrepPattern / GrepSpan / GrepMatcher + code_map.md。 Source/PuddingGrepTests/（新测试工程）：40 条用例，含 oracle 对照、校验失败、超时、边界断言。
+categories: [docs, changelog]
+tags: [r2, 独立匹配内核]
+related_docs: []
+related_files: [code_map.md]
+slug: changelog-2026-10-31-r2-00puddinggrep独立匹配内核
+draft: false
+---
+
 # 2026-10-31 R2-00 起步：PuddingGrep 独立匹配内核（S1–S4）
 
 ## 交付

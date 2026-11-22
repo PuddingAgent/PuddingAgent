@@ -1,16 +1,18 @@
 ---
-title: goal 模式对照 deepseek-harness：我们有两套互不相认的"目标"
+title: "goal 模式对照 deepseek-harness：我们有两套互不相认的\"目标\""
 author: hyfree
 date: 2026-11-17
 last_reviewed: 2026-11-17
 status: proposed
-draft: false
-description: 对照 F:\github\deepseek\deepseek-harness 的 goal 子系统，核对本仓已有的 GoalRun 状态机与 goal.md 自由文本工具。结论是"能力不缺，缺的是一个权威源"——调度侧的结构化 GoalRun 与模型侧读写的 goal.md 之间没有任何一致性约束，当日多次误判皆源于此。文末给出三档改法与未证实项。
+description: "对照 F:\\github\\deepseek\\deepseek-harness 的 goal 子系统，核对本仓已有的 GoalRun 状态机与 goal.md 自由文本工具。结论是\"能力不缺，缺的是一个权威源\"——调度侧的结构化 GoalRun 与模型侧读写的 goal.md 之间没有任何一致性约束，当日多次误判皆源于此。文末给出三档改法与未证实项。"
 categories: [docs, design]
 tags: [goal, goal-run, deepseek-harness, single-source-of-truth, cas, adr-074]
 related_docs: [Docs/11_design/KeyVault明文凭据迁移-2026-11-17.md]
 related_files: [Source/PuddingCore/Goals/GoalStateMachine.cs, Source/PuddingGoalPolicy/GoalContinuationPolicy.cs, Source/PuddingRuntime/Tools/BuiltIns/Agents/GoalUpdateTool.cs, Source/PuddingRuntime/Tools/BuiltIns/Agents/GoalReadTool.cs, Source/PuddingRuntime/Services/TaskTools/GoalLifecycleTools.cs]
+slug: design-goal模式对照deepseek-harness-2026-11-17
+draft: false
 ---
+
 
 # goal 模式对照 deepseek-harness：我们有两套互不相认的"目标"
 

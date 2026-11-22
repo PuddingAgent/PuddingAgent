@@ -1,5 +1,5 @@
 ---
-title: shell auto 解析链改为 pwsh7 > ps5 > cmd / bash > sh
+title: "shell auto 解析链改为 pwsh7 > ps5 > cmd / bash > sh"
 author: hyfree
 date: 2026-11-21
 last_reviewed: 2026-11-21
@@ -7,10 +7,12 @@ status: active
 description: 修正 shell 工具的 auto 模式：Windows 按 pwsh7 → Windows PowerShell 5.1 → cmd 解析，非 Windows 按 bash → sh；缺失时降级而不是失败。
 categories: [changelog, tools, shell]
 tags: [shell, auto, pwsh, powershell, bash]
+related_docs: []
 related_files: [Source/PuddingRuntime/Tools/BuiltIns/Shell/HostShellExecutor.cs, Source/PuddingRuntime/Tools/BuiltIns/Shell/HostShellTool.cs, Source/PuddingRuntimeTests/Tools/HostShellToolTests.cs]
 slug: shell-auto-resolution-chain
 draft: false
 ---
+
 
 # shell auto 解析链
 

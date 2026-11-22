@@ -4,7 +4,15 @@ author: 鲸鲸
 date: 2026-10-31
 last_reviewed: 2026-10-31
 status: proposed
+description: PuddingRetrieval.Contracts ↑ PuddingDomain.Contracts → PuddingRetrieval（编排 + 窄端口） ↑ PuddingRetrieval.Adapters（ICodeIndexStore → 窄端口） ↑ PuddingCodeIndex（存储）
+categories: [docs, tasks]
+tags: [r2, 剩余, 与编排迁移, 规划, tasks]
+related_docs: []
+related_files: []
+slug: tasks-2026-10-31-r2-a剩余-adapters与编排迁移-规划
+draft: false
 ---
+
 
 # R2-A 剩余部分规划 · Adapters 与编排迁移
 

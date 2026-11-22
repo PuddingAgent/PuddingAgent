@@ -4,7 +4,15 @@ author: hyfree
 date: 2026-10-29
 last_reviewed: 2026-10-29
 status: draft
+description: 三个服务已抽出并各自有特征测试：ICodeOutlineService（outline）、ICodeSummaryService（summary）、 ICodeProjectMapService（map）。IRetrievalPort 只承担 workspace_search 的检索面。
+categories: [docs, features]
+tags: [workspace, open, v1, 合同提案, features]
+related_docs: []
+related_files: [Docs/12_features/增强索引统一检索与代码地图设计方案-2026-10-18.md]
+slug: features-workspace-open-v1-合同提案-2026-10-29
+draft: false
 ---
+
 
 # workspace_open v1 合同提案
 

@@ -1,3 +1,18 @@
+---
+title: 2026-10-31 R2-A 步骤 6 检索支持类迁入 PuddingRetrieval
+author: hyfree
+date: 2026-10-31
+last_reviewed: 2026-10-31
+status: archived
+description: 迁移 3 个文件（+3 个测试类）从 Source/PuddingCodeIndex/Services/Retrieval/ 到 Source/PuddingRetrieval/（命名空间 PuddingCodeIndex.Services.Retrieval → PuddingRetrieval）： DefaultLanguageCapabilityMatrix.cs（能力矩阵默认实现） Ret
+categories: [docs, changelog]
+tags: [r2, 步骤, 检索支持类迁入]
+related_docs: []
+related_files: []
+slug: changelog-2026-10-31-r2-a步骤6-检索支持类迁入puddingretrieval
+draft: false
+---
+
 # 2026-10-31 R2-A 步骤 6 检索支持类迁入 PuddingRetrieval
 
 ## 改动

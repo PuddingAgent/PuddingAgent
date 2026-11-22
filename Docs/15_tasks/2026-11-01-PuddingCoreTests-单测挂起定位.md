@@ -1,9 +1,18 @@
 ---
-title: 2026-11-01 PuddingCoreTests 跑不完：**一个测试挂住**，不是套件慢
-status: active
-date: 2026-11-01
+title: "2026-11-01 PuddingCoreTests 跑不完：**一个测试挂住**，不是套件慢"
 author: 鲸鲸
+date: 2026-11-01
+last_reviewed: 2026-11-01
+status: active
+description: dotnet test --no-build 跑 20 分钟无任何结果，只能取消。构建本身 0 error。
+categories: [docs, tasks]
+tags: [puddingcoretests, 单测挂起定位, tasks]
+related_docs: []
+related_files: []
+slug: tasks-2026-11-01-puddingcoretests-单测挂起定位
+draft: false
 ---
+
 # 2026-11-01 PuddingCoreTests 跑不完：**一个测试挂住**，不是套件慢
 
 ## 现象

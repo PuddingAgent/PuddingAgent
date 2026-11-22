@@ -1,10 +1,19 @@
 ---
 title: 动态图解：DeepSeek 的 Super-agent 架构（原文存档）
-status: reference
-date: 2026-11-01
 author: 赛博禅心（原文）；鲸鲸（抓取存档）
-source: https://mp.weixin.qq.com/s/lcIkBMOKHSvkRYELgkduMg
+date: 2026-11-01
+last_reviewed: 2026-11-01
+status: active
+description: "id=\"js_content\" style=\"visibility: hidden; opacity: 0; \">本文紧随：Super-agent 设计探索：迈向更自主的 Agent 系统"
+categories: [docs, references]
+tags: [deepseek, super, 动态图解, 架构, references]
+related_docs: []
+related_files: []
+slug: references-动态图解-deepseek-super-agent架构-2026-11-01
+draft: false
 ---
+
+
 
 > 抓取说明：微信原文对 `http_fetch` / `deepseek_fetch` 返回「环境异常」验证页，
 > 本存档改用 curl（浏览器 UA）取回完整 HTML 后本地提取 `#js_content` 正文。

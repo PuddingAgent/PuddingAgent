@@ -1,3 +1,18 @@
+---
+title: 2026-10-31 R2-A 步骤 8 SymbolRefIssuer 迁入 PuddingRetrieval（CodeIndex 检索目录清零）
+author: hyfree
+date: 2026-10-31
+last_reviewed: 2026-10-31
+status: archived
+description: SymbolRefIssuer.cs 从 Source/PuddingCodeIndex/Services/Retrieval/ 迁至 Source/PuddingRetrieval/，命名空间 PuddingCodeIndex.Services.Retrieval → PuddingRetrieval。 Source/PuddingCodeIndex/Services/Retrieval/ 目录
+categories: [docs, changelog]
+tags: [r2, 步骤, 迁入]
+related_docs: []
+related_files: []
+slug: changelog-2026-10-31-r2-a步骤8-symbolrefissuer迁入puddingretrieval
+draft: false
+---
+
 # 2026-10-31 R2-A 步骤 8 SymbolRefIssuer 迁入 PuddingRetrieval（CodeIndex 检索目录清零）
 
 ## 改动

@@ -1,9 +1,18 @@
 ---
 title: 2026-11-01 PuddingMemoryEngineTests 的 6 条预先存在失败（归因线索，未修）
-status: active
-date: 2026-11-01
 author: 鲸鲸
+date: 2026-11-01
+last_reviewed: 2026-11-01
+status: active
+description: 预先存在：把当次的依赖上提改动 git stash 掉再跑同一组用例 ⇒ 同样 6 条红（对照实验，非推断）。 测的是活代码：MemoryLibraryTests.cs 引用 PuddingRuntime.Services，即 Runtime 的 ContextPipeline， 不是 MemoryEngine 里的历史副本。 该工程不在日常门禁里：我的九工程基线（Runtime / CodeIn
+categories: [docs, tasks]
+tags: [memoryenginetests, 条预先存在失败, 归因线索, tasks]
+related_docs: []
+related_files: [TestScripts/staged-test-baseline.json]
+slug: tasks-2026-11-01-memoryenginetests-6条预先存在失败-归因线索
+draft: false
 ---
+
 # 2026-11-01 PuddingMemoryEngineTests 的 6 条预先存在失败（归因线索，未修）
 
 ## 已证实

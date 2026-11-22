@@ -4,7 +4,15 @@ author: 鲸鲸
 date: 2026-10-31
 last_reviewed: 2026-10-31
 status: proposed
+description: Source/PuddingCodeIndex/Contracts/Retrieval/ 30 个文件 其中依赖 CodeSymbolKind 的 6 个文件 引用该命名空间的文件（含 Runtime / Eval / 测试） ~40 个文件
+categories: [docs, tasks]
+tags: [r2, contracts, 契约迁移到, 任务卡, tasks]
+related_docs: []
+related_files: [TestScripts/migrate-retrieval-contracts.ps1, code_map.md]
+slug: tasks-2026-10-31-r2-01契约迁移到puddingretrieval.contracts-任务卡
+draft: false
 ---
+
 
 # R2-01 契约迁移任务卡
 
