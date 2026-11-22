@@ -12,5 +12,5 @@
 | `PluginModelEvaluations.cs` | `Context.ModelEvaluations()` 门面：文本分类与交付验收两类模型评估调用 | `PluginModelEvaluations.ModelEvaluations`、`ClassificationReceipt`、`AcceptanceReceipt` | `IModelEvaluationApi`、`ModelEvaluationException` | 证据不足的验收不得被判为接受；自报置信度必须落在 0..1 |
 | `PluginEvents.cs` | 冻结的插件事件观察契约：事件信封、宿主绑定上下文与幂等审计回执 | `PluginEventEnvelope`、`IPluginEventObserver`、`IPluginAuditApi` | `PluginAuditReceipt` | 审计 `OperationId` 必须等于 `EventId`；重放返回已存在回执而非新增 |
 | `PluginJobs.cs` | 冻结的插件作业契约：作业信封与三态结果（含 Unknown） | `PluginJobEnvelope`、`PluginJobResult`、`IPluginJobHandler` | `PluginJobsException` | Unknown 是第三态，不得当成成功或失败；Failed 必须带失败码 |
-| `PluginExtensions.cs` | 冻结的扩展声明与处理器（观察/建议/变换/守卫）契约 | `PluginExtensionDeclaration`、`IPluginObserver`、`IPluginTransformer`、`IPluginGuardDecision` | `IPluginAdvisor` | 声明必须有界；受保护字段与授权由宿主强制执行 |
+| `PluginExtensions.cs` | 冻结的扩展声明与处理器（观察/建议/变换/守卫）契约 | `PluginExtensionDeclaration`、`IPluginObserver`、`IPluginTransformer`、`PluginGuardDecision` | `IPluginAdvisor` | 声明必须有界；受保护字段与授权由宿主强制执行 |
 | `Pudding.ToolPlugins.AgentSdk.csproj` | 插件 SDK 工程，只引用插件契约与公开 SDK | — | `Pudding.ToolPlugins.Contracts`、`Pudding.Api.Sdk` | 引用清单即白名单 |
