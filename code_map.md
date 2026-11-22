@@ -1,6 +1,6 @@
 # PuddingAgent 代码地图（根索引）
 
-> 源指纹: Source/**=b49fc3daff55, Tests/**=ae48a314f8fe, Tools/**=788a2a6d6fe4, TestScripts/**=bbd708f61369 · 条目数: 261 · 最近整理: 2026-11-22
+> 源指纹: Source/**=b49fc3daff55, Tests/**=ae48a314f8fe, Tools/**=67108bac83db, TestScripts/**=bbd708f61369 · 条目数: 261 · 最近整理: 2026-11-22
 >
 > ⚠️ 2026-10-28：`TestScripts/**` 与 `Source/**` 指纹均已**陈旧**——本轮新增 9 个验收/采样/运维脚本：
 > verify-retrieval-delivery / verify-fulltext-incremental-latency / sample-host-io-shape / correlate-host-read-io / measure-retrieval-resources / watch-read-io-anomaly / verify-storage-vacuum-readiness / swap-compacted-platform-db / probe-read-io-shape
