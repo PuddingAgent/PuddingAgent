@@ -1,3 +1,4 @@
+using PuddingRuntime.Services.Tools;
 using System.Text.Json;
 using PuddingRuntime.Services.Skills;
 using PuddingToolGuidance;
@@ -121,8 +122,25 @@ public sealed class ToolGuidanceHook : IAgentLoopHook
         }
     }
 
+    /// <summary>
+    /// 工具未声明 shell 时，规则引擎假设的方言。
+    ///
+    /// 必须与实际执行引擎一致：<c>shell</c> 与 <c>terminal_*</c> 现在共用
+    /// <see cref="HostShellResolver"/> 的解析链（Windows: pwsh 7 &gt; 5.1 &gt; cmd），
+    /// 若这里仍把 terminal_* 当 cmd，就会对 PowerShell 命令施加 CMD 方言规则——
+    /// 系统性误报比不提示更糟，因此用同一个解析器取值。
+    /// </summary>
     private static string? DefaultDialect(string toolName) =>
-        toolName.Equals("shell", StringComparison.OrdinalIgnoreCase) ? "powershell" : "cmd";
+        IsShellFamilyTool(toolName) ? DefaultShellName.Value : "cmd";
+
+    /// <summary>与 shell 共用一个解析链的工具族。集中判定，避免两处名单漂移。</summary>
+    private static bool IsShellFamilyTool(string toolName) =>
+        toolName.Equals("shell", StringComparison.OrdinalIgnoreCase)
+        || toolName.StartsWith("terminal_", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>进程内缓存：shell 安装不会在运行期变化，避免每次调用都探测 PATH。</summary>
+    private static readonly Lazy<string> DefaultShellName =
+        new(() => HostShellResolver.ResolveShell(null));
 
     private static string? ReadString(JsonElement root, string propertyName)
     {

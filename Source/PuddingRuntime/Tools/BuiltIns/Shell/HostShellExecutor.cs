@@ -8,16 +8,6 @@ namespace PuddingRuntime.Services.Tools;
 /// </summary>
 public static partial class HostShellExecutor
 {
-    private static readonly HashSet<string> SupportedShells = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "auto",
-        "wsl",
-        "bash",
-        "cmd",
-        "powershell",
-        "pwsh",
-    };
-
     public static async Task<HostShellResult> ExecuteAsync(
         HostShellRequest request,
         ILogger logger,
@@ -45,7 +35,7 @@ public static partial class HostShellExecutor
         var requestedShell = string.IsNullOrWhiteSpace(request.Shell)
             ? "auto"
             : request.Shell.Trim();
-        if (!SupportedShells.Contains(requestedShell))
+        if (!HostShellResolver.SupportedShells.Contains(requestedShell))
             return Fail($"Unsupported shell '{requestedShell}'. Supported shells: auto, wsl, bash, cmd, powershell, pwsh.");
 
         var timeoutSeconds = request.TimeoutSeconds ?? 30;
@@ -56,7 +46,7 @@ public static partial class HostShellExecutor
         if (!Directory.Exists(workingDirectory))
             return Fail($"working_directory does not exist: {workingDirectory}");
 
-        var shell = ResolveShell(requestedShell);
+        var shell = HostShellResolver.ResolveShell(requestedShell);
         if (shell == "powershell" && CmdDirectoryPrefixRegex().IsMatch(command))
             return Fail(
                 "shell_syntax_mismatch: cd /d is CMD syntax, but this call selected PowerShell. " +
@@ -141,113 +131,21 @@ public static partial class HostShellExecutor
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
         };
-        ConfigureUtf8Environment(psi);
 
-        if (!shell.Equals("wsl", StringComparison.OrdinalIgnoreCase))
-            psi.WorkingDirectory = workingDirectory;
+        // 编码、环境变量与 argv 传递方式全部由 HostShellResolver 决定：
+        // terminal_* 工具用的是同一份实现，两个入口不得各自演化。
+        HostShellResolver.ConfigureUtf8Environment(psi);
 
-        switch (shell.ToLowerInvariant())
-        {
-            case "powershell":
-            {
-                var exe = ResolvePowerShellExecutable();
-                if (exe is null)
-                    return HostShellStartInfoResult.Fail("Neither pwsh nor powershell.exe is available.");
-                psi.FileName = exe;
-                psi.ArgumentList.Add("-NoProfile");
-                psi.ArgumentList.Add("-ExecutionPolicy");
-                psi.ArgumentList.Add("Bypass");
-                psi.ArgumentList.Add("-Command");
-                psi.ArgumentList.Add(BuildPowerShellCommand(command));
-                return HostShellStartInfoResult.Ok(psi);
-            }
-            case "cmd":
-                if (!OperatingSystem.IsWindows())
-                    return HostShellStartInfoResult.Fail("cmd shell is only available on Windows hosts.");
-                psi.FileName = "cmd.exe";
-                // CMD does not understand the CRT backslash quoting used by ArgumentList.
-                // Match TerminalProcessManager: /s removes only this outer quote pair.
-                psi.Arguments = "/d /s /c \"" + command + "\"";
-                return HostShellStartInfoResult.Ok(psi);
-            case "wsl":
-                if (!OperatingSystem.IsWindows())
-                    return HostShellStartInfoResult.Fail("wsl shell is only available on Windows hosts.");
-                if (!CommandExists("wsl.exe"))
-                    return HostShellStartInfoResult.Fail("wsl.exe is not available on this host.");
-                psi.FileName = "wsl.exe";
-                psi.ArgumentList.Add("--cd");
-                psi.ArgumentList.Add(workingDirectory);
-                psi.ArgumentList.Add("--");
-                psi.ArgumentList.Add("bash");
-                psi.ArgumentList.Add("-lc");
-                psi.ArgumentList.Add(command);
-                return HostShellStartInfoResult.Ok(psi);
-            // auto 在非 Windows 上会退到 sh（bash 不可用时）；两者调用方式相同。
-            case "bash":
-            case "sh":
-                if (!CommandExists(shell))
-                    return HostShellStartInfoResult.Fail($"{shell} is not available on this host.");
-                psi.FileName = shell;
-                psi.ArgumentList.Add("-lc");
-                psi.ArgumentList.Add(command);
-                return HostShellStartInfoResult.Ok(psi);
-            default:
-                return HostShellStartInfoResult.Fail($"Unsupported shell '{shell}'.");
-        }
+        return HostShellResolver.ConfigureStartInfo(psi, shell, command, workingDirectory, out var error)
+            ? HostShellStartInfoResult.Ok(psi)
+            : HostShellStartInfoResult.Fail(error!);
     }
 
-    private static string ResolveShell(string requestedShell)
-    {
-        if (requestedShell.Equals("pwsh", StringComparison.OrdinalIgnoreCase))
-            return "powershell";
 
-        if (!requestedShell.Equals("auto", StringComparison.OrdinalIgnoreCase))
-            return requestedShell.ToLowerInvariant();
-
-        if (!OperatingSystem.IsWindows())
-            return CommandExists("bash") ? "bash" : "sh";
-
-        // Windows 的 auto 解析链：pwsh 7 > Windows PowerShell 5.1 > cmd。
-        // PowerShell 家族统一解析为 "powershell"（具体可执行文件由
-        // ResolvePowerShellExecutable 决定，它同样优先 pwsh）；两者都不可用时退到 cmd，
-        // 而不是直接失败——auto 的语义是「选一个能跑的」，不是「必须给我 PowerShell」。
-        return CommandExists("pwsh") || CommandExists("powershell.exe")
-            ? "powershell"
-            : "cmd";
-    }
 
     private static string ResolveWorkingDirectory(string? workingDirectory) =>
         HostFileToolPaths.ResolveWorkspaceRoot(workingDirectory);
-
-    private static string? ResolvePowerShellExecutable()
-    {
-        if (CommandExists("pwsh"))
-            return "pwsh";
-
-        return OperatingSystem.IsWindows() && CommandExists("powershell.exe")
-            ? "powershell.exe"
-            : null;
-    }
-
-    private static void ConfigureUtf8Environment(ProcessStartInfo psi)
-    {
-        psi.Environment["PYTHONIOENCODING"] = "utf-8";
-        psi.Environment["PYTHONUTF8"] = "1";
-        // 2026-08-22 冗余治理：模型不需要 ANSI 颜色码。NO_COLOR 是跨工具标准；
-        // pwsh 的 $PSStyle 在 BuildPowerShellCommand 中单独关闭。
-        psi.Environment["NO_COLOR"] = "1";
-    }
-
-    private static string BuildPowerShellCommand(string command) =>
-        "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; " +
-        "$OutputEncoding = [Console]::OutputEncoding; " +
-        // pwsh7 格式化输出（表格/高亮）默认带 ANSI 颜色；PlainText 从源头关闭。
-        // powershell.exe 5.1 无 $PSStyle，try/catch 保持兼容。
-        "try { $PSStyle.OutputRendering = 'PlainText' } catch { }; " +
-        command;
 
     /// <summary>
     /// 兜底剥离 ANSI/VT 转义序列（颜色/光标控制）。子进程可能无视 NO_COLOR
@@ -269,30 +167,6 @@ public static partial class HostShellExecutor
         System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
     private static partial System.Text.RegularExpressions.Regex CmdDirectoryPrefixRegex();
 
-    private static bool CommandExists(string command)
-    {
-        try
-        {
-            var check = new ProcessStartInfo
-            {
-                FileName = OperatingSystem.IsWindows() ? "where.exe" : "which",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            check.ArgumentList.Add(command);
-            using var process = Process.Start(check);
-            if (process is null)
-                return false;
-            process.WaitForExit(3000);
-            return process.ExitCode == 0;
-        }
-        catch
-        {
-            return false;
-        }
-    }
 
     /// <summary>
     /// 超时/取消后尽力取回进程已经产生的输出。

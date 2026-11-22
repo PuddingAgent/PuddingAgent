@@ -21,6 +21,13 @@ namespace PuddingRuntimeTests.Services;
 /// <c>TotalLines</c> — i.e. whether the lines are IN the buffer — which is independent of the read
 /// window. Before the fix, TotalLines is short by the trailing batch and this assertion fails.
 /// </summary>
+
+/// <remarks>
+/// 本文件的命令一律用 CMD 语法（<c>for /L</c>、<c>&amp;</c>、<c>1&gt;&amp;2</c>）构造，
+/// 因此调用 <c>StartAsync</c> 时必须显式 <c>shell: "cmd"</c>。测试验证的是输出排空与
+/// 通道关闭时序，与默认引擎无关；依赖默认值会让「默认引擎改成 pwsh」这种正交变更
+/// 把本测试打红——那是前提污染，不是回归。
+/// </remarks>
 [TestClass]
 public sealed class TerminalProcessManagerOutputDrainTests
 {
@@ -48,7 +55,7 @@ public sealed class TerminalProcessManagerOutputDrainTests
                 ? $"(for /L %i in (1,1,{FillerLines}) do @echo filler-%i) & echo {Marker}"
                 : $"seq 1 {FillerLines}; echo {Marker}";
 
-            var info = await manager.StartAsync("session-drain", command, root);
+            var info = await manager.StartAsync("session-drain", command, root, shell: "cmd");
 
             // Consumers stop at the first completed snapshot; completion must include the tail.
             var deadline = DateTime.UtcNow.AddSeconds(60);
@@ -121,7 +128,7 @@ public sealed class TerminalProcessManagerOutputDrainTests
                 ? "echo \"alpha beta\" | findstr \"alpha\""
                 : "echo \"alpha beta\" | grep \"alpha\"";
 
-            var info = await manager.StartAsync("session-quote", command, root);
+            var info = await manager.StartAsync("session-quote", command, root, shell: "cmd");
 
             var deadline = DateTime.UtcNow.AddSeconds(30);
             int? exitCode = null;

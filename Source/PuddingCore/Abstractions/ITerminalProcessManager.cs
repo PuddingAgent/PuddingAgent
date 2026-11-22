@@ -9,7 +9,7 @@ public interface ITerminalProcessManager
     /// <summary>启动进程，返回进程信息（含 ProcessId）。</summary>
     Task<TerminalProcessInfo> StartAsync(
         string sessionId, string command, string workingDir,
-        CancellationToken ct = default);
+        CancellationToken ct = default, string? shell = null);
 
     /// <summary>订阅进程实时输出（逐行 yield），用于 SSE 推送。</summary>
     IAsyncEnumerable<string> SubscribeAsync(string processId, CancellationToken ct = default);

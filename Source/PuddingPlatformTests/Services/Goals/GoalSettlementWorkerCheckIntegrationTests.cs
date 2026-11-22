@@ -85,7 +85,7 @@ public sealed class GoalSettlementWorkerCheckIntegrationTests
             string sessionId,
             string command,
             string workingDir,
-            CancellationToken ct = default)
+            CancellationToken ct = default, string? shell = null)
         {
             // neverExit：模拟「真超时」——进程一直 Running、无退出码；其余按退出码派生终态（与生产一致）。
             var neverExits = neverExit?.Invoke(command) == true;

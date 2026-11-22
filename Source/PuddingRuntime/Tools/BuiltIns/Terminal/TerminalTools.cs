@@ -141,7 +141,7 @@ internal static class TerminalToolJson
 [Tool(
     id: "terminal_start",
     name: "Terminal start",
-    description: "启动终端任务，默认最多等待 1000ms，让短命令在同一次调用返回结果；yield_time_ms=0 立即返回，上限 10000（超限会被夹取，并在结果 yield_time_notice 里说明）。Windows 使用 CMD，其他系统使用 Bash；目录放 cwd，PowerShell 脚本显式用 pwsh -NoProfile -Command。只有返回 job.status=Running 时才用 terminal_wait，from_offset 传 output.next_offset；构建/测试 wait_seconds 180-600，避免短等待反复轮询。",
+    description: "启动终端任务，默认最多等待 1000ms，让短命令在同一次调用返回结果；yield_time_ms=0 立即返回，上限 10000（超限会被夹取，并在结果 yield_time_notice 里说明）。Windows 默认使用 pwsh 7（与 shell 工具同一套解析：pwsh 7 > Windows PowerShell 5.1 > cmd），其他系统用 bash；需要 CMD 专有语法（如 cd /d）时显式传 shell=cmd。目录放 cwd。只有返回 job.status=Running 时才用 terminal_wait，from_offset 传 output.next_offset；构建/测试 wait_seconds 180-600，避免短等待反复轮询。",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,
@@ -217,7 +217,7 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs, Termi
         TerminalProcessInfo info;
         try
         {
-            info = await _processManager.StartAsync(context.SessionId, args.Command.Trim(), cwd, ct);
+            info = await _processManager.StartAsync(context.SessionId, args.Command.Trim(), cwd, ct, args.Shell);
         }
         catch (Exception ex)
         {
@@ -574,11 +574,15 @@ public sealed class TerminalInputTool : PuddingToolBase<TerminalInputArgs>
 
 public sealed record TerminalStartArgs
 {
-    [ToolParam("Command line: CMD on Windows, Bash elsewhere. Put the directory in cwd. For PowerShell use pwsh -NoProfile -Command explicitly.")]
+    [ToolParam("Command line. Runs in the shell selected by `shell` (default auto: pwsh 7 on Windows, bash elsewhere). Put the directory in cwd.")]
     public required string Command { get; init; }
 
     [ToolParam("Working directory. Default: current runtime directory.")]
     public string? Cwd { get; init; }
+
+    [ToolParam("Shell dialect: auto (default), powershell, pwsh, cmd, bash, wsl. "
+        + "auto resolves to pwsh 7 on Windows (identical to the shell tool), bash elsewhere.")]
+    public string? Shell { get; init; }
 
     [ToolParam("Milliseconds to collect the initial result before yielding a running job. Range: 0-10000. Default: 1000. Use 0 for servers/interactive jobs. A completed job needs no terminal_wait.")]
     public int? YieldTimeMs { get; init; }

@@ -40,7 +40,7 @@ public sealed class TerminalProcessManagerChannelCloseTests
                 ? $"(for /L %i in (1,1,{FillerLines}) do @echo filler-%i) & echo {TailMarker} 1>&2"
                 : $"seq 1 {FillerLines}; echo {TailMarker} 1>&2";
 
-            var info = await manager.StartAsync("session-channel-close", command, root);
+            var info = await manager.StartAsync("session-channel-close", command, root, shell: "cmd");
             var logPath = Path.Combine(dataPaths.TerminalLogsRoot, $"{info.ProcessId}.log");
 
             var deadline = DateTime.UtcNow.AddSeconds(60);

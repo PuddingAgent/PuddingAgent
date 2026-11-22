@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
+using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntime.Services;
 
@@ -37,7 +38,7 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
     }
 
     public Task<TerminalProcessInfo> StartAsync(
-        string sessionId, string command, string workingDir, CancellationToken ct = default)
+        string sessionId, string command, string workingDir, CancellationToken ct = default, string? shell = null)
     {
         ct.ThrowIfCancellationRequested();
         var processId = Guid.NewGuid().ToString("N")[..12];
@@ -54,47 +55,25 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
 
         var psi = new ProcessStartInfo
         {
-            FileName = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/bash",
-            WorkingDirectory = workingDir,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = true,
             UseShellExecute = false,
             CreateNoWindow = true,
-
-            // ★ 必须显式指定重定向输出的解码编码（实测依据，勿删）：
-            //   · `dotnet`（CLI / 构建 / 测试）在 stdout 被重定向时输出 **UTF-8**
-            //     —— 实测 `dotnet --help` 原始字节 E4 BD BF E7 94 A8…＝「使用」，UTF-8 可解、GBK 不可解；
-            //   · `cmd.exe` 内建命令按活动代码页 **GBK(936)** 输出（实测 `chcp` = 936）。
-            // 不显式设置时 ProcessStartInfo 回退到 Console.OutputEncoding，在无控制台/服务宿主下
-            // 该值与子进程实际编码不一致 —— dotnet 的 UTF-8 字节被按 GBK 解码成乱码，直接后果是
-            // VSTest 汇总行「失败: 0，通过: 1188，…」变乱码，GoalCheckOutputParser 的中文本地化
-            // 正则永远匹配不到，受控 test 检查即使 exitCode=0 也恒报 test_count_unknown，Goal 被
-            // 无限阻塞（实测 epoch 1/3/5/7/9 全部复现，与读取窗口/字符预算/输出排空三层修复无关）。
-            // 取 UTF-8：dotnet 是受控检查的唯一执行者（build/test），git/python/node 亦以 UTF-8 为主；
-            // cmd 内建命令的中文不在本项目关键路径上。
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
         };
 
-        if (OperatingSystem.IsWindows())
+        // 引擎选择、UTF-8 编码与 argv 传递方式全部委托给 HostShellResolver：
+        // shell 工具用的是同一份实现，两个入口的默认 shell 不得分叉
+        // （分叉会让「在 shell 里验证通过」的命令搬到 terminal_* 上语法失败）。
+        // 本方法曾硬编码 cmd.exe；改为 auto 后 Windows 默认走 pwsh 7。
+        HostShellResolver.ConfigureUtf8Environment(psi);
+
+        var resolvedShell = HostShellResolver.ResolveShell(shell);
+        if (!HostShellResolver.ConfigureStartInfo(psi, resolvedShell, command, workingDir, out var shellError))
         {
-            // ★ 必须用 Arguments 原样传递，不得改回 ArgumentList（实测依据，勿删）：
-            //   .NET 的 ArgumentList 在 Windows 上按 CRT/MSVCRT 规则拼接命令行，会把命令行内部的
-            //   `"` 转义成 `\"`；但 cmd.exe 的引号语法只认 `""` 与 `^"`，**不认 `\"`**
-            //   ⇒ 任何含引号的命令都会被静默破坏：退出码非 0 且 stdout/stderr 全空。
-            //   实测（2026-09-19，卡 f1d45a15 第 2 项）：`echo "a b" | findstr "a"` 经 ArgumentList
-            //   传递后 exit_code=1 且重定向文件 0 字节（诊断信息完全丢失）；同一命令经 shell(pwsh)
-            //   执行成功（exit=0）。二分实验证实是**引号**而非管道触发：无引号版本在两种路径下均成功。
-            //   改用 Arguments 原样传递（.NET 不再做 CRT 转义），配合 /s（剥离最外层引号后按原样执行，
-            //   不额外处理内部引号）⇒ 含引号命令可正常执行（实测 exit=0 且输出正确）。
-            //   /d 跳过 AutoRun 脚本。
-            psi.Arguments = "/d /s /c \"" + command + "\"";
-        }
-        else
-        {
-            psi.ArgumentList.Add("-lc");
-            psi.ArgumentList.Add(command);
+            logWriter.Dispose();
+            logStream.Dispose();
+            throw new InvalidOperationException(shellError);
         }
 
         Process? process = null;

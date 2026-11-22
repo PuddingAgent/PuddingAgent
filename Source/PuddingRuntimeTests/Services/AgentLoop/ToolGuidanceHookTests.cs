@@ -133,18 +133,26 @@ public sealed class ToolGuidanceHookTests
     }
 
     [TestMethod]
-    public async Task Terminal_tools_default_to_cmd_and_shell_tool_defaults_to_powershell()
+    public async Task Terminal_and_shell_tools_share_the_same_default_dialect()
     {
         var hook = new ToolGuidanceHook();
 
-        // terminal_* 默认 cmd ⇒ tail 命中
+        // 两个入口都未声明 shell：必须走同一个默认方言。
+        // 历史上 terminal_* 恒为 cmd、shell 为 pwsh，分叉的后果是同一命令在一个
+        // 工具里验证通过、搬到另一个就语法失败（用户 2026-11-22 要求二者一致）。
         var terminal = await hook.OnToolResultTransformingAsync(
             Ctx(), 0, "terminal_start", """{"command":"dir | tail -3"}""", Ok("o"));
-        StringAssert.Contains(terminal.Output, "NOTE:");
-
-        // shell 工具默认 pwsh（不为 cmd 规则命中，说明默认值确实按工具分流）
         var shell = await hook.OnToolResultTransformingAsync(
             Ctx(), 0, "shell", """{"command":"dir | tail -3"}""", Ok("o"));
-        Assert.IsFalse(shell.Output.Contains("NOTE:"), "shell 工具默认 pwsh，不应命中 cmd 专属规则");
+        Assert.AreEqual(
+            shell.Output.Contains("NOTE:"),
+            terminal.Output.Contains("NOTE:"),
+            "两个入口的默认方言必须一致：同一命令应得到相同的方言判定");
+
+        // 显式 shell=cmd 时 cmd 专属规则仍必须生效，
+        // 证明「默认值一致」没有把规则本身关掉。
+        var explicitCmd = await hook.OnToolResultTransformingAsync(
+            Ctx(), 0, "terminal_start", """{"command":"dir | tail -3","shell":"cmd"}""", Ok("o"));
+        StringAssert.Contains(explicitCmd.Output, "NOTE:");
     }
 }

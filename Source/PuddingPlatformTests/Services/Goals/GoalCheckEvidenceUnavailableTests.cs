@@ -199,7 +199,7 @@ public sealed class GoalCheckEvidenceUnavailableTests
             string sessionId,
             string command,
             string workingDir,
-            CancellationToken ct = default)
+            CancellationToken ct = default, string? shell = null)
         {
             Commands.Add(command);
             return Task.FromResult(Info());

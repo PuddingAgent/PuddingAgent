@@ -68,7 +68,7 @@ public sealed class GoalContractRefinementWiringTests
             string sessionId,
             string command,
             string workingDir,
-            CancellationToken ct = default)
+            CancellationToken ct = default, string? shell = null)
         {
             var (exitCode, lines) = script(command);
             Commands.Add(command);

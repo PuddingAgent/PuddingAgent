@@ -24,7 +24,7 @@ public sealed class GoalCheckTextAssertionRunnerTests
     private sealed class NeverProcesses : ITerminalProcessManager
     {
         public Task<TerminalProcessInfo> StartAsync(
-            string sessionId, string command, string workingDir, CancellationToken ct = default)
+            string sessionId, string command, string workingDir, CancellationToken ct = default, string? shell = null)
             => throw new InvalidOperationException("text-assertion/gated checks must never start a process.");
 
         public IAsyncEnumerable<string> SubscribeAsync(string processId, CancellationToken ct = default)

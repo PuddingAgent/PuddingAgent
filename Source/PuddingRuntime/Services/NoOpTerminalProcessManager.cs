@@ -11,7 +11,7 @@ public sealed class NoOpTerminalProcessManager : ITerminalProcessManager
 {
     public static readonly NoOpTerminalProcessManager Instance = new();
 
-    public Task<TerminalProcessInfo> StartAsync(string sessionId, string command, string workingDir, CancellationToken ct)
+    public Task<TerminalProcessInfo> StartAsync(string sessionId, string command, string workingDir, CancellationToken ct, string? shell = null)
         => Task.FromResult(new TerminalProcessInfo
         {
             ProcessId = "noop",
