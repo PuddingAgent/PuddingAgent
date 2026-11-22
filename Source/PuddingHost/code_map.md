@@ -15,7 +15,7 @@ draft: false
 
 
 # PuddingHost CodeMAP
-> 源指纹: Source/PuddingHost/**=219-f565e5f5b7bf · 条目数: 64 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingHost/**=219-f565e5f5b7bf · 条目数: 63 · 最近整理: 2026-10-22
 
 > 唯一 Host 组合根 | Console 与 Desktop 共用 DI · Browser Bridge · 飞书连接器
 > 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingHost-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingHost-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
@@ -145,7 +145,6 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 | `Connectors/SlackCredentialFile.cs` | 仓库外凭据文件独占、变更检查与原子替换；临时文件创建时继承原文件 ACL，供 App Token 续期写回 | `SlackCredentialFile` | — | — |
 | `Controllers/SlackChannelDiagnosticsController.cs` | 经认证读取动态 Slack Connector 状态和持久发送回执 | `SlackChannelDiagnosticsController` | — | — |
 | `Tools/SlackLookupMemberTool.cs` | `slack_lookup_member`：由可信当前命令绑定 Slack 工作区/Connector；只读查询真人和 bot 的名称/ID，不接受模型指定路由 | `SlackLookupMemberTool`、`SlackLookupMemberArgs` | — | — |
-| `Services/BoundChannelSessions.cs` | 为已绑定成员按渠道、组织、账号和会话分配独立分支，保留所有者身份 | — | — | — |
 | `Services/MessageGatewayIngress.cs` | 校验飞书和 Slack 来源，区分普通渠道会话与已验证成员分支，并向消息循环提交本轮身份 | `MessageGatewayIngress` | — | — |
 | `Hosting/ConnectorHostLifecycleService.cs` | 连接器生命周期 hosted service（见下「关键语义」） | `ConnectorHostLifecycleService` | — | — |
 | `Services/ConnectorDeliveryDispatcher.cs` | 持久出站投递；飞书复用稳定 uuid；Slack 按 Retry-After 重试，Rejected/Unknown 死信保留证据 | `ConnectorDeliveryDispatcher` | — | — |

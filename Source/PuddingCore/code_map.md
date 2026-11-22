@@ -11,7 +11,7 @@
 | `Goals/GoalStateMachine.cs` | Goal 纯状态机 | `GoalStateMachine` | `Goals/GoalContracts.cs` | 转换矩阵、终态判定、resume/edit 卫兵、计数不变量、CanAcceptNewIteration 预算裁决 |
 | `Goals/GoalEventTypes.cs` | goal.* canonical 事件目录 | `GoalEventTypes` | `Goals/GoalContracts.cs` | G1 冻结命名 + ProducerComponent 常量；冻结后新增 goal.policy_changed；消费方按 goal. 前缀或精确类型读取，无类型穷举 switch |
 | `Goals/GoalCommandTextParser.cs` | /goal 严格 grammar 解析 | `GoalCommandTextParser` | `Goals/IGoalCommandService.cs` | 中文/多行 objective、--rounds 1..256、子命令消歧；保留子命令 policy 缺值或未知值 fail-closed 并列出合法取值，取值归一化为规范常量、大小写不敏感 |
-| `Goals/IGoalCommandService.cs` + `IGoalQueryService.cs` | 命令/查询应用服务契约 | `IGoalCommandService`、`IGoalQueryService` | `Goals/GoalCommandTextParser.cs` | slash 与结构化 API 共用；查询含 steps 与 GetTodoAsync 拆解投影，复用 TodoItemView/TodoSummary |
+| `Goals/IGoalCommandService.cs` | 命令/查询应用服务契约 | `IGoalCommandService`、`IGoalQueryService` | `Goals/GoalCommandTextParser.cs` | slash 与结构化 API 共用；查询含 steps 与 GetTodoAsync 拆解投影，复用 TodoItemView/TodoSummary |
 | `Goals/GoalRunOptions.cs` | GoalRuns 配置节 | `GoalRunOptions` | `Goals/GoalContracts.cs` | Enabled 默认 false，局部配置不得扩大硬边界；NoProgressBreakerThreshold（默认 3，边界 1..16）、DefaultResumePolicy、MaxAutoResumesPerBoot（默认 8，边界 0..64）、GoalResumePolicies |
 | `Goals/GoalContinuationContracts.cs` | continuation outbox wire 契约 | `GoalContinuationContracts` | `Goals/GoalRunOptions.cs` | durable outbox wire 值、受信 Acceptance fence、Task plan/node/fingerprint metadata 与稳定失败码 |
 | `Goals/GoalVerificationContracts.cs` | 有界证据与 verifier 契约 | `GoalVerificationContracts` | `Goals/GoalStateMachine.cs` | Evidence Capsule、verdict/decision 与只读接口；含 WaitBlockerCodes/InfraFailureBlockerCodes/UnrecoverableBlockerCodes 白名单与 IsWaitBlockerCode/IsInfraFailureBlockerCode |

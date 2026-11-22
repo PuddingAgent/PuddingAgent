@@ -1,5 +1,5 @@
 # PuddingPlatform CodeMAP
-> 源指纹: Source/PuddingPlatform/**=662-aed16ff8a8bf · 条目数: 275 · 最近整理: 2026-11-22
+> 源指纹: Source/PuddingPlatform/**=662-aed16ff8a8bf · 条目数: 274 · 最近整理: 2026-11-22
 
 > 平台层 | Session 管理 · API · EF Core 持久化 · 消息网关
 
@@ -312,7 +312,6 @@ per-key 连续 deferred 计数与退避档属 Agent 侧诊断（`classifier_stat
 | `Services/ImageGenerationService.cs` | 图片生成 | `ImageGenerationService` | `Services/VisionArtifactStorageService.cs` | — |
 | `Services/VisionArtifactStorageService.cs` | Workspace 原图与派生缓存 | `VisionArtifactStorageService`、`.Preprocessing.cs`、`ImagePreprocessing.cs` | `Services/VisualArtifactResolverBridge.cs`、`Services/VisualArtifactReference.cs` | 64MiB 与实际格式/尺寸/EXIF；模型边界低分辨率副本与超尺寸概览；原图不覆盖，变换按源与版本化参数复用；解码串行限并发 |
 | `Services/DocumentPreviewPathPolicy.cs` | 文档预览路径策略（纯函数） | `DocumentPreviewPathPolicy`、`DocumentPreviewErrorCodes` | `Controllers/Api/WorkspaceFileApiController.cs` | 拒绝绝对路径/`..`/盘符/冒号；扩展名白名单；前缀复核必带分隔符 |
-| `Services/VisualArtifactObservationService.cs` | 视觉观察 | `VisualArtifactObservationService` | `Services/VisionArtifactStorageService.cs` | — |
 | `Services/AudioArtifactStorageService.cs` | 音频存储 | `AudioArtifactStorageService` | `Services/AudioTranscriptionService.cs` | — |
 | `Services/AudioTranscriptionService.cs` | 音频转录 | `AudioTranscriptionService` | `Services/AudioArtifactStorageService.cs` | — |
 | `Services/VoiceSynthesisService.cs` | 语音合成 | `VoiceSynthesisService` | `Services/AudioArtifactStorageService.cs` | 音色必须命中 providers.json 的 ttsModels[].voices；未知音色在调用上游前即 400 `voice_not_registered` 并列出可选值（不把配置错误送到上游） |
