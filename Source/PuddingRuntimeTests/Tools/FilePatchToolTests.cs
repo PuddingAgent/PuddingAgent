@@ -1037,6 +1037,34 @@ public sealed class FilePatchToolTests
             "span growth is bounded by the anchor's droppable run and stops at the next kept character");
     }
 
+    // ── P2-4c 回归：不对齐的尾部结构字符必须拒绝匹配，不能吞掉分号 ──
+    // 现场实测（部署产物 b539453 之后）：文件 `.a { color: red; background: blue }`、锚点
+    // `.a { color: red }` —— 锚点尾部的 `}` 与文件端的 `;` 并不对齐，旧实现只按字符数消费，
+    // 吃掉 `;` 后落盘 `.a { color: green }background: blue }`，产出无法解析的样式表却报成功。
+
+    [TestMethod]
+    public async Task Replace_CssFile_RefusesUnalignedTrailingStructuralRun()
+    {
+        WriteFile("align.css", ".a { color: red; background: blue }\n");
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "align.css",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["oldText"] = ".a { color: red }", ["newText"] = ".a { color: green }" }
+            }
+        });
+
+        Assert.AreEqual(
+            ".a { color: red; background: blue }\n",
+            ReadFile("align.css"),
+            "an anchor closing '}' that meets the file's ';' must not consume the ';'");
+        StringAssert.Contains(
+            result.Output,
+            "not found",
+            "an unaligned structural tail must be reported, so the caller re-reads the file");
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> parameters)
     {
         var tool = new FilePatchTool();

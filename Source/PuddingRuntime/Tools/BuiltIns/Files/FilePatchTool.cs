@@ -815,16 +815,107 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             var start = match.Index;
             var end = match.Index + match.Length;
 
-            for (var n = 0; n < leadingBudget && start > 0 && IsCssDroppable(original[start - 1]); n++)
-                start--;
+            if (!TryExtendTrailingCssRun(original, end, oldText, trailingBudget, out end))
+                continue;
 
-            for (var n = 0; n < trailingBudget && end < original.Length && IsCssDroppable(original[end]); n++)
-                end++;
+            if (!TryExtendLeadingCssRun(original, start, oldText, leadingBudget, out start))
+                continue;
 
             adjusted.Add(new TextMatch(start, end - start, match.Strategy));
         }
 
         return adjusted;
+    }
+
+    // P2-4c: alignment, not just a budget. The anchor names the structural characters it expects to
+    // sit on, so the file may offer fewer of them (an anchor written slightly wider, e.g.
+    // ".a { color: red };" against ".a { color: red }") but the first structural character it does
+    // offer has to be the one the anchor named. Measured on the deployed build 2026-11-22: anchor
+    // ".a { color: red }" against ".a { color: red; background: blue }" consumed the ';' because the
+    // budget only counted characters, producing ".a { color: green }background: blue }" - an
+    // unparseable stylesheet that the caller was told was a success. Returning false here refuses the
+    // match instead, so the caller re-reads the file rather than silently corrupting it.
+    private static bool TryExtendTrailingCssRun(
+        string original, int end, string oldText, int trailingRun, out int newEnd)
+    {
+        newEnd = end;
+        if (trailingRun == 0)
+            return true;
+
+        // Every structural character the file offers inside the droppable run has to be one the
+        // anchor itself declared. An anchor closing on '}' that meets the file's ';' is a different
+        // boundary, not a formatting difference: consuming it produced
+        // ".a { color: green }background: blue }" on the deployed build 2026-11-22, so such a match
+        // is refused instead of rewritten.
+        var awaited = new HashSet<char>();
+        for (var i = oldText.Length - trailingRun; i < oldText.Length; i++)
+        {
+            if (!char.IsWhiteSpace(oldText[i]))
+                awaited.Add(oldText[i]);
+        }
+
+        if (awaited.Count == 0)
+        {
+            // The anchor ends in plain whitespace: consume whitespace only, never a structural character.
+            while (newEnd < original.Length && original[newEnd] != '\n' && char.IsWhiteSpace(original[newEnd]))
+                newEnd++;
+            return true;
+        }
+
+        while (end < original.Length && original[end] != '\n' && IsCssDroppable(original[end]))
+        {
+            if (!char.IsWhiteSpace(original[end]))
+            {
+                if (!awaited.Contains(original[end]))
+                    return false;
+
+                newEnd = end + 1;
+            }
+
+            end++;
+        }
+
+        return true;
+    }
+
+    // Mirror of TryExtendTrailingCssRun for the leading side; whitespace is skipped on both ends and
+    // the run never crosses a line terminator.
+    private static bool TryExtendLeadingCssRun(
+        string original, int start, string oldText, int leadingRun, out int newStart)
+    {
+        newStart = start;
+        if (leadingRun == 0)
+            return true;
+
+        // Mirror of the trailing set check: the file's leading run may only contain structural
+        // characters the anchor declared, and the span never crosses a line terminator.
+        var awaited = new HashSet<char>();
+        for (var i = 0; i < leadingRun; i++)
+        {
+            if (!char.IsWhiteSpace(oldText[i]))
+                awaited.Add(oldText[i]);
+        }
+
+        if (awaited.Count == 0)
+        {
+            while (newStart > 0 && original[newStart - 1] != '\n' && char.IsWhiteSpace(original[newStart - 1]))
+                newStart--;
+            return true;
+        }
+
+        while (start > 0 && original[start - 1] != '\n' && IsCssDroppable(original[start - 1]))
+        {
+            start--;
+            if (!char.IsWhiteSpace(original[start]))
+            {
+                if (!awaited.Contains(original[start]))
+                    return false;
+
+                newStart = start;
+            }
+        }
+
+        return true;
     }
 
     private static int CountLeadingCssDroppable(string text)
