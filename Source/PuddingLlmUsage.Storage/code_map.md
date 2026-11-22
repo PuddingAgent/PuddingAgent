@@ -1,4 +1,6 @@
 # PuddingLlmUsage.Storage — code map
+> 源指纹: *.cs=1-29231a515ff0, *.csproj=1-3d97cbba4ede · 条目数: 9 · 最近整理: 2026-10-30
+
 > 源指纹: 未生成（本文件首次整理，仓库内无指纹自检器 —— 不编造） · 条目数: 2 · 最近整理: 2026-10-30
 
 > 余额采样的 **SQLite 适配器**。只引用 `PuddingLlmUsage`（零依赖叶子）+ `Microsoft.Data.Sqlite`；

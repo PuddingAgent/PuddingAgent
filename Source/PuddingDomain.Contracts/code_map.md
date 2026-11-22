@@ -1,4 +1,5 @@
 # PuddingDomain.Contracts CodeMAP
+> 源指纹: *.cs=8-9e4b8c7c941f, *.csproj=1-7d8623bb3626 · 条目数: 0 · 最近整理: 2026-11-22
 
 > 源指纹: Source/PuddingDomain.Contracts/**=9-462658dd7bea · 条目数: 9 · 最近整理: 2026-11-22
 > 定位：跨层共享的值类型（ADR-089 R2-01）。.NET 10 类库，只引 BCL。

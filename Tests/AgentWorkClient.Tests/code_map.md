@@ -1,4 +1,5 @@
 # Tests/AgentWorkClient.Tests
+> 源指纹: *.cs=1-23f71ea14c2c, *.csproj=1-a95d2001e193 · 条目数: 2 · 最近整理: 2026-11-22
 
 Agent 工作项样例的离线测试工程：假工作 API，不接真实网络、Core 或 Agent。
 

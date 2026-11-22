@@ -1,4 +1,5 @@
 # PuddingSlack
+> 源指纹: *.cs=8-d7c2136cea13, *.csproj=1-483f97ef766b · 条目数: 8 · 最近整理: 2026-11-09
 
 独立 BCL-only Slack 协议组件。工程与包依赖均由构建门禁禁止；不感知 Agent、配置目录或宿主。
 

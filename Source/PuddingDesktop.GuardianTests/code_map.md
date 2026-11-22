@@ -1,4 +1,5 @@
 # PuddingDesktop.GuardianTests 代码地图
+> 源指纹: TestResults/**=3-f8537aad6009, *.cs=3-7d99e00be20e, *.csproj=1-e06ea3aab72d · 条目数: 2 · 最近整理: 2026-11-22
 
 Guardian 的独立 xUnit 测试工程：只引用 Guardian，用假时钟与隔离目录验证状态机、部署保护与工作区回收。
 

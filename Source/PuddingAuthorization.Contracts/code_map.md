@@ -1,4 +1,5 @@
 # Authorization ports
+> 源指纹: *.cs=1-c11b705df60e, *.csproj=1-64f1f382bfa7 · 条目数: 0 · 最近整理: 2026-11-22
 
 授权端口的 BCL-only 契约：决策结果、策略规则、宿主绑定请求与审批记录存储。
 

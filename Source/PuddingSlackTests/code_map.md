@@ -1,4 +1,5 @@
 # PuddingSlackTests
+> 源指纹: TestResults/**=2-79f0490cd4fa, *.cs=4-abdf1ec29b2e, *.csproj=1-81b04285fda1 · 条目数: 0 · 最近整理: 2026-11-09
 
 只引用 PuddingSlack。`SlackTests.cs` 验证协议过滤、线程路由、持久化/ACK 顺序、崩溃恢复及发送结果分类；无需 Slack 凭据或宿主进程。
 

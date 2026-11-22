@@ -1,4 +1,5 @@
 # Plugin Windows Supervisor
+> 源指纹: *.cs=2-ed2ecf4514d7, *.csproj=1-6c229f6b1bae · 条目数: 2 · 最近整理: 2026-11-09
 
 | File | Responsibility |
 |---|---|

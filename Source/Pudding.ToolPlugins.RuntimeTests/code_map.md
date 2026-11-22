@@ -1,4 +1,5 @@
 # Plugin Runtime Tests
+> 源指纹: *.cs=4-ca0c03067c9d, *.csproj=1-42d206944d5d · 条目数: 5 · 最近整理: 2026-11-10
 
 | File | Responsibility |
 |---|---|

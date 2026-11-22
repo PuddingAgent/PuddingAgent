@@ -1,4 +1,5 @@
 # PuddingInvocationPipelineTests
+> 源指纹: *.cs=1-4f9f8460f2f4, *.csproj=1-ac40edc7d64a · 条目数: 0 · 最近整理: 2026-11-22
 
 扩展加载与排序的离线测试工程：只挂本工程与假扩展源，不碰宿主。
 

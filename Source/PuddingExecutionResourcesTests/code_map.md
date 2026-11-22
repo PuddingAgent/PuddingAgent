@@ -1,4 +1,5 @@
 # PuddingExecutionResourcesTests
+> 源指纹: *.cs=3-01bffad045ab, *.csproj=1-b53e1bab1971 · 条目数: 0 · 最近整理: 2026-11-22
 
 执行资源的独立测试工程：覆盖并发槽位、预派发退款与持久预算的准入、结算、重启对账不变量。
 

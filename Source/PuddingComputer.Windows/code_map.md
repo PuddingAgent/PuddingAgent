@@ -1,4 +1,5 @@
 # PuddingComputer.Windows · code_map
+> 源指纹: *.cs=13-0625baa00b85, *.csproj=1-7896e3dbd7b9 · 条目数: 12 · 最近整理: 2026-11-03
 
 Windows Computer Use 平台组件。依赖方向：Windows → Automation → Contracts；不负责宿主装配。
 

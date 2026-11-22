@@ -1,4 +1,5 @@
 # PuddingWorkspace.Contracts
+> 源指纹: *.cs=1-41bc7b4aa5bd, *.csproj=1-3b3a96d45f16 · 条目数: 0 · 最近整理: 2026-11-22
 
 工作区端口契约（PA-05F）：只暴露受权逻辑信息，真实路径与持久存储由适配器实现。
 

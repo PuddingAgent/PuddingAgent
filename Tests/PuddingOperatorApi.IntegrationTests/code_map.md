@@ -1,4 +1,5 @@
 # Operator API Integration Tests
+> 源指纹: *.cs=2-8f36ab99e5e8, *.csproj=1-8dd8410b917a · 条目数: 3 · 最近整理: 2026-11-12
 
 | File | Responsibility |
 |---|---|

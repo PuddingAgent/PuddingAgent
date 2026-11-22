@@ -1,4 +1,5 @@
 # Tests/CapabilityCatalogClient.Tests
+> 源指纹: *.cs=1-727654be4da8, *.csproj=1-3726f9199201 · 条目数: 3 · 最近整理: 2026-11-22
 
 能力目录样例的离线测试工程：假目录 API，不接真实网络、不调用工具、不开 MCP 会话。
 

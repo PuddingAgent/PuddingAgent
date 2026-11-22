@@ -1,4 +1,5 @@
 # Samples/Plugins/ReviewAudit
+> 源指纹: *.cs=1-296dc24a0c11, *.csproj=1-7e1332ae711a, Samples/Plugins/ReviewAudit/*.json=1-b64c90eb9ace · 条目数: 4 · 最近整理: 2026-11-22
 
 离线只读的插件示例：把一条已授权的 `review.completed` 事件格式化成一条 scoped 审计记录，不依赖任何宿主服务。
 

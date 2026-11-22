@@ -1,4 +1,5 @@
 # Samples/GoalDecisionPresenter
+> 源指纹: *.cs=1-629bb15da249, *.csproj=1-ff4ea552451f · 条目数: 3 · 最近整理: 2026-11-22
 
 net10.0 类库示例（非 `Exe`），仅引用 `Pudding.Api.Contracts`，演示目标决策快照的纯展示格式化。
 

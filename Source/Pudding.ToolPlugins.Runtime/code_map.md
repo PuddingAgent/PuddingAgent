@@ -1,4 +1,5 @@
 # Plugin Runtime
+> 源指纹: *.cs=5-5ca060de472b, *.csproj=1-f8c822bbaeb9 · 条目数: 5 · 最近整理: 2026-11-11
 
 | File | Responsibility |
 |---|---|

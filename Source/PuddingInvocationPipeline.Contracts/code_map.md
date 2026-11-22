@@ -1,4 +1,5 @@
 # PuddingInvocationPipeline.Contracts
+> 源指纹: *.cs=1-4118958645d6, *.csproj=1-e1c5bf6e5007 · 条目数: 0 · 最近整理: 2026-11-22
 
 调用扩展端口的纯契约（PA-07 07B）：声明扩展分类与代际围栏，BCL-only。
 

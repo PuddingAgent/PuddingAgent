@@ -1,4 +1,5 @@
 # Pudding.Api.Contracts
+> 源指纹: *.cs=16-3a75e36f00b0, *.csproj=1-b3b8e4f01aab · 条目数: 14 · 最近整理: 2026-11-09
 
 | File | Purpose |
 |---|---|

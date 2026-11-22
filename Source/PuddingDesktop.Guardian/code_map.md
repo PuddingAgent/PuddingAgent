@@ -1,4 +1,5 @@
 # PuddingDesktop.Guardian 代码地图
+> 源指纹: *.cs=9-27ee97cfee13, *.csproj=1-8e1e5a86c76c · 条目数: 8 · 最近整理: 2026-11-18
 
 独立 BCL 守护进程；禁止引用产品程序集，编译期 `EnforceGuardianBoundary` 拒绝任何 ProjectReference。Desktop 仍直接创建、监督 Core 子进程，守护进程只经本地协议控制生命周期。
 

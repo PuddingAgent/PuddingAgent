@@ -1,4 +1,5 @@
 # PuddingComputer.AutomationTests · code_map
+> 源指纹: TestResults/**=2-1910e27341df, *.cs=6-0d69396cdba7, *.csproj=1-ca6c02767b54 · 条目数: 3 · 最近整理: 2026-11-02
 
 `PuddingComputer.Automation` 的独立测试工程（MSTest.Sdk）。断言全部是纯函数行为，不接触真实桌面、不启动进程、不改剪贴板。
 

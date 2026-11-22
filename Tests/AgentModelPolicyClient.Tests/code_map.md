@@ -1,4 +1,5 @@
 # Tests/AgentModelPolicyClient.Tests
+> 源指纹: *.cs=1-23a093aacd76, *.csproj=1-e0e4d5b5f3bf · 条目数: 3 · 最近整理: 2026-11-22
 
 模型策略只读示例客户端的离线测试工程：用注入的假 API 锁住退出码、输出契约与不写行为。
 

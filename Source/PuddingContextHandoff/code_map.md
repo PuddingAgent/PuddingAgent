@@ -1,4 +1,5 @@
 # PuddingContextHandoff · code_map
+> 源指纹: *.cs=2-f66e7e0c322d, *.csproj=1-082f843ee9aa · 条目数: 2 · 最近整理: 2026-11-01
 
 BCL-only 的工作模型交接摘要组件。只负责有界持久快照、读取定位与压缩提示合同；不引用 Core、Runtime、Host、数据库或模型 SDK。
 

@@ -1,4 +1,5 @@
 # PuddingContext
+> 源指纹: *.cs=2-e094aa7e2e18, *.csproj=1-f1b24b2c7fb3 · 条目数: 2 · 最近整理: 2026-11-22
 
 上下文装配（PA-05D）：按 fence 与 token 预算把 canonical 历史与外部贡献装成有界上下文，纯类库、不依赖宿主。
 

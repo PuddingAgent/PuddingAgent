@@ -1,4 +1,5 @@
 # Capability catalog ports
+> 源指纹: *.cs=1-c5af111486e2, *.csproj=1-d7901d8c5793 · 条目数: 0 · 最近整理: 2026-11-22
 
 能力目录端口的 BCL-only 契约：只读列出的条目与授权分页；权限缺口用 Partial 表达而非空目录。
 

@@ -1,4 +1,5 @@
 # Plugin Worker Fixtures
+> 源指纹: *.cs=5-1720d7ca7edb, *.csproj=1-a1b5f450ce51 · 条目数: 4 · 最近整理: 2026-11-09
 
 | File | Responsibility |
 |---|---|

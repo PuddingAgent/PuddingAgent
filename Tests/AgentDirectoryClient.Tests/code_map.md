@@ -1,4 +1,5 @@
 # Tests/AgentDirectoryClient.Tests
+> 源指纹: *.cs=1-3037326607a2, *.csproj=1-9ef5480ba7d8 · 条目数: 3 · 最近整理: 2026-11-22
 
 Agent 目录样例的离线测试工程：假目录 API，不接真实网络、Core 或 Agent。
 

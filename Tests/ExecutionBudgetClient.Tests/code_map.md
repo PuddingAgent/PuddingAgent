@@ -1,4 +1,5 @@
 # Tests/ExecutionBudgetClient.Tests
+> 源指纹: *.cs=1-0077fae976ae, *.csproj=1-84f659e6d315 · 条目数: 3 · 最近整理: 2026-11-22
 
 执行预算样例的离线测试工程：假预算 API，不接真实网络、Core 或 Agent。
 

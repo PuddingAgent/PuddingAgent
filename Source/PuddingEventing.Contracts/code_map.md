@@ -1,4 +1,5 @@
 # PuddingEventing.Contracts
+> 源指纹: *.cs=2-8dd94d3648dd, *.csproj=1-5b47f4d6af37 · 条目数: 0 · 最近整理: 2026-11-22
 
 事件与作业的纯端口契约（PA-07A）：只依赖 BCL，定义信封、订阅、投递与持久作业的稳定边界。
 

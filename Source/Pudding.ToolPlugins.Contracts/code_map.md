@@ -1,4 +1,5 @@
 # Plugin Contracts
+> 源指纹: *.cs=3-701edeb6e7a7, *.csproj=1-e6530e1caf4b · 条目数: 0 · 最近整理: 2026-11-09
 
   File   Responsibility  
  --- --- 

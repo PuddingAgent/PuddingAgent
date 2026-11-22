@@ -1,4 +1,5 @@
 # PuddingMcp.Contracts
+> 源指纹: *.cs=1-d421790da536, *.csproj=1-abb4aec5eca3 · 条目数: 0 · 最近整理: 2026-11-22
 
 MCP 端口契约（PA-05C）：只定义连接状态与请求语义，传输与凭据由适配器实现，BCL-only。
 

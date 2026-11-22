@@ -1,4 +1,5 @@
 # PuddingComputer.Automation · code_map
+> 源指纹: *.cs=6-52e4a59a8bd6, *.csproj=1-3c48dc760b91 · 条目数: 4 · 最近整理: 2026-11-03
 
 Computer Use 的**纯规则**组件。只放无 IO 的判定：动作矩阵、坐标换算、候选标注、回执归约。
 不引用 UIA、窗口、输入、IPC、DI、数据库 —— 那些属于 `PuddingComputer.Windows` / `Connection` / `Worker`。

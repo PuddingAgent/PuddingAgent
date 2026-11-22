@@ -1,4 +1,5 @@
 # PuddingComputer.WindowsTests · code_map
+> 源指纹: TestResults/**=2-7b8c53266e12, *.cs=8-8a54f874f8f9, *.csproj=1-ffc8159738f4 · 条目数: 8 · 最近整理: 2026-11-03
 
 Windows 平台组件测试。纯规则与合成图像用例不派发输入；窗口解析用例会只读采集当前桌面。
 

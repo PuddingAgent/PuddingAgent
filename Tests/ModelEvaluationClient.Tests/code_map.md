@@ -1,4 +1,5 @@
 # Tests/ModelEvaluationClient.Tests
+> 源指纹: *.cs=1-72d37df4dbed, *.csproj=1-db34b77558db · 条目数: 2 · 最近整理: 2026-11-22
 
 模型评估样例的离线测试工程：假评估 API，不接真实网络、Core 或 Agent。
 

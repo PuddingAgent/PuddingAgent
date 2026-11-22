@@ -1,4 +1,5 @@
 # PuddingDingTalk
+> 源指纹: *.cs=6-fd1891845b73, *.csproj=1-066bd5e6b23c, Source/PuddingDingTalk/*.md=1-c3682a24f18d · 条目数: 6 · 最近整理: 2026-11-12
 
 | 入口 | 职责 |
 |---|---|

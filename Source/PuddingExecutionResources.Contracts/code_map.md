@@ -1,4 +1,5 @@
 # Execution resource ports
+> 源指纹: *.cs=3-a1ebe88dcb3d, *.csproj=1-df69d67d71f2 · 条目数: 0 · 最近整理: 2026-11-22
 
 执行资源端口的契约：宿主持有的执行作用域、层级预算、模型描述与单次派发。
 

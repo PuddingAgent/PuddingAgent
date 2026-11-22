@@ -1,4 +1,5 @@
 # Guardian WinUI 集成测试代码地图
+> 源指纹: TestResults/**=2-fa660c196a81, *.cs=3-e7b25c91f6d3, *.csproj=1-ec2e0bc30e33 · 条目数: 2 · 最近整理: 2026-11-18
 
 | 文件 | 用途 |
 |---|---|

@@ -1,4 +1,5 @@
 # PuddingRetrieval.Adapters CodeMAP
+> 源指纹: *.cs=1-48f57d383e48, *.csproj=1-ada73ba0e8fd · 条目数: 1 · 最近整理: 2026-11-22
 
 > 源指纹: Source/PuddingRetrieval.Adapters/**=2-7ad9aada20c0 · 条目数: 2 · 最近整理: 2026-11-22
 > 定位：适配器层——存储到检索窄端口的桥（ADR-089 R2-A 四组件之四）。.NET 10 类库。

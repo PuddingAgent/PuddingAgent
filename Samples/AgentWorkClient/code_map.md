@@ -1,4 +1,5 @@
 # Samples/AgentWorkClient
+> 源指纹: *.cs=2-228f78aa9cd1, *.csproj=1-ca20e2d2c1e3 · 条目数: 4 · 最近整理: 2026-11-22
 
 net10.0 控制台示例（`Exe`），仅引用 `Pudding.Api.Sdk`，演示 `IAgentWorkApi` 的注入式离线用法。
 

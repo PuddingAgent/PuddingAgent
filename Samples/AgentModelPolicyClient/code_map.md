@@ -1,4 +1,5 @@
 # Samples/AgentModelPolicyClient
+> 源指纹: *.cs=2-b86c01367a74, *.csproj=1-967383037a29 · 条目数: 4 · 最近整理: 2026-11-22
 
 net10.0 控制台示例（`Exe`），仅引用 `Pudding.Api.Sdk`，演示 `IAgentModelPolicyApi` 的注入式离线用法。
 

@@ -1,4 +1,5 @@
 # PuddingContextPruningTests CodeMAP
+> 源指纹: TestResults/**=3-145e5ffbee52, *.cs=3-c3c77c2a5e74, *.csproj=1-85b3eb84bee9 · 条目数: 5 · 最近整理: 2026-10-23
 
 > 职责：`PuddingContextPruning` 的**独立**测试工程（S2/S3/S4）——不启动宿主、不连库、不读配置，`dotnet test` 直接跑。
 > 边界：只 `ProjectReference` 被测工程（含 `PuddingCore` 传递引用）；**不得**引用 `PuddingRuntime` / `PuddingHost` / `PuddingPlatform` / `PuddingCodeIntelligence` / `PuddingCodeIndex`，`ComponentBoundaryTests` 会在 CI 里把这条钉死。

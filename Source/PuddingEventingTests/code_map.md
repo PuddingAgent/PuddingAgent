@@ -1,4 +1,5 @@
 # PuddingEventingTests
+> 源指纹: *.cs=4-0af05c9ea95d, *.csproj=1-f7f07d497c7d · 条目数: 0 · 最近整理: 2026-11-22
 
 事件投递的独立测试工程：用内存适配器覆盖授权过滤、租约重投、checkpoint 原子性与作业栅栏。
 

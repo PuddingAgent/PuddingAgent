@@ -1,4 +1,5 @@
 # Tests/GoalDecisionPresenter.Tests
+> 源指纹: *.cs=1-68533e023412, *.csproj=1-000c2c93d4b7 · 条目数: 3 · 最近整理: 2026-11-22
 
 Goal 决策展示器的 golden 测试工程：快照全在内存，不接 Goal 存储也不联网。
 

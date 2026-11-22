@@ -1,4 +1,5 @@
 # PuddingModels.Contracts
+> 源指纹: *.cs=1-c435b5f23ca5, *.csproj=1-3579f92900f9 · 条目数: 0 · 最近整理: 2026-11-22
 
 模型策略端口契约（PA-06）：定义分层配置、能力目录与可信报价，BCL-only，不暴露密钥与 endpoint。
 

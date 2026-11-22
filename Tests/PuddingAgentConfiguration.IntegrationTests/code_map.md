@@ -1,4 +1,5 @@
 # PuddingAgentConfiguration.IntegrationTests
+> 源指纹: *.cs=2-be194bca5770, *.csproj=1-a9b409fce347 · 条目数: 1 · 最近整理: 2026-11-12
 
 | File | Purpose |
 |---|---|

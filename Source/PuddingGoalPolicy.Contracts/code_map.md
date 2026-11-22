@@ -1,4 +1,5 @@
 # PuddingGoalPolicy.Contracts
+> 源指纹: *.cs=1-cd294d49650d, *.csproj=1-7866ff57df1f · 条目数: 0 · 最近整理: 2026-11-22
 
 Goal 续跑建议的纯契约（PA-04）：只定义事实快照与四类建议，BCL-only，不写库、不调模型、不复制 Goal 状态机。
 

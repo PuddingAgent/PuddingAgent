@@ -1,4 +1,5 @@
 # Tests/AgentConfigurationClient.Tests
+> 源指纹: *.cs=1-04383a62d9b6, *.csproj=1-ae22cc428cba · 条目数: 2 · 最近整理: 2026-11-22
 
 Agent 配置样例的离线测试工程：只挂样例工程与假 API，不接真实网络或真实 Core。
 

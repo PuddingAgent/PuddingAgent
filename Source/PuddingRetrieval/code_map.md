@@ -1,4 +1,5 @@
 # PuddingRetrieval CodeMAP
+> 源指纹: *.cs=6-3d0628744e5b, *.csproj=1-12ab290c6cc1 · 条目数: 6 · 最近整理: 2026-11-22
 
 > 源指纹: Source/PuddingRetrieval/**=7-e007a9946e91 · 条目数: 7 · 最近整理: 2026-11-22
 > 定位：检索实现层——编排与数据面抽象（ADR-089 R2-A 四组件之一）。.NET 10 类库。

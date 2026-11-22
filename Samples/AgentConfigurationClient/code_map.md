@@ -1,4 +1,5 @@
 # Samples/AgentConfigurationClient
+> 源指纹: *.cs=2-66d0e049af29, *.csproj=1-ec53dd838dbe, Samples/AgentConfigurationClient/*.md=1-1a64f3e80212 · 条目数: 4 · 最近整理: 2026-11-12
 
 | File | Purpose |
 |---|---|

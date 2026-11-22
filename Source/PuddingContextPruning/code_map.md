@@ -1,4 +1,5 @@
 # PuddingContextPruning CodeMAP
+> 源指纹: *.cs=4-4940b7e8b8fc, *.csproj=1-8a44d44efd83 · 条目数: 5 · 最近整理: 2026-10-23
 
 > 职责：**在花钱的 LLM 摘要之前，用零 LLM 的确定性手段先把载荷压下来**——去重、首尾摘要、参数截断，压不动就整份回退。
 > 边界：只引用 `PuddingCore`（`ChatMessage` / `ToolCall` / `ChatRole` / `LlmTextPart`）；**不引用** `PuddingRuntime` / `PuddingHost` / `PuddingPlatform` / `PuddingCodeIntelligence` / `PuddingCodeIndex`（`ProjectReference` 只有一条，编译期强制）。

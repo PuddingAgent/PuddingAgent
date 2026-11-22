@@ -1,4 +1,5 @@
 # PuddingGrep CodeMAP
+> 源指纹: *.cs=4-cd5d55186a9f, *.csproj=1-8e96b2ec3f78 · 条目数: 4 · 最近整理: 2026-11-22
 
 > 源指纹: Source/PuddingGrep/**=5-d1c01e38c26b · 条目数: 5 · 最近整理: 2026-11-22
 > 定位：统一 grep 的独立匹配内核（ADR-089 R2-00）。.NET 10 类库，只引 BCL。

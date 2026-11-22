@@ -1,4 +1,5 @@
 # PuddingReviews.Contracts
+> 源指纹: *.cs=1-c1e31bb0c3c9, *.csproj=1-fb427c7337d2 · 条目数: 0 · 最近整理: 2026-11-22
 
 评审任务端口契约（PA-03）：定义持久评审任务的键与结论建议，BCL-only，不映射成 GoalPhase。
 

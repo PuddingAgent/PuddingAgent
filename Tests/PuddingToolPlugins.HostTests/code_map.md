@@ -1,4 +1,5 @@
 # Plugin Host Tests
+> 源指纹: *.cs=1-be4e775aaff5, *.csproj=1-e19a1a4f0542 · 条目数: 2 · 最近整理: 2026-11-09
 
 | File | Responsibility |
 |---|---|

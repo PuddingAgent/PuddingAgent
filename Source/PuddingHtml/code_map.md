@@ -1,4 +1,5 @@
 # PuddingHtml — code_map
+> 源指纹: *.cs=2-2104a337a687, *.csproj=1-a622e1482e99 · 条目数: 8 · 最近整理: 2026-10-24
 
 > **角色**：叶子组件（S1）。HTML 正文抽取 + HTML→Markdown 转换。
 > **为什么存在**：`PuddingRuntime` 的 `http_fetch` 需要正文抽取与 Markdown 转换。这两个类原先就住在

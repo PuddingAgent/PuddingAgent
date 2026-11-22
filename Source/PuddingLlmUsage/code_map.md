@@ -1,4 +1,6 @@
 # PuddingLlmUsage — code map
+> 源指纹: Contracts/**=4-0e5b5e6934df, *.cs=3-ab180b933817, *.csproj=1-05551f02a9cc · 条目数: 9 · 最近整理: 2026-10-30
+
 > 源指纹: 未生成（本文件首次整理，仓库内无指纹自检器 —— 不编造） · 条目数: 5 · 最近整理: 2026-10-30
 
 > LLM 余额采样与消耗判定的**零依赖叶子**：`ProjectReference = 0`、`PackageReference = 0`
