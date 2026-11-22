@@ -1,7 +1,12 @@
-# Goal policy tests
+# PuddingGoalPolicyTests
 
-`GoalFixtures.cs`: frozen policy/facts builders used by the decision-matrix and trace tests.
+目标续跑策略的独立测试工程：用决策矩阵与最小循环轨迹锁定纯函数决策与下一轮键的稳定性。
 
-`GoalPolicyTests.cs`: decision matrix — cancel/pause/revocation first, Chat single-turn, stale/changed versions, missing/pending/unknown required review, review-not-required completion, budget/round exhaustion, NeedsUser wait, evidence-required completion, model Accept without evidence is not completion, repair within/without limits, no-progress block, no executable action, typed invalid input, stable next-round key.
+> 源指纹: Source/PuddingGoalPolicyTests/**=pending · 条目数: 4 · 最近整理: 2026-11-22
 
-`GoalPolicyTraceTests.cs`: minimal-loop traces — Chat ends after the first round, Goal missing deliverable continues once then completes, old-version satisfied review cannot complete the new goal, repeated settlement yields the same decision and key, unknown review is neither accept nor reject, budget exhaustion stops without infinite retry, truncated/insufficient evidence never passes.
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `GoalFixtures.cs` | 提供冻结的策略快照与事实构造器 | `GoalFixtures` | `ContinuationPolicySnapshot`、`GoalPolicyFacts` | 默认值是整张决策矩阵的基线，改任一默认字段都会牵动两个测试类 |
+| `GoalPolicyTests.cs` | 锁定续跑决策矩阵的每个分支判定 | `GoalPolicyTests` | `GoalPolicyFacts`、`GoalFixtures` | 模型给出 Accept 但无证据不构成完成；重复结算必须返回同一决策与同一键 |
+| `GoalPolicyTraceTests.cs` | 最小循环轨迹：从 Chat 单轮到修复后完成与证据不足永不过关 | `GoalPolicyTraceTests` | `GoalFixtures` | 截断或不足的证据永远不能过关；预算耗尽必须停机而不是无限重试 |
+| `PuddingGoalPolicyTests.csproj` | MSTest.Sdk 的可执行测试工程，只引用 GoalPolicy 组件 | — | `../PuddingGoalPolicy` | `UseVSTest=false`，产物是自宿主测试可执行文件 |

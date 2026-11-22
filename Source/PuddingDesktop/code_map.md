@@ -1,48 +1,26 @@
-# WinUI Shell / independent Core launcher
-> 源指纹: Assets/**=1-03d89cb968fa, Hosting/**=3-15c96cb63544, *.cs=8-917bc295bdfe, *.csproj=1-4306ca07887d, *.manifest=1-c50e9539699b, *.xaml=2-48f32cc6998f · 条目数: 0 · 最近整理: 2026-10-22
+# PuddingDesktop
 
-- `App.xaml` retains native theme brushes, rounded controls and Mica styling from desktop development B.
-- `App.xaml.cs`: single-instance activation and launcher composition; wires UI/AppDomain/task exceptions, process-exit callback, five-second durable scene capture and the independent exit observer.
-- `Hosting/DesktopApplicationCoordinator.Guardian.cs`: generates token-free guardian settings, checks installation identity and routes commands. Initial Desktop hands ownership to Guardian before starting Core; managed children skip the handoff. Queues whole-application exit and preserves the UI repair path on failure. Successful adoption disables competing in-process automatic recovery.
-- `Hosting/GuardianAdoptionPlan.cs`: pure decision telling whether an already-listening guardian adopts *this* desktop. An answering guardian used to be accepted unconditionally, so after a restart the old one kept adopting the dead pid and the live desktop stayed unmanaged without a single warning.
-- `PuddingDesktop.csproj`: serially publishes Core, observer and `guardian/`; honors isolated artifacts paths and skips guardian self-replacement builds. Links `../PuddingSecretReferences/BootstrapSecretFile.cs` for DPAPI-protected control-token references without expanding the assembly whitelist. `GuardianTestAssembly.cs` grants only the WinUI integration test access to existing test hooks.
-- `../PuddingDesktop.Guardian/code_map.md`: independent build/deployment supervisor; [operation contract](../../Docs/13_runbooks/Desktop-Guardian.md).
-- `../PuddingDesktop.Diagnostics/code_map.md`: bounded, redacted per-run evidence and next-start recovery; no UI or Core dependencies.
-- `../PuddingDesktop.ExitObserver/code_map.md`: separate observer in `observer/`; preserves actual exit code even when managed callbacks do not run.
-- `MainWindow.xaml[.cs]`: trusted Web workbench, separate Agent browser, runtime controls and launcher-only settings. Business configuration remains Web.
-- Tool home cards (`*CardSubtitle` blocks + `ApplyToolAvailabilityLabels`): chip label, subtitle and
-  clickability are all pasted from `PuddingDesktop.Foundation.ToolAvailabilityCatalog`, and the 「+」menu's
-  terminal item shares the same decision — a Deferred capability is disabled in both places instead of opening a
-  placeholder tab. The stale `DeferredNotice(Panel)` branch (said 「交互面板尚未接入」 while the card said 可用)
-  was removed; `DeferredNotice` now covers only genuinely unwired kinds.
-- `MainWindow.xaml.cs` panel methods: current canvas polling, annotation commands, composer forwarding and native craft-library wiring.
-- `PanelImageBridge.cs`: serves allowed local image resources to panel WebView2 instances.
-- [Agent-driven panel ADR-099](../../Docs/07_architecture/113ADR-099交互面板编辑状态与制成品归属ADR.md): proposed interactive HTML/JS runtime, bidirectional SDK events, recoverable state and Core asset ownership.
-- Startup state panel (`LoadingPanel` in `MainWindow.xaml`): replaces the old static "等待 Core 就绪" copy with a state-driven panel for starting / slow start (≥15 s, latest `[StartupPhase]` output) / loading the Web workbench / failure. All
-  copy, visibility and status-bar text come from `PuddingDesktop.Foundation.StartupPanelPresenter`; steps/colors are pre-declared XAML visuals switched by visibility so Light/Dark/HighContrast re-resolve. The Shell only maps
-  `DesktopStartupState` → presenter input, drives a 200 ms stopwatch timer, and routes primary actions (`StartCore` / `CancelStartup` via `StopCoreAsync`→`_startCts` / `Retry` / `OpenSettings`). `StartupPhaseActivity` is the only place
-  that understands the `[StartupPhase]` log format. A 20 s WebView2 watchdog downgrades a hung workbench load to `WorkbenchFailed`; retries reload the WebView through `_webGate` instead of closing it directly. The Debug smoke captures
-  `smoke.startup.png` before `WorkbenchReady` and asserts the panel/ring state.
-- Runtime Center navigation lives beside Workbench and Browser. Colored status, startup duration/time, uptime, Core CPU and memory cards sit above a stretchable log viewport with optional follow mode. Metrics sample only while this page and window are visible; unchanged logs are not reassigned.
-- Memory card reports the **private working set** (Task Manager's 内存 column), not `Process.WorkingSet64` (total working set, which also counts shared image/mapped/JIT pages and reads 30%–120% higher). The subtitle always discloses the counter used and the concurrent total working set; see
- `Docs/14_reports/Core内存口径与占用归因-2026-10-02.md`.
-- `PuddingDesktop.WpfArchive/Runtime/CoreProcessMetricsSampler.cs`: shared BCL process sampling and monotonic CPU deltas; unavailable samples are empty, PID/start-time changes reset the CPU baseline. No business Host or database access.
-- `PuddingDesktop.WpfArchive/Runtime/ProcessMemoryReader.cs`: private working set via `NtQuerySystemInformation(SystemProcessInformation)` → `WorkingSetPrivateSize` (same source as Task Manager); returns null off x64 or when unreadable so callers fall back explicitly.
-- `PuddingDesktop.WpfArchive/Runtime/CoreMemoryDisplay.cs`: pure mapping from `CoreProcessMetrics` to the memory card's value/subtitle, including the shared-page fallback wording. Unit-tested without a UI.
-- `Hosting/DesktopApplicationCoordinator.cs`: former launcher coordinator with WinUI dispatcher/window adaptation. Process supervisor, restart policy, token/config handling and Bridge logic compile from shared sources in `PuddingDesktop.WpfArchive`.
-- `Assets/Pudding.ico`: multi-size Web brand avatar, embedded in EXE and copied to build/publish output; regenerate with `TestScripts/update-pudding-desktop-icon.ps1`.
-- `DesktopIcon.cs`: shared icon path and private Win32 tray HICON loading; `MainWindow` sets the AppWindow icon for the taskbar/title bar.
-- `DesktopTrayIcon.cs`: native tray open/exit and close-policy adapter; records Windows session-ending message flags separately from user exit, and owns its icon handle.
-- Tool DropDownButton styles use the control's default template without the nonexistent `DefaultDropDownButtonStyle` resource key.
-- `PuddingDesktop.csproj`: rejects Host/Runtime/Platform compiler references; both Build and Publish bundle an independently executable Core in `core/`. VS fast up-to-date skipping is disabled so Core-only edits also reach the current build. PuddingCore reference is for existing
- configuration contracts, not Host composition.
-- `TestScripts/test-pudding-desktop-launcher.ps1`: isolated real-process smoke and external lifecycle checks; default Core path is empty to verify automatic discovery of the build's bundled Core. Explicit `-CoreExe` remains available for diagnostic overrides; `-CapabilityChannelEnabled`
- enables the named-pipe channel in both isolated configurations and verifies preflight plus redirected Chinese log decoding in the Debug smoke.
+WinUI 3 外壳与独立 Core 启动器：负责桌面窗口、Core 进程监督、托盘与 Guardian 交接，自己是产品组合根但不装配 Host。
 
-The WPF archive is a reference/test host, not loaded into the WinUI product. Browser driver behavior is shared with `PuddingBrowser.WinUI` through source links.
+> 源指纹: Source/PuddingDesktop/**=pending · 条目数: 18 · 最近整理: 2026-11-22
 
-`Hosting/DesktopApplicationCoordinator.Capability.cs` connects workspace target snapshots through `BrowserWorkspaceTargetBridge.ObserveAgentTarget`; empty or repeated UI state is not a user revocation command. Product surface management
-requires the workspace's `IBrowserWorkspaceLifecycle`; context events and each tab's owning ContextId drive registration and cleanup. Explicit control actions use the lifecycle command ports.
-
-- `../../TestScripts/build-browser-companion.ps1`: serial Desktop + bundled Core build in a dedicated output directory; records per-file hashes, process identities and protocol revisions in `browser-companion.json`; `-VerifyOnly` validates
-  copied packages, `-AllowDirty` marks development repairs explicitly.
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `app.manifest` | 声明 PerMonitorV2 DPI 感知、长路径支持与 Windows 10 兼容性 | — | `PuddingDesktop.csproj` | — |
+| `App.xaml` | 定义外壳主题画刷与 QuietButton 样式，含三套主题字典 | `ShellBackground`、`CardBackground`、`QuietButton` | `MainWindow.xaml` | 新增颜色必须同时补 Light / Default / HighContrast 三套，否则高对比度下丢对比 |
+| `App.xaml.cs` | 负责单实例激活与协调器启动，并驱动诊断日志心跳 | `App`、`OnLaunched`、`UiThread` | `DesktopApplicationCoordinator`、`DesktopRunJournal` | `UiThread.Queue` 只在 `OnLaunched` 内赋值，UI 投递必须经它而非直接拿 DispatcherQueue |
+| `Assets/Pudding.ico` | 多尺寸品牌图标，同时作 EXE 图标与托盘图标源 | — | `DesktopIcon`、`PuddingDesktop.csproj` | 图标须含多尺寸；重新生成走 `TestScripts/update-pudding-desktop-icon.ps1` |
+| `DesktopIcon.cs` | 提供图标路径并按系统小图标尺寸加载私有 HICON | `DesktopIcon`、`LoadTrayIcon` | `DesktopTrayIcon` | HICON 生命周期归调用方，用完必须 `DestroyIcon`，否则句柄泄漏 |
+| `DesktopTrayIcon.cs` | 托盘外壳：气泡通知、打开与退出菜单及会话结束处理 | `DesktopTrayIcon`、`ShowBalloon` | `MainWindow`、`DesktopIcon` | 气泡弹不出来时必须返回 false 而不是抛异常，调用方据此刻意区分「没送达」与「能力不可用」 |
+| `GuardianTestAssembly.cs` | 只给 Guardian 集成测试开放 internal 可见性 | `InternalsVisibleTo` | `../PuddingDesktop.Guardian/code_map.md` | 不得扩大可见性名单 |
+| `Hosting/DesktopApplicationCoordinator.cs` | Core 进程监督与启动状态机的组合根 | `DesktopApplicationCoordinator`、`StartAsync`、`StartCoreAsync`、`StopCoreAsync` | `CoreProcessLogBuffer`、`DesktopRuntimeSnapshot` | 进程内不得装配 Host / Runtime / Platform（`EnforceShellBoundary` 构建期拦截）；重启不等于部署 |
+| `Hosting/DesktopApplicationCoordinator.Capability.cs` | 把工作区目标快照接入浏览器能力通道与页面生命周期 | `DesktopApplicationCoordinator` | `BrowserWorkspaceTargetBridge`、`IBrowserWorkspaceLifecycle` | 空或重复的 UI 状态不构成用户撤销指令，不得据此注销目标 |
+| `Hosting/DesktopApplicationCoordinator.Guardian.cs` | Guardian 交接：生成无令牌设置、校验安装身份并转发控制命令 | `GuardianManaged`、`RequestGuardianExitAsync` | `GuardianAdoptionPlan`、`GuardianLaunchPlan` | 初始 Desktop 必须先交接所有权再启动 Core；受管子进程跳过交接 |
+| `Hosting/GuardianAdoptionPlan.cs` | 纯函数：判定已在监听的 Guardian 是否可接管本进程 | `GuardianAdoptionPlan.Decide`、`GuardianAdoption` | `DesktopApplicationCoordinator.Guardian.cs` | 身份相同优先于存活探测；`AdoptsExitedDesktop` 必须报错，不能当健康接受 |
+| `Hosting/GuardianLaunchPlan.cs` | 纯函数：判定新拉起 Guardian 的每次探测结果 | `GuardianLaunchPlan.Decide`、`GuardianLaunchDecision` | `GuardianAdoptionPlan` | 子进程 exit 0 表示另一进程持有安装租约，不得折叠成探测超时 |
+| `MainWindow.xaml` | 外壳布局：Web 工作台与 Agent 浏览器、运行时中心及启动状态面板 | `MainWindow` | `MainWindow.xaml.cs`、`App.xaml` | 启动状态面板只切预声明元素的 Visibility，不要在代码里改颜色，否则主题切换不会重解析 |
+| `MainWindow.xaml.cs` | 外壳交互：面板画布与工具卡片、运行时中心及启动流程编排 | `MainWindow` | `PanelImageBridge`、`ToolTabItem` | 工具卡片的标签与可点击性只能取自 `PuddingDesktop.Foundation.ToolAvailabilityCatalog`，不得就地判断 |
+| `PanelImageBridge.cs` | 为画布 WebView2 提供 `pudding-image://` 本地图片通道 | `PanelImageBridge.Attach` | `PanelImageSource` | 空白名单等于全部拒绝，不得退化成不限；拒绝时只回状态码，不回显路径 |
+| `PuddingDesktop.csproj` | 外壳工程定义：构建期边界检查与 Core、observer 的串行打包 | — | `../PuddingAgent/PuddingAgent.csproj`、`../PuddingDesktop.ExitObserver` | `DisableFastUpToDateCheck` 必须保留，否则只改 Core 不会进当前构建；Core 与 observer 由 Target 串行 Publish 到 `core/` 与 `observer/` |
+| `SplitterHandle.cs` | 聊天区与工具区之间的拖拽分隔条，兼键盘焦点目标 | `SplitterHandle` | `MainWindow.xaml` | 必须继承 `Grid` 而不是 Border，因为调整光标挂在 `UIElement.ProtectedCursor` 上 |
+| `ToolTabItem.cs` | 把 `ToolTab` 投影成标签条可绑定的视图模型 | `ToolTabItem`、`Refresh` | `ToolTab`、`ToolWorkspaceTabs` | 注册表保持无 UI 依赖；每次注册表变更后必须调 `Refresh`，否则标签不刷新 |

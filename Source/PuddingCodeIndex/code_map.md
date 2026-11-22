@@ -5,13 +5,14 @@
 > 依赖倒置：`ICodeIndexer` 定义在本工程，Roslyn/TS 等**实现留在** `PuddingCodeIntelligence`。
 > 命名空间：`PuddingCodeIndex.Contracts` / `PuddingCodeIndex.Services` / `PuddingCodeIndex.Services.CodeIndex` / `PuddingCodeIndex.Storage`
 > 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingCodeIndex-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingCodeIndex-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
-> 源指纹: Source/PuddingCodeIndex/**=64-34e7cce10286 · 条目数: 56 · 最近整理: 2026-10-31
+> 源指纹: Source/PuddingCodeIndex/**=64-34e7cce10286 · 条目数: 60 · 最近整理: 2026-11-22
 > ⚠ 2026-10-31 R2-01：28 个检索契约已迁至 **`Source/PuddingRetrieval.Contracts/`**（独立工程，命名空间 `PuddingRetrieval.Contracts`）。
-> 下表凡写 `PuddingRetrieval.Contracts/…` 的条目，文件**不在本工程内**；`Services/Retrieval/…` 仍是本工程实现。
+> 下表凡写 `PuddingRetrieval.Contracts/…` 的条目，文件**不在本工程内**。`Services/Retrieval/…` 已无对应文件（该目录已删除），实现位置见 `Source/PuddingRetrieval/`。
 > 同时 `CodeSymbolKind` / `CodeRelationKind` 已下沉到 `PuddingDomain.Contracts`（命名空间保持 `PuddingCodeIndex.Contracts`，调用方零改动）。
 > 同日追加：CodeFileRecord / CodeSymbolContracts / CodeProjectContracts / CodeRelationContracts / CodeIndexScopeContracts **5 个文件（13 个类型）**也已下沉到 PuddingDomain.Contracts（命名空间不变，零调用方改动）—— 下表这 5 条的文件**不在本工程内**。
 > ⚠ 同日步骤 2：`Services/Retrieval/RetrievalPortV1.cs`（1391 行编排）与其测试已迁至 `Source/PuddingRetrieval/`（命名空间 `PuddingRetrieval`）。本工程**不再引用** `PuddingRetrieval`，全工程扫描检索窄端口类型为空。
-> ⚠ 同日步骤 6：`Services/Retrieval/` 下 `DefaultLanguageCapabilityMatrix.cs` / `RetrievalCoverageMatrix.cs` / `SymbolRefFreshness.cs` 及其三个测试类已迁至 `Source/PuddingRetrieval/`（命名空间 `PuddingRetrieval`）。本目录现只余 `SymbolRefIssuer.cs` —— 它是**纯类**（manifest 由调用方传入，不持有 store）；唯一搬迁障碍是 `CodeSourceEntry` / `SourceFingerprint` / `AppliedFileVersion` 仍在 `Contracts/CodeSourceManifestContracts.cs`。
+> ⚠ 同日步骤 6：`Services/Retrieval/` 下 `DefaultLanguageCapabilityMatrix.cs` / `RetrievalCoverageMatrix.cs` / `SymbolRefFreshness.cs` 及其三个测试类已迁至 `Source/PuddingRetrieval/`（命名空间 `PuddingRetrieval`）。
+> 步骤 6 时点：本目录只余 `SymbolRefIssuer.cs` —— 它是**纯类**（manifest 由调用方传入，不持有 store）；唯一搬迁障碍是 `CodeSourceEntry` / `SourceFingerprint` / `AppliedFileVersion` 仍在 `Contracts/CodeSourceManifestContracts.cs`。
 > **步骤 7**：`Contracts/CodeSourceManifestContracts.cs` 里的 3 个源指纹值类型 `SourceFingerprint` / `AppliedFileVersion` / `CodeSourceEntry` 已下沉到 `PuddingDomain.Contracts/CodeSourceFingerprintContracts.cs`（命名空间仍 `PuddingCodeIndex.Contracts`，调用方零改动）。剩余 `ICodeSourceMaintenanceStore` 等存储端口仍在本工程。
 > **步骤 8**：`Services/Retrieval/SymbolRefIssuer.cs` 已迁至 `Source/PuddingRetrieval/`（命名空间 `PuddingRetrieval`）。**`Services/Retrieval/` 目录已删除**，本工程不再有该子命名空间。
 
@@ -24,13 +25,12 @@
 | `CodeIndexScopeContracts.cs` | 索引范围的定义类型 | `ScopeSource` / `ScopeState` / `CodeIndexScope` | — | — |
 | `CodeProjectContracts.cs` | 项目注册记录与增删请求的类型定义 | `CodeProjectStatus` / `CodeProjectRecord` / 增删请求 | — | `CodeProjectRecord.StatusMessage` 追加在**末尾**（可选参数）—— 插到中间会迫使全部 5 个构造点改签名；它承载「最近一次状态变更的原因」（如索引被中断），此前只写不读 |
 | `CodeSymbolContracts.cs` | 符号与搜索请求的契约类型 | `CodeSymbolKind` / `CodeSymbolRecord` / 搜索请求 | — | — |
-| `PuddingRetrieval.Contracts/SymbolRefV1.cs` | 跨请求符号引用（`workspace_open` 的 `ref`；绑定身份/源版本/scope/代际） | `SymbolRefV1` / `SymbolIdStability` / `ClassifySymbolId` | `PuddingRetrieval.Contracts/SymbolIdentity.cs` · `Docs/12_features/symbol_ref-v1-合同提案-2026-10-30.md` | 载体为不透明 token `pmsym1.<base64url>`（可读串会被 docId 的 `: . ( ) ,` 与路径的 `\` `:` 击穿）；创建与解析共用同一条不变量校验 ⇒ 伪造 ref 与非法参数同路径；无 `content_hash` 不得签发；`PositionDependent` 形态只能判陈旧、不得重定位 |
+| `PuddingRetrieval.Contracts/SymbolRefV1.cs` | 跨请求符号引用（`workspace_open` 的 `ref` 载体） | `SymbolRefV1` / `ClassifySymbolId` | `PuddingRetrieval.Contracts/SymbolIdentity.cs` | 载体为不透明 token（可读串会被 docId 与路径分隔符击穿）；创建与解析共用同一不变量校验，伪造 ref 与非法参数同路；无 `content_hash` 不得签发；`PositionDependent` 只能判陈旧 |
 | `PuddingRetrieval.Contracts/SymbolAnchor.cs` | 已解析的符号锚点：`workspace_search(symbol_ref=…, intent=callers/…)` 的入参载体 | `SymbolAnchor` | `RetrievalRequest.cs` · `RetrievalPortV1.cs` | 只有身份没有名字 —— 留着名字会诱使实现退回名字匹配（那也是关系面最容易错的一步） |
 | `CodeReferenceRecord.cs` | 引用记录的契约类型 | `CodeReferenceRecord` | — | — |
 | `CodeRelationContracts.cs` | 符号关系的契约类型 | `CodeRelationKind` / `CodeRelationRecord` | — | — |
 | `CodeWorkspaceDescriptor.cs` | 索引器输入的工作区描述符 | `CodeWorkspaceDescriptor` | — | — |
 | `ICodeIndexStore.cs` | 索引存储端口 | `ICodeIndexStore` / `RemoveFilesAsync` | — | 按文件清除必须与文件记录、符号及其关联图/引用同事务；幂等且回报真实删除数 |
-| `Services/Retrieval/RetrievalPortV1.cs` | `IRetrievalPort` 首个实现（切片一：Auto / Namespace / Type / Member / Any） | `RetrievalPortV1` / `IRetrievalSymbolSource` / `CodeIndexStoreSymbolSource` | `PuddingRetrieval.Contracts/IRetrievalPort.cs` | 未支持意图必须报 `IntentUnsupported` 并给替代方案（不得伪装空命中）；跨 scope 去重先于过载判定；超页必须落盘 + 给游标；带符号锚点时只按 (项目, 符号) 精确取目标，**不得**退回名字检索 |
 | `ICodeIndexer.cs` | 工作区级索引器端口 | `ICodeIndexer` / `IndexWorkspaceAsync` / `RemoveWorkspaceIndexAsync` | `Source/PuddingCodeIntelligence/code_map.md` | 只含全量操作；给共享端口加成员会破坏每个实现者（含组件外替身），增量能力必须另开端口 |
 | `ICodeIndexFileUpdater.cs` | 按文件增量的可选能力端口 | `ICodeIndexFileUpdater` / `IndexFileAsync` | `ICodeIndexer.cs` | 实现方未提供该能力时，调用方必须升级为 scope 级重索引，不得静默跳过文件 |
 | `ICodeIndexScheduler.cs` | 后台索引调度端口 | `ICodeIndexScheduler` | — | — |

@@ -1,69 +1,21 @@
-# PuddingRetrievalEval — 检索评测组件（叶子）
-> 源指纹: Contracts/**=2-89ea29ff4b60, Services/**=8-fe3c2ff56e2b, eval/**=87-f268fb49f8b7, *.csproj=1-9c02f7c0210d · 条目数: 0 · 最近整理: 2026-10-07
+# PuddingRetrievalEval
 
-> 上游：`Docs/12_features/ADR-089-检索增强需求落地方案-2026-09-24.md` §4（U4-0）。
-> 组件化交付规程：S1 独立工程 → S2 独立测试 → S3 无宿主验证 → S4 边界断言 → S5 接入（本刀未接入）。
-> 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingRetrievalEval-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingRetrievalEval-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
+检索评测叶子组件：只测检索质量与耗时，不改变任何检索行为，通过 `ISearchProbe` 端口观察引擎。
 
-## 职责
+> 源指纹: Source/PuddingRetrievalEval/**=pending · 条目数: 13 · 最近整理: 2026-11-22
 
-**测量**检索质量（准确率 + 性能），**不改**任何检索行为。它回答"某一版检索比上一版好还是差"，
-因此 U4-1（统一忽略）、U4-2（作用域/类型）、U4-4（向量）、U4-5（并行）的收益都由它判定。
-
-## 关键设计：只依赖端口
-
-依赖方向：`PuddingRetrievalEval ──▶ ISearchProbe`（本组件定义的端口）；实现在端口之外 ——
-测试替身，或 `temp/U4-0-probe` 的 `LuceneFullTextProbe`。
-
-- 组件**不引用任何检索引擎**（`ProjectReference = 0`、`PackageReference = 0`），因此换引擎不改评测。
-- 真实检索引擎只出现在**适配器**里；适配器不属于组件边界，放在 `temp/U4-0-probe/`（见
-  `eval/reports/README.md`）。
-
-## 文件
-
-| 文件 | 内容 |
-|---|---|
-`Contracts/EvalCase.cs` | `EvalCase` / `EvalKind{Symbol,Intent,Crossref}` / `EvalLanguage{CSharp,TypeScript,Markdown}` / `EvalSet`。`Unknown = 0`，加载器永不产出 `Unknown` |
-`Contracts/SearchProbeContracts.cs` | 端口 `ISearchProbe` + `SearchProbeRequest` / `SearchScope` / `SearchProbeHit` / `SearchProbeOutcome` / `SearchProbeClaim`。耗时由**探针**测量（`double` 毫秒，保留亚毫秒分辨率）。R0-02：`SearchProbeOutcome` 追加可选 `Claim`（`SearchProbeClaim{Kind, Searched, Unsearched, NextStepKinds}`，**纯字符串**，不引用任何引擎）——空结果的否定类型与已查/未查面得以进入报告，本工程仍为零 ProjectReference 叶子 |
-`Services/PathIdentity.cs` | 路径比较规则：大小写不敏感、`\`≡`/`、`./` 去除、期望命中支持后缀匹配（仓储相对路径 vs 绝对命中）、可选 `#Symbol`、`DistinctByFile`（同一文件多行命中只算一次）|
-`Services/NoiseDirectoryRules.cs` | **噪声目录**定义 = 现有三套规则的**并集**（`SearchGrepTool.DefaultExcludeDirs` 12 + `IndexExcludePatterns.NoiseDirNames` 28 + `FullTextIndexOptions.ExcludedDirectoryNames` 33 ⇒ 46 个去重段名）。取并集是**保守**方向（宁可多报噪声），因为 U4-1 才是"选哪套"的裁决者 |
-`Services/RetrievalMetrics.cs` | `recall@k`(1/5/10) / `MRR` / `precision@k` / `noiseRate@k` + 分子分母原始计数。**分母已在 XML 文档逐条写明** |
-`Services/LatencyStatistics.cs` | 最近秩（nearest-rank）百分位 + `LatencySummary`（min/p50/p95/p99/max/mean）；空桶返回 `Empty`（"无样本"，不是"很快"）|
-`Services/EvalSetLoader.cs` | 受版本控制标注集（`eval/sets/*.json`）的加载器，**fail-closed**：未知 `kind`/`language`、空 query、空/重复 `expectedHits`、非法 JSON 一律抛 `EvalSetFormatException` |
-`Services/EvalRunner.cs` | 每个 case 的调用序列 = **1 次冷调用** → `WarmupRepetitions` → `MeasuredRepetitions`；冷/热分开计时，准确率取**第一个已测重复**；并检测重复间是否一致（不可复现的准确率必须被看见）。不吞异常：空用例集 / `MaxResults < 10` / 负 warmup 一律拒绝 |
-`Services/EvalRun.cs` | 运行结果模型（逐 case 分数 + 分层聚合 + 冷/热 `LatencySummary` + 冷调用原始样本）|
-`Services/EvalReportWriter.cs` | Markdown + JSON（`ToMarkdown` / `ToJson` 纯函数；`Write` 落盘 UTF-8 无 BOM）。报告内**显式声明不设阈值** |
-`eval/sets/seed-v1.json` | **种子标注集**：80 条（C# 36 / TS-TSX 22 / md 22；symbol 36 / intent 26 / crossref 18），共 98 个 (query, 期望文件) 对 |
-| `eval/sets/production-negative-v1.json` | **R0-02 概念反例集**（4 条中文自然语言）：答案确实在仓库里但字面与标识符零重叠。断言不是命中，而是 `claim.kind == None` 且 `unsearched` 含 `vector`——词面未命中不得被写成“世上没有” |
-| `eval/reports/r0-02-production-*.{md,json,probe.json}` | **R0-02 生产端口基线**（`PuddingRetrievalEvalProbe --mode production`，`IRetrievalPort` 本体）：`negative-v1` 与 `negative-v1-repeat` 同快照重跑，`small-puddingcodeindex` 同集对 10-02 基线。`.probe.json` = 环境冻结块（数据 sha256 + repo HEAD + capabilities 三态 + 反例 claim + 锚点/分页/ref 实测）|
-| `eval/reports/*.md,*.json` | 首份真实基线（Lucene 全文索引面），见 `eval/reports/README.md` |
-| `eval/reports/u4-3-frozen-{f32,i8}-{all,p0}.*` | **U4-3 四变体矩阵**（同一 1,352 块语料：float32/int8 × 全 tier/仅 P0），报告 `temp/U4-3-REPORT.md`。`.probe.json` 里记 `VectorFormat` / `VectorTierFilter`，与索引 JSON 的 `VectorFormat` 对得上 |
-| `eval/reports/u4-3-{f32,i8}-{all,p0}.*` | 同四变体在**活仓库语料**（U4-2a 提交后 61 文件 / 2,177 块）上的稳健性复跑 |
-
-## 指标定义（分母固定，禁止口头约定）
-
-- `recall@k` = top-k 命中的**去重**期望数 ÷ 期望总数（期望为空 ⇒ 0）
-- `MRR` = 首个命中任一期望的命中位置的倒数（1-based；无命中 ⇒ 0）
-- `precision@k` = top-k 中命中期望的条数 ÷ **k**（不是"实际返回条数"——返回太少是真实损失）
-- `noiseRate@k` = top-k 去重文件中落在噪声目录的比例 ÷ top-k 去重文件数（窗口为空 ⇒ 0）
-- 所有指标先对命中列表做**按文件去重**（同文件多行命中只算一次），否则一个"话多"的文件能占满整个 top-k
-
-## 边界（S4，机器可验）
-
-- 本工程 `ProjectReference = 0`、`PackageReference = 0`。
-- 组件源码内对 `PuddingRuntime` / `PuddingHost` / `PuddingAgent` / `PuddingCodeIndex` / `PuddingCodeIntelligence` /
-  `PuddingFullTextIndex` / `Lucene.*` / `Microsoft.CodeAnalysis.*` / `Microsoft.Build.*` 的**代码引用 = 0**
-  （仅 `NoiseDirectoryRules.cs:11-13` 的 XML 注释里出现来源文件路径）。
-- 运行时断言在 `Source/PuddingRetrievalEvalTests/ComponentBoundaryTests.cs`：进程内/依赖闭包中不得出现上述程序集，
-  且**检测器自带阳性对照**（`Boundary_Detector_Flags_Forbidden_Names`）。
-- 变异取红实测：临时给本工程加一条指向 `PuddingFullTextIndex` 的 `ProjectReference` ⇒ 断言变红并点出
-  `Lucene.Net, Lucene.Net.Analysis.Common, ..., PuddingFullTextIndex` 6 个程序集；撤销后 `git hash-object`
-  逐位相同（`19dd4f5946fb16468a9d7decf883a20227f67414`）且 78/78 全绿。
-
-## 未做（诚实留白）
-
-- **S5 未接入**：本刀不改 Host/DI，不注册进 DI 组合根，也没有宿主侧消费方。
-- 评测组件未内置"毫秒级达标阈值"（by design；见 `eval/reports/README.md`）。
-- 冷样本只是"该查询在本进程内的第一次调用"，不是"进程刚启动 / OS 页缓存冷"；跨进程冷启动未测（见 `temp/U4-0-REPORT.md` RISKS）。
-- markdown 分层下 `noiseRate@10 = 0` 是真实值（`Docs/` 内无噪声段名），不代表 U4-1 无收益：收益在 `Source/` 与
-  根 scope（`.pudding` 20,926 个可索引文件、`.tmp-build` 1,335 个）。
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Contracts/EvalCase.cs` | 定义标注用例与用例集的数据形状 | `EvalCase`、`EvalSet`、`EvalKind`、`EvalLanguage` | `Services/EvalSetLoader.cs` | `EvalKind.Unknown = 0` 只为占位，加载器永不产出它 |
+| `Contracts/SearchProbeContracts.cs` | 定义探针端口及请求与命中契约 | `ISearchProbe`、`SearchProbeRequest`、`SearchProbeOutcome`、`SearchProbeClaim` | `Services/EvalRunner.cs` | 耗时由探针自己测；`Claim` 只能用纯字符串描述已查与未查面，不得引用任何引擎类型 |
+| `Services/PathIdentity.cs` | 统一路径比较口径并支持按文件去重 | `PathIdentity` | `RetrievalMetrics` | 期望命中按文件去重，同文件多行只算一次，否则话多的文件能占满 top-k |
+| `Services/NoiseDirectoryRules.cs` | 取三套现存噪声目录规则的并集作为噪声定义 | `NoiseDirectoryRules` | `PathIdentity` | 并集是保守取法（宁可多报噪声）；选哪套规则由 U4-1 裁决，本组件不拍板 |
+| `Services/RetrievalMetrics.cs` | 计算四项检索质量指标及其分子分母 | `RetrievalMetrics` | `PathIdentity` | 分母必须在 XML 文档逐条写明；`precision@k` 的 k 是请求数，不是实际返回条数 |
+| `Services/LatencyStatistics.cs` | 用最近秩法计算百分位与延迟摘要 | `LatencyStatistics`、`LatencySummary` | `EvalRun` | 空样本必须返回 `Empty`（表示无样本），不得当成「很快」 |
+| `Services/EvalSetLoader.cs` | 加载受版本控制的标注集并做严格格式校验 | `EvalSetLoader`、`EvalSetFormatException` | `eval/sets` | fail-closed：未知 kind、空 query、重复 expectedHits、非法 JSON 一律抛异常 |
+| `Services/EvalRunner.cs` | 每个用例按冷调用加预热加测量重复执行并比对一致性 | `EvalRunner`、`EvalRunOptions` | `ISearchProbe`、`EvalRun` | 准确率取第一个已测重复；重复间不一致必须暴露；空用例集或 `MaxResults < 10` 直接拒绝 |
+| `Services/EvalRun.cs` | 运行结果模型：分数与分层聚合、冷热延迟摘要 | `EvalRun`、`EvalCaseScore`、`EvalSlice`、`EvalObservation` | `EvalRunner` | 冷与热必须分开计时，不得合并成一个平均值 |
+| `Services/EvalReportWriter.cs` | 把运行结果渲染成 Markdown 与 JSON 并落盘 | `EvalReportWriter` | `EvalRun` | 报告必须显式声明不设阈值；落盘为 UTF-8 无 BOM |
+| `eval/sets` | 受版本控制的标注集，含种子集与中文概念反例集 | — | `Services/EvalSetLoader.cs` | 反例集断言的是 `claim.kind == None` 且已查面含 vector，不是断言命中 |
+| `eval/reports` | 基线报告与四变体矩阵的历史产物，含环境冻结块 | — | `eval/sets` | 报告是历史快照，重跑前先看 `.probe.json` 里的数据 sha256 与 HEAD 是否对得上 |
+| `PuddingRetrievalEval.csproj` | 把本工程锁成零引用的叶子，并带上标注集内容 | — | `eval/sets` | `ProjectReference` 与 `PackageReference` 必须保持为 0；边界由独立测试工程的运行时断言守护 |

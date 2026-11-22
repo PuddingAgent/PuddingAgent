@@ -1,99 +1,16 @@
-# PuddingTokenization — code_map
+# PuddingTokenization
 
-按模型自己的词表做 token 计数。**叶子组件**：零 `ProjectReference`，不认识 `ChatMessage` /
-`LlmToolDefinition` / `ContextUsageSnapshot` 等任何 Core 类型；只接收文本，返回数量。
+按模型自己的词表做 token 计数的叶子组件：零工程引用，只接收文本并返回数量，不认识任何 Core 类型。
 
-## 为什么独立成组件
+> 源指纹: Source/PuddingTokenization/**=pending · 条目数: 8 · 最近整理: 2026-11-22
 
-词表选择原先写在 `PuddingCore/Platform/LlmOptions.cs` 里，因此：
-
-1. 不启动宿主就无法验证（这条缺陷正是这样活了很久：把 DeepSeek 当成 OpenAI 词表算，
-   实测高估 **1.83 倍**）；
-2. `Microsoft.ML.Tokenizers` 被绑在 LLM 客户端里，测试必须拖上整个 Core。
-
-拆出来后可以在独立工程里编译、用官方向量比对、变异取红，全程不碰宿主。
-
-## 边界（由测试强制，不靠文档）
-
-`PuddingTokenizationTests/ComponentBoundaryTests.cs`：
-
-- `Component_HasNoProjectReferences` — 运行期枚举引用程序集，出现任何 `Pudding*` 即失败；
-- `Component_DoesNotReferenceCoreOrRuntimeTypes` — 双重保险，禁止宿主类型名出现。
-
-依赖方向只能是 `PuddingCore → PuddingTokenization`。反向引用会立刻被上述测试拒绝。
-
-## 文件职责
-
-| 文件 | 职责 |
-|---|---|
-| `TokenizerFallbackReason.cs` | 回退原因枚举。存在的意义是让「回退」可观测，而不是静默给一个数字 |
-| `ModelTokenizerCatalog.cs` | `modelId → 词表身份` 的**精确别名**映射。刻意不用 `Contains("deepseek")` |
-| `DeepSeekTokenizerJsonLoader.cs` | 解析 HuggingFace `tokenizer.json` → `BpeTokenizer` |
-| `IsolatedSplitPreTokenizer.cs` | 顺序执行 Split(Isolated)，保留未匹配片段；特殊标记独立；返回前物化原文区间 |
-| `ScalarRegex.cs` | 将 Split 正则的 Unicode 大类扩展到补充平面，匹配结果仍为原文 UTF-16 坐标 |
-| `TokenizerProvider.cs` | `TokenizerHandle`（单次解析结果）+ 按 modelId 缓存与回退 |
-| `TokenizerAssetDirectory.cs` | 决定去哪儿找 `<identity>.tokenizer.json`；判据是「目录里至少一份资产」而不是「目录存在」 |
-| `PuddingTokenization.csproj` | 唯一允许引 `Microsoft.ML.Tokenizers` 的地方 |
-
-## 三个必须保留的实现细节（每一个都是踩出来的）
-
-1. **`BpeOptions.ByteLevel = true`**
-   关掉它，`"人工智能"` 会编码成 **0 个 token**（实测）。DeepSeek 词表以 GPT-2 风格的字节
-   表示存储（空格写作 `Ġ`），不做字节映射则 UTF-8 中文匹配不到任何词条。
-   注意：ByteLevel 必须走 `BpeOptions` 开关，**不要**自写 `Normalizer` 来做字节映射 ——
-   官方语义是 `Sequence[Split…, ByteLevel]`（先切分后映射），而 `Create(preTokenizer,
-   normalizer)` 是「先 normalizer」，顺序反转会让正则匹配不到原文而失效。
-
-2. **三条 Split 正则从 JSON 程序化读取**
-   第三条含引号、反斜杠与 `\p{L}` 等 Unicode 类别转义，手抄极难与上游一致；差一个字符
-   产出的计数就是错的，而且看不出来。
-
-3. **特殊标记在 Split 之前隔离，普通片段逐级切分**
-   `IsolatedSplitPreTokenizer` 与 `BpeOptions` 共用特殊标记；普通片段中的匹配与未匹配区间均保留。
-   string / Span 入口返回连续、不重叠、不越界的原文区间，不能让延迟枚举持有已归还的缓冲区。
-   `ScalarRegex` 让 Unicode 类别按完整码点匹配，BPE 编码始终使用原始文本。
-
-## 词表资产
-
-不在仓库里（6.4 MB），也不嵌入程序集。由 `Tools/Tokenization/Prepare-TokenizerAssets.ps1`
-安装到数据根 `D:\Data\models\tokenizers\`，并校验长度与 SHA-256：
-
-```
-文件名  deepseek-v4.1-flash.tokenizer.json
-字节数  6,367,257
-SHA256  C90DFA01249DB1BE4245780A052EDE752E1361C612AC6D08E2BDADA7D599476B
-```
-
-⚠️ **必须是 V4.1-Flash 那一份**。V4-Pro / V4-Flash 的 `tokenizer.json` 是另一个文件
-（5,530,562 B，ETag `628e3364…`），拿它去算 V4.1 会产出错误计数而不是报错 —— 哈希就是
-为拦住这个而钉的。
-
-安装失败时脚本会删掉它刚建的那个目录。早期版本不删，于是中止的运行会留下一个**空的**
-`tokenizers/`——而空目录读起来是「配过又没了」，不是「从没配」。部署树里那个从
-2026-10-24T07:01:14Z 起就存在的空目录就是这么来的：创建时间早于首份资产落地，零文件，
-却让诊断报了一个月的 `beside-application` + `AssetMissing`。
-
-运行时目录来源（`TokenizerAssetDirectory.Resolve`，由 `LlmOptions` 在类型初始化时调用）：
-`PUDDING_TOKENIZER_ASSETS` 环境变量 → 应用目录旁的 `tokenizers/`（**必须含至少一份
-`*.tokenizer.json`**）→ 都没有则回退通用编码。
-
-⚠️ 第二个来源的判据是「目录里有资产」，不是「目录存在」。部署产物天然带一个**空的**
-`tokenizers/`，按「目录存在」判会让诊断报出 `assetSource=beside-application` + `AssetMissing`——
-读起来像「文件被删了」，实际是「从没放过文件」，两类问题的处置完全不同。
-`TokenizerAssetDirectoryTests` 用一条用例把这个区别钉住（变异取红：把判据退回
-`Directory.Exists`，该用例与「只有无关文件」那条一起变红）。
-
-引导期还会把数据根接进来：`PuddingDataRootBootstrapper.EnsureTokenizerAssetsVisible` 在
-`{DataRoot}/models/tokenizers` **确有资产**、且 `PUDDING_TOKENIZER_ASSETS` 为空时，把
-**进程级**变量指向它。这么做的理由很具体：Windows 的环境块在进程创建时从父进程继承，
-Core 是 Desktop 的常驻子进程，所以「User 级变量已登记」与「本进程看不到」可以同时成立——
-只重启 Core 读不到新值，要连 Desktop 一起重启。引导期写入进程级变量后，下一轮 Core 启动
-就能生效，不必动整条进程树；用户显式配置仍然优先（非空时一律不覆盖）。
-
-## 正确性判据
-
-`GoldenVectorTests` 与 `UnicodeRegressionTests` 分别使用 HuggingFace Node / Rust 引擎生成的
-独立向量，核对 token ID、计数、区间覆盖及并发稳定性。`IsolatedSplitPreTokenizerTests` 不依赖外部词表。
-Core 的 `ExactTokenizerRequestMeasurementTests` 验证实际 `CountTokens` 和预压缩 `MeasureLlmRequest` 入口。
-
-round-trip 可逆只说明映射自洽，不排除「两边一起偏移但各自自洽」，**不足以**作为完成判据。
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `TokenizerFallbackReason.cs` | 让计数回退可被观测，而不是静默给出一个数字 | `TokenizerFallbackReason` | `TokenizerProvider` | 新增回退原因必须落到唯一枚举值，禁止用通用值兜底 |
+| `ModelTokenizerCatalog.cs` | 用精确别名把 modelId 映射到词表身份 | `ModelTokenizerCatalog` | `TokenizerProvider` | 刻意不用 `Contains("deepseek")` 这类模糊匹配；未知模型必须走回退而不是猜 |
+| `DeepSeekTokenizerJsonLoader.cs` | 解析 HuggingFace `tokenizer.json` 并产出 BPE 分词器 | `DeepSeekTokenizerJsonLoader`、`TokenizerLoadResult` | `BpeTokenizer` | `ByteLevel` 必须走 `BpeOptions` 开关，自写 `Normalizer` 会把「先切分后映射」的顺序反转，正则匹配不到原文 |
+| `IsolatedSplitPreTokenizer.cs` | 切分前隔离特殊标记并保留未匹配片段 | `IsolatedSplitPreTokenizer` | `BpeTokenizer`、`ScalarRegex` | 返回区间必须连续且不重叠、不越界，延迟枚举不得持有已归还的缓冲区 |
+| `ScalarRegex.cs` | 让 Split 正则按完整码点覆盖补充平面字符 | `ScalarRegex` | `IsolatedSplitPreTokenizer` | 匹配结果仍须是原文 UTF-16 坐标，不能返回码点下标 |
+| `TokenizerProvider.cs` | 解析并缓存分词器，失败时返回带原因的回退句柄 | `TokenizerProvider`、`TokenizerHandle` | `ModelTokenizerCatalog`、`TokenizerFallbackReason` | 缓存键是词表身份而不是 modelId，同一身份只解析一次（`ConcurrentDictionary` 加 `Lazy`） |
+| `TokenizerAssetDirectory.cs` | 决定去哪儿找词表资产并标记来源 | `TokenizerAssetDirectory`、`TokenizerAssetResolution` | `PUDDING_TOKENIZER_ASSETS` | 判据是目录里至少有一份 `*.tokenizer.json` 而不是目录存在；资产必须是 V4.1-Flash 那份（6,367,257 B），换 V4-Pro 会算出错数而不是报错（SHA256 C90DFA01…D599476B）；`PUDDING_TOKENIZER_ASSETS` 非空时优先且不得被覆盖 |
+| `PuddingTokenization.csproj` | 叶子工程：零工程引用，独占分词引擎包 | — | `Microsoft.ML.Tokenizers` | `Microsoft.ML.Tokenizers` 只允许在本工程引用；加任何 `ProjectReference` 都会让边界测试变红 |

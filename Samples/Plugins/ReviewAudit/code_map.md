@@ -1,8 +1,11 @@
 # Samples/Plugins/ReviewAudit
 
-| File | Purpose |
-|---|---|
-| `ReviewAudit.csproj` | net10.0 class library sample (TFM inherited from the root build properties; OutputType=Library; no packages); only `ProjectReference` is `Pudding.ToolPlugins.AgentSdk`. |
-| `ReviewAuditPlugin.cs` | `public sealed class ReviewAuditPlugin : IPluginEventObserver`; `HandleAsync(envelope, context, ct)` only acts when `envelope.Kind == "review.completed"` and `envelope.ReviewCompleted` is present — otherwise it writes nothing, logs nothing and throws nothing. For a valid event it maps exactly six `PluginAuditRecord` fields (`OperationId=envelope.EventId`, `EventId`, `ReviewId`, `Finding`, `EvidenceLevel`, `ReasonCode` verbatim) and calls `context.Audit.RecordAsync(record, ct)` exactly once; a pre-cancelled `ct` prevents the write and `RecordAsync` exceptions (including cancellation) are never swallowed. The internal `FormatForTest` helper renders the frozen one-line text `review.completed event={EventId} review={ReviewId} finding={Finding} evidence={EvidenceLevel} reason={ReasonCode或"无"}`. Never sends messages, invokes tools, executes MCP, starts a Review/Goal, subscribes to its own audit output or keeps state/cache/timers. |
-| `manifest.json` | Frozen sample manifest: schema `pudding-tool-plugin/v2`, id `review-audit`, sdkApi 1.4, coreApi 1.3, entry type `Pudding.Samples.Plugins.ReviewAudit.ReviewAuditPlugin`, the two scoped capabilities `events.observe.review.completed` and `audit.record.write`, the single `review.completed` event observation (schemaVersion 1) and bounded limits; no wildcard capability. |
-| `code_map.md` | This index. |
+离线只读的插件示例：把一条已授权的 `review.completed` 事件格式化成一条 scoped 审计记录，不依赖任何宿主服务。
+
+> 源指纹: Samples/Plugins/ReviewAudit/**=pending · 条目数: 3 · 最近整理: 2026-11-22
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `ReviewAudit.csproj` | 示例插件工程，输出 net10.0 类库且只引用 SDK 工程 | — | `../../Source/Pudding.ToolPlugins.AgentSdk/Pudding.ToolPlugins.AgentSdk.csproj` | 不打包（`IsPackable=false`）；无任何 PackageReference |
+| `ReviewAuditPlugin.cs` | 只把带负载的 `review.completed` 事件写成一条审计记录，其余事件静默忽略 | `ReviewAuditPlugin`、`HandleAsync`、`FormatForTest` | `IPluginEventObserver`、`PluginAuditRecord` | `OperationId` 必须等于 `EventId`（宿主据此去重）；非目标事件不得写记录或抛异常 |
+| `manifest.json` | 冻结的插件清单：声明入口类型、两项 scoped 能力与一个事件观察 | — | `ReviewAuditPlugin` | 能力必须是 scoped 精确值，禁止通配符；`sdkApi` 与 `coreApi` 版本不可随意提升 |

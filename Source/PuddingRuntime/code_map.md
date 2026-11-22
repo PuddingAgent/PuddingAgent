@@ -1,13 +1,14 @@
 # PuddingRuntime CodeMAP
 
-> 源指纹: Source/PuddingRuntime/**=442-9f3c55127bfc · 条目数: 353 · 最近整理: 2026-10-24
+> 源指纹: Source/PuddingRuntime/**=442-9f3c55127bfc · 条目数: 398 · 最近整理: 2026-11-22
 > 定位：Agent 运行时核心（Agent Loop / LLM 调用 / 工具系统 / 上下文管线 / 子代理 / 后台学习）；.NET 10 类库，唯一服务注册入口 `DependencyInjection.cs`。
 > 本文件只做本项目文件级索引；跨项目调用链、测试工程索引、架构文档索引、运行时目录与构建入口只在根 [`code_map.md`](../../code_map.md)。
 > 每对象一行；空字段写 `—`。角色 `observe` 的对象只在文末附录列路径。
 
 ## 入口与配置
 
-凭据执行边界统一调用 `../PuddingSecretReferences/CredentialReference.cs`：LLM、Embedding、搜索、余额探针及 CalDAV 在发送前解析引用，未解析引用不发往上游；`DeepSeekWebServiceCollectionExtensions` 与 `LlmUsageSamplingServiceCollectionExtensions` 将 KeyVault 委托装配给读取器。`Tools/BuiltIns/Management/BootstrapRebootTool.cs` 从 DPAPI 启动缓存解析控制令牌，不依赖 KeyVault HTTP 服务。
+凭据执行边界统一调用 `../PuddingSecretReferences/CredentialReference.cs`：LLM、Embedding、搜索、余额探针及 CalDAV 在发送前解析引用，未解析引用不发往上游。
+`DeepSeekWebServiceCollectionExtensions` 与 `LlmUsageSamplingServiceCollectionExtensions` 将 KeyVault 委托装配给读取器；`Tools/BuiltIns/Management/BootstrapRebootTool.cs` 从 DPAPI 启动缓存解析控制令牌，不依赖 KeyVault HTTP 服务。
 
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
@@ -67,9 +68,9 @@
 | `Services/AgentContextCompactionSummaryGenerator.cs` | 由当前运行时 Agent 生成压缩摘要 | `IContextCompactionSummaryGenerator` | `Services/FlashContextCompactionSummaryGenerator.cs` | — |
 | `Services/AgentExecution/AgentExecutionLlmInvoker.cs` | LLM 调用的统一封装（facade 与 legacy 两条路径） | `AgentExecutionLlmInvoker` | `Services/LlmInvocationService.cs` | 每次调用绑定冻结视觉路由，包含 SSE yield 后的摘要调用；透传 FinishReason，截断摘要不提交 |
 | `Services/BudgetedSendAttemptObserver.cs` | CORE-I1-06 发送边界 observer：每次发送新 attempt、冻结 Work 身份/价格、输出上限收紧、usage 结算/Unknown | `BudgetedSendAttemptObserver` | `PuddingCore/Observability/LlmSendAttemptScope.cs`、`Services/LlmInvocationService.cs` | 唯一预算写入者；未接线前不改变现有单 attempt 行为 |
-| `Services/AgentExecution/WorkBudgetAttempt.cs` | 受管 Work 预算载体 → 每次发送的 `LlmAttemptBudget` 共享转换；托管执行缺 facade 或身份不一致时 fail-closed | `WorkBudgetAttempt` | `PuddingCore/Runtime/RuntimeExecutionIdentity.cs`、`Services/AgentExecution/AgentExecutionLlmInvoker.cs`、`Services/AgentExecution/AgentExecutionService.Streaming.cs` | 每次发送独立 attempt、同 Work 账户复用；无载体保持旧直连行为 |
+| `Services/AgentExecution/WorkBudgetAttempt.cs` | 受管 Work 预算载体到每次发送 `LlmAttemptBudget` 的共享转换 | `WorkBudgetAttempt` | `Services/AgentExecution/AgentExecutionLlmInvoker.cs` | 托管执行缺 facade 或身份不一致时 fail-closed；每次发送独立 attempt、同 Work 账户复用；无载体保持旧直连行为 |
 | `Services/AgentExecution/AgentExecutionResponseHandler.cs` | LLM 输出解析为 Loop 响应并评估终态 | `AgentExecutionResponseHandler` | `Services/AgentLoop/CompletionPolicy.cs` | — |
-| `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial） | `AgentExecutionService` | `Services/AgentExecution/AgentExecutionService.Streaming.cs` | 工具目录在 dispatch 时冻结，新发现定义只在下一次 LLM round 生效。**2026-10-25**：思考强度由 `ReasoningEffortPolicy.Resolve(快照手动档位, 模板, 已解析配置)` 合成后写入 ConfigOverride（两条路径同源） |
+| `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial） | `AgentExecutionService` | `Services/AgentExecution/AgentExecutionService.Streaming.cs` | 工具目录在 dispatch 时冻结，新发现的定义只在下一次 LLM round 生效；思考强度由 `ReasoningEffortPolicy.Resolve` 合成后写入 ConfigOverride，两条路径同源 |
 | `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial） | `AgentExecutionService` | `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 与 Buffered 共用冻结前缀与止损语义；思考强度合成同样走 `ReasoningEffortPolicy`，不得另写一套继承规则 |
 | `Services/AgentExecution/AgentToolArguments.cs` | tool-call JSON 到参数的纯转换 | `AgentToolArguments` | `Tools/BuiltIns/Skills/AgentSkillTool.cs` | 纯函数，不读写状态 |
 | `Services/AgentExecution/AgentTurnTimingCollector.cs` | 单轮耗时检查点的采集 | `AgentTurnTimingCollector` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | — |
@@ -119,7 +120,7 @@
 | `Services/ContextHealthEvaluator.cs` | 上下文健康度的评估 | `ContextHealthEvaluator` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | 占用率分母 = 模型窗口、门禁分母 = 有效输入窗口，两者不可混用；容量分量与来源须如实输出，回退输出预算单列而不得冒充用户预算（见下「关键语义」） |
 | `Services/ContextLayerContracts.cs` | 上下文分层的契约模型 | `ContextLayerContracts` | `Services/ContextPipelineLayers.cs` | — |
 | `Services/ContextPipeline.cs` | 分层上下文组装的对外实现 | `ContextPipeline` | `Services/ContextPipelineLayers.cs` | 稳定 system prefix 与本轮 User tail 必须分离 |
-| `Services/ContextPipelineLayers.cs` | 上下文各层的装配 | `ContextPipelineLayers` | `Services/ContextPipelineOrchestrator.cs` | 实例配置正文指纹刷新静态层；系统指令、协作、人设、工具约定与记忆策略完整注入，显式空文档不回退模板；常驻技能索引只投射 skillId+一句话摘要（不投影 tags/keywords，2026-10-23）。**2026-11-20**：工具目录取数必须经 `ResolveToolDescriptors`（携带 `ToolExecutionContext`），退回 `ListAvailable(policy, workspaceId)` 会让 host-catalog 工具源整体缺席（实测目录报 6 个而实际可用 40+） |
+| `Services/ContextPipelineLayers.cs` | 上下文各层的装配 | `ContextPipelineLayers` | `Services/ContextPipelineOrchestrator.cs` | 工具目录取数必须经 `ResolveToolDescriptors`（携带 `ToolExecutionContext`）：退回 `ListAvailable(policy, workspaceId)` 会让 host-catalog 工具源整体缺席（实测目录报 6 个而可用 40+） |
 | `Services/AgentPromptSnapshot.cs` | 推理使用的实例提示词快照 | `AgentPromptSnapshot` | `Services/SystemPromptBuilder.cs` | 按 manifest 文档引用读取 UTF-8；分层与直接构建共用实例名称、角色和提示词来源 |
 | `Services/ContextPipelineOrchestrator.cs` | 上下文组装编排与分层占比快照 | `ContextPipelineOrchestrator` | `Services/ContextPipelineLayers.cs` | BuildSessionMessagePreviews 仅供快照显示，不可回填模型历史 |
 | `Services/ContextWindowConstants.cs` | 上下文窗口的命名常量 | `ContextWindowConstants` | `Services/ContextWindowManager.cs` | — |
@@ -270,7 +271,7 @@
 | `Services/TodoTools/TodoReadTool.cs` | `todo_read`：读取某作用域的待办表 | `TodoReadTool` | `Services/TodoTools/TodoToolModels.cs` | — |
 | `Services/TodoTools/TodoToolModels.cs` | 待办三工具的共享参数模型 | `TodoToolJson` | `Services/TodoTools/TodoWriteTool.cs` | — |
 | `Services/TodoTools/TodoWriteTool.cs` | `todo_write`：全量替换待办表 | `TodoWriteTool` | `Services/TodoTools/TodoReadTool.cs` | — |
-| `Services/Tools/ToolExposurePlanner.cs` | 与 Provider 无关的工具暴露规划（延迟加载 + 有界可见集预算） | `ToolExposurePlanner` | `Tools/Platform/PuddingToolRegistry.cs` | 每个 turn 冻结可见集（core ∪ 最近使用的非核心，默认 48 个/40 KiB）；能力包原子取舍、无 search_tools 不淘汰；**顺序为 stable_append（不得改回 canonical 重排，否则每轮改写前缀）**；同一 turn 内只追加；被淘汰定义可由 `search_tools` 重新加载；**2026-10-27 新增 `ToolExposureOptions.EvictOnlyAtSessionStart`（默认 false）：开启后会话内跳过淘汰（计划里 `BudgetDeferred=true` 如实上报），把集合收缩推到会话边界，使前缀只增长不挖洞** |
+| `Services/Tools/ToolExposurePlanner.cs` | 与 Provider 无关的工具暴露规划（延迟加载 + 有界可见集预算） | `ToolExposurePlanner` | `Tools/Platform/PuddingToolRegistry.cs` | 每个 turn 冻结可见集（core ∪ 最近使用的非核心，默认 48 个/40 KiB）；顺序恒为 stable_append，不得改回 canonical 重排（否则每轮改写前缀）；被淘汰定义只能由 `search_tools` 重新加载 |
 | `Services/Tools/ToolSummaryTier.cs` | L1 摘要级工具定义：冷门工具只发「首句 + 参数名 + 必填」 | `ToolSummaryTier.Apply`、`SummarizeDescription` | `Services/Tools/ToolExposurePlanner.cs` | 纯函数且**幂等**（重复压缩不得再变形，否则工具块字节每轮变）；必须丢掉 `RawJsonSchema`，否则等于没压缩；英文句点只在「后接空白且前词非单字母缩写」时算句末 |
 | `Services/TurnExecutorAdapter.cs` | Turn 执行的门控与请求适配 | `TurnExecutorAdapter` | `Services/Messaging/AgentExecutionAdmissionCoordinator.cs` | 后台忙碌时采用有界退避与节流日志；失败诊断按公开字段白名单写入 TerminalInfo，交由 canonical Journal 持久化 |
 | `Services/UserPreferenceService.cs` | 用户偏好的预取注入与写入 | `UserPreferenceService` | `Tools/BuiltIns/Memory/SavePreferenceTool.cs` | — |

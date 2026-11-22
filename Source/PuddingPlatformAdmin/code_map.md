@@ -1,5 +1,5 @@
 # PuddingPlatformAdmin CodeMAP
-> 源指纹: Source/PuddingPlatformAdmin/*=9-5d6d7d54d4bc, src/**=955-bed151ef1a3d, public/**=14-f3aa09cf5f00, mock/**=7-15a79f8b3988, config/**=5-502280cdfaa6, e2e/**=5-b8abc0439ac3, scripts/**=5-356b08dc0055, .husky/**=2-a2d740670ada, .github/**=1-7e41fe33d602 · 条目数: 195 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingPlatformAdmin/*=9-5d6d7d54d4bc, src/**=955-bed151ef1a3d, public/**=14-f3aa09cf5f00, mock/**=7-15a79f8b3988, config/**=5-502280cdfaa6, e2e/**=5-b8abc0439ac3, scripts/**=5-356b08dc0055, .husky/**=2-a2d740670ada, .github/**=1-7e41fe33d602 · 条目数: 219 · 最近整理: 2026-11-22
 > 指纹覆盖: *、src/**、public/**、mock/**、config/**、e2e/**、scripts/**、.husky/**、.github/**；未纳入 10 项: .commitlintrc.js、.editorconfig、.gitignore、.lintstagedrc、.npmrc、.tmp-b6-build.log、.tmp-b6-tsc-orch.log、.tmp-b6-tsc.log、tests/**、types/**
 
 > React 管理前端 | Ant Design Pro v6 · React 19 · UmiJS
@@ -37,15 +37,15 @@
 
 ## 关键文件
 
-| 语音入口 | 用途 |
-|---|---|
-| `src/pages/chat/hooks/cloudVoiceInput.ts` · `public/audio/pcm-capture.js` | 授权后立即采集，连接期间有界暂存开头音频；分批排空、停止 flush/最终排空、取消整个生命周期与设备释放 |
-| `src/pages/chat/hooks/useHoldToTalk.ts` | 聊天页按住说话手势：Ctrl+Shift+Space、麦克风/输入区中键；短按保护、松开提交、Esc/右键/失焦取消。**焦点在输入框/可编辑区时不接管 Space**（Ctrl+Shift 是输入法切换键，否则草稿会被误发）；**pointerup 校验 button**（鼠标各键共享 pointerId）；**鼠标 pointercancel 不取消**（中键自动滚动不是用户意图） |
-| `src/pages/chat/hooks/voiceSilenceStop.ts` | 免按键录音的静音收尾判定：预热期、说过话、连续静默达阈后只触发一次 |
-| `src/pages/chat/hooks/voiceAudio.ts` · `voiceDraft.ts` | PCM/WAV 编码；按光标维护语音区间、实时替换、取消回滚、保护手动编辑 |
-| `src/services/platform/realtimeAsr.ts` | 服务商无关的本机 WS：首帧一次性凭证、实时句子投影、背压、停止/取消与终态围栏 |
-| `src/pages/chat/hooks/ttsPlaybackController.ts` · `useTtsPlayer.ts` · `cloudVoiceOutput.ts` | 共享单一播放任务、PCM SSE 排程、网络取消、切会话清理和可见错误 |
-| `src/pages/chat/components/IntentConsole.tsx` · `ComposerTextInput.tsx` | 按住/松开后最终文字走既有发送或队列入口；保留草稿模式、失败保留文字；真实光标与同步 ref、IME 编辑保护、generation 丢弃迟到结果 |
+| 文件 / 目录 | 用途 | 约束 |
+|---|---|---|
+| `src/pages/chat/hooks/cloudVoiceInput.ts` · `public/audio/pcm-capture.js` | 授权后立即采集，连接期间有界暂存开头音频 | 分批排空；停止时 flush 后最终排空；取消释放整个生命周期与设备 |
+| `src/pages/chat/hooks/useHoldToTalk.ts` | 聊天页按住说话手势（Ctrl+Shift+Space、麦克风与输入区中键） | 焦点在输入框或可编辑区时不接管 Space（Ctrl+Shift 是输入法切换键，否则草稿会被误发）；pointerup 必须校验 button（鼠标各键共享 pointerId）；鼠标 pointercancel 不取消（中键自动滚动不是用户意图） |
+| `src/pages/chat/hooks/voiceSilenceStop.ts` | 免按键录音的静音收尾判定 | 预热期与「说过话」前置；连续静默达阈后只触发一次 |
+| `src/pages/chat/hooks/voiceAudio.ts` · `voiceDraft.ts` | PCM/WAV 编码与语音区间维护 | 按光标维护区间并实时替换；取消要回滚；不得覆盖用户手动编辑 |
+| `src/services/platform/realtimeAsr.ts` | 服务商无关的本机 WS 实时 ASR 客户端 | 首帧发一次性凭证；句子上行做背压；停止与取消须有终态围栏 |
+| `src/pages/chat/hooks/ttsPlaybackController.ts` · `useTtsPlayer.ts` · `cloudVoiceOutput.ts` | TTS 播放排程与播放任务共享 | 同一时刻只共享一个播放任务；PCM SSE 排程；网络取消与切换会话需清理，错误必须可见 |
+| `src/pages/chat/components/IntentConsole.tsx` · `ComposerTextInput.tsx` | 按住或松开后把最终文字交给既有发送与队列入口 | 保留草稿模式、失败保留文字；真实光标与同步 ref；IME 编辑保护；generation 丢弃迟到结果 |
 
 | 文件 | 用途 |
 |------|------|
@@ -95,7 +95,8 @@
 | `src/pages/chat/components/ProviderBalanceIndicator.tsx` | 品牌图标（DeepSeek/Mimo 内联 SVG）+ `¥xx.xx` 徽标；`detail` prop 进 Tooltip 第二行（错误原因/刷新提示） |
 | `src/pages/chat/components/GoalBanner.tsx` + `hooks/useGoal.ts` | ADR-074 Goal 状态控件与 GoalStepsPanel 惰性化（见下「关键语义」） |
 | `src/pages/chat/components/ExecutionReviewPanel.tsx` + `.types.ts` + `.fixtures.ts` | PA-08A 执行评审纯展示面板：冻结 `ExecutionReviewView`（run/review 双状态、未满足条件与证据、预算 Unknown、取消排空、数据新鲜度、模型建议与受控检查分离）；props 提供全部数据、点击证据仅回调 `onOpenEvidence`；不 fetch/SSE/轮询、不改 stores/hooks |
-| `src/pages/chat/hooks/useExecutionReview.ts` + `useGoalExecutionReview.ts` + `src/pages/chat/utils/executionReviewView.ts` | PA-08A 只读数据钩子与快照→视图纯映射：单次读取 `GET /api/v1/execution-reviews/{reviewId}` 或 `GET /api/v1/goals/{goalId}/execution-review`（不轮询/不重试），未知金额与 stale 原样保留；`src/services/platform/api.ts` 增加对应 DTO 客户端 |
+| `src/pages/chat/hooks/useExecutionReview.ts` + `useGoalExecutionReview.ts` | PA-08A 只读数据钩子：单次读取 execution-review 端点（不轮询、不重试），未知金额与 stale 原样保留 |
+| `src/pages/chat/utils/executionReviewView.ts` | 快照到 `ExecutionReviewView` 的纯映射；`src/services/platform/api.ts` 同步补对应 DTO 客户端 |
 | `src/pages/chat/components/ExecutionReviewSection.tsx` | PA-08A 执行评审小节：Goal 详情 Popover 内只读挂载 panel（懒加载首开才请求）；无投影/错误时不渲染伪造视图；证据点击只展示已获引用 |
 | `src/pages/chat/utils/goalContinuationMessage.ts` + `types.ts` + `projections/messageProjection.ts` | 仅对服务端 `goal_managed + goal_continuation` 消息解析 `<goal_payload>`；历史 `\\uXXXX` 由 JSON parser 还原为可读 Goal/Task/工作单元文本，普通用户消息与损坏 payload 均原样保留 |
 | `src/pages/workspace-tasks/SchedulerDrawer.tsx` | Task 看板“调度中心”：权威状态、候选决策码、Pause/Resume/Scan/Repair、revision CAS 策略表单与 Authoritative 前置门禁 |
@@ -103,7 +104,7 @@
 | `src/services/platform/api.ts` | 调度 status/policy/actions/evaluate API；Goal 与 Task 继续使用服务端结构化命令，不在浏览器复制状态机 |
 | `src/pages/chat/components/ChatMain.tsx` | Goal 状态控件挂到 WorkspaceNavigationHeader 的「任务看板」旁；消息首屏不再被 Goal 长正文下推；其余余额/推断辅助请求继续 idle 后启动 |
 | `src/services/platform/api.ts` | `getLlmProviderBalance` → `GET /api/llm/providers/{id}/balance`；`LlmProviderBalanceDto`/`LlmBalanceInfoDto` 类型 |
-| `src/pages/chat/components/subagent-pool/` + `ChatMain.tsx` | 子代理池**只读**骨架：顶栏「子代理」按钮开 80% 宽高模态（关闭即卸载重取）；左树 320px + 右详情；`useSubAgentPool` 三态互斥（加载中 / 失败+重试 / 空池「暂无子代理」），取数 `GET /api/admin/sub-agent-pool`；`avatarKey` 空时按 name+poolId 确定性生成头像（不引图形库）；徽标 idle/busy/sleeping/dead 四态各自独立，`lastSuccess` 三态（从未执行/上次失败/上次成功）不伪造时间 |
+| `src/pages/chat/components/subagent-pool/` + `src/pages/chat/components/ChatMain.tsx` | 子代理池**只读**骨架：顶栏按钮开 80% 宽高模态（关闭即卸载重取），左树 320px + 右详情；`useSubAgentPool` 三态互斥，取数 `GET /api/admin/sub-agent-pool`；`avatarKey` 空时按 name+poolId 确定性生成头像；`lastSuccess` 三态不伪造时间 |
 
 **关键语义**
 
