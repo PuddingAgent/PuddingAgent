@@ -1,8 +1,6 @@
 # PuddingLlmUsage — code map
 > 源指纹: Contracts/**=4-0e5b5e6934df, *.cs=3-ab180b933817, *.csproj=1-05551f02a9cc · 条目数: 9 · 最近整理: 2026-10-30
 
-> 源指纹: 未生成（本文件首次整理，仓库内无指纹自检器 —— 不编造） · 条目数: 5 · 最近整理: 2026-10-30
-
 > LLM 余额采样与消耗判定的**零依赖叶子**：`ProjectReference = 0`、`PackageReference = 0`
 > （由 `PuddingLlmUsageTests.PuddingLlmUsage_AssemblyReferencesNoProjectAssemblies` 运行时断言）。
 
@@ -15,15 +13,15 @@
 
 ## 文件
 
-| 文件 | 内容 |
-|---|---|
-| `Contracts/BalanceContracts.cs` | `LlmBalanceObservation`（成功/失败都是观测）、`LlmUsageIntervalKind{Consumption,Recharge,NoChange,Unavailable,Gap}`、`LlmUsageInterval`、`LlmUsageSummary` + `ConsumptionPerHour`、`LlmUsageAnalysisOptions(GapThreshold=30min, AmountTolerance=0)` |
-| `Contracts/ILlmBalanceProbe.cs` | 采样端口。**约定：凡能描述成一次观测的失败都返回 Failure 观测，只有取消才抛** —— 用异常表达失败会迫使调用方吞掉或中断循环，两者都会让缺口在曲线上变成「没变化」 |
-| `Contracts/ILlmUsageStore.cs` | 持久化端口。尝试（`LlmUsageAttemptStatus`）与观测分开；`MarkRunningAttemptsInterruptedAsync` 让被强杀的那一轮在事后可见 |
-| `Contracts/LlmUsageSamplingOptions.cs` | 采样配置 + `Validate()`：provider 去重归一；**单次超时必须小于间隔**，否则两轮会重叠；启用时至少一个 provider |
-| `LlmUsageAnalyzer.cs` | 观测序列 → 区间。判定顺序：失败→`Unavailable`、超阈值→`Gap`、上升→`Recharge`、持平→`NoChange`、下降→`Consumption`。`Summarize` 的分母**只用可判定时长**，跨窗口边界的区间排除 |
-| `LlmSamplingSchedule.cs` | UTC 槽位对齐（以 `UnixEpoch` 为基准）。**恰好对齐时返回下一槽**，否则「刚采完」与「下一次」指向同一时刻，退化成零间隔连采 |
-| `LlmBalanceSampler.cs` | 一轮：落 Started → 查余额 → 落结果。存储写不进时**不发起外部查询**；端口抛异常兜住并落 Failure；取消穿透 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Contracts/BalanceContracts.cs` | 余额观测、消耗区间与汇总的不可变合同 | `LlmBalanceObservation`、`LlmUsageInterval`、`LlmUsageSummary` | `LlmUsageAnalyzer.cs` | 无法判定时一律 `null`，不得用 0 冒充「这段时间没花钱」 |
+| `Contracts/ILlmBalanceProbe.cs` | 余额采样端口 | `ILlmBalanceProbe` | `LlmBalanceSampler.cs` | 凡能描述成一次观测的失败都返回 Failure 观测，只有取消才抛 |
+| `Contracts/ILlmUsageStore.cs` | 持久化端口：尝试与观测分开 | `ILlmUsageStore`、`LlmUsageAttemptStatus` | `LlmBalanceSampler.cs` | 被强杀的那一轮必须能事后标为中断，否则消耗缺口不可见 |
+| `Contracts/LlmUsageSamplingOptions.cs` | 采样配置与 fail-fast 校验 | `LlmUsageSamplingOptions` | `LlmBalanceSampler.cs` | 单次超时必须小于采样间隔，否则两轮重叠 |
+| `LlmUsageAnalyzer.cs` | 观测序列判成区间并汇总可判定时长 | `LlmUsageAnalyzer` | `Contracts/BalanceContracts.cs` | 汇总分母只用可判定时长，跨窗口边界的区间必须排除 |
+| `LlmSamplingSchedule.cs` | UTC 槽位对齐的采样时刻计算 | `LlmSamplingSchedule` | `LlmBalanceSampler.cs` | 恰好对齐时必须返回下一槽，否则退化成零间隔连采 |
+| `LlmBalanceSampler.cs` | 一轮采样：落 Started → 查余额 → 落结果 | `LlmBalanceSampler`、`LlmSamplingOutcome` | `Contracts/ILlmBalanceProbe.cs` | 存储写不进时不得发起外部查询；端口异常兜住并落 Failure |
 
 ## 唯一的不变量
 
@@ -34,9 +32,9 @@
 
 ## 测试（`Source/PuddingLlmUsageTests/`，33 用例）
 
-| 文件 | 覆盖 |
-|---|---|
-| `LlmUsageAnalyzerTests.cs` | 五种判定各一；跨 provider / 跨币种不得相减；乱序输入先排序；汇总分母只用可判定时长；跨边界区间排除；组件零工程依赖（反射查 `GetReferencedAssemblies`） |
-| `LlmBalanceSamplerTests.cs` | 落盘顺序（begin→complete）；端口抛异常被兜住；**存储不可写时不发起外部查询**；存储失败仍如实上报查询结果；取消穿透；多 provider 串行且保序；槽位算术（含"恰好对齐"边界） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `../PuddingLlmUsageTests/LlmUsageAnalyzerTests.cs` | 五种判定与跨币种、乱序输入的归约行为 | `LlmUsageAnalyzerTests` | `LlmUsageAnalyzer.cs` | 跨 provider 或跨币种不得相减；判定分支改动必须先跑它 |
+| `../PuddingLlmUsageTests/LlmBalanceSamplerTests.cs` | 落盘顺序、端口异常兜住与槽位算术 | `LlmBalanceSamplerTests` | `LlmBalanceSampler.cs` | 取消必须穿透；存储不可写时不得发起外部查询 |
 
 未进 `PuddingAgentNetwork.slnx`（S5 时随宿主装配一起登记）。

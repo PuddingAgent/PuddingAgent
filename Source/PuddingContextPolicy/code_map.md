@@ -18,15 +18,15 @@
 
 ## 2. 文件索引
 
-| 文件 | 职责 | 关键符号 | 约束 |
-|---|---|---|---|
-| `PrefixCompactionPolicy.cs` | 前缀缓存友好的分阶段调度与追加式候选校验 | `Decide/ValidateAppendOnly` | 可配置比例乘注册模型窗口；默认 60% 准备、65% 提交就绪候选、70% 等待；上传轴独立等待阈值 95%；预测及实际输入上限优先；冻结历史逐位不变才允许追加 |
-| `ContextPolicyContracts.cs` | 输入/输出合同：消息策略视图、容量输入/结果、压力分类、来源常量、策略版本 | `ContextMessageShape` 等 6 型合同（消息/容量输入输出/压力/来源/版本）（见下「关键语义」） | 只带整数与**稳定身份**，不带正文；来源取值与 Runtime 的 `ContextEffectiveWindowSources` 逐字对齐 |
-| `ContextCapacityArithmetic.cs` | 容量算术与压力分类 | `ContextCapacityArithmetic.Resolve/Classify` | `effectiveInput = min(providerInputLimit, modelWindow − reservedOutput − safetyBuffer)`；回退预留必须记为 `fallback_output_reserve`，不得冒充用户预算；**先判硬边界再判软阈值** |
-| `ContextCandidateSelector.cs` | 候选边界选择与稳定指纹 | `ContextCandidateSelector.Select/ComputeFingerprint` + 选项/结果两型（见下「关键语义」） | 前导 System 不可移除；当前 User、System、最新完整执行单元及未完成工具批次不可移除；近期 N 条偏好在硬压力下受预算约束；完整历史轮与轮内已完成执行单元可选；token/字节预算包含摘要与包装预留；`ProjectedUsedTokensExcludingSummary` **不是**提交后的值 |
-| `ContextCandidateApplicability.cs` | 严格适用校验（旧候选能否提交） | `ContextCandidateApplicability.Validate` + 冻结/当前描述符与判定（见下「关键语义」） | 代次/revision/路由/工具/策略版本任一变化 ⇒ `stale_candidate`；保留后缀必须与当前历史**逐位一致**（新消息追加/中间插入/删改一律失效）；不做尾部拼接或自动 rebase |
-| `ContextNetGainAdmission.cs` | 净收益准入 | `ContextNetGainAdmission.Evaluate`、`NetGainInputs`、`NetGainDecision` | 必须用**真实摘要长度**重算 after；摘要为空/不缩小 ⇒ `no_gain`；加摘要后仍越界 ⇒ 不得提交；未达目标允许提交但必须如实记录 |
-| `ContextBackoffPolicy.cs` | 退避/去重判定 | `ContextBackoffPolicy.Decide`、`CandidateMaintenanceRecord`、`CandidateMaintenanceOutcomes` | **硬保护优先于任何退避**；同候选同代次上的 `applied` 记录不可信（成功应用应推进代次） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `PrefixCompactionPolicy.cs` | 前缀缓存友好的分阶段调度与追加式候选校验 | `Decide/ValidateAppendOnly` | `ContextPolicyContracts` | 可配置比例乘注册模型窗口；默认 60% 准备、65% 提交就绪候选、70% 等待；上传轴独立等待阈值 95%；预测及实际输入上限优先；冻结历史逐位不变才允许追加 |
+| `ContextPolicyContracts.cs` | 输入/输出合同：消息策略视图、容量输入/结果、压力分类、来源常量、策略版本 | `ContextMessageShape` 等 6 型合同（消息/容量输入输出/压力/来源/版本）（见下「关键语义」） | `PrefixCompactionPolicy` | 只带整数与**稳定身份**，不带正文；来源取值与 Runtime 的 `ContextEffectiveWindowSources` 逐字对齐 |
+| `ContextCapacityArithmetic.cs` | 容量算术与压力分类 | `ContextCapacityArithmetic.Resolve/Classify` | `ContextPolicyContracts` | `effectiveInput = min(providerInputLimit, modelWindow − reservedOutput − safetyBuffer)`；回退预留必须记为 `fallback_output_reserve`，不得冒充用户预算；**先判硬边界再判软阈值** |
+| `ContextCandidateSelector.cs` | 候选边界选择与稳定指纹 | `ContextCandidateSelector.Select/ComputeFingerprint` + 选项/结果两型 | `ContextPolicyContracts` | 前导 System、当前 User 与最新完整执行单元不可移除；`ProjectedUsedTokensExcludingSummary` 不是提交后的值 |
+| `ContextCandidateApplicability.cs` | 严格适用校验（旧候选能否提交） | `ContextCandidateApplicability.Validate` + 冻结/当前描述符与判定（见下「关键语义」） | `PrefixCompactionPolicy` | 代次/revision/路由/工具/策略版本任一变化 ⇒ `stale_candidate`；保留后缀必须与当前历史**逐位一致**（新消息追加/中间插入/删改一律失效）；不做尾部拼接或自动 rebase |
+| `ContextNetGainAdmission.cs` | 净收益准入 | `ContextNetGainAdmission.Evaluate`、`NetGainInputs`、`NetGainDecision` | `ContextCandidateSelector` | 必须用**真实摘要长度**重算 after；摘要为空/不缩小 ⇒ `no_gain`；加摘要后仍越界 ⇒ 不得提交；未达目标允许提交但必须如实记录 |
+| `ContextBackoffPolicy.cs` | 退避/去重判定 | `ContextBackoffPolicy.Decide`、`CandidateMaintenanceRecord`、`CandidateMaintenanceOutcomes` | `ContextCandidateApplicability` | **硬保护优先于任何退避**；同候选同代次上的 `applied` 记录不可信（成功应用应推进代次） |
 
 **关键语义（§2「文件索引」表·关键符号列逐字原文）**
 
@@ -50,15 +50,15 @@
 
 ## 4. 测试与门禁
 
-| 位置 | 覆盖 |
-|---|---|
-| `Source/PuddingContextPolicyTests/ContextCapacityArithmeticTests.cs` | 容量算式与来源；**2026-10-07 事故两条样本的记录值回放**（583,691 判软 / 625,824 判硬，上限 605,760，软阈值 484,608） |
-| `…/ContextCandidateSelectorTests.cs` | 触发门槛、完整单元移除、当前用户输入保护、tool 调用与结果不拆分、指纹确定性与版本敏感性 |
-| `…/CompletedExecutionCompactionTests.cs` | 长轮内执行跨度、双预算、并行/未完成工具批次、冻结位置消除重复正文歧义 |
-| `…/ContextCandidateApplicabilityTests.cs` | 未变化可提交；**新消息追加即失效**；中间插入/删改失效；五类版本变化各自 `stale_candidate` |
-| `…/ContextNetGainAdmissionTests.cs` | 真实摘要重算 after（事故口径 583,691−257,299+4,343=330,735）、空/不缩小 ⇒ no_gain、仍越界 ⇒ 拒绝、未达目标如实记录 |
-| `…/ContextBackoffPolicyTests.cs` | 硬保护覆盖退避、同候选退避、间隔到期、新候选/新代次可再评估、`applied` 无代次推进不抑制 |
-| `…/ComponentBoundaryTests.cs` | S4 边界断言：检测器自检（控制组）、进程未加载上层/重依赖、声明依赖闭包、组件元数据引用仅 BCL |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Source/PuddingContextPolicyTests/ContextCapacityArithmeticTests.cs` | 容量算式与来源，含事故样本回放 | `ContextCapacityArithmeticTests` | `ContextCapacityArithmetic` | 事故回放值：583,691 判软 / 625,824 判硬，上限 605,760，软阈值 484,608 |
+| `…/ContextCandidateSelectorTests.cs` | 触发门槛与完整执行单元移除的边界 | `ContextCandidateSelectorTests` | `ContextCandidateSelector` | tool 调用与其结果不得被拆开移除 |
+| `…/CompletedExecutionCompactionTests.cs` | 长轮内执行跨度与双预算 | `CompletedExecutionCompactionTests` | `ContextCandidateSelector` | 并行或未完成的工具批次不可移除 |
+| `…/ContextCandidateApplicabilityTests.cs` | 未变化可提交、新消息追加即失效 | `ContextCandidateApplicabilityTests` | `ContextCandidateApplicability` | 五类版本变化必须各自给出 `stale_candidate` |
+| `…/ContextNetGainAdmissionTests.cs` | 真实摘要重算 after 的准入判定 | `ContextNetGainAdmissionTests` | `ContextNetGainAdmission` | 事故口径 583,691−257,299+4,343=330,735；空摘要或仍越界必须拒绝 |
+| `…/ContextBackoffPolicyTests.cs` | 硬保护覆盖退避与间隔到期 | `ContextBackoffPolicyTests` | `ContextBackoffPolicy` | `applied` 无代次推进时不得抑制重新评估 |
+| `…/ComponentBoundaryTests.cs` | S4 边界断言：加载面与依赖闭包 | `ComponentBoundaryTests` | `PuddingContextPolicy.csproj` | 检测器必须自带控制组，否则检查可能是空转 |
 
 无宿主验证（S3）：`dotnet build Source/PuddingContextPolicy/PuddingContextPolicy.csproj` 与
 `dotnet test Source/PuddingContextPolicyTests/PuddingContextPolicyTests.csproj` 都可以在

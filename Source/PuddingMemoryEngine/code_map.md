@@ -5,22 +5,22 @@
 
 ## 核心引擎
 
-| 文件 | 用途 |
-|------|------|
-| `MemoryEngine.cs` | 🔑 记忆引擎主入口（25KB） |
-| `MemoryEntry.cs` | 记忆条目模型 |
-| `MemoryBoundaryService.cs` | 记忆边界服务 |
-| `BookRegistry.cs` | Book 注册表 |
-| `SessionMemoryStore.cs` | 会话级记忆存储（7KB） |
-| `WorkspaceMemoryStore.cs` | 工作区级记忆存储（7KB） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `MemoryEngine.cs` | 🔑 记忆引擎主入口（25KB） | `MemoryEngine` | — | — |
+| `MemoryEntry.cs` | 记忆条目模型 | `MemoryScope`、`MemoryEntry` | — | — |
+| `MemoryBoundaryService.cs` | 记忆边界服务 | `MemoryBoundaryService` | — | — |
+| `BookRegistry.cs` | Book 注册表 | `BookRegistry`、`BookTemplate` | — | — |
+| `SessionMemoryStore.cs` | 会话级记忆存储（7KB） | `SessionMemoryStore` | — | — |
+| `WorkspaceMemoryStore.cs` | 工作区级记忆存储（7KB） | `WorkspaceMemoryStore` | — | — |
 
 ## 存储层
 
-| 目录/文件 | 用途 |
-|------|------|
-| `Data/` | 数据访问层（`MemoryDbContext` + `init_memory.sql` 幂等建表 + additive 补列迁移） |
-| `Entities/` | 实体定义：压缩覆盖清单 / ContextSegmentLedger 底座 / P0-5 快照（见下「关键语义」） |
-| `Schema/` | Schema：建表/补列（覆盖清单、ContextSegments、CompositionSnapshots）（见下「关键语义」） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Data/` | 数据访问层（`MemoryDbContext` + `init_memory.sql` 幂等建表 + additive 补列迁移） | — | — | — |
+| `Entities/` | 实体定义：压缩覆盖清单 / ContextSegmentLedger 底座 / P0-5 快照（见下「关键语义」） | — | — | — |
+| `Schema/` | Schema：建表/补列（覆盖清单、ContextSegments、CompositionSnapshots）（见下「关键语义」） | — | — | — |
 
 **关键语义**
 
@@ -31,21 +31,21 @@
 
 ## 服务
 
-| 文件 | 用途 |
-|------|------|
-| `Services/FactMemoryService.cs` | 事实记忆服务（23KB） |
-| `Services/MemoryRecallService.cs` | 记忆召回服务（19KB） |
-| `Services/MemoryLibrarian.cs` | 记忆图书馆员 |
-| `Services/SkillEvolutionDeduplicationService.cs` | 🔑 Skill 进化去重（26KB）；相似度与判据提为 public static（见下「关键语义」） |
-| `Services/SkillFamilyCapJudge.cs` | G4-D3 家族内上限判据：输出评审请求、零写盘（见下「关键语义」） |
-| `Services/SkillKeywordOwnershipProbe.cs` | 🆕 G4-D4 关键词归属**只读**事实探针：每个关键词的**全部**竞争者（不止第一个）+ 共享关键词数 / 被挤掉次数（须与 G1 报告逐数一致） |
-| `Services/SkillKeywordOwnershipJudge.cs` | G4-D5 关键词归属裁决判据（归一谓词复用）（见下「关键语义」） |
-| `Services/SkillMergeEligibilityJudge.cs` | G4-D6 合并四条件判据（纯判定层，零 IO）（见下「关键语义」） |
-| `Services/SubconsciousOrchestrator.cs` | 潜意识编排（75KB，核心）；G7 起 SkillCurateAsync 过门禁（见下「关键语义」） |
-| `Services/SkillPortfolioAdmissionJudge.cs` | G3 规则层：组合预算判定器（纯函数，fail-closed）（见下「关键语义」） |
-| `Services/SkillPortfolioAdmissionExecutor.cs` | G3 副作用层：置换先禁用后物化，可回滚（见下「关键语义」） |
-| `Services/SkillCurationGate.cs` | G7 提炼契约门禁（纯判定层，零 IO / LLM）（见下「关键语义」） |
-| `Services/SubconsciousJobQueue.cs` | 潜意识任务队列（~29KB）；schedule_skip 窗口聚合（见下「关键语义」） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Services/FactMemoryService.cs` | 事实记忆服务（23KB） | `MemoryFactStatus`、`FactFreshnessDecayKind`、`FactFreshnessStatus` | — | — |
+| `Services/MemoryRecallService.cs` | 记忆召回服务（19KB） | `MemoryRecallService` | — | — |
+| `Services/MemoryLibrarian.cs` | 记忆图书馆员 | `MemoryLibrarian` | — | — |
+| `Services/SkillEvolutionDeduplicationService.cs` | 🔑 Skill 进化去重（26KB）；相似度与判据提为 public static（见下「关键语义」） | `SkillAdmissionActions`、`SkillAdmissionResult`、`SkillConsolidationResult` | — | — |
+| `Services/SkillFamilyCapJudge.cs` | G4-D3 家族内上限判据：输出评审请求、零写盘（见下「关键语义」） | `SkillFamilyCapReview`、`SkillFamilyCapReviewReport`、`SkillFamilyCapJudge` | — | — |
+| `Services/SkillKeywordOwnershipProbe.cs` | 🆕 G4-D4 关键词归属**只读**事实探针：每个关键词的**全部**竞争者（不止第一个）+ 共享关键词数 / 被挤掉次数（须与 G1 报告逐数一致） | `SkillKeywordSubject`、`SkillKeywordOwnership`、`SkillKeywordOwnershipReport` | — | — |
+| `Services/SkillKeywordOwnershipJudge.cs` | G4-D5 关键词归属裁决判据（归一谓词复用）（见下「关键语义」） | `SkillKeywordDisputeReason`、`KeywordDispositionOption` | — | — |
+| `Services/SkillMergeEligibilityJudge.cs` | G4-D6 合并四条件判据（纯判定层，零 IO）（见下「关键语义」） | `SkillMergeCondition`、`SkillMergeEvidence`、`SkillMergePair` | — | — |
+| `Services/SubconsciousOrchestrator.cs` | 潜意识编排（75KB，核心）；G7 起 SkillCurateAsync 过门禁（见下「关键语义」） | `SubconsciousOrchestrator`、`RecallDiagnostics` | — | — |
+| `Services/SkillPortfolioAdmissionJudge.cs` | G3 规则层：组合预算判定器（纯函数，fail-closed）（见下「关键语义」） | `SkillPortfolioInput`、`SkillPortfolioAdmissionJudge` | — | — |
+| `Services/SkillPortfolioAdmissionExecutor.cs` | G3 副作用层：置换先禁用后物化，可回滚（见下「关键语义」） | `SkillPortfolioExecutionOutcome`、`SkillPortfolioAdmissionExecutor` | — | — |
+| `Services/SkillCurationGate.cs` | G7 提炼契约门禁（纯判定层，零 IO / LLM）（见下「关键语义」） | `SkillCurationSkillSnapshot`、`SkillCurationRequest`、`SkillCurationCriterionResult` | — | — |
+| `Services/SubconsciousJobQueue.cs` | 潜意识任务队列（~29KB）；schedule_skip 窗口聚合（见下「关键语义」） | `SubconsciousJobQueue` | — | — |
 
 **关键语义**
 
@@ -76,9 +76,9 @@ G3 `SkillScoreSnapshot` 两态，`Unavailable` **不得**当 0）；C5 可回滚
 
 ## 基础设施
 
-| 文件 | 用途 |
-|------|------|
-| `Infrastructure/` | 基础设施（索引、存储实现） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Infrastructure/` | 基础设施（索引、存储实现） | — | — | — |
 
 ## 测试
 

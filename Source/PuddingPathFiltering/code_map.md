@@ -1,5 +1,5 @@
 # PuddingPathFiltering — code map
-> 源指纹: *.cs=8-630ed46ca9b7, *.csproj=1-caa3bfbb7fba · 条目数: 12 · 最近整理: 2026-10-14
+> 源指纹: *.cs=8-630ed46ca9b7, *.csproj=1-caa3bfbb7fba · 条目数: 16 · 最近整理: 2026-10-14
 
 > ADR-089 U4-4 交付的**叶子组件**：路径忽略合同的唯一真源。
 > `ProjectReference = 0`、`PackageReference = 0`（由 `PuddingPathFilteringTests/ComponentBoundaryTests` 读盘断言）。
@@ -19,16 +19,16 @@
 
 判定链**零 I/O**（`ComponentBoundaryTests.Decision_chain_does_not_touch_the_file_system` 静态扫描源码）：
 
-| 文件 | 角色 | I/O |
-|---|---|---|
-| `GitWildcard.cs` | git `wildmatch()`（`WM_PATHNAME`）等价实现：`*`/`?` 不跨 `/`；边界处 `**` 跨目录、非边界 `**` 退化为 `*`；`[...]`/`[!...]`/`[^...]`、`[]]` 首字符字面量、未闭合 `[` 判不匹配 | 无 |
-| `PathText.cs` | 分隔符归一、`TryGetBelow`、`Basename` | 无 |
-| `IgnoreRule.cs` | 一条已解析规则：取反 / 目录专属 / 锚定 / 基准目录 + `Matches` | 无 |
-| `IgnoreFileParser.cs` | 行级语义：注释、空行、**行尾空格裁剪（转义空格保留）**、**行首空格有意义**、`\#`/`\!`、`!` 取反、尾部 `/`、首部 `/` | 无 |
-| `IgnoreStack.cs` | 忽略栈：**祖先目录剪枝优先**（父目录被排除时取反救不回）、后命中者胜出、更深 .gitignore 优先 | 无 |
-| `PathNoiseRules.cs` | **D2 canonical 名单**：52 个目录名 + 6 个文件名；`IsNoisePath`（相对扫描根）/ `IsNoiseSegment` / **`IsNoisePathBelow`**（绝对路径必须先折算，否则宿主自身的 `%TEMP%` 段名会命中 `temp`） | 无 |
-| `WorkspacePathFilter.cs` | 消费者唯一入口：名字级噪声 ∪ 忽略栈 | 无 |
-| `GitIgnoreFileLoader.cs` | **唯一**触盘类型：广度优先读 `<root>/**/.gitignore`，跳过噪声目录；支持 `walkScopeDirectory` 只收集被扫描树内的忽略文件 | 有（只读） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `GitWildcard.cs` | git `wildmatch` 的等价实现 | `GitWildcard` | `IgnoreRule.cs` | `*` 与 `?` 不跨 `/`；非边界 `**` 必须退化为 `*`；未闭合 `[` 判不匹配 |
+| `PathText.cs` | 分隔符归一与相对路径判定 | `PathText` | `WorkspacePathFilter.cs` | — |
+| `IgnoreRule.cs` | 一条已解析规则：取反、目录专属、锚定与基准目录 | `IgnoreRule` | `IgnoreFileParser.cs` | — |
+| `IgnoreFileParser.cs` | .gitignore 的行级语义解析 | `IgnoreFileParser` | `IgnoreRule.cs` | 行尾空格要裁剪但转义空格保留；行首空格有意义 |
+| `IgnoreStack.cs` | 忽略栈：祖先目录剪枝优先，后命中者胜出 | `IgnoreStack` | `GitIgnoreFileLoader.cs` | 父目录被排除时取反救不回 |
+| `PathNoiseRules.cs` | 名字级噪声名单的 D2 canonical 定义 | `PathNoiseRules` | `WorkspacePathFilter.cs` | 绝对路径必须先折算再调 `IsNoisePathBelow`，否则宿主自身 `%TEMP%` 的 `temp` 段会命中 |
+| `WorkspacePathFilter.cs` | 消费者唯一入口：名字级噪声 ∪ 忽略栈 | `WorkspacePathFilter` | `PathNoiseRules.cs` | — |
+| `GitIgnoreFileLoader.cs` | 唯一触盘类型：广度优先收集 `<root>/**/.gitignore` | `GitIgnoreFileLoader` | `IgnoreStack.cs` | 必须跳过噪声目录，否则读盘退化为全树扫描 |
 
 ## 为什么自研而不是用 NuGet
 
@@ -39,12 +39,16 @@
 
 ## 测试（`Source/PuddingPathFilteringTests/`，84 用例）
 
-| 文件 | 覆盖 |
-|---|---|
-| `GitIgnoreOracleTests.cs` | **核心验收**：两份冻结语料共 **196 条路径**，逐条断言「结论 + 定案规则原文」与 `git check-ignore -v` 一致（一致率 100%）。语料含取反、父目录剪枝、嵌套 .gitignore、`**`、字符类、行首/行尾空格、大小写折叠等判别性行 |
-| `RepositoryRootReductionTests.cs` | **「−84%」判据的可失效断言**：canonical 集合必须覆盖 P3 实测的四家头部噪声目录（23,756/28,519 = 83.3%） |
-| 逐文件语义锁（5 个测试类，见下「关键语义」） | 语义逐条锁 |
-| `ComponentBoundaryTests.cs` | S4：csproj 零 ProjectReference/PackageReference、判定链无 `System.IO`、叶子不 `using Pudding*`、测试工程只引用本叶子 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `GitIgnoreOracleTests.cs` | 冻结语料 196 条路径与 `git check-ignore -v` 逐条比对 | `GitIgnoreOracleTests` | `GitWildcard.cs` | 必须同时断言结论与定案规则原文，否则规则选错仍绿 |
+| `RepositoryRootReductionTests.cs` | canonical 集合对头部噪声目录的覆盖率 | `RepositoryRootReductionTests` | `PathNoiseRules.cs` | 覆盖率低于实测 83.3% 即取红 |
+| `GitWildcardTests.cs` | 通配符语义逐条锁 | `GitWildcardTests` | `GitWildcard.cs` | — |
+| `IgnoreFileParserTests.cs` | 行级语义逐条锁 | `IgnoreFileParserTests` | `IgnoreFileParser.cs` | — |
+| `IgnoreStackTests.cs` | 忽略栈的优先级逐条锁 | `IgnoreStackTests` | `IgnoreStack.cs` | — |
+| `GitIgnoreFileLoaderTests.cs` | 忽略文件装载与作用域 | `GitIgnoreFileLoaderTests` | `GitIgnoreFileLoader.cs` | — |
+| `PathNoiseRulesTests.cs` | 噪声名单的段名与大小写行为 | `PathNoiseRulesTests` | `PathNoiseRules.cs` | — |
+| `ComponentBoundaryTests.cs` | 零引用、判定链无 `System.IO`、叶子不 `using Pudding*` | `ComponentBoundaryTests` | `PuddingPathFiltering.csproj` | 判定链一旦引入 `System.IO` 必须取红 |
 
 ### 关键语义
 

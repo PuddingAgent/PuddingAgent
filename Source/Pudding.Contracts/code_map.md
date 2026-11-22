@@ -13,9 +13,8 @@ slug: code-map
 draft: false
 ---
 
-
 # Pudding.Contracts CodeMAP
-> 源指纹: Audit/**=1-c2dac80a0924, Desktop/**=46-971e27f8fe72, *.cs=6-8f5d1d92fec3, *.csproj=1-023d72a7bede · 条目数: 38 · 最近整理: 2026-10-14
+> 源指纹: Audit/**=1-c2dac80a0924, Desktop/**=46-971e27f8fe72, *.cs=6-8f5d1d92fec3, *.csproj=1-023d72a7bede · 条目数: 41 · 最近整理: 2026-10-14
 
 > 平台与传输无关的**契约叶程序集**：接口 · 不可变 DTO · 能力标识 · 错误语义 · 审计形状
 > 边界（[技术方案](../../Docs/12_features/Desktop-Contracts-Grpc-Capability-Plan-2026-10-01.md) §3）：**仅 BCL**。
@@ -27,11 +26,11 @@ draft: false
 
 ## 身份与调用上下文（`Pudding.Contracts`）
 
-| 文件 | 用途 |
-|------|------|
-| `Identity.cs` | 身份/操作标识集合：实例·启动·操作·关联·世代；含 `ContractText` 校验（见下「关键语义」） |
-| `DesktopCallContext.cs` | 调用上下文：DesktopId/OperationId/UTC Deadline/关联 + `IsExpiredAt`（见下「关键语义」） |
-| `DesktopProtocolVersion.cs` | 协商版本区间常量（`Current = Minimum = 1`）与 `TryNegotiate` |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Identity.cs` | 身份/操作标识集合：实例·启动·操作·关联·世代；含 `ContractText` 校验（见下「关键语义」） | `DesktopInstanceId`、`DesktopProcessInstanceId`、`OperationId` | — | — |
+| `DesktopCallContext.cs` | 调用上下文：DesktopId/OperationId/UTC Deadline/关联 + `IsExpiredAt`（见下「关键语义」） | `DesktopCallContext` | — | — |
+| `DesktopProtocolVersion.cs` | 协商版本区间常量（`Current = Minimum = 1`）与 `TryNegotiate` | `DesktopProtocolVersion` | — | — |
 
 **关键语义**
 
@@ -89,31 +88,34 @@ draft: false
 
 ## 能力 DTO（`Desktop/`）
 
-| 文件 | 用途 |
-|------|------|
-| `PageContracts.cs` | 页面目标/版本/就绪度/状态契约：`DesktopPageTarget` 等四型（见下「关键语义」） |
-| `WebViewContracts.cs` | 导航/脚本契约：`NavigateDisposition`、`JavascriptRequest/Result` 等（见下「关键语义」） |
-| `ShellContracts.cs` | Shell 通知契约：`DesktopNotificationPriority/Request/Result`（见下「关键语义」） |
-| `ApiInterfaces.cs` | 桌面 API 接口：`IPuddingDesktopApi`/WebView/Shell（见下「关键语义」） |
-| `Desktop/BrowserControlPlaneRequests.cs` | 控制面载荷：`BrowserBindingApplyRequest`/`RevokeRequest` 与 ack（见下「关键语义」） |
-| `Desktop/BrowserTaskBinding.cs` | 任务绑定 `BrowserTaskBinding`：可信元数据 + 唯一 grantee 规则（见下「关键语义」） |
-| `Desktop/BrowserOperationMapping.cs` | 能力 → 自动化操作的唯一映射（能力级 + request-aware 重载）（见下「关键语义」） |
-| `Desktop/IBrowserDelegationLifecycle.cs` | 浏览器委派生命周期窄端口（Contracts 声明·Host 实现）（见下「关键语义」） |
-| `Desktop/BrowserCallerRequirement.cs` | 浏览器操作对调用者身份的统一要求（三情形各给原因）（见下「关键语义」） |
-| `Desktop/BrowserCallerKindWire.cs` | 调用者类别的线缆编码真源（`user`/`agent`/`sub_agent`）（见下「关键语义」） |
-| `Desktop/BrowserCallerIdentityProjection.cs` | 可信调用身份的投影（唯一产生 `BrowserCallerIdentity` 处）（见下「关键语义」） |
-| `Desktop/LocateContracts.cs` | 元素定位契约：定位种类/定位器/请求/元素引用/结果（见下「关键语义」） |
-| `Desktop/LocateCursor.cs` | 分页游标 `BrowserLocateCursor`（对模型不透明）（见下「关键语义」） |
-| `Desktop/ReadingRevision.cs` | 读取结果的修订标识（绑定页面版本+查询指纹+内容哈希）（见下「关键语义」） |
-| `Desktop/BrowserTextDiff.cs` | 行级差异：削公共前后缀后只对中间段 diff（见下「关键语义」） |
-| `Desktop/StableHash.cs` | 跨进程稳定短哈希（SHA-256 截断）（见下「关键语义」） |
-| `CapabilityErrors.cs` | 错误码 ↔ 线名真源（快照由契约测试冻结）（见下「关键语义」） |
-| `Desktop/OutputFieldSet.cs` | 输出字段白名单的通用实现（核心/可裁剪两类）（见下「关键语义」） |
-| `Desktop/ElementFields.cs` | 元素输出的字段定义（locate）：核心 + 可裁剪（见下「关键语义」） |
-| `Desktop/SnapshotFields.cs` | 快照输出的字段定义（核心事实 + 三种表示）（见下「关键语义」） |
-| `Desktop/InteractionContracts.cs` | 交互契约：动作/输入模式/滚动目标/请求/结果（见下「关键语义」） |
-| `Desktop/ScreenshotContracts.cs` | 截图契约：作用域/细节/请求/元数据/分块/结果（见下「关键语义」） |
-| `CapabilityEndpoint.cs` | Core 发布的能力通道端点描述（无凭据字段）（见下「关键语义」） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `PageContracts.cs` | 页面目标/版本/就绪度/状态契约：`DesktopPageTarget` 等四型（见下「关键语义」） | `DesktopPageTarget`、`DesktopPageVersion`、`DesktopPageReadiness` | — | — |
+| `WebViewContracts.cs` | 导航/脚本契约：`NavigateDisposition`、`JavascriptRequest/Result` 等（见下「关键语义」） | `NavigateDisposition`、`DesktopNavigationAction`、`DesktopNavigationActionWire` | — | — |
+| `ShellContracts.cs` | Shell 通知契约：`DesktopNotificationPriority/Request/Result`（见下「关键语义」） | `DesktopNotificationPriority`、`DesktopNotificationRequest`、`DesktopNotificationResult` | — | — |
+| `ApiInterfaces.cs` | 桌面 API 接口：`IPuddingDesktopApi`/WebView/Shell（见下「关键语义」） | `IPuddingDesktopApi`、`IPuddingDesktopWebViewApi`、`IPuddingDesktopShellApi` | — | — |
+| `Desktop/BrowserControlPlaneRequests.cs` | 控制面载荷：`BrowserBindingApplyRequest`/`RevokeRequest` 与 ack（见下「关键语义」） | `BrowserBindingApplyRequest`、`BrowserBindingRevokeRequest`、`BrowserBindingAck` | — | — |
+| `Desktop/BrowserTaskBinding.cs` | 任务绑定 `BrowserTaskBinding`：可信元数据 + 唯一 grantee 规则（见下「关键语义」） | `BrowserTaskBinding` | — | — |
+| `Desktop/BrowserOperationMapping.cs` | 能力 → 自动化操作的唯一映射（能力级 + request-aware 重载）（见下「关键语义」） | `DesktopCapabilityOperations` | — | — |
+| `Desktop/IBrowserDelegationLifecycle.cs` | 浏览器委派生命周期窄端口（Contracts 声明·Host 实现）（见下「关键语义」） | — | — | — |
+| `Desktop/BrowserCallerRequirement.cs` | 浏览器操作对调用者身份的统一要求（三情形各给原因）（见下「关键语义」） | `BrowserCallerRequirement` | — | — |
+| `Desktop/BrowserCallerKindWire.cs` | 调用者类别的线缆编码真源（`user`/`agent`/`sub_agent`）（见下「关键语义」） | `BrowserCallerKindWire` | — | — |
+| `Desktop/BrowserCallerIdentityProjection.cs` | 可信调用身份的投影（唯一产生 `BrowserCallerIdentity` 处）（见下「关键语义」） | `BrowserCallerIdentityProjection` | — | — |
+| `Desktop/LocateContracts.cs` | 元素定位契约：定位种类/定位器/请求/元素引用/结果（见下「关键语义」） | `DesktopLocatorKind`、`DesktopLocatorKindWire`、`DesktopLocator` | — | — |
+| `Desktop/LocateCursor.cs` | 分页游标 `BrowserLocateCursor`（对模型不透明）（见下「关键语义」） | `BrowserLocateCursor` | — | — |
+| `Desktop/ReadingRevision.cs` | 读取结果的修订标识（绑定页面版本+查询指纹+内容哈希）（见下「关键语义」） | `BrowserReadingRevision` | — | — |
+| `Desktop/BrowserTextDiff.cs` | 行级差异：削公共前后缀后只对中间段 diff（见下「关键语义」） | `BrowserTextDiff` | — | — |
+| `Desktop/StableHash.cs` | 跨进程稳定短哈希（SHA-256 截断）（见下「关键语义」） | `StableHash` | — | — |
+| `CapabilityErrors.cs` | 错误码 ↔ 线名真源（快照由契约测试冻结）（见下「关键语义」） | `DesktopCapabilityErrorCode`、`DesktopCapabilityErrorCodes`、`DesktopCapabilityError` | — | — |
+| `Desktop/OutputFieldSet.cs` | 输出字段白名单的通用实现（核心/可裁剪两类）（见下「关键语义」） | `OutputFieldSet` | — | — |
+| `Desktop/ElementFields.cs` | 元素输出的字段定义（locate）：核心 + 可裁剪（见下「关键语义」） | `BrowserElementFields` | — | — |
+| `Desktop/SnapshotFields.cs` | 快照输出的字段定义（核心事实 + 三种表示）（见下「关键语义」） | `BrowserSnapshotFields` | — | — |
+| `Desktop/InteractionContracts.cs` | 交互契约：动作/输入模式/滚动目标/请求/结果（见下「关键语义」） | `DesktopInteractionAction`、`DesktopInputMode`、`DesktopInputModeWire` | — | — |
+| `Desktop/ScreenshotContracts.cs` | 截图契约：作用域/细节/请求/元数据/分块/结果（见下「关键语义」） | `DesktopScreenshotScope`、`DesktopScreenshotScopeWire`、`DesktopScreenshotDetail` | — | — |
+| `CapabilityEndpoint.cs` | Core 发布的能力通道端点描述（无凭据字段）（见下「关键语义」） | `DesktopCapabilityEndpointKind`、`DesktopCapabilityEndpoint` | — | — |
+| `Desktop/BrowserCapabilitySurface.cs` | 能力通道能覆盖的九个浏览器操作的窄端口 | `IDesktopBrowserCapabilitySurface` | `DesktopSession` | 刻意窄：宽接口整替会让二十多个成员只能在运行期抛 `NotSupported` |
+| `Desktop/DesktopCapabilityCallContextFactory.cs` | 为一次能力调用产生 `DesktopCallContext` | `IDesktopCapabilityCallContextFactory` | `DesktopCallContext` | 实例 ID、`OperationId` 与期限不得由调用方猜；本工厂不产生调用方身份 |
+| `Desktop/ContextManagementContracts.cs` | 上下文创建的契约与两个写操作的窄端口 | `BrowserContextCreateRequest`、`BrowserContextCloseRequest`、`IDesktopContextCapabilitySurface` | `Desktop/BrowserCapabilitySurface.cs` | 上下文作用域必须单独开端口，不得并进页面作用域的九个操作 |
 
 **关键语义**
 
@@ -145,14 +147,6 @@ includeHidden/inViewportOnly），不含 limit/cursor 自身
 `page` 不得带定位、位移类目标必须非零位移）、`DesktopScrollReport`（容器/前后位置/消耗位移/边界/内容变化；**内容没变不是失败**）、`BrowserInteractRequest`（**必须固定页面版本**、按动作校验参数、携带 `InputMode` 与 `ScrollTarget`）、`DesktopInteractionResult`（元素 + 可选滚动事实）
 **`Desktop/ScreenshotContracts.cs`**：截图契约（§8.1）：`DesktopScreenshotScope`（viewport/region/full_page，**与实现同名同义**）、`DesktopScreenshotDetail`、`BrowserScreenshotRequest`（**钉版本**；scope 与参数一一对应）、`DesktopScreenshotMetadata`（**含 `ObservationId`**）/`Chunk`/`BrowserScreenshotResult`。
 **`CapabilityEndpoint.cs`**：Core 发布的**能力通道端点描述**：形态（NamedPipe / LoopbackHttp2 / Tls）+ 地址 + 协议版本 + Core 实例 ID；`ToEndpointString()`/`TryParse` 严格解析。**没有任何凭据字段**（凭据由 Desktop 主机侧注入），地址形态受约束（明文只允许回环、TLS 只能 https、URI 不许带凭据/查询/片段）
-
-| `Desktop/BrowserCapabilitySurface.cs` | **窄端口** `IDesktopBrowserCapabilitySurface`：能力通道**能覆盖**的九个浏览器操作。刻意窄（`IBrowserPage` 约 35 个成员 ⇒ 宽接口整替会让二十多个成员只能在运行期抛 `NotSupported`）。约定：参数顺序与 `DesktopSession` 同名方法一致、结果一律 `CapabilityResult<T>` 不抛异常、两个实现必须给出**同形**结果 |
-
-| `Desktop/DesktopCapabilityCallContextFactory.cs` | `IDesktopCapabilityCallContextFactory`：为一次能力调用产生 `DesktopCallContext`（实例 ID 来自活动会话/Bridge 连接、每次新 `OperationId`、期限来自配置）。工具侧只有业务参数，这三个字段不能由调用方猜。**不产生调用方身份** |
-
-| `Desktop/ContextManagementContracts.cs` | 上下文**管理**（缺口 #1 的契约齿轮，**待接线**）：`BrowserContextCreateRequest`/`BrowserContextCloseRequest`/`DesktopContextClosed` + 窄端口 `IDesktopContextCapabilitySurface`（两个写操作）。单开端口而非并入上面那个：现有九个操作是页面作用域，这两个是上下文作用域 |
-
-
 
 > 与方案初稿的差异（有意）：初稿示例写 `Task<NavigateResult>`；实际返回 `Task<CapabilityResult<NavigateResult>>`，
 > 否则领域错误只能靠异常穿越流边界，丢「未执行/可能已生效/可重试」语义。

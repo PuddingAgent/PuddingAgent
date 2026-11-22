@@ -10,14 +10,14 @@
 
 ## 2. 文件与当前语义
 
-| 文件 | 职责与限制 |
-|---|---|
-| `AgentTargetSession.cs` | 会话 = 目标页 + 桥世代 + **宿主注入的可信控制句柄**（Core 会话所有者 + 仅诊断用的展示名）；`AgentTargetOwnerId`/`AgentTargetControlHandle`；两轴运行控制态 `Paused`/`UserTakeover`；快照含 `PendingTarget`（用户已交出、归属待确认） |
-| `AgentTargetAuthorization.cs` | 操作分类、九种稳定拒绝码、带可信控制句柄的请求、票据（唯一 `AgentTargetPermitId` + 连接/控制/**写世代** + 取消信号）、`AgentTargetWriteEpoch` |
-| `AgentTargetSessionAuthority.cs` | OnBridgeReady/Lost；`OfferTarget`（用户交页，不产生可执行授权）→ `TryClaimOwner`（可信 owner 确认归属才建会话）；显式 `SelectTarget`/撤销/关页/所有者失效；暂停与接管两轴；Authorize/Revalidate/CompleteOperation/CancelOperation；进入阻断推进写世代并取消在途写，释放后票据不可再用，重复/迟到完成不释放他人占用 |
-| `PuddingBrowser.Authorization.csproj` | 组件依赖门禁 |
-| [状态机测试](../PuddingBrowser.AuthorizationTests/AgentTargetSessionAuthorityTests.cs) | 48 条独立用例：准入、串行、归属、交页/确认、两轴控制、切页/换代、F7 反例、取消与精确释放 |
-| [边界测试](../PuddingBrowser.AuthorizationTests/ComponentBoundaryTests.cs) | 引用闭包检查 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `AgentTargetSession.cs` | 会话身份：目标页 + 桥世代 + 宿主注入的可信控制句柄 | `AgentTargetSessionId`、`AgentTargetOwnerId`、`AgentTargetControlHandle` | `AgentTargetSessionAuthority.cs` | 快照含 `PendingTarget`（用户已交出、归属待确认）；展示名仅诊断用，不得当身份 |
+| `AgentTargetAuthorization.cs` | 操作分类、九种稳定拒绝码与带写世代的唯一票据 | `AgentTargetOperation`、`AgentTargetErrorCodes`、`AgentTargetOperationExtensions` | `AgentTargetSessionAuthority.cs` | 票据释放后不可复用；推进写世代必须同时取消在途写 |
+| `AgentTargetSessionAuthority.cs` | 单目标会话状态机：交页确认、暂停接管、准入复检与精确释放 | `AgentTargetSessionAuthority` | `Source/Pudding.DesktopService/code_map.md` | 不同 owner 一律拒绝；重复或迟到的完成不得释放他人占用 |
+| `PuddingBrowser.Authorization.csproj` | 组件编译边界：仅允许引用 `Pudding.Contracts` | `—` | `Pudding.Contracts` | 禁止 PackageReference 与宿主/UI/驱动引用，越界由 `EnforceAgentTargetBoundary` 在 ResolveReferences 前拒绝 |
+| `../PuddingBrowser.AuthorizationTests/AgentTargetSessionAuthorityTests.cs` | 状态机 48 例：准入与归属、两轴控制及取消释放 | `AgentTargetSessionAuthorityTests` | `AgentTargetSessionAuthority.cs` | — |
+| `../PuddingBrowser.AuthorizationTests/ComponentBoundaryTests.cs` | 引用闭包检查：越界引用必须取红 | `ComponentBoundaryTests` | `PuddingBrowser.Authorization.csproj` | — |
 
 ## 3. 生产接缝
 

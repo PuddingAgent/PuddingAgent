@@ -1,35 +1,24 @@
 # PuddingTaskRecall.Cli CodeMAP
-> 源指纹: *.cs=2-03abc8c90916, *.csproj=1-c8e6a72a856e · 条目数: 13 · 最近整理: 2026-10-14
+> 源指纹: *.cs=2-03abc8c90916, *.csproj=1-c8e6a72a856e · 条目数: 3 · 最近整理: 2026-10-14
 
 > 历史脏数据一次性诊断/修复 CLI（看板卡 4ed930e7 原子任务③） | .NET 10 · Microsoft.Data.Sqlite · 只读优先的直连库审计
 
 ## 入口 & 配置
 
-| 文件 | 用途 |
-|------|------|
-| `Program.cs` | 🔑 CLI 入口（160 行）；默认 dry-run、写库需 `--apply` （见下「关键语义」） |
-| `PuddingTaskRecall.Cli.csproj` | net10.0；依赖平台实体事实表与 Core 契约 （见下「关键语义」） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Program.cs` | CLI 入口：参数解析与 dry-run/apply 分流 | `—` | `TaskRecallAuditEngine.cs` | 默认 dry-run，只有显式 `--apply` 才写库；写前先备份且全部修复包在单事务里 |
+| `PuddingTaskRecall.Cli.csproj` | net10.0 一次性诊断 CLI 工程 | `—` | `Program.cs` | 依赖平台实体事实表与 Core 契约，不得反向引用宿主执行链 |
 
 ## 核心功能
 
-| 文件 | 用途 |
-|------|------|
-| `TaskRecallAuditEngine.cs` | 🔑 审计与修复引擎（922 行），两个静态类：`TaskRecallAuditEngine` 与 `TaskRecallReportWriter` |
-| ├ `TaskRecallAuditEngine.Analyze(...)`（:173） | 只读侦查返回 `TaskRecallResult` 报告，不写库 （见下「关键语义」） |
-| ├ `TaskRecallAuditEngine.ApplyAsync(...)`（:225） | 显式 `--apply` 才执行；按报告修复并返回 `ApplyOutcome`，单事务提交 |
-| ├ 侦查查询区（:332） | task / attempt / binding / projection 事实查询（SQLite 直查） |
-| ├ 辅助区（:660） | 查询与修复的公共辅助 |
-| └ `TaskRecallReportWriter`（:751） | 报告落盘（Markdown/JSON） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `TaskRecallAuditEngine.cs` | 只读侦查与按报告修复的引擎，并负责报告落盘 | `TaskRecallAuditEngine`、`TaskRecallReportWriter`、`TaskRecallResult`、`ApplyOutcome` | `Program.cs` | 侦查阶段绝不写库；A 类回填只处理已完成但缺 `TaskCompleted` 事实的任务 |
 
 ### 结果模型（`TaskRecallAuditEngine.cs:10` 起）
 
-| 模型 | 含义 |
-|------|------|
-| `TaskStatusCount` / `AttemptStatusCount` | 任务 / 尝试的状态分布；`UnreleasedCount` 标出未释放的尝试 |
-| `BindingSnapshot` | 执行绑定健康度：`ExecutionId`/`SessionId` 为空计数、终态任务上的可修复数、活跃任务上的 pending claim |
-| `ProjectionSnapshot` | 投影过期清理口径：`Total` / `Expired` / `WouldDelete` / `SkippedLiveTask` |
-| `TaskCompletedBackfill` | **A 类修复**：`Completed`（status=8）但缺 `TaskCompleted`（event_type=10）事实的任务回填 |
-| `CompletedEventSample` | 已完成事件抽样（含 `decisionCode`/`correlationId`/`causationId` 归因字段） |
+结果类型集中在 `TaskRecallAuditEngine.cs`（`TaskStatusCount` / `BindingSnapshot` / `ProjectionSnapshot` / `TaskCompletedBackfill` / `CompletedEventSample`），逐型含义见源码同名类型。
 
 ## 测试
 

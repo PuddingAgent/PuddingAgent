@@ -1,5 +1,5 @@
 # PuddingRetrievalEvalTests — 评测组件独立测试工程（S2/S3）
-> 源指纹: *.cs=9-6d0220e8fff6, *.csproj=1-dbfc4ae42722 · 条目数: 0 · 最近整理: 2026-10-07
+> 源指纹: *.cs=9-6d0220e8fff6, *.csproj=1-dbfc4ae42722 · 条目数: 9 · 最近整理: 2026-11-22
 
 > 被侧：`Source/PuddingRetrievalEval`（组件化交付规程 S2）。
 > **`ProjectReference` 恰好 1 条**，且只指向 `PuddingRetrievalEval`。
@@ -12,28 +12,24 @@
 
 ## 文件
 
-| 文件 | 内容 |
-|---|---|
-`StubSearchProbe.cs` | 手工替身探针：可编排的命中列表（`AlwaysHits` / `ForQuery` / `Sequence`）、可注入耗时与失败；`TestHits` 是构造命中列表的助手。所有准确率断言都喂已知期望值给替身，**不依赖任何引擎的行为** |
-`RetrievalMetricsTests.cs` | 指标正确性（A2）逐项：`recall@1/5/10` 的窗口与分母、`MRR` 位置（第 1 位=1.0 / 第 3 位=1/3 / 全落空=0）、`precision@k` 分母为 k、**噪声率**（全落 `node_modules` ⇒ 1.0）、k 大于命中数、重复期望、同文件多行命中、k ≤ 0 抛错。内含 `ExpectThrows<T>` 助手 |
-`PathIdentityTests.cs` | 大小写 / 分隔符 / `./` / 仓储相对 vs 绝对路径 / `#Symbol` 约束 / 引擎不报 symbol 时不惩罚 / `DistinctExpected` / `DistinctByFile` |
-`NoiseDirectoryRulesTests.cs` | 噪声段名集合是**三套规则的 46 项并集**（断言集合大小与三套各自的代表项）；段名**精确匹配**（`bin.cs` 不是噪声、`bin` 是）；大小写与分隔符不敏感；根级路径与尾部分隔符 |
-`LatencyStatisticsTests.cs` | 最近秩百分位（4 样本 p50=20、10 样本 p95=10）、单样本、**亚毫秒分辨率**、空桶 = `LatencySummary.Empty`（不是"很快"）、乱序输入不影响结果、非法百分位抛错 |
-`EvalSetLoaderTests.cs` | A1：加载受版本控制的 `eval/sets/seed-v1.json`（80 条、三语言各 ≥15、三类 kind 齐备、无重复标注、每条至少一个期望）；fail-closed 反例：未知 kind/language、空 cases、缺 cases、空 query、空/重复 expectedHits、非法 JSON、坏 version、语言别名 |
-`EvalRunnerTests.cs` | 冷/热调用序列（1 冷 + warmup + measured）、**只给第一个已测重复打分**、重复间不一致必须被报出、探针失败计为 0 分且计数、按语言分层、空用例集与 `MaxResults < 10` 抛错、替身探针下确定性 |
-`EvalReportWriterTests.cs` | 报告契约：显式"不设阈值"、冷/热两行都在、每 case 与每期望命中都列出、枚举按名字序列化、同一 run 两次序列化逐字节相同、落盘 UTF-8 **无 BOM** |
-`ComponentBoundaryTests.cs` | S3/S4 边界断言：进程内 + `deps.json` 依赖闭包都不得含禁用程序集；**检测器自带阳性对照**；控制组断言（组件本身必须在闭包内，否则检查是空的）|
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `StubSearchProbe.cs` | 可编排的手工替身探针：命中列表、耗时与失败注入 | `StubSearchProbe`、`TestHits` | `EvalRunnerTests.cs` | 准确率断言只能喂已知期望值，不得依赖任何引擎行为 |
+| `RetrievalMetricsTests.cs` | recall@k 窗口与分母、MRR 位置、precision@k 与噪声率 | `RetrievalMetricsTests` | `RetrievalMetrics` | recall@k 分母改成 `expected.Count + 1` 取红 8 条；MRR 位置改成 `1d/(bestRank+2)` 取红 5 条 |
+| `PathIdentityTests.cs` | 路径身份归一的匹配行为 | `PathIdentityTests` | `PathIdentity` | 引擎不报 symbol 时不得惩罚调用方期望 |
+| `NoiseDirectoryRulesTests.cs` | 噪声段名集合是三套规则的 46 项并集 | `NoiseDirectoryRulesTests` | `PathNoiseRules` | 段名必须精确匹配：`bin.cs` 不是噪声而 `bin` 是 |
+| `LatencyStatisticsTests.cs` | 最近秩百分位与亚毫秒分辨率 | `LatencyStatisticsTests` | `LatencySummary` | 空桶必须报 `LatencySummary.Empty`，不得报「很快」 |
+| `EvalSetLoaderTests.cs` | 受版本控制用例集的加载与 fail-closed 反例 | `EvalSetLoaderTests` | `EvalSetLoader` | 未知 kind 或 language 必须拒绝，不得降级成默认分层 |
+| `EvalRunnerTests.cs` | 冷/热调用序列与只给第一个已测重复打分 | `EvalRunnerTests` | `StubSearchProbe.cs` | 重复间不一致必须报出；探针失败计 0 分并计数 |
+| `EvalReportWriterTests.cs` | 报告契约：显式不设阈值与逐 case 列出 | `EvalReportWriterTests` | `EvalReportWriter` | 同一 run 两次序列化必须逐字节相同且落盘 UTF-8 无 BOM |
+| `ComponentBoundaryTests.cs` | 进程内与 `deps.json` 闭包都不得含禁用程序集 | `ComponentBoundaryTests` | `PuddingRetrievalEvalTests.csproj` | 检测器必须自带阳性对照，否则检查可能整体空转 |
 
 ## 验证
 
 `dotnet test Source\PuddingRetrievalEvalTests\PuddingRetrievalEvalTests.csproj -p:CollectCoverage=false`
 78/78 通过、exit 0（不启动 Core/Desktop，不需要任何后台服务）。
 
-## 变异取红（都实测过，原始输出在 `temp/test-out/`）
+## 变异取红
 
-| 变异 | 结果 |
-|---|---|
-`recall@k` 分母改成 `expected.Count + 1` | **8 红 / 70 绿 / 78**（`u4-0-mutation-A-recall-denominator.log`）|
-`MRR` 位置改成 `1d / (bestRank + 2)` | **5 红 / 73 绿 / 78**（`u4-0-mutation-B-mrr-position.log`）|
-复原 | `RetrievalMetrics.cs` blob hash 逐位相同（`93edd683b5396ebeb03c9026a483290be656ede9`），78/78 绿（`u4-0-restore-green.log`）|
-组件临时加一条指向 `PuddingFullTextIndex` 的 `ProjectReference` | **1 红 / 77 绿 / 78**，报出 `Lucene.Net … PuddingFullTextIndex`（`u4-0-a8-boundary-mutation.log`）；撤销后 csproj hash 逐位相同、78/78 绿（`u4-0-a8-boundary-restored.log`）|
+四条变异（recall 分母、MRR 位置、边界加引用、复原）的原始日志在 `temp/test-out/`；
+要点已并入上表 `约束` 列，复原后 78/78 绿。

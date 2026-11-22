@@ -12,13 +12,13 @@
 
 ## 关键文件
 
-| 文件 | 关键类型 / 职责 | 何时读 |
-|---|---|---|
-| `DeterministicPayloadCompaction.cs` | `DeterministicPayloadCompaction.TryApply`：三段策略按序执行 + 尾部保护区 + 准入地板 | 想知道「改写发生在哪一步、为什么没改」 |
-| `DeterministicPruneOptions.cs` | `DeterministicPruneOptions`（10 个阈值 + `Enabled`）与 `Validate()` fail-fast | 调阈值、写配置项、排查「为什么不触发」 |
-| `PruneOutcome.cs` | `PruneNoOpReason` / `PruneStats` / `PruneOutcome` 三个只读结果类型 | 消费结果、落日志、写断言 |
-| `TokenCounting.cs` | `ITextTokenCounter` · `CharacterRatioTokenCounter`（默认 4 字符/token）· `PruneTokenMath` | 换计数口径、解释 `BeforeTokens` 的来源 |
-| `PuddingContextPruning.csproj` | 叶子工程（1 条 `ProjectReference` + `InternalsVisibleTo` 测试工程） | 查依赖面 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `DeterministicPayloadCompaction.cs` | 零 LLM 确定性剪枝：去重→首尾摘要→参数截断→准入地板 | `DeterministicPayloadCompaction` | `DeterministicPruneOptions.cs` | 策略顺序不可交换；回收量不足即整份回退，no-op 必须返回入参列表同一个实例 |
+| `DeterministicPruneOptions.cs` | 剪枝阈值与启用开关，附 fail-fast 校验 | `DeterministicPruneOptions` | `DeterministicPayloadCompaction.cs` | 默认值即冻结合同，改动会改变生产行为 |
+| `PruneOutcome.cs` | 剪枝只读结果类型：原因与统计 | `PruneNoOpReason`、`PruneStats`、`PruneOutcome` | `DeterministicPayloadCompaction.cs` | `Changed` 必须等价于 `NoOpReason == None` |
+| `TokenCounting.cs` | 组件自带的 token 计数口径 | `ITextTokenCounter`、`CharacterRatioTokenCounter`、`PruneTokenMath` | `DeterministicPruneOptions.cs` | 与 `ContextBudgetManager` 数字不必相等，只用于「这次改写值不值得」的相对判断 |
+| `PuddingContextPruning.csproj` | 叶子工程：仅引用 `PuddingCore` | `—` | `PuddingCore` | 只允许一条 ProjectReference；不得引用 Runtime/Host/Platform/CodeIndex |
 
 ## 不变量（改代码前先读这一节）
 

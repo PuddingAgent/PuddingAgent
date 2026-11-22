@@ -1,17 +1,17 @@
 # PuddingContextPruningTests CodeMAP
-> 源指纹: TestResults/**=3-145e5ffbee52, *.cs=3-c3c77c2a5e74, *.csproj=1-85b3eb84bee9 · 条目数: 5 · 最近整理: 2026-10-23
+> 源指纹: TestResults/**=3-145e5ffbee52, *.cs=3-c3c77c2a5e74, *.csproj=1-85b3eb84bee9 · 条目数: 4 · 最近整理: 2026-10-23
 
 > 职责：`PuddingContextPruning` 的**独立**测试工程（S2/S3/S4）——不启动宿主、不连库、不读配置，`dotnet test` 直接跑。
 > 边界：只 `ProjectReference` 被测工程（含 `PuddingCore` 传递引用）；**不得**引用 `PuddingRuntime` / `PuddingHost` / `PuddingPlatform` / `PuddingCodeIntelligence` / `PuddingCodeIndex`，`ComponentBoundaryTests` 会在 CI 里把这条钉死。
 
 ## 关键文件
 
-| 文件 | 覆盖 | 何时读 |
-|---|---|---|
-| `DeterministicPayloadCompactionTests.cs` | 17 例行为用例：开关关闭 = 原样返回、尾部按引用保留、配对回退、去重留最新、阈值边界、首尾摘要、参数截断、两条 reclaim 回退、逐字节确定性、入参不可变、四种 no-op 原因、多模态/摘要保护 | 改 `DeterministicPayloadCompaction` 前先看它锁了什么 |
-| `PruneOptionsValidationTests.cs` | 9 例：冻结默认值 + 每条非法配置的异常类型与参数名（含 `MinReclaimRatio = NaN` 这种静默通过型陷阱） | 调 `Validate()` 规则时 |
-| `ComponentBoundaryTests.cs` | 3 例边界：探测器**自检**（必须恰好标出 8 个禁用名，否则说明检测逻辑坏了）、进程实际加载面、`deps.json` 依赖闭包 | 怀疑「隔离」被破坏时 |
-| `PuddingContextPruningTests.csproj` | 单引用 + 程序集级 `Parallelize(MethodLevel)`（纯内存用例，无共享状态） | 加包/加引用时 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `DeterministicPayloadCompactionTests.cs` | 17 例行为：尾部保护与去重留最新等剪枝语义 | `DeterministicPayloadCompactionTests` | `DeterministicPayloadCompaction` | no-op 路径必须 `Assert.AreSame` 入参实例；改成 `AreEqual` 会放过新建列表的回归 |
+| `PruneOptionsValidationTests.cs` | 9 例配置校验：冻结默认值与非法配置的异常类型和参数名 | `PruneOptionsValidationTests` | `DeterministicPruneOptions` | 必须覆盖 `MinReclaimRatio = NaN` 这类静默通过型陷阱 |
+| `ComponentBoundaryTests.cs` | 3 例边界：探测器自检与 `deps.json` 依赖闭包 | `ComponentBoundaryTests` | `../PuddingContextPruning/PuddingContextPruning.csproj` | 探测器自检必须恰好标出 8 个禁用名，否则说明检测逻辑本身坏了 |
+| `PuddingContextPruningTests.csproj` | 独立测试工程：单引用被测叶子 + 方法级并行 | `—` | `../PuddingContextPruning/PuddingContextPruning.csproj` | 不得引用 Runtime/Host/Platform，边界由 `ComponentBoundaryTests` 钉死 |
 
 ## 断言约定
 
@@ -21,6 +21,3 @@
 
 ## 变更日志
 
-| 日期 | 变更 |
-|---|---|
-| 2026-10-23 | 初版：29 例（行为 17 / 校验 9 / 边界 3）全绿；构建 0 警告 0 错误；变异取红已验证 |

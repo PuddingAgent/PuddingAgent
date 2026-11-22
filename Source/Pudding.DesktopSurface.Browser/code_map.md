@@ -1,5 +1,5 @@
 # Pudding.DesktopSurface.Browser — 代码地图
-> 源指纹: *.cs=3-11a8181845a8, *.csproj=1-8b5cbb1deffe · 条目数: 4 · 最近整理: 2026-10-19
+> 源指纹: *.cs=3-11a8181845a8, *.csproj=1-8b5cbb1deffe · 条目数: 3 · 最近整理: 2026-10-19
 
 > 项目定位与边界见根 [`code_map.md`](../../code_map.md) §2.2；施工规格见
 > [`Docs/12_features/Desktop-Surface-Browser-Mapping-2026-10-01.md`](../../Docs/12_features/Desktop-Surface-Browser-Mapping-2026-10-01.md)。
@@ -18,16 +18,15 @@
 
 ## 2. 关键文件
 
-| 文件 | 用途 / 不变量 |
-|------|---------------|
-| `BrowserRuntimeDesktopSurface.cs` | 浏览器能力映射；多匹配交互返回脱敏歧义原因与 nth 提示（见下「关键语义」） |
-| `DesktopSurfaceComposition.cs` | 把协作方组装成 `DesktopService` 需要的**单一** `IDesktopUiSurface`：浏览器 9 项 → `BrowserRuntimeDesktopSurface`，Shell 5 项 → `DesktopShellSurface`。组装层无逻辑，唯一可能的缺陷是**接错协作者**（编译期查不出、表现是"能调用但做错事"），故由测试逐个钉住 |
-| `BrowserWorkspaceTargetBridge.cs` | 页面生命周期翻译；`ObserveAgentTarget` 同步 UI 快照，`OnAgentTargetChanged` 表达显式选页/撤权，空快照不作撤权 |
-| （同上）切换目标即撤销 | （见下「关键语义」） | （见下「关键语义」） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `BrowserRuntimeDesktopSurface.cs` | 把九项浏览器能力映射到既有 `IBrowserRuntime`，不伪造版本与截图 | `BrowserRuntimeDesktopSurface` | `Source/Pudding.DesktopSurface.Browser/BrowserWorkspaceTargetBridge.cs` | 页面版本来自身是一等成员，缺失即 `Unknown`；超预算结果必须如实标 `Truncated` |
+| `BrowserWorkspaceTargetBridge.cs` | 把页面生命周期事件翻译成目标注册表变更与授权撤销 | `BrowserWorkspaceTargetBridge` | `Source/Pudding.DesktopService/code_map.md` | 只有目标真的改变才撤销授权，以注册表实际状态为准；空 UI 快照不得当撤权 |
+| `DesktopSurfaceComposition.cs` | 装配 `DesktopService` 需要的单一 `IDesktopUiSurface`，自身不含逻辑 | `DesktopSurfaceComposition` | `BrowserRuntimeDesktopSurface` | 组装层唯一可能的缺陷是接错协作者，编译期查不出，只能靠测试钉住 |
 
 ### 2.1 关键语义（长单元格原文）
 
-下表两条目的「用途 / 不变量」原文逐字下沉如下。
+上表两条目的原始长描述（压缩前逐字原文）如下，仅供排查细节，不入表。
 
 **`BrowserRuntimeDesktopSurface.cs`**
 

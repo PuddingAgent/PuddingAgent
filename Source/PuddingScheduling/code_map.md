@@ -2,15 +2,15 @@
 
 
 > 源指纹: Source/PuddingScheduling/**=8-6218db89de52 · 条目数: 7 · 最近整理: 2026-11-22
-| 文件 | 契约 |
-|---|---|
-| `CronExpression.cs` | 五段 cron（分 时 日 月 周）的解析与下一次触发计算；纯函数，时钟与时区由调用方传入 |
-| `ScheduleTickPlanner.cs` | 有界计算触发、游标和跳过数；Skip 保留当前调度分钟，截断时游标推进到未来并标注跳过数下限 |
-| `AutomationScheduleRecord.cs` | 持久化模型（设计 §3.2 字段）投影到 `ScheduleState`，以及 `(scheduleId, fireTime)` 幂等键的规范化：fireTime 必须转 UTC 并截到整分钟 |
-| `IScheduleStore.cs` | 读取到期计划并原子提交 tick；按版本拒绝过期快照，只把触发唯一键冲突判为已记录 |
-| `ScheduleStoreSchema.cs` | 计划与触发表 DDL、触发唯一约束、到期扫描索引 |
-| `SqliteScheduleStore.cs` | 任务写入、触发和游标共享事务；同一定义重启保留游标，变更递增版本 |
-| `ScheduleTickService.cs` | 从注入时钟读取一轮时间，扫描到期项并逐项规划和提交；返回每项写入或失败 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `CronExpression.cs` | 五段 cron 解析与下一次触发计算 | `CronExpression` | `ScheduleTickPlanner.cs` | 纯函数：时钟与时区由调用方传入，不得读系统时钟 |
+| `ScheduleTickPlanner.cs` | 有界计算触发、游标与跳过数 | `ScheduleTickPlanner`、`TickPlan`、`CatchUpPolicy` | `CronExpression.cs` | Skip 必须保留当前调度分钟；截断时游标推进到未来并标注跳过数下限 |
+| `AutomationScheduleRecord.cs` | 持久化模型投影到 `ScheduleState` 并规范化幂等键 | `AutomationScheduleRecord`、`ScheduleFireKey` | `ScheduleState` | fireTime 必须转 UTC 并截到整分钟，否则唯一索引挡不住重复 |
+| `IScheduleStore.cs` | 到期计划读取与 tick 原子提交端口 | `IScheduleStore`、`ScheduleTickWrite` | `SqliteScheduleStore.cs` | 按版本拒绝过期快照；只把触发唯一键冲突判为已记录 |
+| `ScheduleStoreSchema.cs` | 计划与触发表的 DDL 与到期扫描索引 | `ScheduleStoreSchema` | `SqliteScheduleStore.cs` | 触发唯一约束不可退化为无效 CHECK，否则重复触发不被拦 |
+| `SqliteScheduleStore.cs` | 写入、触发与游标共享同一事务 | `SqliteScheduleStore` | `ScheduleStoreSchema.cs` | 同一定义重启要保留游标，定义变更才递增版本 |
+| `ScheduleTickService.cs` | 从注入时钟取一轮时间并逐项规划提交 | `ScheduleTickService`、`ScheduleTickResult` | `IScheduleStore.cs` | 时钟必须注入，不得内部读 `DateTime.UtcNow` |
 
 叶组件只依赖 BCL。项目的 MSBuild 门禁拒绝 ProjectReference，测试工程提供 SQLite 驱动。
 

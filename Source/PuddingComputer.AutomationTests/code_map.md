@@ -3,11 +3,11 @@
 
 `PuddingComputer.Automation` 的独立测试工程（MSTest.Sdk）。断言全部是纯函数行为，不接触真实桌面、不启动进程、不改剪贴板。
 
-| 文件 | 覆盖的不变量 | 变异验证 |
-|---|---|---|
-| `ComputerActionMatrixTests.cs` | 12 动作 × 2 后端全组合；`Every_action_is_classified` 用集合比对防止「新增动作忘归类」；空串语义只对 set_value 成立；不改状态的动作只能是 Move / Drag | 把 IsSupported 里 Drag 改为 true → 2 红（精确命中 Drag 与 SupportedBackend 两条） |
-| `ComputerCoordinateMapperTests.cs` | 一对一/半尺寸/双倍缩放；**WindowRender 永不出坐标**；采集方式优先于调用方标志；负坐标副屏；零尺寸除零防护 | 去掉「采集方式优先」→ 1 红（Capture_mode_wins_even_if_the_flag_lies） |
-| `ComputerReceiptEvaluatorTests.cs` | 六种情况表逐条；`Only_blocked_is_ever_safe_to_retry` 穷举 execution×verification；NotStarted 永不报副作用 | 部分提交从 Failed 改为 Dispatched → 1 红（Partial_input_is_failed_not_dispatched） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `ComputerActionMatrixTests.cs` | 动作矩阵：12 动作 × 2 后端全组合与空串语义 | `ComputerActionMatrixTests` | `ComputerActionMatrix` | 把 IsSupported 里 Drag 改为 true 则 2 条红（`Drag` 与 `SupportedBackend`） |
+| `ComputerCoordinateMapperTests.cs` | 坐标换算：一对一、半尺寸、双倍缩放与负原点副屏 | `ComputerCoordinateMapperTests` | `ComputerCoordinateMapper` | 去掉「采集方式优先」则 `Capture_mode_wins_even_if_the_flag_lies` 红 |
+| `ComputerReceiptEvaluatorTests.cs` | 回执归约六种情况表与「只有 Blocked 可重试」 | `ComputerReceiptEvaluatorTests` | `ComputerReceiptEvaluator` | 部分提交从 Failed 改为 Dispatched 则 `Partial_input_is_failed_not_dispatched` 红 |
 
 ## 测试数字的来源
 

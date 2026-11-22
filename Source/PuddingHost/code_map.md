@@ -15,7 +15,7 @@ draft: false
 
 
 # PuddingHost CodeMAP
-> 源指纹: Source/PuddingHost/**=219-f565e5f5b7bf · 条目数: 44 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingHost/**=219-f565e5f5b7bf · 条目数: 64 · 最近整理: 2026-10-22
 
 > 唯一 Host 组合根 | Console 与 Desktop 共用 DI · Browser Bridge · 飞书连接器
 > 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingHost-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingHost-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
@@ -30,35 +30,35 @@ Agent 配置公共 API：`Extensions/PuddingServiceCollectionExtensions.Platform
 
 Agent 单轮执行 API：`Extensions/PuddingServiceCollectionExtensions.cs` 调用平台 `AddAgentWorkApi` 装配单例 canonical adapter、身份工厂及 scoped 主会话解析器；组合边界由 `Tests/PuddingHost.Tests/Hosting/AgentWorkCompositionTests.cs` 验证。
 
-| 插件交付 | 用途 |
-|---|---|
-| `Build/PuddingHostContent.props` | 将独立 Worker、SDK、编写指南与示例递归装入 Core 的 `tools/plugin-worker/`，构建顺序引用不形成程序集引用 |
-| `Extensions/PuddingServiceCollectionExtensions.cs` | 装配平台 `PluginAgentApiLeaseFactory` 到插件合同端口（细节见「条目细节」） |
-| `Extensions/PuddingServiceCollectionExtensions.cs` → `../PuddingRuntime/Operators/PublicApi/OperatorServiceCollectionExtensions.cs` | 装配确定性算子、模型资源与分类/验收工厂（细节见「条目细节」） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Build/PuddingHostContent.props` | 将独立 Worker、SDK、编写指南与示例递归装入 Core 的 `tools/plugin-worker/`，构建顺序引用不形成程序集引用 | — | — | — |
+| `Extensions/PuddingServiceCollectionExtensions.cs` | 装配平台 `PluginAgentApiLeaseFactory` 到插件合同端口（细节见「条目细节」） | `PuddingServiceCollectionExtensions` | — | — |
+| `Extensions/PuddingServiceCollectionExtensions.cs` | 装配确定性算子、模型资源与分类/验收工厂 | `PuddingServiceCollectionExtensions` | `../PuddingRuntime/Operators/PublicApi/OperatorServiceCollectionExtensions.cs` | — |
 
-| 文件 | 用途 |
-|------|------|
-| [ToolPackages/](ToolPackages/) · [Build/PuddingHostContent.props](Build/PuddingHostContent.props) | 产品随包工具的导出与服务类型映射；构建及发布复制声明、插件 Worker 与 SDK |
-| `PuddingHostAssemblyMarker.cs` | 程序集标记 |
-| `Services/ReviewWorkerHostedService.cs` · `Services/HostRuntimeLlmChatClient.cs` | 驱动持久评审任务，将已绑定的模型调用交给 Runtime |
-| `Services/SlackConnectorFactory.cs` · `Connectors/SlackConnector.cs` · `Tools/SlackLookupMemberTool.cs` | 在已配置的渠道创建 Slack 连接器，按当前绑定查询成员 |
-| `Services/`（钉钉群链路 7 件） | 鲸鲸的持久群会话、来源授权、工具与图片投递；已绑定成员走普通执行器，未绑定成员走访客执行器 |
-| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册（见下「关键语义」） |
-| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册（细节见「条目细节」） |
-| `Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs` | 原生图片阅读与预处理工具（见下「关键语义」） |
-| `Tools/ScreenCaptureTool.cs` + `ScreenCapture/` | 🔑 Agent 自用屏幕采集：多屏/区域/窗口三口径、物理像素坐标、GDI + SkiaSharp 编码、结果落 Vision Artifact |
-| `Tools/ComputerObserveTool.cs` | 可见窗口客户区原图/编号图与候选 ID（细节见「条目细节」） |
-| `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库 schema 初始化（见下「关键语义」） |
-| `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理（细节见「条目细节」） |
-| `Controllers/StorageManagementController.cs` | `/api/admin/storage/databases` 分析、清理预览与执行 API |
-| `Hosting/StorageManagementAuthorization.cs` | 平台 admin JWT，或 DesktopChild Loopback + ControlToken 的管理策略 |
-| `Controllers/IndexAdminController.cs` | 索引状态只读 API（fullText + codeIndex）（见下「关键语义」） |
-| `Services/HostActivePluginSubscriptionSource.cs` | 从真实 PluginManager 激活+包清单生成插件订阅候选（generation=activation.Revision） |
-| `Services/HostWorkspacePluginEventTarget.cs` | 插件 workspace 事件 Host 适配（细节见「条目细节」） |
-| `Services/CodeIndexStatusProbe.cs` | codeIndex 状态只读探针（见下「关键语义」） |
-| `Services/FullTextIndexStatusProbe.cs` | S-A：`fullText` 块探针（只产块，不再产响应根对象）；响应根对象 `IndexAdminStatusSnapshot` 由控制器组装 |
-| `Controllers/TransportStatusController.cs` | 传输用量只读 API（退役判据证据面）（见下「关键语义」） |
-| `Controllers/SubAgentPoolAdminController.cs` | `GET /api/admin/sub-agent-pool` 池条目只读列表（细节见「条目细节」） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| [ToolPackages/](ToolPackages/) · [Build/PuddingHostContent.props](Build/PuddingHostContent.props) | 产品随包工具的导出与服务类型映射；构建及发布复制声明、插件 Worker 与 SDK | — | — | — |
+| `PuddingHostAssemblyMarker.cs` | 程序集标记 | `PuddingHostAssemblyMarker` | — | — |
+| `Services/ReviewWorkerHostedService.cs` · `Services/HostRuntimeLlmChatClient.cs` | 驱动持久评审任务，将已绑定的模型调用交给 Runtime | — | — | — |
+| `Services/SlackConnectorFactory.cs` · `Connectors/SlackConnector.cs` · `Tools/SlackLookupMemberTool.cs` | 在已配置的渠道创建 Slack 连接器，按当前绑定查询成员 | — | — | — |
+| `Services/`（钉钉群链路 7 件） | 鲸鲸的持久群会话、来源授权、工具与图片投递；已绑定成员走普通执行器，未绑定成员走访客执行器 | — | — | — |
+| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册（见下「关键语义」） | `PuddingServiceCollectionExtensions` | — | — |
+| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册（细节见「条目细节」） | `PuddingServiceCollectionExtensions` | — | — |
+| `Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs` | 原生图片阅读与预处理工具（见下「关键语义」） | — | — | — |
+| `Tools/ScreenCaptureTool.cs` + `ScreenCapture/` | 🔑 Agent 自用屏幕采集：多屏/区域/窗口三口径、物理像素坐标、GDI + SkiaSharp 编码、结果落 Vision Artifact | — | — | — |
+| `Tools/ComputerObserveTool.cs` | 可见窗口客户区原图/编号图与候选 ID（细节见「条目细节」） | `ComputerObserveTool`、`ComputerObserveArgs` | — | — |
+| `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库 schema 初始化（见下「关键语义」） | `PuddingApplicationInitializer` | — | — |
+| `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理（细节见「条目细节」） | `StorageMaintenanceService` | — | — |
+| `Controllers/StorageManagementController.cs` | `/api/admin/storage/databases` 分析、清理预览与执行 API | `StorageManagementController` | — | — |
+| `Hosting/StorageManagementAuthorization.cs` | 平台 admin JWT，或 DesktopChild Loopback + ControlToken 的管理策略 | `PuddingAuthorizationPolicies`、`StorageManagementRequirement` | — | — |
+| `Controllers/IndexAdminController.cs` | 索引状态只读 API（fullText + codeIndex）（见下「关键语义」） | `IndexAdminController`、`IndexAdminStatusSnapshot` | — | — |
+| `Services/HostActivePluginSubscriptionSource.cs` | 从真实 PluginManager 激活+包清单生成插件订阅候选（generation=activation.Revision） | `HostActivePluginSubscriptionSource` | — | — |
+| `Services/HostWorkspacePluginEventTarget.cs` | 插件 workspace 事件 Host 适配（细节见「条目细节」） | `HostWorkspacePluginEventTarget` | — | — |
+| `Services/CodeIndexStatusProbe.cs` | codeIndex 状态只读探针（见下「关键语义」） | `CodeIndexStatusDetailSnapshot`、`CodeIndexProjectStatusSnapshot` | — | — |
+| `Services/FullTextIndexStatusProbe.cs` | S-A：`fullText` 块探针（只产块，不再产响应根对象）；响应根对象 `IndexAdminStatusSnapshot` 由控制器组装 | `FullTextIndexStatusDetailSnapshot`、`FullTextIndexMaintenanceStatusSnapshot` | — | — |
+| `Controllers/TransportStatusController.cs` | 传输用量只读 API（退役判据证据面）（见下「关键语义」） | `TransportStatusController`、`DesktopTransportStatusSnapshot` | — | — |
+| `Controllers/SubAgentPoolAdminController.cs` | `GET /api/admin/sub-agent-pool` 池条目只读列表（细节见「条目细节」） | `SubAgentPoolAdminController`、`SubAgentPoolEntryDto` | — | — |
 
 **关键语义**
 
@@ -88,15 +88,15 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 
 ## Browser Bridge（Phase 2A）
 
-| 文件 | 用途 |
-|------|------|
-| `BrowserBridge/DesktopBrowserBridgeWebSocketEndpoint.cs` | 认证 Bridge 入口；Hello 信封与载荷严格校验，版本拒绝记录 expected/received 并限时关闭，不回显原始帧 |
-| `BrowserBridge/RemoteBrowserRuntime.cs` | Core 侧 Browser 代理（→ 认证 Bridge）：严格消费命令 DTO；单值、列表与无值合同见修复规格 |
-| `BrowserBridge/RemoteBrowserContext.cs` | Remote Context 代理 |
-| `BrowserBridge/RemoteBrowserPage.cs` | Remote Page 代理；page.locate 携带页面版本，包括交互前 ref 查询；如实回传宿主事实（见下「关键语义」） |
-| `BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs` | 条件注册（DesktopChild + BrowserAutomationEnabled）（见下「关键语义」） |；并注册**委派生命周期端口**（与门共用会话解析器与能力描述符来源） |
-| `BrowserBridge/BrowserScreenshotArtifactPublisher.cs` | 截图工件发布端（内容寻址 + 幂等）（见下「关键语义」） |
-| `BrowserBridge/HostBrowserDelegationLifecycle.cs` | 委派生命周期端口的 Host 实现（fail-closed）（见下「关键语义」） |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `BrowserBridge/DesktopBrowserBridgeWebSocketEndpoint.cs` | 认证 Bridge 入口；Hello 信封与载荷严格校验，版本拒绝记录 expected/received 并限时关闭，不回显原始帧 | `IBrowserBridgeClock`、`SystemBrowserBridgeClock` | — | — |
+| `BrowserBridge/RemoteBrowserRuntime.cs` | Core 侧 Browser 代理（→ 认证 Bridge）：严格消费命令 DTO；单值、列表与无值合同见修复规格 | `RemoteBrowserRuntime` | — | — |
+| `BrowserBridge/RemoteBrowserContext.cs` | Remote Context 代理 | `RemoteBrowserContext` | — | — |
+| `BrowserBridge/RemoteBrowserPage.cs` | Remote Page 代理；page.locate 携带页面版本，包括交互前 ref 查询；如实回传宿主事实（见下「关键语义」） | `RemoteBrowserPage`、`RemoteBrowserElementHandle` | — | — |
+| `BrowserBridge/BrowserBridgeServiceCollectionExtensions.cs` | 条件注册（DesktopChild + BrowserAutomationEnabled）（见下「关键语义」） | — | — | — |
+| `BrowserBridge/BrowserScreenshotArtifactPublisher.cs` | 截图工件发布端（内容寻址 + 幂等）（见下「关键语义」） | `BrowserScreenshotArtifactPublisher` | — | — |
+| `BrowserBridge/HostBrowserDelegationLifecycle.cs` | 委派生命周期端口的 Host 实现（fail-closed）（见下「关键语义」） | `HostBrowserDelegationLifecycle` | — | — |
 
 | `BrowserBridge/BridgeBrowserCapabilitySurface.cs` | 窄端口的 Bridge 实现（与能力通道同形）（见下「关键语义」） |
 
@@ -127,30 +127,30 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 
 ## 飞书连接器
 
-| 文件 | 用途 |
-|------|------|
-| `Services/FeishuConnectorFactory.cs` | 飞书连接器工厂 |
-| `Services/FeishuStreamingProjectionWorker.cs` | 飞书流式投影（31KB） |
-| `Services/FeishuImageUploadPreparationService.cs` | 飞书图片上传准备 |
-| `Services/FeishuTtsDeliveryService.cs` | 飞书 TTS 投递 |
-| `Services/FeishuConnectorIdentity.cs` | 飞书身份标识 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Services/FeishuConnectorFactory.cs` | 飞书连接器工厂 | `FeishuConnectorFactory` | — | — |
+| `Services/FeishuStreamingProjectionWorker.cs` | 飞书流式投影（31KB） | `FeishuStreamingProjectionWorker` | — | — |
+| `Services/FeishuImageUploadPreparationService.cs` | 飞书图片上传准备 | `FeishuImageUploadPayload`、`FeishuImageUploadPreparationService` | — | — |
+| `Services/FeishuTtsDeliveryService.cs` | 飞书 TTS 投递 | `FeishuTtsDeliveryService` | — | — |
+| `Services/FeishuConnectorIdentity.cs` | 飞书身份标识 | `FeishuConnectorIdentity` | — | — |
 
 ## 连接器 & 消息
 
-| 文件 | 用途 |
-|------|------|
-| `Connectors/` | 连接器实现 |
-| `Services/ConnectorHost.cs` | 连接器宿主 |
-| `Connectors/SlackConnector.cs` · `Services/SlackConnectorFactory.cs` | Slack 叶子组件适配、独占 App 绑定、凭据文件读取、持久收件箱交接与发送回执 |
-| `Connectors/SlackCredentialFile.cs` | 仓库外凭据文件独占、变更检查与原子替换；临时文件创建时继承原文件 ACL，供 App Token 续期写回 |
-| `Controllers/SlackChannelDiagnosticsController.cs` | 经认证读取动态 Slack Connector 状态和持久发送回执 |
-| `Tools/SlackLookupMemberTool.cs` | `slack_lookup_member`：由可信当前命令绑定 Slack 工作区/Connector；只读查询真人和 bot 的名称/ID，不接受模型指定路由 |
-| `Services/BoundChannelSessions.cs` | 为已绑定成员按渠道、组织、账号和会话分配独立分支，保留所有者身份 |
-| `Services/MessageGatewayIngress.cs` | 校验飞书和 Slack 来源，区分普通渠道会话与已验证成员分支，并向消息循环提交本轮身份 |
-| `Hosting/ConnectorHostLifecycleService.cs` | 连接器生命周期 hosted service（见下「关键语义」） |
-| `Services/ConnectorDeliveryDispatcher.cs` | 持久出站投递；飞书复用稳定 uuid；Slack 按 Retry-After 重试，Rejected/Unknown 死信保留证据 |
-| `Services/MessageGatewayIngress.cs` | 消息网关入口（19KB） |
-| `Extensions/` | 扩展注册 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Connectors/` | 连接器实现 | — | — | — |
+| `Services/ConnectorHost.cs` | 连接器宿主 | `ConnectorHost`、`ConnectorStatus` | — | — |
+| `Connectors/SlackConnector.cs` · `Services/SlackConnectorFactory.cs` | Slack 叶子组件适配、独占 App 绑定、凭据文件读取、持久收件箱交接与发送回执 | — | — | — |
+| `Connectors/SlackCredentialFile.cs` | 仓库外凭据文件独占、变更检查与原子替换；临时文件创建时继承原文件 ACL，供 App Token 续期写回 | `SlackCredentialFile` | — | — |
+| `Controllers/SlackChannelDiagnosticsController.cs` | 经认证读取动态 Slack Connector 状态和持久发送回执 | `SlackChannelDiagnosticsController` | — | — |
+| `Tools/SlackLookupMemberTool.cs` | `slack_lookup_member`：由可信当前命令绑定 Slack 工作区/Connector；只读查询真人和 bot 的名称/ID，不接受模型指定路由 | `SlackLookupMemberTool`、`SlackLookupMemberArgs` | — | — |
+| `Services/BoundChannelSessions.cs` | 为已绑定成员按渠道、组织、账号和会话分配独立分支，保留所有者身份 | — | — | — |
+| `Services/MessageGatewayIngress.cs` | 校验飞书和 Slack 来源，区分普通渠道会话与已验证成员分支，并向消息循环提交本轮身份 | `MessageGatewayIngress` | — | — |
+| `Hosting/ConnectorHostLifecycleService.cs` | 连接器生命周期 hosted service（见下「关键语义」） | `ConnectorHostLifecycleService` | — | — |
+| `Services/ConnectorDeliveryDispatcher.cs` | 持久出站投递；飞书复用稳定 uuid；Slack 按 Retry-After 重试，Rejected/Unknown 死信保留证据 | `ConnectorDeliveryDispatcher` | — | — |
+| `Services/MessageGatewayIngress.cs` | 消息网关入口（19KB） | `MessageGatewayIngress` | — | — |
+| `Extensions/` | 扩展注册 | — | — | — |
 
 **关键语义**
 
@@ -161,24 +161,24 @@ HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 St
 
 ## 服务治理
 
-| 文件 | 用途 |
-|------|------|
-| `Services/HeartbeatService.cs` | 当前 Agent 心跳编排（见下「关键语义」） |
-| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | Goal/Task 编排 worker 组合注册（见下「关键语义」） |
-| `Services/TaskAutoDispatchOptionsStartupValidator.cs` | TaskAutoDispatch 启动自愈：authoritative 缺 Goal 前置降级 disabled；其余非法仍 fail-closed |
-| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` · `Build/PuddingHostContent.props` | 登记每日巡检 Worker 并随 Core 打包只读巡检脚本 |
-| `Services/CronSchedulerService.cs` | Cron 调度 |
-| `Services/ConfigHotReloadService.cs` | 配置热重载 |
-| `Services/IndexPrebuildService.cs` | 索引预构建 |
-| `Hosting/PuddingHostOptionsFactory.cs` | DesktopChild 固定 `0.0.0.0:<port>` 启动约束 |
-| `Hosting/PuddingServerAddressAccessor.cs` | 全网卡监听地址投影为同端口 Loopback 控制地址 |
-| `Hosting/PuddingApplicationHost.cs` | 组合根与 Kestrel 地址绑定（见下「关键语义」） |
-| `Hosting/AgentAdapterApiDocumentation.cs` | 生成外部 Agent 接口 OpenAPI JSON（细节见「条目细节」） |
-| `Hosting/PuddingDataRootBootstrapper.cs` | DataRoot 解析与引导（见下「关键语义」） |
-| `Config/` | 默认配置 |
-| `default-data/config/voice/providers.json` | 语音默认目录：Qwen Message ASR 与 Qwen3 TTS；不含真实凭据 |
-| `Prompts/` | 系统提示模板 |
-| `P2P/` | P2P 通信 |
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Services/HeartbeatService.cs` | 当前 Agent 心跳编排（见下「关键语义」） | `HeartbeatOrchestrator`、`HeartbeatPromptComposer` | — | — |
+| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | Goal/Task 编排 worker 组合注册（见下「关键语义」） | `PuddingServiceCollectionExtensions` | — | — |
+| `Services/TaskAutoDispatchOptionsStartupValidator.cs` | TaskAutoDispatch 启动自愈：authoritative 缺 Goal 前置降级 disabled；其余非法仍 fail-closed | `TaskAutoDispatchOptionsStartupValidator` | — | — |
+| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` · `Build/PuddingHostContent.props` | 登记每日巡检 Worker 并随 Core 打包只读巡检脚本 | — | — | — |
+| `Services/CronSchedulerService.cs` | Cron 调度 | `CronSchedulerService`、`CronTriggerPayload` | — | — |
+| `Services/ConfigHotReloadService.cs` | 配置热重载 | `ConfigHotReloadService` | — | — |
+| `Services/IndexPrebuildService.cs` | 索引预构建 | `IndexPrebuildService` | — | — |
+| `Hosting/PuddingHostOptionsFactory.cs` | DesktopChild 固定 `0.0.0.0:<port>` 启动约束 | `PuddingHostOptionsFactory` | — | — |
+| `Hosting/PuddingServerAddressAccessor.cs` | 全网卡监听地址投影为同端口 Loopback 控制地址 | `IPuddingServerAddressAccessor`、`PuddingServerAddressAccessor` | — | — |
+| `Hosting/PuddingApplicationHost.cs` | 组合根与 Kestrel 地址绑定（见下「关键语义」） | `PuddingApplicationHost` | — | — |
+| `Hosting/AgentAdapterApiDocumentation.cs` | 生成外部 Agent 接口 OpenAPI JSON（细节见「条目细节」） | `AgentAdapterApiDocumentation` | — | — |
+| `Hosting/PuddingDataRootBootstrapper.cs` | DataRoot 解析与引导（见下「关键语义」） | `PuddingDataRootBootstrapper` | — | — |
+| `Config/` | 默认配置 | — | — | — |
+| `default-data/config/voice/providers.json` | 语音默认目录：Qwen Message ASR 与 Qwen3 TTS；不含真实凭据 | — | — | — |
+| `Prompts/` | 系统提示模板 | — | — | — |
+| `P2P/` | P2P 通信 | — | — | — |
 
 **关键语义**
 
