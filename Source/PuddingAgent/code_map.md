@@ -13,8 +13,8 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/PuddingServiceCollectionExtensions.Connectors.cs` | 连接器组合：P2P/mDNS、Webhook/Http/WebSocket/MQTT、Feishu、GatewayAuth 注册（见下「关键语义」） |
-| `Services/PuddingServiceCollectionExtensions.Runtime.cs` | Runtime 组合：TaskDelegationPolicy、会话/记忆、JSONL 读写与工具运行时服务（见下「关键语义」） |
+| `Services/PuddingServiceCollectionExtensions.Connectors.cs` | 连接器服务的依赖注入注册 |
+| `Services/PuddingServiceCollectionExtensions.Runtime.cs` | 运行时服务的依赖注入注册 |
 
 ## 配置与部署
 

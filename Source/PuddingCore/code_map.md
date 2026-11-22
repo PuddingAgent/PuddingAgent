@@ -145,7 +145,7 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | `Runtime/RuntimeExecutionIdentity.cs` | 一次 Runtime 执行的稳定身份（Conversation/Turn/Command/Run）（细节见「条目细节」） |
 | `Runtime/ContextSummaryMarkers.cs` | 压缩摘要的请求侧标记唯一合同 |
 | `Runtime/ContextCompactionContracts.cs` | 压缩终态、`ContextHealthSnapshot` 与容量预测契约；WarmPrefixSourceMessage 携带完整运行期原文与精确持久 ID |
-| `Abstractions/ICompactionEvidenceReader.cs` | 已提交覆盖清单的只读来源页、原始 Turn ID、旧 checkpoint 引用和归档文本窗口契约 |
+| `Abstractions/ICompactionEvidenceReader.cs` | 压缩覆盖清单的只读读取端口 |
 | `Abstractions/IRawSessionLogService.cs` | 原始会话转录/事件查询；支持源会话内精确 Turn ID 过滤，转录及文本搜索结果携带 Turn ID |
 | `Runtime/ContextUsageDisplay.cs` | 上下文用量的唯一显示口径投影（细节见「条目细节」） |
 | `Runtime/SubAgentInvocationContracts.cs` | `ContextCompaction` 独立压缩策略；`ToolExposure` 工具 schema 投递预算（默认 48 个/40 KiB） |
@@ -173,11 +173,11 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | `AgentOrchestrationGraphCompiler.cs` | 纯图编译器（校验 + 确定性 DAG 拓扑排序） |
 | `AgentOrchestrationPersistenceContracts.cs` | 通用图/run 发现与持久 CAS 契约 |
 | `DesignCouncilOrchestrationGraphAdapter.cs` | 将 MOA stage/work item 和上下文可见性映射为通用 gate/subAgent 节点及 control/data edge |
-| `SubAgentOrchestrationModels.cs` | MOA 设计请求、专家成员、阶段门禁、只读 work item 与 Draft 计划契约 |
+| `SubAgentOrchestrationModels.cs` | 子代理编排的声明式契约 |
 | `DesignCouncilPlanCompiler.cs` | 纯计划编译器；校验精确模型路由/多样性/独立终审并生成六阶段 DAG，不启动子代理 |
-| `SubAgentOrchestrationRuntimeModels.cs` | MOA run/stage/work item 快照、claim、完成结果和用户上下文补充契约 |
+| `SubAgentOrchestrationRuntimeModels.cs` | 子代理编排运行期的快照契约 |
 | `SubAgentOrchestrationRuntimeContracts.cs` | MOA 乐观并发 run store、运行时命令/派发结果与 `IDesignCouncilRuntimeService` 契约 |
-| `DesignCouncilRunStateMachine.cs` | 纯状态机；显式激活、并发领取、claim 校验、暂停恢复、法定人数、取消和终态 |
+| `DesignCouncilRunStateMachine.cs` | 设计评审编排的纯状态机 |
 
 **关键语义**
 
@@ -191,7 +191,7 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 | 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
 |---|---|---|---|---|
 | `Tools/` | 工具接口与基类目录 | — | — | — |
-| `Tools/PuddingToolContracts.cs` | Tool 描述、执行上下文、动态工具源与宿主资源端口 | `IContextualPuddingToolSource` | `Runtime/ToolInvocationContracts.cs` | 同一 Agent/session 解析；`ExecutionResources` 仅宿主传递，不从 JSON 反序列化父预算 |
+| `Tools/PuddingToolContracts.cs` | 工具描述符与权限判定的契约面 | `IContextualPuddingToolSource` | `Runtime/ToolInvocationContracts.cs` | 同一 Agent/session 解析；`ExecutionResources` 仅宿主传递，不从 JSON 反序列化父预算 |
 
 ## 交互面板域（Panels/）
 

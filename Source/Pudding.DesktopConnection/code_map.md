@@ -33,7 +33,7 @@
 | `IDesktopConnectionSupervisor.cs` | 监督端口（状态/世代/尝试次数/最后错误/状态事件 + RunAsync/DisposeAsync）；宿主只依赖该端口（见下「关键语义」） |
 | `GrpcDesktopChannelStreamFactory.cs` | GrpcChannel + ConnectCallback：NamedPipe/Loopback h2c/TLS 与帧上限绑定（见下「关键语义」） |
 | `DesktopChannelStream.cs` | 双向流抽象（读/写/半关闭）。存在的理由：连接状态机可**不启动 gRPC 服务端**被确定性测试 |
-| `DesktopConnectionOptions.cs` | 身份、能力声明、认证（凭据不进日志）、在途/字节/终态缓存上限、握手与静默超时、审计出口、可测时钟（见下「关键语义」） |
+| `DesktopConnectionOptions.cs` | 单条连接一次握手生命周期的选项契约 |
 | `ByteBudget.cs` | 按字节预留的预算（`SemaphoreSlim` 无法按字节取许可）；`ReserveAsync` 支持 FIFO 与取消，`ShrinkTo` 支持协商收缩 |
 
 ## 接缝与映射

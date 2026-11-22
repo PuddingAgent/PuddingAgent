@@ -67,7 +67,7 @@
 | `Services/AgentCompactionNotifier.cs` | 压缩生命周期通知的对外发布 | `AgentCompactionNotifier` | `Services/ContextCompactionService.cs` | — |
 | `Services/AgentContextCompactionSummaryGenerator.cs` | 由当前运行时 Agent 生成压缩摘要 | `IContextCompactionSummaryGenerator` | `Services/FlashContextCompactionSummaryGenerator.cs` | — |
 | `Services/AgentExecution/AgentExecutionLlmInvoker.cs` | LLM 调用的统一封装（facade 与 legacy 两条路径） | `AgentExecutionLlmInvoker` | `Services/LlmInvocationService.cs` | 每次调用绑定冻结视觉路由，包含 SSE yield 后的摘要调用；透传 FinishReason，截断摘要不提交 |
-| `Services/BudgetedSendAttemptObserver.cs` | CORE-I1-06 发送边界 observer：每次发送新 attempt、冻结 Work 身份/价格、输出上限收紧、usage 结算/Unknown | `BudgetedSendAttemptObserver` | `PuddingCore/Observability/LlmSendAttemptScope.cs`、`Services/LlmInvocationService.cs` | 唯一预算写入者；未接线前不改变现有单 attempt 行为 |
+| `Services/BudgetedSendAttemptObserver.cs` | 发送边界的预算记账观察者 | `BudgetedSendAttemptObserver` | `PuddingCore/Observability/LlmSendAttemptScope.cs`、`Services/LlmInvocationService.cs` | 唯一预算写入者；未接线前不改变现有单 attempt 行为 |
 | `Services/AgentExecution/WorkBudgetAttempt.cs` | 受管 Work 预算载体到每次发送 `LlmAttemptBudget` 的共享转换 | `WorkBudgetAttempt` | `Services/AgentExecution/AgentExecutionLlmInvoker.cs` | 托管执行缺 facade 或身份不一致时 fail-closed；每次发送独立 attempt、同 Work 账户复用；无载体保持旧直连行为 |
 | `Services/AgentExecution/AgentExecutionResponseHandler.cs` | LLM 输出解析为 Loop 响应并评估终态 | `AgentExecutionResponseHandler` | `Services/AgentLoop/CompletionPolicy.cs` | — |
 | `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial） | `AgentExecutionService` | `Services/AgentExecution/AgentExecutionService.Streaming.cs` | 工具目录在 dispatch 时冻结，新发现的定义只在下一次 LLM round 生效；思考强度由 `ReasoningEffortPolicy.Resolve` 合成后写入 ConfigOverride，两条路径同源 |
@@ -232,7 +232,7 @@
 | `Services/SandboxExecutor.cs` | 沙箱执行的二级门控入口 | `SandboxExecutor` | `Services/AgentFirewall.cs` | — |
 | `Services/Search/SearchAttemptLedger.cs` | 搜索尝试的失败账本与短路判定 | `SearchAttemptOutcome` | `Tools/BuiltIns/Search/SearchGrepTool.cs` | — |
 | `Services/SessionArchiver.cs` | 会话原始记录到 Markdown 的导出 | `SessionArchiver` | `Services/SessionSummaryStore.cs` | — |
-| `Services/SessionChunkBackfillService.cs` | 会话块存量回填：持久 checkpoint（数据集/配置版本/冻结 H）、增量恢复、恢复旧库失效重建、Ready 保护窗口 | `SessionChunkBackfillService`、`SessionChunkBackfillCheckpoint` | `Services/SessionChunkIndexer.cs` | 每批成功后才原子推进；批内失败/取消重扫（幂等）；checkpoint 写失败不阻断；不重扫已完成区间 |
+| `Services/SessionChunkBackfillService.cs` | 会话块向量的存量回填作业 | `SessionChunkBackfillService`、`SessionChunkBackfillCheckpoint` | `Services/SessionChunkIndexer.cs` | 每批成功后才原子推进；批内失败/取消重扫（幂等）；checkpoint 写失败不阻断；不重扫已完成区间 |
 | `Services/SessionChunkIndexer.cs` | 会话块切分与向量写入 | `ISessionChunkIndexer` | `Services/OpenAiEmbeddingService.cs` | 不回查到哈希时按源文本现算兜底 |
 | `Services/SessionExecutionGate.cs` | 会话状态的进程内单写者门控 | `SessionExecutionGate` | `Services/AgentSessionManager.cs` | — |
 | `Services/SessionSummaryStore.cs` | 会话压缩摘要的持久化 | `SessionSummaryStore` | `Services/AgentMemorySummaryContextBuilder.cs` | — |

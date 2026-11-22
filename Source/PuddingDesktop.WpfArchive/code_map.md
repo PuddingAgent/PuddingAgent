@@ -8,8 +8,8 @@
 | 文件 | 用途 |
 |------|------|
 | `App.xaml` | Windows 11 Light/Dark 样式 Token；原生浅色 Popup 文本对比度资源 |
-| `App.xaml.cs` | WPF 产品入口、单实例所有权、异常日志 |
-| `MainWindow.xaml(.cs)` | 48px 标题栏、Navigation、Workbench/Browser/Runtime/Storage 页 |
+| `App.xaml.cs` | WPF 应用的启动入口 |
+| `MainWindow.xaml(.cs)` | 桌面主窗口的导航外壳 |
 
 ## 进程管理
 
@@ -50,7 +50,7 @@
 | `Debug/DesktopReverseProxy.cs` | HttpListener 本机反向代理（后端→Core、其余→前端）见下「关键语义」 |
 | `Debug/ProxyRoutePlanner.cs` | 纯路由决策：8 个后端前缀 + /admin SPA fallback（与 dev-up.py 语义逐条对齐） |
 | `Debug/DebugBackendLauncher.cs` | `dotnet build` 源码后端并解析可执行产物见下「关键语义」 |
-| `Debug/FrontendDevSupervisor.cs` | `pnpm run start:dev`（缺 node_modules 自动 install）、/admin/ 就绪探测、进程树回收、环形日志 |
+| `Debug/FrontendDevSupervisor.cs` | 调试模式前端开发服务器的托管 |
 | `Debug/FrontendBuildDeployService.cs` | 运行中心/API 前端制品服务（build 或加载预构建 dist）见下「关键语义」 |
 | `Debug/DebugRepositoryResolver.cs` | 仓库根向上自动解析 + 显式覆盖（repositoryRoot/frontendWorkingDirectory/backendProjectPath） |
 | `Configuration/DesktopBootstrapSettings.cs` | `DesktopDebugSettings`（desktop.json `debug` 节：Enabled/端口/超时） |
@@ -69,7 +69,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Browser/DesktopBrowserBridgeClient.cs` | 认证 WebSocket Client：HelloAck 双层版本校验、heartbeat、重连；收包与有界命令队列分离；终止原因保留到握手结果 |
+| `Browser/DesktopBrowserBridgeClient.cs` | 浏览器桥的 WebSocket 客户端 |
 | `Browser/BrowserBridgeCommandDispatcher.cs` | 命令分发，安全摘要投影到 UI Activity；实现 `IBrowserAutomationGate` 见下「关键语义」 |
 | `Browser/BrowserBridgeCommandAdapter.cs` | I2-c 映射层（未接管执行）：Bridge 命令 → 能力描述符/请求对，失败 fail-closed 且原因可行动 |
 | `Browser/BrowserBridgeResultAdapter.cs` | 结果反投影：pageState/contexts/list/locate/interact/wait/snapshot；BoundingBox 逐字段透传 |
@@ -78,7 +78,7 @@
 | `Browser/BrowserWorkspaceController.cs` | Tab/Activity/active/target UI 状态源；实现 `IBrowserWorkspaceLifecycle`；接管/暂停见下「关键语义」 |
 | `Browser/BrowserTabViewModel.cs` | 页签展示与所属 ContextId；页面登记/关闭不借用当前活动上下文 |
 | `Browser/BrowserAutomationGateSync.cs` | `IBrowserAutomationGate` 端口/闸门集合/`DelegateAutomationGate` 见下「关键语义」 |
-| `Views/BrowserWorkspaceView.xaml(.cs)` | 双标签、地址栏、Surface、Agent Activity Pane |
+| `Views/BrowserWorkspaceView.xaml(.cs)` | 带 Agent 活动面板的浏览器工作区视图 |
 
 **关键语义**
 
@@ -101,10 +101,10 @@
 
 | 文件 | 用途 |
 |------|------|
-| `ViewModels/RuntimeCenterViewModel.cs` | Core 状态、PID、健康、启停重启；`DeployFrontendAsync` 防重入门控 |
+| `ViewModels/RuntimeCenterViewModel.cs` | Core 运行中心的启停与状态呈现 |
 | `Views/RuntimeCenterView.xaml(.cs)` | 运行中心 UI，500 行日志视口；「构建并部署前端」按钮（成功反馈目标目录与文件数） |
 | `Runtime/DiagnosticBundleService.cs` | 诊断 ZIP，过滤敏感信息；包含最近三次 Desktop 运行的有界现场文件 |
-| `Diagnostics/DesktopDiagnosticLog.cs` | 早期异常兜底日志与当前运行事件入口；脱敏、PID、容量轮转 |
+| `Diagnostics/DesktopDiagnosticLog.cs` | Core 就绪前的兜底诊断日志 |
 
 ## 系统集成
 
@@ -115,7 +115,7 @@
 | `Runtime/DesktopBackgroundModeService.cs` | 关闭到托盘策略 |
 | `Runtime/AutoStartRegistrationService.cs` | HKCU Run 登录启动 |
 | `Theming/WindowsThemeService.cs` | Windows Light/Dark + DWM Accent |
-| `Theming/WindowsBackdropService.cs` | Mica、沉浸式深色、系统圆角 |
+| `Theming/WindowsBackdropService.cs` | Windows 11 背景材质与圆角的应用 |
 
 ## 客户端素材
 
@@ -131,10 +131,10 @@
 | `Storage/LogRetentionService.cs` | 24h 日志清理 |
 | `Storage/CoreStorageManagementClient.cs` | 携带 Desktop ControlToken 调用 Core 存储 API 见下「关键语义」 |
 | `Storage/DataRootSafetyValidator.cs` | 安全校验（拒绝越界、链接） |
-| `ViewModels/StorageViewModel.cs` | 文件分类与 Core 数据库明细合并展示；7/14/30/90 天保留期、预览确认、清理后重扫 |
+| `ViewModels/StorageViewModel.cs` | 存储占用的分析与清理编排 |
 | `Configuration/SystemConfigurationService.cs` | system.json 原子写入 |
 | `Configuration/DesktopControlTokenService.cs` | 保留控制令牌引用，返回当前 Windows 用户 DPAPI 启动缓存解密值；共用启动器文件由 WinUI 链接编译 |
-| `ViewModels/SettingsViewModel.cs` | Desktop Core 固定监听端口（默认 8080）、恢复与关闭策略、调试模式（仓库根/前端端口/代理端口/超时）配置 |
+| `ViewModels/SettingsViewModel.cs` | 桌面设置的加载与保存 |
 
 **关键语义**
 

@@ -23,7 +23,7 @@
 | `Services/CodeIndex/CodeIndexChangeCoalescerTests.cs` | 防抖折叠（静默 500ms / 最长 2s / 2 万路径 → reconcile） |
 | `Services/CodeIndex/CodeIndexChangeQueueTests.cs` | 有界队列容量与 `TryPublish` 不阻塞 |
 | `Services/CodeIndex/CodeIndexChangeTestHelpers.cs` | 共享测试替身：`TestDirectory` / `MutableTimeProvider` / `CodeIndexChangeTestFactory` |
-| `Services/CodeIndex/CodeIndexMaintenanceServiceTests.cs` | **U3-B1** 变更驱动维护服务：单驱动泵、置脏补跑、有界停止；**U3-B3** 改写为按文件语义（单文件变更不触发全量重索引、删除不触发全量重索引） |
+| `Services/CodeIndex/CodeIndexMaintenanceServiceTests.cs` | 变更驱动索引维护的回归测试 |
 | `Services/CodeIndex/CodeIndexMaintenanceTestDoubles.cs` | 维护服务测试替身：`RecordingCodeIndexer` / `FakeCodeIndexChangeWatcher` 等（见下「关键语义」） |
 | `Services/CodeIndex/MaintenanceHarness.cs` | **U3-B3** 共享驱动夹具（真调度器 + 真 store + 假变更源，与管理服务测试共用） |
 | `Services/CodeIndex/CodeIndexRemovalCorrectnessTests.cs` | **U3-B3** 管线级施用：删除后查询不再命中、重命名旧清新增等（见下「关键语义」） |

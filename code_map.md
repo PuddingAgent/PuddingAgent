@@ -29,14 +29,14 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingDesktop/` | WinUI 3 Shell：承载 WebView2 工作台并监督 Core 子进程生命周期 | [code_map](Source/PuddingDesktop/code_map.md) |
 | `Source/PuddingDesktop.Guardian/` | 独立 BCL 进程：本地 HTTP 编译/重启命令、Desktop/Core 健康与持久程序集回滚 | [code_map](Source/PuddingDesktop.Guardian/code_map.md) |
 | `Source/PuddingDesktop.GuardianTests/` · `Tests/PuddingDesktop.GuardianIntegrationTests/` | 主管独立门禁与真实 WinUI 控制面集成门禁 | [独立测试](Source/PuddingDesktop.GuardianTests/code_map.md) · [集成测试](Tests/PuddingDesktop.GuardianIntegrationTests/code_map.md) |
-| `Source/PuddingDesktop.Diagnostics/` | BCL 现场记录：原子快照、脱敏、退出分类与补录 | [code_map](Source/PuddingDesktop.Diagnostics/code_map.md) |
+| `Source/PuddingDesktop.Diagnostics/` | 桌面进程启动现场的记录组件 | [code_map](Source/PuddingDesktop.Diagnostics/code_map.md) |
 | `Source/PuddingDesktop.ExitObserver/` | 独立观察 Shell 退出码并保存现场，不管理产品生命周期 | [code_map](Source/PuddingDesktop.ExitObserver/code_map.md) |
 | `Source/PuddingAgent/` | 入口 `Program.cs`：Console / DesktopChild 两种薄壳 | [code_map](Source/PuddingAgent/code_map.md) |
 | `Source/PuddingHost/` | Core 组合根：装配 HTTP 宿主、本机控制地址与各连接器 | [code_map](Source/PuddingHost/code_map.md) |
-| `Source/PuddingSlack/` · `Source/PuddingSlackTests/` | Slack Socket Mode、Web API、持久收件箱与不确定发送回执；BCL-only 叶子 | [组件](Source/PuddingSlack/code_map.md) · [独立测试](Source/PuddingSlackTests/code_map.md) |
-| `Source/PuddingDingTalk/` · `Source/PuddingDingTalkTests/` | 企业群来源校验、群会话图文消息、公开问答与本机反馈登记 | [组件](Source/PuddingDingTalk/code_map.md) · [Core 接入](Source/PuddingHost/Services/DingTalkConversationIngress.cs) · [独立测试](Source/PuddingDingTalkTests/code_map.md) |
+| `Source/PuddingSlack/` · `Source/PuddingSlackTests/` | Slack 通道的协议组件 | [组件](Source/PuddingSlack/code_map.md) · [独立测试](Source/PuddingSlackTests/code_map.md) |
+| `Source/PuddingDingTalk/` · `Source/PuddingDingTalkTests/` | 钉钉企业群的公开问答组件 | [组件](Source/PuddingDingTalk/code_map.md) · [Core 接入](Source/PuddingHost/Services/DingTalkConversationIngress.cs) · [独立测试](Source/PuddingDingTalkTests/code_map.md) |
 | `Source/PuddingRuntime/` | Agent Loop · LLM 网关调用 · 工具系统 · 上下文管线 · 子代理 · 后台学习 | [code_map](Source/PuddingRuntime/code_map.md) |
-| `Source/PuddingSpeech/` · `Source/PuddingSpeechTests/` | 实时 PCM 会话、Qwen Message ASR、增量 TTS、音频校验与统一错误的独立语音协议叶子 | [组件](Source/PuddingSpeech/code_map.md) · [独立测试](Source/PuddingSpeechTests/code_map.md) |
+| `Source/PuddingSpeech/` · `Source/PuddingSpeechTests/` | 语音识别与合成的协议组件 | [组件](Source/PuddingSpeech/code_map.md) · [独立测试](Source/PuddingSpeechTests/code_map.md) |
 | `Source/PuddingSecretReferences/` · `Source/PuddingSecretReferencesTests/` | 凭据字段的环境变量/vault 严格解析与启动前 DPAPI 缓存；不反向引用宿主 | [组件](Source/PuddingSecretReferences/code_map.md) · [独立测试](Source/PuddingSecretReferencesTests/code_map.md) |
 | `Source/Pudding.Api.Contracts/` | 存储无关的 Agent 配置、单轮执行与确定性评分公共合同（BCL-only） | [code_map](Source/Pudding.Api.Contracts/code_map.md) |
 | `Source/Pudding.Api.Sdk/` · `Source/Pudding.Api.SdkTests/` | 配置/执行门面及 HTTP 适配、确定性评分的有类型门面与独立测试 | [SDK](Source/Pudding.Api.Sdk/code_map.md) · [测试](Source/Pudding.Api.SdkTests/code_map.md) |
@@ -44,39 +44,39 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingAgentConfigurationTests/` · `Tests/PuddingAgentConfiguration.IntegrationTests/` | 配置组件独立测试及 manifest/HTTP 集成测试 | [独立测试](Source/PuddingAgentConfigurationTests/code_map.md) · [集成](Tests/PuddingAgentConfiguration.IntegrationTests/code_map.md) |
 | `Source/PuddingAgentWork.Contracts/` · `Source/PuddingAgentWork/` | 单轮执行授权、受理端口及调用方绑定服务；复用 canonical 执行链 | [端口](Source/PuddingAgentWork.Contracts/code_map.md) · [组件](Source/PuddingAgentWork/code_map.md) |
 | `Source/PuddingAgentWorkTests/` · `Tests/PuddingAgentWork.IntegrationTests/` | 单轮执行组件测试及 SQLite/HTTP 因果回执验收 | [独立测试](Source/PuddingAgentWorkTests/code_map.md) · [集成](Tests/PuddingAgentWork.IntegrationTests/code_map.md) |
-| `Source/PuddingOperatorAccess.Contracts/` · `Source/PuddingOperatorAccess/` | 算子后端端口、授权目录、输入校验、调用预算与撤销；无 Runtime/插件反向依赖 | [端口](Source/PuddingOperatorAccess.Contracts/code_map.md) · [组件](Source/PuddingOperatorAccess/code_map.md) |
+| `Source/PuddingOperatorAccess.Contracts/` · `Source/PuddingOperatorAccess/` | 算子后端的授权访问层 | [端口](Source/PuddingOperatorAccess.Contracts/code_map.md) · [组件](Source/PuddingOperatorAccess/code_map.md) |
 | `Source/PuddingOperatorAccessTests/` · `Tests/PuddingOperatorApi.IntegrationTests/` | 算子独立边界及真实 Worker 到原技能评分器的验收 | [独立测试](Source/PuddingOperatorAccessTests/code_map.md) · [集成](Tests/PuddingOperatorApi.IntegrationTests/code_map.md) |
-| `Source/PuddingExecutionResources.Contracts/` · `Source/PuddingExecutionResources/` | 父任务资源端口、分层预算预留/结算、取消与模型租约 | [端口](Source/PuddingExecutionResources.Contracts/code_map.md) · [资源组件](Source/PuddingExecutionResources/code_map.md) |
+| `Source/PuddingExecutionResources.Contracts/` · `Source/PuddingExecutionResources/` | 执行资源的层级预算组件 | [端口](Source/PuddingExecutionResources.Contracts/code_map.md) · [资源组件](Source/PuddingExecutionResources/code_map.md) |
 | `Source/PuddingModelEvaluation/` | 受父预算约束的文本分类与逐项证据评审 | [code_map](Source/PuddingModelEvaluation/code_map.md) |
 | `Source/PuddingExecutionResourcesTests/` · `Source/PuddingModelEvaluationTests/` | 独立资源与语义测试、Runtime 模型绑定 | [资源测试](Source/PuddingExecutionResourcesTests/code_map.md) · [评审测试](Source/PuddingModelEvaluationTests/code_map.md) |
 | `Tests/PuddingModelEvaluation.IntegrationTests/` | 真实 Worker 与旧能力回归 | [集成](Tests/PuddingModelEvaluation.IntegrationTests/code_map.md) |
-| `Source/PuddingEventing.Contracts/` · `Source/PuddingEventing/` | 插件可靠事件与任务端口、事务 outbox、至少一次投递、原子 checkpoint、死信与代际围栏；不含 Goal/Review 业务 | [端口](Source/PuddingEventing.Contracts/code_map.md) · [组件](Source/PuddingEventing/code_map.md) |
+| `Source/PuddingEventing.Contracts/` · `Source/PuddingEventing/` | 插件事件与作业的可靠投递组件 | [端口](Source/PuddingEventing.Contracts/code_map.md) · [组件](Source/PuddingEventing/code_map.md) |
 | `Source/PuddingEventingTests/` | 事件/任务协议的独立测试（内存端口适配器、崩溃/竞争/取红） | [code_map](Source/PuddingEventingTests/code_map.md) |
-| `Source/PuddingAgents.Contracts/` · `Source/PuddingAgents/` | Agent 绑定后端端口、目录借用句柄、工作观察/幂等取消、委派与原子池租约；身份由宿主注入 | [端口](Source/PuddingAgents.Contracts/code_map.md) · [组件](Source/PuddingAgents/code_map.md) |
+| `Source/PuddingAgents.Contracts/` · `Source/PuddingAgents/` | Agent 绑定的后端组件 | [端口](Source/PuddingAgents.Contracts/code_map.md) · [组件](Source/PuddingAgents/code_map.md) |
 | `Source/PuddingAgentsTests/` | Agent 目录/工作控制/委派租约的独立测试与取红证据 | [code_map](Source/PuddingAgentsTests/code_map.md) |
-| `Source/PuddingReviews.Contracts/` · `Source/PuddingReviews/` | Review Job 端口与领域：唯一键、冻结输入与证据校验、建议级结论与证据级别、owner/revision 围栏与完成 outbox；不写 Goal 终态 | [端口](Source/PuddingReviews.Contracts/code_map.md) · [组件](Source/PuddingReviews/code_map.md) |
+| `Source/PuddingReviews.Contracts/` · `Source/PuddingReviews/` | 评审作业的领域组件 | [端口](Source/PuddingReviews.Contracts/code_map.md) · [组件](Source/PuddingReviews/code_map.md) |
 | `Source/PuddingReviewsTests/` | Review Job 幂等/围栏/证据/恢复的独立测试与取红证据 | [code_map](Source/PuddingReviewsTests/code_map.md) |
-| `Source/PuddingModels.Contracts/` · `Source/PuddingModels/` | 有效模型配置（layering/CAS）、能力目录端口、可信报价冻结与租约代际；未知价格不为零、降配不抢占活跃槽 | [端口](Source/PuddingModels.Contracts/code_map.md) · [组件](Source/PuddingModels/code_map.md) |
+| `Source/PuddingModels.Contracts/` · `Source/PuddingModels/` | 模型策略与报价的解析组件 | [端口](Source/PuddingModels.Contracts/code_map.md) · [组件](Source/PuddingModels/code_map.md) |
 | `Source/PuddingModelsTests/` | 配置层级/CAS、报价窗口/缓存计价、租约代际的独立测试与取红证据 | [code_map](Source/PuddingModelsTests/code_map.md) |
-| `Source/PuddingGoalPolicy.Contracts/` · `Source/PuddingGoalPolicy/` | Goal 续跑纯策略：模式、策略快照、权威事实与 Continue/Wait/Complete/Stop 建议；不复制状态机、不写终态 | [端口](Source/PuddingGoalPolicy.Contracts/code_map.md) · [策略](Source/PuddingGoalPolicy/code_map.md) |
+| `Source/PuddingGoalPolicy.Contracts/` · `Source/PuddingGoalPolicy/` | Goal 续跑的判定策略组件 | [端口](Source/PuddingGoalPolicy.Contracts/code_map.md) · [策略](Source/PuddingGoalPolicy/code_map.md) |
 | `Source/PuddingGoalPolicyTests/` | 决策矩阵与最小闭环轨迹测试、变异取红证据 | [code_map](Source/PuddingGoalPolicyTests/code_map.md) |
 | `Source/PuddingCapabilityCatalog.Contracts/` · `Source/PuddingCapabilityCatalog/` | 只读能力目录：kind/界限校验、Revision/Generation/完整性与 partial/forbidden 语义；目录项不是执行授权 | [端口](Source/PuddingCapabilityCatalog.Contracts/code_map.md) · [组件](Source/PuddingCapabilityCatalog/code_map.md) |
 | `Source/PuddingCapabilityCatalogTests/` | 能力目录只读语义与取红证据 | [code_map](Source/PuddingCapabilityCatalogTests/code_map.md) |
-| `Source/PuddingAuthorization.Contracts/` · `Source/PuddingAuthorization/` | 授权判定与审批生命周期：系统 Deny 优先、插件只收紧、批准绑定参数 hash/策略版本、失败不 fail-open | [端口](Source/PuddingAuthorization.Contracts/code_map.md) · [组件](Source/PuddingAuthorization/code_map.md) |
+| `Source/PuddingAuthorization.Contracts/` · `Source/PuddingAuthorization/` | 授权判定与审批的协调组件 | [端口](Source/PuddingAuthorization.Contracts/code_map.md) · [组件](Source/PuddingAuthorization/code_map.md) |
 | `Source/PuddingAuthorizationTests/` | 授权/审批决策矩阵与取红证据 | [code_map](Source/PuddingAuthorizationTests/code_map.md) |
-| `Source/PuddingWorkspace.Contracts/` · `Source/PuddingWorkspace/` | 工作区只读/文件策略：受权列表、逻辑环境快照、路径规范化、越界/链接拒绝、CAS 原子写 | [端口](Source/PuddingWorkspace.Contracts/code_map.md) · [组件](Source/PuddingWorkspace/code_map.md) |
+| `Source/PuddingWorkspace.Contracts/` · `Source/PuddingWorkspace/` | 工作区文件面的受控读写组件 | [端口](Source/PuddingWorkspace.Contracts/code_map.md) · [组件](Source/PuddingWorkspace/code_map.md) |
 | `Source/PuddingWorkspaceTests/` | 工作区路径/链接/CAS 与取红证据 | [code_map](Source/PuddingWorkspaceTests/code_map.md) |
 | `Source/PuddingContext.Contracts/` · `Source/PuddingContext/` | 上下文有序构建/裁剪：canonical 顺序与当前用户围栏不变，外部数据只能是 tool，预算/贡献上限/哈希失败均 typed | [端口](Source/PuddingContext.Contracts/code_map.md) · [组件](Source/PuddingContext/code_map.md) |
 | `Source/PuddingContextTests/` | 围栏/冒名/裁剪/预算与取红证据 | [code_map](Source/PuddingContextTests/code_map.md) |
-| `Source/PuddingMcp.Contracts/` · `Source/PuddingMcp/` | MCP 生命周期：启动超时/失败 typed、generation 围栏、超时/不确定为 Unknown 不重试、SSE 事件游标去重/缺口 | [端口](Source/PuddingMcp.Contracts/code_map.md) · [组件](Source/PuddingMcp/code_map.md) |
+| `Source/PuddingMcp.Contracts/` · `Source/PuddingMcp/` | MCP 连接的生命周期协调组件 | [端口](Source/PuddingMcp.Contracts/code_map.md) · [组件](Source/PuddingMcp/code_map.md) |
 | `Source/PuddingMcpTests/` | MCP 生命周期/游标/超时与取红证据 | [code_map](Source/PuddingMcpTests/code_map.md) |
-| `Source/PuddingTools.Contracts/` · `Source/PuddingTools/` | 工具门面：只做搜索/检查/状态、不可见工具不泄露、未知可用性原样、源失败 typed（无执行入口） | [端口](Source/PuddingTools.Contracts/code_map.md) · [组件](Source/PuddingTools/code_map.md) |
+| `Source/PuddingTools.Contracts/` · `Source/PuddingTools/` | 工具目录的只读门面组件 | [端口](Source/PuddingTools.Contracts/code_map.md) · [组件](Source/PuddingTools/code_map.md) |
 | `Source/PuddingToolsTests/` | 工具搜索/可见性/状态与取红证据 | [code_map](Source/PuddingToolsTests/code_map.md) |
-| `Source/PuddingInvocationPipeline.Contracts/` · `Source/PuddingInvocationPipeline/` | 扩展点注册与管道：Observer/Advice/Transform/Guard 分类、grant/代际围栏、Transform 不改身份/授权/退出码/预算 | [端口](Source/PuddingInvocationPipeline.Contracts/code_map.md) · [组件](Source/PuddingInvocationPipeline/code_map.md) |
+| `Source/PuddingInvocationPipeline.Contracts/` · `Source/PuddingInvocationPipeline/` | 调用扩展点的注册与执行管道 | [端口](Source/PuddingInvocationPipeline.Contracts/code_map.md) · [组件](Source/PuddingInvocationPipeline/code_map.md) |
 | `Source/PuddingInvocationPipelineTests/` | 扩展注册/排序/grant/Transform 围栏与取红证据 | [code_map](Source/PuddingInvocationPipelineTests/code_map.md) |
 | `Samples/AgentWorkClient/` · `Tests/AgentWorkClient.Tests/` | 单轮执行 SDK 离线消费示例与假 API 测试；不读取凭据或连接宿主 | [示例](Samples/AgentWorkClient/code_map.md) · [测试](Tests/AgentWorkClient.Tests/code_map.md) |
 | `Samples/AgentDirectoryClient/` · `Tests/AgentDirectoryClient.Tests/` | 代理目录离线消费示例与假 API 测试；借用句柄只读，不创建/翻页/连宿主 | [示例](Samples/AgentDirectoryClient/code_map.md) · [测试](Tests/AgentDirectoryClient.Tests/code_map.md) |
-| `Samples/AgentModelPolicyClient/` · `Tests/AgentModelPolicyClient.Tests/` | 有效模型配置离线只读示例与假 API 测试；不实现 Update、不读配置、不发模型请求 | [示例](Samples/AgentModelPolicyClient/code_map.md) · [测试](Tests/AgentModelPolicyClient.Tests/code_map.md) |
+| `Samples/AgentModelPolicyClient/` · `Tests/AgentModelPolicyClient.Tests/` | 有效模型配置客户端的离线只读示例 | [示例](Samples/AgentModelPolicyClient/code_map.md) · [测试](Tests/AgentModelPolicyClient.Tests/code_map.md) |
 | `Samples/ExecutionBudgetClient/` · `Tests/ExecutionBudgetClient.Tests/` | 跨轮预算快照离线示例与假 API 测试；Unknown/null 上限原样保留，不计算可用余额 | [示例](Samples/ExecutionBudgetClient/code_map.md) · [测试](Tests/ExecutionBudgetClient.Tests/code_map.md) |
 | `Samples/GoalDecisionPresenter/` · `Tests/GoalDecisionPresenter.Tests/` | Goal 决策只读展示函数与 golden 逐字测试；不补写结论、不推导状态 | [示例](Samples/GoalDecisionPresenter/code_map.md) · [测试](Tests/GoalDecisionPresenter.Tests/code_map.md) |
 | `Samples/CapabilityCatalogClient/` · `Tests/CapabilityCatalogClient.Tests/` | 能力目录只读示例与假 API 测试；partial/Forbidden 原样，不执行工具/MCP | [示例](Samples/CapabilityCatalogClient/code_map.md) · [测试](Tests/CapabilityCatalogClient.Tests/code_map.md) |
@@ -85,20 +85,20 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/Pudding.ToolPlugins.Contracts/` | 无宿主依赖的插件合同与 Worker 端口 | [code_map](Source/Pudding.ToolPlugins.Contracts/code_map.md) |
 | `Source/Pudding.ToolPlugins.Sdk/` | 插件作者基类；只引用 Contracts | [code_map](Source/Pudding.ToolPlugins.Sdk/code_map.md) |
 | `Source/Pudding.ToolPlugins.AgentSdk/` · `Source/Pudding.ToolPlugins.AgentSdkTests/` | 插件到公共配置与确定性评分 SDK 的有类型适配；不接受调用方身份或任意目标 | [SDK](Source/Pudding.ToolPlugins.AgentSdk/code_map.md) · [测试](Source/Pudding.ToolPlugins.AgentSdkTests/code_map.md) |
-| `Source/PuddingAgentDelegation/` · `Source/PuddingAgentDelegationTests/` | 当前调用的配置授权租约、额度、到期与撤销排空；复用公共配置组件 | [组件](Source/PuddingAgentDelegation/code_map.md) · [测试](Source/PuddingAgentDelegationTests/code_map.md) |
+| `Source/PuddingAgentDelegation/` · `Source/PuddingAgentDelegationTests/` | Agent 配置授权的租约组件 | [组件](Source/PuddingAgentDelegation/code_map.md) · [测试](Source/PuddingAgentDelegationTests/code_map.md) |
 | `Source/Pudding.ToolPlugins.Protocol/` | 有界命名管道帧、版本与请求关联 | [code_map](Source/Pudding.ToolPlugins.Protocol/code_map.md) |
-| `Source/Pudding.ToolPlugins.Runtime/` | 不可变包、作用域实例、工具与建议 Hook、Core 服务 | [code_map](Source/Pudding.ToolPlugins.Runtime/code_map.md) |
+| `Source/Pudding.ToolPlugins.Runtime/` | 可执行插件的运行时宿主 | [code_map](Source/Pudding.ToolPlugins.Runtime/code_map.md) |
 | `Source/Pudding.ToolPlugins.Windows/` | Windows Job 与同用户命名管道监督 | [code_map](Source/Pudding.ToolPlugins.Windows/code_map.md) |
 | `Source/Pudding.ToolPlugins.Worker/` | 唯一装载插件 DLL 的独立进程，附发布 SDK 与示例 | [code_map](Source/Pudding.ToolPlugins.Worker/code_map.md) |
 | `Source/Pudding.ToolPlugins.RuntimeTests/` | 包、权限、状态与租约独立测试 | [code_map](Source/Pudding.ToolPlugins.RuntimeTests/code_map.md) |
 | `Tests/PuddingToolPlugins.Fixture/` | 真实 DLL 故障注入夹具 | [code_map](Tests/PuddingToolPlugins.Fixture/code_map.md) |
 | `Tests/PuddingToolPlugins.IntegrationTests/` | Worker、子进程回收与隔离验收 | [目录](Tests/PuddingToolPlugins.IntegrationTests/)（无 code_map） |
-| `Tests/PuddingPluginAgentApi.IntegrationTests/` | 真实 Worker → Runtime broker → 既有配置 writer；CAS、去重、作用域、卸载与重载 | [code_map](Tests/PuddingPluginAgentApi.IntegrationTests/code_map.md) |
+| `Tests/PuddingPluginAgentApi.IntegrationTests/` | 插件 Agent API 的端到端验收测试 | [code_map](Tests/PuddingPluginAgentApi.IntegrationTests/code_map.md) |
 | `Tests/PuddingToolPlugins.HostTests/` | Buffered/Streaming 同任务动态工具与权限验收 | [code_map](Tests/PuddingToolPlugins.HostTests/code_map.md) |
 | `Source/PuddingCore/` | 跨层抽象与契约：接口与基础模型类型（含 Goal 与编排） | [code_map](Source/PuddingCore/code_map.md) |
 | 渠道开发权限 | 工具归属工作区与 Agent；渠道绑定识别发送者，Core 执行时核对操作权限 | [策略服务](Source/PuddingPlatform/Services/ChannelDevelopmentTrust.cs) · [渠道设置](Source/PuddingPlatformAdmin/src/pages/workspace/ChannelTrustSettings.tsx) |
 | `Source/PuddingPlatform/` | Session · Web 与外部 API · EF Core + SQLite · 消息网关 | [code_map](Source/PuddingPlatform/code_map.md) |
-| `Source/PuddingScheduling/` | 定时触发、错过补偿、SQLite 原子建卡 | [code_map](Source/PuddingScheduling/code_map.md) |
+| `Source/PuddingScheduling/` | 定时任务的触发规划与建卡 | [code_map](Source/PuddingScheduling/code_map.md) |
 | `Source/PuddingMemoryEngine/` | Library/Book/Chapter 记忆库 · FTS5 · 潜意识检索 | [code_map](Source/PuddingMemoryEngine/code_map.md) |
 | `Source/PuddingMemoryEngineBenchmarks/` | 记忆库与记忆召回的 BenchmarkDotNet 基准工程（不参与运行时装配） | — |
 | `Source/PuddingGateway/` | LLM 服务商网关适配：openai / responses / anthropic 三协议 | [code_map](Source/PuddingGateway/code_map.md) |
@@ -107,7 +107,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingPlatformAdmin/` | React 管理前端（Chat 工作台与任务看板等页面）；`dist` 部署到 Core `wwwroot/admin` | [code_map](Source/PuddingPlatformAdmin/code_map.md) |
 | `Source/PuddingTaskRecall.Cli/` | 历史脏数据诊断/修复 CLI（默认 dry-run，`--apply` 才写库） | [code_map](Source/PuddingTaskRecall.Cli/code_map.md) |
 | `Source/PuddingGit.Tools/` | Git 工具声明（实现在 Runtime） | [code_map](Source/PuddingGit.Tools/code_map.md) |
-| `Source/PuddingFinance/` | 金融数据源零依赖叶子：必盈端点注册与响应整形、官方源采集（白名单/重试/有界读取/SHA-256）、巨潮公告查询（分页/PDF 直链/归属日/选标规则） | — |
+| `Source/PuddingFinance/` | 金融数据源的采集适配 | — |
 | `Source/PuddingFinance.Documents/` | PDF 文本抽取的独立组件：唯一引用 PdfPig 的地方，对外只暴露 `IPdfTextSource` | — |
 | `Source/HarnessAgent.Core/` | Harness Agent 核心库（与主线并列的 Harness 实现） | — |
 | `Source/Pudding.Contracts/` | 契约叶（仅 BCL）：能力目录、握手协商与错误语义的 DTO | [code_map](Source/Pudding.Contracts/code_map.md) |
@@ -126,12 +126,12 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingDomain.Contracts/` | 跨层共享值类型（BCL-only）：`CodeSymbolKind` / `CodeRelationKind`；命名空间刻意沿用旧名（零调用方改动） | [code_map](Source/PuddingDomain.Contracts/code_map.md) |
 | `Source/PuddingRetrieval.Contracts/` | 跨 provider 检索契约（请求 / 结果 / 覆盖声明 / 能力矩阵）；只依赖 `PuddingDomain.Contracts` | [目录](Source/PuddingRetrieval.Contracts/)（无 code_map） |
 | `Source/PuddingGrep/` | grep 匹配内核（BCL-only）。**生产端零引用**（2026-11 实测），`Runtime/SearchGrepTool` 仍自带实现、语义未统一 | [code_map](Source/PuddingGrep/code_map.md) |
-| `Source/PuddingContextPolicy/` | 上下文容量与压缩候选的**纯策略**组件（BCL-only）：容量算术、候选边界与指纹、严格适用校验、净收益准入、退避判定（见下「关键语义」） | [code_map](Source/PuddingContextPolicy/code_map.md) |
+| `Source/PuddingContextPolicy/` | 上下文容量与压缩候选的纯策略库 | [code_map](Source/PuddingContextPolicy/code_map.md) |
 | `Source/PuddingContextPruning/` | 零 LLM 确定性载荷剪枝：工具结果去重与超大载荷裁剪，保护尾部（见下「关键语义」） | [code_map](Source/PuddingContextPruning/code_map.md) |
 | `Source/PuddingContextHandoff/` | 工作模型交接摘要（BCL-only）：有界不可变笔记、会话/Agent 隔离与恢复定位 | [code_map](Source/PuddingContextHandoff/code_map.md) |
 | `Source/PuddingConversationReadModel/` | 会话首屏读模型纯规则组件（BCL-only；C2 已接入 Platform/slnx）：事件归约、预算与三游标合同 | [code_map](Source/PuddingConversationReadModel/code_map.md) |
 | `Source/PuddingSsh/` | SSH 远程执行叶子组件（`ProjectReference=0`，包 `SSH.NET`）：合同/端口与错误分类、协调器与独占连接（见下「关键语义」） | [code_map](Source/PuddingSsh/code_map.md) |
-| `Source/PuddingHomeAssistant/` | Home Assistant 叶子组件：REST 客户端、域策略三档、输出预算与历史裁剪；四个工具见 code_map | [code_map](Source/PuddingHomeAssistant/code_map.md) |
+| `Source/PuddingHomeAssistant/` | Home Assistant 的 REST 叶子组件 | [code_map](Source/PuddingHomeAssistant/code_map.md) |
 | `Source/PuddingDeepSeekWeb/` | 🔑 DeepSeek Search/Fetch 协议叶子组件（零引用；传输是端口，不直连 HTTP/不持凭据） | [code_map](Source/PuddingDeepSeekWeb/code_map.md) |
 | `Source/PuddingCodeIntelligence/` | 语言智能与查询：Roslyn 与 TypeScript 抽取及 outliner 与符号查询 | [code_map](Source/PuddingCodeIntelligence/code_map.md) |
 | `Source/PuddingIndexChunking/` | 分块组件：源文件 → 可独立索引的块（叶子，outline 由 `IOutlineSource` 注入） | [code_map](Source/PuddingIndexChunking/code_map.md) |
@@ -142,7 +142,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingFullTextIndex/` | 全文索引引擎（Lucene）与供给协调 | [code_map](Source/PuddingFullTextIndex/code_map.md) |
 | `Source/PuddingFullTextIndex.Cli/` | 全文索引供给的离线驱动工具（`plan` / `status` / `build` / `cancel`） | [code_map](Source/PuddingFullTextIndex.Cli/code_map.md) |
 | `Source/PuddingCodeIndexer.Cli/` | 代码索引 CLI | [code_map](Source/PuddingCodeIndexer.Cli/code_map.md) |
-| `Source/PuddingLlmUsage.Storage/` | 余额采样 SQLite 适配器：尝试表与币种观测表分离、金额 TEXT 保精度、Running 遗留由启动扫描改写；`llm_usage.db` 不进平台大库 | — |
+| `Source/PuddingLlmUsage.Storage/` | 余额采样的 SQLite 存储适配器 | — |
 | `Source/PuddingLlmUsage/` | LLM 余额消耗判定（叶子，零依赖）：观测→区间状态机（消耗/充值/持平/缺口/无法判定）+ 窗口汇总；测试工程独立运行 | — |
 | `Source/PuddingRetrievalEval/` | 检索评测组件（叶子，只依赖 `ISearchProbe` 端口） | [code_map](Source/PuddingRetrievalEval/code_map.md) |
 | `Source/PuddingRetrievalEvalProbe/` | 检索评测探针入口：语料构建 + 混合检索可复现测量；`--mode production` 直驱生产 `IRetrievalPort`，快照与环境冻结 | — |
@@ -152,8 +152,8 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingBrowser.AgentTools/` | 八项 `browser_*` 工具类；canonical 集合限制见子索引 | [code_map](Source/PuddingBrowser.AgentTools/code_map.md) |
 | `Source/PuddingBrowser.WinUI/` | WinUI 浏览器表面宿主（与 WPF 适配层共享驱动源文件） | [code_map](Source/PuddingBrowser.WinUI/code_map.md) |
 | `Source/PuddingBrowser.Authorization/` | 独立会话授权规则，由 DesktopService 持有；票据/写世代与可信 owner，见 ADR-097 | [code_map](Source/PuddingBrowser.Authorization/code_map.md) |
-| `Source/PuddingBrowser.Automation/` | 🔑 浏览器自动化可靠性组件（叶子）：统一控制权状态机、页面授权与执行租约、证据化回执判定、变更类后置条件、operationId 账本（见下「关键语义」） | [code_map](Source/PuddingBrowser.Automation/code_map.md) |
-| `Source/PuddingComputer.Windows/` | Windows Computer Use：物理截图、候选 ID、有回执输入；computer_observe/computer_input 共享会话、截图验证 | [code_map](Source/PuddingComputer.Windows/code_map.md) |
+| `Source/PuddingBrowser.Automation/` | 浏览器自动化的可靠性判定组件 | [code_map](Source/PuddingBrowser.Automation/code_map.md) |
+| `Source/PuddingComputer.Windows/` | Windows 桌面的截屏与输入自动化 | [code_map](Source/PuddingComputer.Windows/code_map.md) |
 | `Source/PuddingDiagnostics/` | 🔑 可诊断基础设施叶子组件：稳定因果码/分类器/有界证据/脱敏/事故投影/故障场景；不得引用任何 Pudding 程序集 | [code_map](Source/PuddingDiagnostics/code_map.md) |
 
 **关键语义（§2「子项目索引」表·用途列逐字原文）**

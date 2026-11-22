@@ -42,7 +42,7 @@
 | `Contracts/IDiagnosticCauseClassifier.cs` | 分类器契约（实现必须是纯函数） |
 | `Classification/LlmFailureClassifier.cs` | LLM 调用链分类器（生产用 `Default`，测试可注入帧指纹） |
 | `Redaction/DiagnosticEvidenceRedactor.cs` · `Contracts/DiagnosticEvidence.cs` | 脱敏与证据预算 |
-| `Projection/*` · `Query/*` · `Scenarios/*` · `Presentation/*` | 事故投影、查询契约、故障场景表、界面呈现与复制现场载荷 |
+| `Projection/*` · `Query/*` · `Scenarios/*` · `Presentation/*` | 诊断事实的投影与查询面 |
 
 ## 4. 测试
 

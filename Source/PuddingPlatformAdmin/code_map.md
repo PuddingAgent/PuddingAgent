@@ -16,7 +16,7 @@
 
 | 插件入口 | 用途 |
 |---|---|
-| `src/pages/capability-management/ExecutablePluginsPanel.tsx` | v2 包导入、选择真实会话并授权加载、卸载状态与失败诊断；旧 v1 清单另列 |
+| `src/pages/capability-management/ExecutablePluginsPanel.tsx` | 可执行插件包的管理面板 |
 | `src/services/platform/toolPlugins.ts` | 管理员插件 API 与作用域/状态 DTO |
 | `src/pages/capability-management/ExecutablePluginsPanel.test.tsx` | 加载授权/会话身份及未确认退出不可显示成功 |
 

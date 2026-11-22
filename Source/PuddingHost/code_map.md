@@ -42,11 +42,11 @@ Agent 单轮执行 API：`Extensions/PuddingServiceCollectionExtensions.cs` 调�
 | `PuddingHostAssemblyMarker.cs` | 程序集标记 | `PuddingHostAssemblyMarker` | — | — |
 | `Services/ReviewWorkerHostedService.cs` · `Services/HostRuntimeLlmChatClient.cs` | 驱动持久评审任务，将已绑定的模型调用交给 Runtime | — | — | — |
 | `Services/SlackConnectorFactory.cs` · `Connectors/SlackConnector.cs` · `Tools/SlackLookupMemberTool.cs` | 在已配置的渠道创建 Slack 连接器，按当前绑定查询成员 | — | — | — |
-| `Services/`（钉钉群链路 7 件） | 鲸鲸的持久群会话、来源授权、工具与图片投递；已绑定成员走普通执行器，未绑定成员走访客执行器 | — | — | — |
+| `Services/`（钉钉群链路 7 件） | 钉钉企业群的会话与回复链路 | — | — | — |
 | `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册（见下「关键语义」） | `PuddingServiceCollectionExtensions` | — | — |
 | `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册（细节见「条目细节」） | `PuddingServiceCollectionExtensions` | — | — |
 | `Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs` | 原生图片阅读与预处理工具（见下「关键语义」） | — | — | — |
-| `Tools/ScreenCaptureTool.cs` + `ScreenCapture/` | 🔑 Agent 自用屏幕采集：多屏/区域/窗口三口径、物理像素坐标、GDI + SkiaSharp 编码、结果落 Vision Artifact | — | — | — |
+| `Tools/ScreenCaptureTool.cs` + `ScreenCapture/` | Agent 自用的屏幕采集工具 | — | — | — |
 | `Tools/ComputerObserveTool.cs` | 可见窗口客户区原图/编号图与候选 ID（细节见「条目细节」） | `ComputerObserveTool`、`ComputerObserveArgs` | — | — |
 | `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库 schema 初始化（见下「关键语义」） | `PuddingApplicationInitializer` | — | — |
 | `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理（细节见「条目细节」） | `StorageMaintenanceService` | — | — |
@@ -141,7 +141,7 @@ replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工�
 |---|---|---|---|---|
 | `Connectors/` | 连接器实现 | — | — | — |
 | `Services/ConnectorHost.cs` | 连接器宿主 | `ConnectorHost`、`ConnectorStatus` | — | — |
-| `Connectors/SlackConnector.cs` · `Services/SlackConnectorFactory.cs` | Slack 叶子组件适配、独占 App 绑定、凭据文件读取、持久收件箱交接与发送回执 | — | — | — |
+| `Connectors/SlackConnector.cs` · `Services/SlackConnectorFactory.cs` | Slack 通道的宿主适配 | — | — | — |
 | `Connectors/SlackCredentialFile.cs` | 仓库外凭据文件独占、变更检查与原子替换；临时文件创建时继承原文件 ACL，供 App Token 续期写回 | `SlackCredentialFile` | — | — |
 | `Controllers/SlackChannelDiagnosticsController.cs` | 经认证读取动态 Slack Connector 状态和持久发送回执 | `SlackChannelDiagnosticsController` | — | — |
 | `Tools/SlackLookupMemberTool.cs` | `slack_lookup_member`：由可信当前命令绑定 Slack 工作区/Connector；只读查询真人和 bot 的名称/ID，不接受模型指定路由 | `SlackLookupMemberTool`、`SlackLookupMemberArgs` | — | — |

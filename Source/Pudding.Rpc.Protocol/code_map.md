@@ -22,8 +22,8 @@
 |---|---|
 | `DesktopFrame` | Desktop → Core 四类帧（hello/result/event/heartbeat_ack），`oneof frame`。（见下「关键语义」） |
 | `CoreFrame` | Core → Desktop 四类帧（hello_ack/command/cancel/heartbeat），`oneof frame`。（见下「关键语义」） |
-| `DesktopHello` | desktop_id、process_instance_id、`ProtocolRange`、能力声明、请求帧上限（见下「关键语义」） |
-| `CoreHelloAck` | connection_id、**generation**（旧世代失效依据）、协商版本、实际能力、`ChannelLimits`、core_instance_id |
+| `DesktopHello` | Desktop 向 Core 发起的握手首帧 |
+| `CoreHelloAck` | Core 对握手首帧的回执与世代标记 |
 | `ChannelLimits` | 帧/在途/队列/心跳间隔/心跳超时 五类边界值（见下「关键语义」） |
 | `Heartbeat` / `HeartbeatAck` | 序号回显，用于判定对端存活 |
 

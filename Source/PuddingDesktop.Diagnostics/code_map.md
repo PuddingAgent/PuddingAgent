@@ -5,8 +5,8 @@
 
 | 文件 | 用途 |
 |------|------|
-| `DesktopRunJournal.cs` | 每次启动一个目录；原子状态快照、轮转事件、异常脱敏、退出分类、上次异常退出补录与保留上限 |
+| `DesktopRunJournal.cs` | 桌面进程每次启动的运行现场记录 |
 | `PuddingDesktop.Diagnostics.csproj` | 编译期禁止项目与第三方包引用 |
-| `../../Tests/PuddingDesktop.Diagnostics.Tests/DesktopRunJournalTests.cs` | 退出分类、保留现场、脱敏、有界写入与恢复测试 |
+| `../../Tests/PuddingDesktop.Diagnostics.Tests/DesktopRunJournalTests.cs` | 运行现场记录的回归测试 |
 
 `shutdown_completed` 与“已请求退出”严格分离；只有 PID 和启动时间共同确认的进程死亡才可补录，未知终止来源保持 unknown。

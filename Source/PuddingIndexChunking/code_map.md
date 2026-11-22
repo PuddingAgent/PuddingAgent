@@ -16,7 +16,7 @@
 | `ChunkKind` | 索引层枚举，枚举值即优先级（见下「关键语义」） |
 | `ChunkPriorities` | 优先级映射 P0/P1/P2（见下「关键语义」） |
 | `IndexChunk` | 块文本 + 来源文件 + 行范围 + 优先级；**构造即校验**（空文本 / 行号 <1 / 末行早于首行都会抛）|
-| `OutlineSymbolKind` / `OutlineSymbol` / `OutlineSymbolSet` | 端口 DTO：符号种类、名字、行范围、签名、修饰符、容器、文档摘要；`Error` 是**数据**不是异常 |
+| `OutlineSymbolKind` / `OutlineSymbol` / `OutlineSymbolSet` | 符号大纲的分块数据契约 |
 | `IOutlineSource` | **唯一端口**：`GetOutlineAsync(filePath, sourceText, language, ct)` |
 | `ChunkAssembly` | 一次装配的结果（行数、符号数、块列表、`OutlineError`）|
 
