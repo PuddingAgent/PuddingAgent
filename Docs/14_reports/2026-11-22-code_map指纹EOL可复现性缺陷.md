@@ -106,3 +106,52 @@ CI 通常 `core.autocrlf=false` ⇒ 工作树是 LF ⇒ **那 1970 + 289 个文�
 - 确认是 EOL 后，用 `code_map_fingerprint.py --refresh --apply` 刷新，**不要**去改业务代码找原因
 
 本轮就是这样处理的（提交 `2fc10fe`）。
+
+---
+
+## 7. 更正（2026-11-22 19:5x）：本仓**没有 CI**，§3.1 的推断作废
+
+§3.1 写了「CI 通常 `core.autocrlf=false` ⇒ 落在作用域内的指纹全部失配 ⇒ **CI 上大概率整仓 stale**」。
+这句话是**推断，不是实测**。本轮去验证，结论是它不成立。
+
+### 7.1 验证
+
+```
+HAS_DOT_GITHUB   False
+HAS_GITLAB_CI    False
+HAS_AZURE        False
+```
+
+全仓扫 `.yml/.yaml` 且路径含 `workflow|github|gitlab|azure-pipelines|.ci` 的条目共 24 个，
+**全部位于 `.work/**` 归档快照与插件 vendor 目录**（如
+`.work/asr-realtime/20261115/release-source/Source/PuddingPlatformAdmin/.github/workflows/e2e-tests.yml`），
+没有任何一个在治理本仓。
+
+⇒ **本仓当前没有 CI 在跑 `code_map_check`。**「CI 上整仓 stale」这句话作废。
+
+### 7.2 影响面重新界定
+
+缺陷本身仍然成立（同一内容、不同 EOL、不同指纹），但影响收窄为两条：
+
+| 影响 | 状态 |
+|---|---|
+| 单机 worktree 内 `git checkout` / `restore` 触及指纹作用域内的文件 ⇒ 该指纹翻转 | **已实测证实**（本报告 §1、§2） |
+| 换机器 / 换 clone（不同 `core.autocrlf`）⇒ 同一 commit 得出不同指纹 | 机理成立，**本机未实测**（无第二台机器可对照） |
+
+严重性下调：不是「打破 CI」，而是
+
+- 同一内容存在两种合法指纹（可复现性瑕疵）
+- 每次 checkout 触及相关文件后必须刷一次指纹（操作负担）
+
+### 7.3 建议不变，优先级下调
+
+§4 的两个修法仍然有效，但从「修复被打破的 CI」降为「**预防性**改造」：
+
+- 现在做：收益是消除「checkout 后 warn 莫名 +1」的操作负担
+- 现在不做：代价可控，因为无 CI 双跑，冲突面只有本机 worktree
+- 若将来接入 CI（届时会真的出现双套结果），则应先做 §4.1 的归一化
+
+### 7.4 纪律补充
+
+**写下「CI 会怎样」之前，先确认本仓有没有 CI。** 本轮差点把一条未经验证的推断当成缺陷的严重性依据 ——
+若据此去做了 186 个文件的全量指纹刷新，等于为不存在的受害者付账。
