@@ -18,7 +18,11 @@ import subprocess
 import sys
 from urllib.parse import unquote
 
-SKIP_DIRS = {'.git', 'bin', 'obj', 'node_modules', 'temp', 'tmp', '.venv', 'dist', 'dist-dev', 'pub', '.pudding'}
+SKIP_DIRS = {'.git', 'bin', 'obj', 'node_modules', 'temp', 'tmp', '.venv', 'dist', 'dist-dev', 'pub', '.pudding',
+             # 以下与 code_map_check.py 的 LIMITS["EXCLUDE_DIR_NAMES"] 对齐（约定上的单一真源）。
+             # 漏掉 `.work` 的后果是实测出来的：--all-repo 会把三份整仓库归档快照也算进去，
+             # 失效目标从 134 虚增到 898（其中 764 条全在 .work/ 下，且锚点 29 条全部来自它）。
+             '.work', '__pycache__', '.vs', '.idea'}
 SKIP_PREFIX = ('external/',)
 LINK_RE = re.compile(r'\]\(\s*([^)\s]+?)(\s+"[^"]*")?\s*\)')
 HEADING_RE = re.compile(r'^(#{1,6})\s+(.*?)\s*#*\s*$')
@@ -91,6 +95,11 @@ def main() -> int:
         matches = [m for line in scan_lines(path) for m in LINK_RE.finditer(line)]
         for m in matches:
             raw = m.group(1)
+            # CommonMark 允许用尖括号包裹链接目标（用于含空格的路径）：`[t](<a b.md>)`。
+            # 不剥掉尖括号就会把它当成文件名的一部分，于是 R 永远报「目标不存在」。
+            # 实测：Docs/14_reports/2026-11-05-Agent组件化交付索引.md 一文件占 86 条这种假阳。
+            if raw.startswith('<') and raw.endswith('>') and len(raw) >= 2:
+                raw = raw[1:-1]
             if re.match(r'^(https?:|mailto:|file:|data:)', raw):
                 continue
             target, anchor = raw, ''
