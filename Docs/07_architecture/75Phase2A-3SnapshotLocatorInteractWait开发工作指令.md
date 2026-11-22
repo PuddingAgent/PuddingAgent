@@ -16,8 +16,8 @@ draft: false
 # 75 Phase 2A-3 Snapshot、Locator、Interact、Wait 开发工作指令
 
 > - 状态：**automated accepted / real DeepSeek smoke pending（2026-08-02）**
-> - 前置验收：[74 Phase 2A-2 验收报告](74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md)
-> - 实施验收：[76 Phase 2A-3 验收报告](76Phase2A-3通用WebView2页面操作实施验收报告.md)
+> - 前置验收：74 Phase 2A-2 验收报告
+> - 实施验收：76 Phase 2A-3 验收报告
 > - 目标：让通用 Agent 能观察并操作 Desktop WebView2 页面
 > - 禁止混入：Douyin 选择器、Cookie、CDP、Evaluate、下载、上传和 BrowserWindow
 

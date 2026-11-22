@@ -17,7 +17,7 @@ draft: false
 
 > 状态：待执行  
 > 执行入口：`PuddingDesktop.exe`，不得以 `dev-up.py` 代替产品链路  
-> 前置结果：[76Phase2A-3通用WebView2页面操作实施验收报告](76Phase2A-3通用WebView2页面操作实施验收报告.md)  
+> 前置结果：76Phase2A-3通用WebView2页面操作实施验收报告  
 > 通过后下一步：只编写 Phase 2A-4 Douyin Adapter 工作指令，不在本批实现抖音业务代码
 
 ## 1. 本批唯一目标

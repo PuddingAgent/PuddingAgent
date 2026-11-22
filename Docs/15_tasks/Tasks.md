@@ -151,7 +151,7 @@ python .github/skills/todo-api/todo_api.py kanban --group-by stage --project Pud
 
 行动指南：[24核心架构组件边界与执行引擎拆分ADR](../07_architecture/24核心架构组件边界与执行引擎拆分ADR.md)
 实施计划：[2026-05-20-core-architecture-boundaries-refactor-plan](../18_superpowers/plans/2026-05-20-core-architecture-boundaries-refactor-plan.md)
-QA：[QA-2026-05-20-Core-Architecture-Boundaries](../../QA/QA-2026-05-20-Core-Architecture-Boundaries.md)
+QA：QA-2026-05-20-Core-Architecture-Boundaries
 
 | 任务 ID | 标题 | 状态 |
 |--------|------|------|
@@ -169,7 +169,7 @@ QA：[QA-2026-05-20-Core-Architecture-Boundaries](../../QA/QA-2026-05-20-Core-Ar
 ### ADR-026 ADR-025 验收阻塞修复与执行闭环（2026-05-20）
 
 行动指南：[26ADR-025验收阻塞修复与执行闭环方案](../07_architecture/26ADR-025验收阻塞修复与执行闭环方案.md)
-QA：[QA-2026-05-20-ADR-026-Closure](../../QA/QA-2026-05-20-ADR-026-Closure.md)
+QA：QA-2026-05-20-ADR-026-Closure
 
 | 优先级 | 任务 ID | 标题 | 状态 |
 |--------|---------|------|------|
@@ -260,9 +260,9 @@ QA：[QA-2026-05-20-ADR-026-Closure](../../QA/QA-2026-05-20-ADR-026-Closure.md)
 
 | 优先级 | 任务卡 ID | 标题 | 状态 | QA |
 |--------|-----------|------|------|-----|
-| **P1** | task-ui-01-chat-core | Chat 核心体验 — 时间戳/重试/骨架屏/欢迎引导 | ✅ done | [PASS_WITH_NOTES](../16_qa/QA-2026-05-03-ChatCoreUpgrade.md) |
-| **P1** | task-ui-02-chat-interaction | Chat 交互增强 — 全栈 SSE 流式改造 + 消息操作 | ✅ done | [PASS_WITH_NOTES](../16_qa/QA-2026-05-03-ChatStreamingUpgrade.md) |
-| **P2** | task-ui-03-visual-system | 视觉系统 — 主题/响应式/动效/无障碍 | ✅ done | [PASS_WITH_NOTES](../16_qa/QA-2026-05-03-VisualSystemUpgrade.md) |
+| **P1** | task-ui-01-chat-core | Chat 核心体验 — 时间戳/重试/骨架屏/欢迎引导 | ✅ done | PASS_WITH_NOTES |
+| **P1** | task-ui-02-chat-interaction | Chat 交互增强 — 全栈 SSE 流式改造 + 消息操作 | ✅ done | PASS_WITH_NOTES |
+| **P2** | task-ui-03-visual-system | 视觉系统 — 主题/响应式/动效/无障碍 | ✅ done | PASS_WITH_NOTES |
 | **P2** | task-ui-04-management-details | 管理详情页 — 仪表盘/场景/Agent 详情 | 🔲 ready | — |
 
 ## 技术选型

@@ -17,7 +17,7 @@ draft: false
 
 > 状态：Accepted，Implementation In Progress  
 > 日期：2026-07-21  
-> 详细实施清单：[frontend-chat-ui-audit-plan.md](../../memory/plans/frontend-chat-ui-audit-plan.md)
+> 详细实施清单：frontend-chat-ui-audit-plan.md
 
 ## 1. 背景
 

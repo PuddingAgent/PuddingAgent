@@ -58,7 +58,7 @@ Workspace 内只创建和管理 Agent 实例。全局模板只在创建时作为
 `WorkspaceAgentFileService` 把模板配置、Markdown 内容和 LLM Binding 复制到
 `data/agents/{agentId}/`。创建完成后，Agent 独立编辑、独立演进；运行时不得回查模板。
 
-> **2026-06-12 变更**：Workspace 详情页移除“模板管理”Tab，`/workspace-agent-template` 旧入口保留隐藏重定向用于兼容旧链接。旧版 `/agent-template` 统一模板页面已移除，其 API（`listAgentTemplates`、`getAgentTemplate`、`AgentTemplateType`、`AgentTemplateDefinition`）同步清理。详见 [QA-2026-05-03-RemoveOldAgentTemplate](../16_qa/QA-2026-05-03-RemoveOldAgentTemplate.md)。
+> **2026-06-12 变更**：Workspace 详情页移除“模板管理”Tab，`/workspace-agent-template` 旧入口保留隐藏重定向用于兼容旧链接。旧版 `/agent-template` 统一模板页面已移除，其 API（`listAgentTemplates`、`getAgentTemplate`、`AgentTemplateType`、`AgentTemplateDefinition`）同步清理。详见 QA-2026-05-03-RemoveOldAgentTemplate。
 
 ### 模板与 Agent 实例字段归属
 

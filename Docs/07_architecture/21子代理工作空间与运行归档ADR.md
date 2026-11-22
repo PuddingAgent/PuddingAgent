@@ -20,7 +20,7 @@ draft: false
 > Git: `c79d983`
 > 范围：子代理系统、workspace 隔离、Agent 文件配置、运行归档、可观测性、重放
 > 前置：[19架构基础设施增强下一步ADR](19架构基础设施增强下一步ADR.md)、[20会话状态机与事件规范ADR](20会话状态机与事件规范ADR.md)
-> 审阅：[QA-2026-05-19-Architecture-Foundation-Review](../16_qa/QA-2026-05-19-Architecture-Foundation-Review.md)
+> 审阅：QA-2026-05-19-Architecture-Foundation-Review
 >
 > **2026-07-19 演进**：运行归档仍是子代理详细审计事实源；Chat 实时状态不再消费一套
 > 独立易失 SSE 词汇和轮询表，而由 run archive 事件可靠投影到 canonical Conversation

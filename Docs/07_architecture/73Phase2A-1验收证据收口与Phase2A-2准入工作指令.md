@@ -378,4 +378,4 @@ Phase 2A-1 accepted（2026-08-02）
 
 ## 11. 后续状态（2026-08-02）
 
-Phase 2A-2 最小 Remote Browser Runtime/Context/Page 与 `browser_context`、`browser_tabs`、`browser_navigate` 已实现并完成自动化、发布和可见 Desktop smoke 验收。实现边界、类签名、测试证据和下一批 Phase 2A-3 指令见 [74](74Phase2A-2最小RemoteBrowser与AgentTools实施验收报告.md)。
+Phase 2A-2 最小 Remote Browser Runtime/Context/Page 与 `browser_context`、`browser_tabs`、`browser_navigate` 已实现并完成自动化、发布和可见 Desktop smoke 验收。实现边界、类签名、测试证据和下一批 Phase 2A-3 指令见 74。

@@ -17,7 +17,7 @@ draft: false
 
 > 状态：待开发  
 > 执行对象：Pudding 内部开发 Agent  
-> 前置基线：[76Phase2A-3通用WebView2页面操作实施验收报告](76Phase2A-3通用WebView2页面操作实施验收报告.md)  
+> 前置基线：76Phase2A-3通用WebView2页面操作实施验收报告  
 > 功能验收：[77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令](77Phase2A-3B真实DeepSeekAgent浏览器工具选择验收工作指令.md)
 
 ## 1. 本批结论与目标

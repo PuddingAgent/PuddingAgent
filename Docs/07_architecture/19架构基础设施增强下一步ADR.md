@@ -18,7 +18,7 @@ draft: false
 > 状态：**in-progress**（Phase 1-4 基础骨架已完成，Git: `21f6057`）
 > 日期：2026-05-18 / 最后更新：2026-05-19
 > 范围：配置与目录、事件系统、执行引擎、会话层、子代理、可观测性、E2E 测试
-> 关联：[18上下文缓存可观测性ADR](18上下文缓存可观测性ADR.md)、[QA-2026-05-18-Architecture-Audit](../16_qa/QA-2026-05-18-Architecture-Audit.md)、[Tasks](../15_tasks/Tasks.md)
+> 关联：[18上下文缓存可观测性ADR](18上下文缓存可观测性ADR.md)、QA-2026-05-18-Architecture-Audit、[Tasks](../15_tasks/Tasks.md)
 
 ---
 
