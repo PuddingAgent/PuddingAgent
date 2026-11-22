@@ -100,7 +100,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingPlatform/` | Session · Web 与外部 API · EF Core + SQLite · 消息网关 | [code_map](Source/PuddingPlatform/code_map.md) |
 | `Source/PuddingScheduling/` | 定时任务的触发规划与建卡 | [code_map](Source/PuddingScheduling/code_map.md) |
 | `Source/PuddingMemoryEngine/` | Library/Book/Chapter 记忆库 · FTS5 · 潜意识检索 | [code_map](Source/PuddingMemoryEngine/code_map.md) |
-| `Source/PuddingMemoryEngineBenchmarks/` | 记忆库与记忆召回的 BenchmarkDotNet 基准工程（不参与运行时装配） | — |
+| `Source/PuddingMemoryEngineBenchmarks/` | 记忆库与记忆召回的 BenchmarkDotNet 基准工程（不参与运行时装配） | [code_map](Source/PuddingMemoryEngineBenchmarks/code_map.md) |
 | `Source/PuddingGateway/` | LLM 服务商网关适配：openai / responses / anthropic 三协议 | [code_map](Source/PuddingGateway/code_map.md) |
 | `Source/PuddingController/` | 代理控制层 | [code_map](Source/PuddingController/code_map.md) |
 | `Source/PuddingCodexService/` | Codex MCP Sidecar | [code_map](Source/PuddingCodexService/code_map.md) |
@@ -108,15 +108,15 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingTaskRecall.Cli/` | 历史脏数据诊断/修复 CLI（默认 dry-run，`--apply` 才写库） | [code_map](Source/PuddingTaskRecall.Cli/code_map.md) |
 | `Source/PuddingGit.Tools/` | Git 工具声明（实现在 Runtime） | [code_map](Source/PuddingGit.Tools/code_map.md) |
 | `Source/PuddingFinance/` | 金融数据源的采集适配 | [code_map](Source/PuddingFinance/code_map.md) |
-| `Source/PuddingFinance.Documents/` | PDF 文本抽取的独立组件：唯一引用 PdfPig 的地方，对外只暴露 `IPdfTextSource` | — |
-| `Source/HarnessAgent.Core/` | Harness Agent 核心库（与主线并列的 Harness 实现） | — |
+| `Source/PuddingFinance.Documents/` | PDF 文本抽取的独立组件：唯一引用 PdfPig 的地方，对外只暴露 `IPdfTextSource` | [code_map](Source/PuddingFinance.Documents/code_map.md) |
+| `Source/HarnessAgent.Core/` | Harness Agent 核心库（与主线并列的 Harness 实现） | [code_map](Source/HarnessAgent.Core/code_map.md) |
 | `Source/Pudding.Contracts/` | 契约叶（仅 BCL）：能力目录、握手协商与错误语义的 DTO | [code_map](Source/Pudding.Contracts/code_map.md) |
 | `Source/Pudding.Rpc.Protocol/` | wire 协议叶：`Protos/desktop_capability.proto` 与生成类型 | [code_map](Source/Pudding.Rpc.Protocol/code_map.md) |
 | `Source/Pudding.CapabilityBroker/` | Core 侧能力 Broker：握手协商与会话世代的命令关联入口 | [code_map](Source/Pudding.CapabilityBroker/code_map.md) |
 | `Source/Pudding.CapabilityBroker.AspNetCore/` | Core 侧宿主适配：gRPC 服务与服务端流及 Kestrel 装配 | [code_map](Source/Pudding.CapabilityBroker.AspNetCore/code_map.md) |
 | `Source/Pudding.DesktopConnection/` | Desktop 侧 gRPC 双向流适配：连接状态机与命令关联（含取消与重连） | [code_map](Source/Pudding.DesktopConnection/code_map.md) |
 | `Source/Pudding.DesktopService/` | Desktop 侧能力服务：准入与 UI 调度边界及宿主装配；另含两段式验收判定与交付清单链（见下「关键语义」） | [code_map](Source/Pudding.DesktopService/code_map.md) |
-| `Source/Pudding.DeliveryManifest.Cli/` | 交付清单**采集入口**（B7 内部一侧）：目录 → 自检清单 → JSON；不合格以退出码 2 拒绝产出（见下「关键语义」） | — |
+| `Source/Pudding.DeliveryManifest.Cli/` | 交付清单**采集入口**（B7 内部一侧）：目录 → 自检清单 → JSON；不合格以退出码 2 拒绝产出（见下「关键语义」） | [code_map](Source/Pudding.DeliveryManifest.Cli/code_map.md) |
 | `Source/PuddingDesktop.CapabilityHost/` | WinUI 侧平台适配：`DispatcherQueue` 调度实现（只引用 Contracts） | [code_map](Source/PuddingDesktop.CapabilityHost/code_map.md) |
 | `Source/Pudding.DesktopSurface.Browser/` | 浏览器侧 Desktop 表面与目标注册表桥；不含 UI 代码，可脱 UI 测试 | [code_map](Source/Pudding.DesktopSurface.Browser/code_map.md) |
 | `Source/PuddingDesktop.Foundation/` | BCL-only 布局/外观偏好、启动面板文案与设计令牌（字号/圆角/颜色）+ XAML 字面量与 {ThemeResource} 键集门禁 | [code_map](Source/PuddingDesktop.Foundation/code_map.md) |
@@ -124,7 +124,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/Pudding.Rpc.IpcProbe/` | 真实端点技术探针（Named Pipe / h2c 服务端替身，退出码 0/1） | — |
 | `Source/PuddingCodeIndex/` | 索引组件：契约与变更捕获管线及范围注册；不得引用 `PuddingCodeIntelligence` | [code_map](Source/PuddingCodeIndex/code_map.md) |
 | `Source/PuddingDomain.Contracts/` | 跨层共享值类型（BCL-only）：`CodeSymbolKind` / `CodeRelationKind`；命名空间刻意沿用旧名（零调用方改动） | [code_map](Source/PuddingDomain.Contracts/code_map.md) |
-| `Source/PuddingRetrieval.Contracts/` | 跨 provider 检索契约（请求 / 结果 / 覆盖声明 / 能力矩阵）；只依赖 `PuddingDomain.Contracts` | [目录](Source/PuddingRetrieval.Contracts/)（无 code_map） |
+| `Source/PuddingRetrieval.Contracts/` | 跨 provider 检索契约（请求 / 结果 / 覆盖声明 / 能力矩阵）；只依赖 `PuddingDomain.Contracts` | [code_map](Source/PuddingRetrieval.Contracts/code_map.md) |
 | `Source/PuddingGrep/` | grep 匹配内核（BCL-only）。**生产端零引用**（2026-11 实测），`Runtime/SearchGrepTool` 仍自带实现、语义未统一 | [code_map](Source/PuddingGrep/code_map.md) |
 | `Source/PuddingContextPolicy/` | 上下文容量与压缩候选的纯策略库 | [code_map](Source/PuddingContextPolicy/code_map.md) |
 | `Source/PuddingContextPruning/` | 零 LLM 确定性载荷剪枝：工具结果去重与超大载荷裁剪，保护尾部（见下「关键语义」） | [code_map](Source/PuddingContextPruning/code_map.md) |
@@ -155,6 +155,13 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingBrowser.Automation/` | 浏览器自动化的可靠性判定组件 | [code_map](Source/PuddingBrowser.Automation/code_map.md) |
 | `Source/PuddingComputer.Windows/` | Windows 桌面的截屏与输入自动化 | [code_map](Source/PuddingComputer.Windows/code_map.md) |
 | `Source/PuddingDiagnostics/` | 🔑 可诊断基础设施叶子组件：稳定因果码/分类器/有界证据/脱敏/事故投影/故障场景；不得引用任何 Pudding 程序集 | [code_map](Source/PuddingDiagnostics/code_map.md) |
+| `Source/PuddingToolGuidance/` | 工具失败后的下一步指引引擎 | [code_map](Source/PuddingToolGuidance/code_map.md) |
+| `Source/PuddingComputer.UIAutomation/` | UIA 界面的观察与写入适配 | [code_map](Source/PuddingComputer.UIAutomation/code_map.md) |
+| `Source/PuddingComputer.Benchmark/` | Computer Use 的基准任务与判定规则 | [code_map](Source/PuddingComputer.Benchmark/code_map.md) |
+| `Source/PuddingComputer.BenchmarkRunner/` | 只读的基准端到端跑批与报告 | [code_map](Source/PuddingComputer.BenchmarkRunner/code_map.md) |
+| `Source/PuddingMemoryGraph/` | 记忆图的契约与遍历排序纯函数 | [code_map](Source/PuddingMemoryGraph/code_map.md) |
+| `Tests/HarnessAgent.Cli/` | HarnessAgent 的分层冒烟自检命令行 | [code_map](Tests/HarnessAgent.Cli/code_map.md) |
+| `Tests/Mcp.Cli/` | MCP 与 Codex 服务链路的探针命令行 | [code_map](Tests/Mcp.Cli/code_map.md) |
 
 **关键语义（§2「子项目索引」表·用途列逐字原文）**
 
