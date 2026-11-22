@@ -365,6 +365,11 @@ def refresh_declared(rep, write):
         print('[refresh] %s :: %s  %s -> %s  (files=%d)' % (p, glob, old, new, n))
     for p, glob, why in failed:
         print('FAILED: %s :: %s (%s)' % (p, glob, why))
+    if any(why == 'declaration not found on disk' for _, _, why in failed):
+        print('\n⚠ 报告可能过期：上述 glob 在文件里找不到声明（声明已被改写或删除）。')
+        print('  本工具不会据此写盘（写入前要求 glob 在文件中恰好命中 1 次），')
+        print('  但**本次结果不代表全部声明都已校验**。请先重生成报告再跑：')
+        print('    py -3 Tools/Docs/code_map_check.py --check --report temp/cm_rep.json')
     if not write:
         return
 
