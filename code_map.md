@@ -155,6 +155,11 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingBrowser.Automation/` | 浏览器自动化的可靠性判定组件 | [code_map](Source/PuddingBrowser.Automation/code_map.md) |
 | `Source/PuddingComputer.Windows/` | Windows 桌面的截屏与输入自动化 | [code_map](Source/PuddingComputer.Windows/code_map.md) |
 | `Source/PuddingDiagnostics/` | 🔑 可诊断基础设施叶子组件：稳定因果码/分类器/有界证据/脱敏/事故投影/故障场景；不得引用任何 Pudding 程序集 | [code_map](Source/PuddingDiagnostics/code_map.md) |
+| `Source/PuddingHomeAssistant.Probe/` | 智能家居组件的无宿主验证程序 | [code_map](Source/PuddingHomeAssistant.Probe/code_map.md) |
+| `Source/PuddingSsh.Probe/` | SSH 组件的独立协议探针 | [code_map](Source/PuddingSsh.Probe/code_map.md) |
+| `Tests/PuddingBrowser.TestSite/` | 浏览器验收用的最小观察站点 | [code_map](Tests/PuddingBrowser.TestSite/code_map.md) |
+| `Tests/PuddingBrowser.WebView2.Smoke/` | WebView2 在真实 WPF 消息泵下的端到端冒烟 | [code_map](Tests/PuddingBrowser.WebView2.Smoke/code_map.md) |
+| `Tests/PuddingRecovery.SchemaProbe/` | 数据库快照的只读兼容校验器 | [code_map](Tests/PuddingRecovery.SchemaProbe/code_map.md) |
 | `Source/PuddingToolGuidance/` | 工具失败后的下一步指引引擎 | [code_map](Source/PuddingToolGuidance/code_map.md) |
 | `Source/PuddingComputer.UIAutomation/` | UIA 界面的观察与写入适配 | [code_map](Source/PuddingComputer.UIAutomation/code_map.md) |
 | `Source/PuddingComputer.Benchmark/` | Computer Use 的基准任务与判定规则 | [code_map](Source/PuddingComputer.Benchmark/code_map.md) |
