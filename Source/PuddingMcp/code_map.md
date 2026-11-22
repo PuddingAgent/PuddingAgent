@@ -1,3 +1,10 @@
-# MCP
+# PuddingMcp
 
-`McpConnectionCoordinator.cs`: PA-05C lifecycle coordination — bounded start with typed `start_timeout`/`start_failed` (never Ready on failure), idempotent same-generation connect, requests require Ready + matching generation, expired deadlines return Unknown without touching the transport, transport timeouts/uncertain failures are Unknown and never auto-retried, drain disposes the transport and stops accepting requests, events are accepted in sequence order with duplicates/out-of-order ignored, gaps reported, and the cursor persisted for reconnect.
+MCP 连接协调实现（PA-05C）：管生命周期、请求相关性与事件游标，宿主不感知传输细节。
+
+> 源指纹: Source/PuddingMcp/**=pending · 条目数: 2 · 最近整理: 2026-11-22
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `McpConnectionCoordinator.cs` | 协调 MCP 连接生命周期并推进事件游标 | `McpConnectionCoordinator`、`ConnectAsync`、`RequestAsync`、`AcceptEventsAsync`、`DrainAsync` | `Source/PuddingMcp.Contracts/McpPorts.cs` | 启动失败绝不得报 Ready；请求需 Ready 且代际一致；drain 后拒绝新请求并释放传输 |
+| `PuddingMcp.csproj` | 构建期锁死本工程只依赖端口工程 | — | `Source/PuddingMcp.Contracts/PuddingMcp.Contracts.csproj` | `EnforceMcpBoundary` 目标会失败构建：引用非 Contracts 工程或任何 PackageReference 都报错 |

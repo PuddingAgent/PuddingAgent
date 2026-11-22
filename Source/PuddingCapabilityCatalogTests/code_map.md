@@ -1,3 +1,10 @@
 # Capability catalog tests
 
-`CapabilityCatalogTests.cs`: kind/bounds validation before the source, revision/generation/availability preservation, forbidden page is not an empty success, partial truncated page keeps Cursor/Complete=false, legitimate empty page is complete, catalog entry still requires approval (not an execution grant), source failure/invalid generation typed as source-unavailable, caller cancellation not swallowed. Uses an in-file fake source; no Host/platform loading.
+能力目录门面的测试：种类与边界校验先于来源，分页与可用性原样保留。
+
+> 源指纹: Source/PuddingCapabilityCatalogTests/**=pending · 条目数: 2 · 最近整理: 2026-11-22
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `CapabilityCatalogTests.cs` | 覆盖种类与边界校验、禁止页非空成功，以及部分页保留游标 | `CapabilityCatalogTests.List_ForbiddenSourcePage_IsNotAnEmptySuccess` | `CapabilityCatalogService` | 使用文件内假来源，不加载宿主或平台 |
+| `PuddingCapabilityCatalogTests.csproj` | 测试可执行工程，唯一工程引用为 `PuddingCapabilityCatalog` | — | `PuddingCapabilityCatalog` | — |

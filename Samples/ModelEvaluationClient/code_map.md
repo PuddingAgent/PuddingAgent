@@ -1,8 +1,12 @@
 # Samples/ModelEvaluationClient
 
-| File | Purpose |
-|---|---|
-| `ModelEvaluationClient.csproj` | net10.0 console sample (TFM inherited from the root build properties); only `ProjectReference` is `Pudding.Api.Sdk`; no packages. |
-| `EvaluationDemo.cs` | Fixed public entry point `RunAsync(args, api, output, error, ct)`: `classify <requestJson>` or `review <requestJson>` (strict 2 args, command and JSON used verbatim). Argument/JSON binding errors (no command, unknown command, wrong count, blank argument, invalid JSON, `null` request, missing `input`/`options`) → fixed usage on stderr + exit 2 with zero API calls; success → exactly one camelCase JSON line of the original receipt (exit 0, including Abstain/Degraded/Reject); `ModelEvaluationException` → only `code=...` on stderr, exit 1; caller cancellation → exit 130. Exactly one Classify or one Review call through `ModelEvaluationsClient`; no retry, generated CallId, file/stdin input, domain validator copy, List command or durable-delivery claim. |
-| `Program.cs` | Offline shell only: writes the fixed notice “这是可注入 IModelEvaluationApi 的离线示例；请由上层提供已授权的 API。” to stderr and returns 2. No credential reading, no online connection, no host wiring. |
-| `code_map.md` | This index. |
+net10.0 控制台示例（`Exe`），仅引用 `Pudding.Api.Sdk`，演示 `IModelEvaluationApi` 的注入式离线用法。
+
+> 源指纹: Samples/ModelEvaluationClient/**=pending · 条目数: 4 · 最近整理: 2026-11-22
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `ModelEvaluationClient.csproj` | 示例控制台工程，唯一工程引用为 `Pudding.Api.Sdk` | — | `Pudding.Api.Sdk` | — |
+| `EvaluationDemo.cs` | 固定入口 `RunAsync`：`classify`/`review` 各转成恰好一次评估调用，并原样输出回执 JSON | `EvaluationDemo.RunAsync` | `ModelEvaluationsClient`、`ModelEvaluationException` | 参数或 JSON 绑定错误零 API 调用；不重试、不自造 CallId、不复制域校验 |
+| `Program.cs` | 离线壳：向 stderr 打印固定提示并以 2 退出；不读凭据也不联网 | `Program` | `EvaluationDemo` | — |
+| `code_map.md` | 本索引 | — | — | — |

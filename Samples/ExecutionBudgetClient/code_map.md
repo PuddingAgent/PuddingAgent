@@ -1,8 +1,12 @@
 # Samples/ExecutionBudgetClient
 
-| File | Purpose |
-|---|---|
-| `ExecutionBudgetClient.csproj` | net10.0 console sample (TFM inherited from the root build properties); only `ProjectReference` is `Pudding.Api.Sdk`; no packages. |
-| `BudgetDemo.cs` | Fixed public entry point `RunAsync(args, api, output, error, ct)`: only `get <accountId>` (strict 2 tokens). The account id is passed verbatim to exactly one `IExecutionBudgetApi.GetAsync(accountId, ct)` call. Argument, unknown-command, wrong-count and blank errors → fixed usage on stderr + exit 2 with zero API calls; success → one camelCase JSON line of the original `ExecutionBudgetSnapshot` with every `accountId`/`revision`/`limits`/`actual`/`reserved`/`unknown`/`activeAttempts`/`cancelled`/`cancellationRevision`/`reasonCode` field preserved verbatim (exit 0 even when the budget is exhausted, cancelled or contains unknown amounts); missing snapshot → `{"found":false}` and exit 3; `ExecutionBudgetException` → only `code={Code}` on stderr, exit 1; caller cancellation → exit 130 with no further calls; every other exception propagates. Never implements a ledger, budget calculation, derived available balance, polling, retry or cancel, and never turns Unknown into zero. |
-| `Program.cs` | Offline shell only: writes the fixed notice “这是可注入 IExecutionBudgetApi 的离线示例；请由上层提供已授权的 API。” to stderr and returns 2. No credential reading, no online connection, no host wiring. |
-| `code_map.md` | This index. |
+net10.0 控制台示例（`Exe`），仅引用 `Pudding.Api.Sdk`，演示 `IExecutionBudgetApi` 的注入式离线用法。
+
+> 源指纹: Samples/ExecutionBudgetClient/**=pending · 条目数: 4 · 最近整理: 2026-11-22
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `ExecutionBudgetClient.csproj` | 示例控制台工程，唯一工程引用为 `Pudding.Api.Sdk` | — | `Pudding.Api.Sdk` | — |
+| `BudgetDemo.cs` | 固定入口 `RunAsync`：仅接受 `get <accountId>`，转成一次 `GetAsync` 并原样输出预算快照 JSON | `BudgetDemo.RunAsync` | `IExecutionBudgetApi`、`ExecutionBudgetSnapshot` | 只透传：不算可用余额、不轮询、不重试、不把 Unknown 当成零 |
+| `Program.cs` | 离线壳：向 stderr 打印固定提示并以 2 退出；不读凭据也不联网 | `Program` | `BudgetDemo` | — |
+| `code_map.md` | 本索引 | — | — | — |

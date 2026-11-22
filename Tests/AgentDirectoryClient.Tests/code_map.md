@@ -1,7 +1,10 @@
 # Tests/AgentDirectoryClient.Tests
 
-| File | Purpose |
-|---|---|
-| `AgentDirectoryClient.Tests.csproj` | MSTest.Sdk/4.0.1 runner (`OutputType=Exe`, `UseVSTest=false`); only `ProjectReference` is the sample project; every API is an injected fake `IAgentDirectoryApi`, no real network, no real Core, no real Agent. |
-| `DirectoryDemoTests.cs` | Offline coverage for `DirectoryDemo`: exactly one mutually exclusive `Get`/`List` call with the frozen `MaxCount=50` and verbatim Chinese/space-padded workspace, agent and cursor (cross-workspace ids not mixed); zero API calls for no/unknown command, wrong argument count and blank fields; missing entry → `{"found":false}` with exit 3; empty page preserved as `{"agents":[],"cursor":null,"complete":true}` with exit 0; `AgentDirectoryException` reduced to `code=...` on stderr with exit 1 and no message leak; caller cancellation → exit 130 with no retry or second query; cancellation not requested by the caller and unexpected exceptions are not swallowed; stdout exactly one camelCase JSON line; null reference arguments rejected with `ArgumentNullException`. |
-| `code_map.md` | This index. |
+Agent 目录样例的离线测试工程：假目录 API，不接真实网络、Core 或 Agent。
+
+> 源指纹: Tests/AgentDirectoryClient.Tests/**=pending · 条目数: 2 · 最近整理: 2026-11-22
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `DirectoryDemoTests.cs` | 覆盖目录查询与列表参数的原样透传 | `DirectoryDemoTests` | `Samples/AgentDirectoryClient/AgentDirectoryClient.csproj` | 断言区分「调用零次」与「恰好一次」；空页必须保留 `agents` 与 `cursor` 字段；未知命令与空字段走 exit 2 |
+| `AgentDirectoryClient.Tests.csproj` | 定义 MSTest 运行器与本工程的唯一引用 | — | `Samples/AgentDirectoryClient/AgentDirectoryClient.csproj` | `MSTest.Sdk/4.0.1` 且 `OutputType=Exe`、`UseVSTest=false`；唯一 ProjectReference 是样例工程 |

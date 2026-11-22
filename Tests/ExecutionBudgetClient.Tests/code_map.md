@@ -1,7 +1,10 @@
 # Tests/ExecutionBudgetClient.Tests
 
-| File | Purpose |
-|---|---|
-| `ExecutionBudgetClient.Tests.csproj` | MSTest.Sdk/4.0.1 runner (`OutputType=Exe`, `UseVSTest=false`); only `ProjectReference` is the sample project; every API is an injected fake `IExecutionBudgetApi`, no real network, no real Core, no real Agent. |
-| `BudgetDemoTests.cs` | Offline coverage for `BudgetDemo`: exactly one `GetAsync(accountId)`; the original snapshot is printed verbatim in one camelCase JSON line with every `accountId`/`revision`/`limits`/`actual`/`reserved`/`unknown`/`activeAttempts`/`cancelled`/`cancellationRevision`/`reasonCode` field (Unknown amounts stay nonzero, exhausted and cancelled snapshots stay exit 0); verbatim Chinese/space-padded account id; zero API calls for no/unknown command, wrong argument count and blank account id (exit 2); missing snapshot → `{"found":false}` with exit 3; `ExecutionBudgetException` reduced to `code=...` on stderr with exit 1 and no message leak; caller cancellation → exit 130 with no retry or second read; cancellation not requested by the caller and unexpected exceptions are not swallowed; null reference arguments rejected with `ArgumentNullException`. |
-| `code_map.md` | This index. |
+执行预算样例的离线测试工程：假预算 API，不接真实网络、Core 或 Agent。
+
+> 源指纹: Tests/ExecutionBudgetClient.Tests/**=pending · 条目数: 2 · 最近整理: 2026-11-22
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `BudgetDemoTests.cs` | 覆盖预算快照字段的原样输出 | `BudgetDemoTests` | `Samples/ExecutionBudgetClient/ExecutionBudgetClient.csproj` | Unknown 金额不得归零，耗尽或已取消的快照仍须 exit 0；缺快照走 exit 3 而不是空对象 |
+| `ExecutionBudgetClient.Tests.csproj` | 定义 MSTest 运行器与本工程的唯一引用 | — | `Samples/ExecutionBudgetClient/ExecutionBudgetClient.csproj` | `MSTest.Sdk/4.0.1` 且 `OutputType=Exe`、`UseVSTest=false`；唯一 ProjectReference 是样例工程 |

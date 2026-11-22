@@ -1,7 +1,10 @@
 # Tests/CapabilityCatalogClient.Tests
 
-| File | Purpose |
-|---|---|
-| `CapabilityCatalogClient.Tests.csproj` | MSTest.Sdk/4.0.1 runner (`OutputType=Exe`, `UseVSTest=false`); only `ProjectReference` is the sample project; every API is an injected fake `ICapabilityCatalogApi`, no real network, no tool invocation, no MCP session. |
-| `CatalogDemoTests.cs` | Offline coverage for `CatalogDemo`: exactly one `ListAsync` with `CapabilityQuery(kind, cursor, 50)` and no automatic paging; verbatim kind/cursor (Chinese cursor and surrounding spaces); partial/empty pages exit 0 while preserving `partial`/`missingReason` without writing "没有能力"; Forbidden pages keep `partial`/`missingReason` instead of a fake complete empty list; older `generation` values preserved on the page and entries; zero API calls for no/unknown command, wrong argument count, invalid (case-sensitive) kind and blank kind/cursor (exit 2); null page → `code=capability.source_unavailable` with exit 1; `CapabilityCatalogException` reduced to `code=...` on stderr with exit 1 and no message leak; caller cancellation → exit 130 with no retry or second page; cancellation not requested by the caller and unexpected exceptions are not swallowed; stdout exactly one camelCase JSON line with every page and entry field; null reference arguments rejected with `ArgumentNullException`. |
-| `code_map.md` | This index. |
+能力目录样例的离线测试工程：假目录 API，不接真实网络、不调用工具、不开 MCP 会话。
+
+> 源指纹: Tests/CapabilityCatalogClient.Tests/**=pending · 条目数: 2 · 最近整理: 2026-11-22
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `CatalogDemoTests.cs` | 覆盖能力列表分页字段与拒绝原因保留 | `CatalogDemoTests` | `Samples/CapabilityCatalogClient/CapabilityCatalogClient.csproj` | 不完整页必须保留 `partial` 与 `missingReason`；kind 区分大小写，非法或空值走 exit 2 |
+| `CapabilityCatalogClient.Tests.csproj` | 定义 MSTest 运行器与本工程的唯一引用 | — | `Samples/CapabilityCatalogClient/CapabilityCatalogClient.csproj` | `MSTest.Sdk/4.0.1` 且 `OutputType=Exe`、`UseVSTest=false`；唯一 ProjectReference 是样例工程 |

@@ -1,6 +1,10 @@
 # Tests/ModelEvaluationClient.Tests
 
-| File | Purpose |
-|---|---|
-| `ModelEvaluationClient.Tests.csproj` | MSTest.Sdk/4.0.1 runner (`OutputType=Exe`, `UseVSTest=false`); only `ProjectReference` is the sample project; every API is an injected fake `IModelEvaluationApi`, no real network, no real Core, no real Agent. |
-| `EvaluationDemoTests.cs` | Offline coverage for `EvaluationDemo`: exact-once and mutually exclusive Classify/Review with zero List calls; verbatim Chinese text and options (no trimming, contract defaults preserved); zero API calls for no/unknown command, wrong argument count, blank argument, invalid JSON, `null` request and missing `input`/`options`; unknown JSON members rejected through the frozen contract; Abstain/Degraded/Reject receipts preserved as one camelCase line with exit 0 and no invented `verified` field; full provenance field set; `ModelEvaluationException` reduced to `code=...` on stderr with exit 1 and no message leak; caller cancellation (exit 130, no extra calls) and non-requested cancellation not swallowed; stdout exactly one JSON line; null reference arguments rejected. |
+模型评估样例的离线测试工程：假评估 API，不接真实网络、Core 或 Agent。
+
+> 源指纹: Tests/ModelEvaluationClient.Tests/**=pending · 条目数: 2 · 最近整理: 2026-11-22
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `EvaluationDemoTests.cs` | 覆盖分类与评审回执的字段与降级语义 | `EvaluationDemoTests` | `Samples/ModelEvaluationClient/ModelEvaluationClient.csproj` | 回执不得凭空补 `verified` 字段；Abstain 与 Degraded 都要原样保留并以 exit 0 输出 |
+| `ModelEvaluationClient.Tests.csproj` | 定义 MSTest 运行器与本工程的唯一引用 | — | `Samples/ModelEvaluationClient/ModelEvaluationClient.csproj` | `MSTest.Sdk/4.0.1` 且 `OutputType=Exe`、`UseVSTest=false`；唯一 ProjectReference 是样例工程 |

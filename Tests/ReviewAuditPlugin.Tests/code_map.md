@@ -1,7 +1,10 @@
 # Tests/ReviewAuditPlugin.Tests
 
-| File | Purpose |
-|---|---|
-| `ReviewAuditPlugin.Tests.csproj` | MSTest.Sdk/4.0.1 runner (`OutputType=Exe`, `UseVSTest=false`); only `ProjectReference` is the sample project; every host dependency is an in-memory fake `IPluginEventContext`/`IPluginAuditApi`, no real plugin process, no host, no network. |
-| `ReviewAuditPluginTests.cs` | Offline coverage for `ReviewAuditPlugin`: review.completed maps exactly six `PluginAuditRecord` fields verbatim (OperationId=EventId, Chinese Finding/ReasonCode); the frozen audit text is asserted verbatim via `FormatForTest` (blank/missing ReasonCode → `无`, record value stays verbatim); non-review events and a missing `ReviewCompleted` payload write nothing; a replayed event keeps the same OperationId (the plugin does not dedupe or mint a GUID); a pre-cancelled call writes nothing; `RecordAsync` cancellation and typed `PluginEventsException` are not swallowed or converted to success; only the scoped audit sink is used (other context members are never read); the sample assembly references only the AgentSdk surface; helper rejects non-review envelopes; null envelope/context → `ArgumentNullException`. |
-| `code_map.md` | This index. |
+评审审计插件的离线测试工程：内存事件上下文与审计假源，不起插件进程、不接宿主。
+
+> 源指纹: Tests/ReviewAuditPlugin.Tests/**=pending · 条目数: 2 · 最近整理: 2026-11-22
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `ReviewAuditPluginTests.cs` | 覆盖 review.completed 到审计记录的字段映射 | `ReviewAuditPluginTests` | `Samples/Plugins/ReviewAudit/ReviewAudit.csproj` | 重放同一事件必须保持同一 OperationId，插件不自行去重也不另生成 GUID；只有规范化审计文本可逐字断言 |
+| `ReviewAuditPlugin.Tests.csproj` | 定义 MSTest 运行器与本工程的唯一引用 | — | `Samples/Plugins/ReviewAudit/ReviewAudit.csproj` | `MSTest.Sdk/4.0.1` 且 `OutputType=Exe`、`UseVSTest=false`；唯一 ProjectReference 是样例插件工程 |

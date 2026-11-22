@@ -1,6 +1,10 @@
 # Plugin Worker
 
-| File | Responsibility |
-|---|---|
-| `Program.cs` | Loads plugin DLL in private context; shares authoring/public SDK contracts; reports tools/hooks/workspace-event subscriptions; handles `event` delivery; tool callbacks use the calling session; async-context invocation leases reject delayed callbacks borrowing a later request; typed configuration, operator and model evaluation failures preserve unknown tool effects |
-| `Pudding.ToolPlugins.Worker.csproj` | Host-independent executable referencing authoring SDK, Agent SDK, public SDK/contracts and protocol only |
+插件进程宿主：在私有加载上下文中装载插件 DLL，并向宿主上报工具、钩子与工作区事件订阅。
+
+> 源指纹: Source/Pudding.ToolPlugins.Worker/**=pending · 条目数: 2 · 最近整理: 2026-11-22
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `Program.cs` | 插件工作进程入口：私有上下文装载插件，处理事件投递与工具回调 | `Program`、`InvokeAgentApiAsync`、`RequestArchiveAsync` | `Pudding.ToolPlugins.Protocol`、`Pudding.ToolPlugins.Sdk` | 回调只使用发起调用的会话；异步上下文的调用租约拒绝延迟回调借用后续请求；未知工具副作用必须原样保留 |
+| `Pudding.ToolPlugins.Worker.csproj` | 与宿主无关的可执行工程，引用协议、插件 SDK 与 Agent SDK | — | `Pudding.ToolPlugins.Protocol`、`Pudding.ToolPlugins.Sdk`、`Pudding.ToolPlugins.AgentSdk` | — |

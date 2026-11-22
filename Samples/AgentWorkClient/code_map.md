@@ -1,10 +1,12 @@
 # Samples/AgentWorkClient
 
-| File | Purpose |
-|---|---|
-| `AgentWorkClient.csproj` | net10.0 console sample (TFM inherited from the root build properties); only `ProjectReference` is `Pudding.Api.Sdk`; no packages. |
-| `WorkDemo.cs` | Fixed public entry point `RunAsync(args, api, output, error, ct)`: `submit <workspaceId> <agentId> <operationId> <text>` (strict 5 args) or `get <workspaceId> <agentId> <operationId>` (strict 4 args). Argument errors → fixed usage on stderr + exit 2 with zero API calls; success → one camelCase JSON line of the original receipt/snapshot (exit 0); not found → `{"found":false}` (exit 3); `AgentWorkException` → code/effectOutcome/operationId on stderr, `unknown` → exit 4 else exit 1; caller cancellation → exit 130. Exactly one Submit or one Get call; no polling, retry, status query or cancel command. |
-| `Program.cs` | Offline shell only: writes the fixed notice “这是可注入 IAgentWorkApi 的离线示例；请由上层提供已授权的 API。” to stderr and returns 2. No credential reading, no online connection, no host wiring. |
-| `code_map.md` | This index. |
+net10.0 控制台示例（`Exe`），仅引用 `Pudding.Api.Sdk`，演示 `IAgentWorkApi` 的注入式离线用法。
 
-Registered under `/Samples/` in [the solution](../../PuddingAgentNetwork.slnx); project navigation is in [the root code map](../../code_map.md).
+> 源指纹: Samples/AgentWorkClient/**=pending · 条目数: 4 · 最近整理: 2026-11-22
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `AgentWorkClient.csproj` | 示例控制台工程，唯一工程引用为 `Pudding.Api.Sdk` | — | `Pudding.Api.Sdk` | — |
+| `WorkDemo.cs` | 固定入口 `RunAsync`：`submit`/`get` 各转成恰好一次工作 API 调用，并按回执或错误映射退出码 | `WorkDemo.RunAsync` | `IAgentWorkApi`、`AgentWorkException` | `effectOutcome=unknown` 单独退 4；无轮询、无重试、无状态查询与取消命令 |
+| `Program.cs` | 离线壳：向 stderr 打印固定提示并以 2 退出；不读凭据也不联网 | `Program` | `WorkDemo` | — |
+| `code_map.md` | 本索引 | — | — | — |

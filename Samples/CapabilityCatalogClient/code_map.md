@@ -1,8 +1,12 @@
 # Samples/CapabilityCatalogClient
 
-| File | Purpose |
-|---|---|
-| `CapabilityCatalogClient.csproj` | net10.0 console sample (TFM inherited from the root build properties); only `ProjectReference` is `Pudding.Api.Sdk`; no packages. |
-| `CatalogDemo.cs` | Fixed public entry point `RunAsync(args, api, output, error, ct)`: only `list <kind> [cursor]` (2 or 3 tokens) with kind limited to the case-sensitive `tool`/`mcp`/`context`; an absent cursor stays `null` and `CapabilityQuery.MaxCount` stays at its default 50. Values are passed verbatim to exactly one `ICapabilityCatalogApi.ListAsync(new CapabilityQuery(kind, cursor))` call. Argument, unknown-command, wrong-count, invalid-kind and blank errors → fixed usage on stderr + exit 2 with zero API calls; success → one camelCase JSON line of the original `CapabilityCatalogPage` with every `capabilities` entry field (`capabilityId`/`kind`/`displayName`/`revision`/`generation`/`availability`/`missingReason`/`requiresApproval`/`requiredCapabilities`) and every page field (`cursor`/`complete`/`partial`/`generation`/`missingReason`) preserved verbatim, exit 0 even for partial or empty pages; a null page → `code=capability.source_unavailable` on stderr and exit 1; `CapabilityCatalogException` → only `code={Code}` on stderr, exit 1; caller cancellation → exit 130 with no further calls; every other exception propagates. Never pages automatically, invokes a tool, executes MCP, mutates the catalog or treats an entry as an executable authorization. |
-| `Program.cs` | Offline shell only: writes the fixed notice “这是可注入 ICapabilityCatalogApi 的离线示例；请由上层提供已授权的 API。” to stderr and returns 2. No credential reading, no online connection, no host wiring. |
-| `code_map.md` | This index. |
+net10.0 控制台示例（`Exe`），仅引用 `Pudding.Api.Sdk`，演示 `ICapabilityCatalogApi` 的注入式离线用法。
+
+> 源指纹: Samples/CapabilityCatalogClient/**=pending · 条目数: 4 · 最近整理: 2026-11-22
+
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `CapabilityCatalogClient.csproj` | 示例控制台工程，唯一工程引用为 `Pudding.Api.Sdk` | — | `Pudding.Api.Sdk` | — |
+| `CatalogDemo.cs` | 固定入口 `RunAsync`：仅接受 `list <kind> [cursor]`，转成一次 `ListAsync` 并原样输出页面 JSON | `CatalogDemo.RunAsync` | `ICapabilityCatalogApi`、`CapabilityQuery`、`CapabilityCatalogPage` | 不自动翻页、不调用工具或 MCP、不把目录条目当执行授权 |
+| `Program.cs` | 离线壳：向 stderr 打印固定提示并以 2 退出；不读凭据也不联网 | `Program` | `CatalogDemo` | — |
+| `code_map.md` | 本索引 | — | — | — |
