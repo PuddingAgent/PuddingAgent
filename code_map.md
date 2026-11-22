@@ -107,7 +107,7 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingPlatformAdmin/` | React 管理前端（Chat 工作台与任务看板等页面）；`dist` 部署到 Core `wwwroot/admin` | [code_map](Source/PuddingPlatformAdmin/code_map.md) |
 | `Source/PuddingTaskRecall.Cli/` | 历史脏数据诊断/修复 CLI（默认 dry-run，`--apply` 才写库） | [code_map](Source/PuddingTaskRecall.Cli/code_map.md) |
 | `Source/PuddingGit.Tools/` | Git 工具声明（实现在 Runtime） | [code_map](Source/PuddingGit.Tools/code_map.md) |
-| `Source/PuddingFinance/` | 金融数据源的采集适配 | — |
+| `Source/PuddingFinance/` | 金融数据源的采集适配 | [code_map](Source/PuddingFinance/code_map.md) |
 | `Source/PuddingFinance.Documents/` | PDF 文本抽取的独立组件：唯一引用 PdfPig 的地方，对外只暴露 `IPdfTextSource` | — |
 | `Source/HarnessAgent.Core/` | Harness Agent 核心库（与主线并列的 Harness 实现） | — |
 | `Source/Pudding.Contracts/` | 契约叶（仅 BCL）：能力目录、握手协商与错误语义的 DTO | [code_map](Source/Pudding.Contracts/code_map.md) |
@@ -142,8 +142,8 @@ Pudding — Windows First 的 .NET 10 桌面智能助手与 IDE：六层记忆�
 | `Source/PuddingFullTextIndex/` | 全文索引引擎（Lucene）与供给协调 | [code_map](Source/PuddingFullTextIndex/code_map.md) |
 | `Source/PuddingFullTextIndex.Cli/` | 全文索引供给的离线驱动工具（`plan` / `status` / `build` / `cancel`） | [code_map](Source/PuddingFullTextIndex.Cli/code_map.md) |
 | `Source/PuddingCodeIndexer.Cli/` | 代码索引 CLI | [code_map](Source/PuddingCodeIndexer.Cli/code_map.md) |
-| `Source/PuddingLlmUsage.Storage/` | 余额采样的 SQLite 存储适配器 | — |
-| `Source/PuddingLlmUsage/` | LLM 余额消耗判定（叶子，零依赖）：观测→区间状态机（消耗/充值/持平/缺口/无法判定）+ 窗口汇总；测试工程独立运行 | — |
+| `Source/PuddingLlmUsage.Storage/` | 余额采样的 SQLite 存储适配器 | [code_map](Source/PuddingLlmUsage.Storage/code_map.md) |
+| `Source/PuddingLlmUsage/` | LLM 余额消耗判定（叶子，零依赖）：观测→区间状态机（消耗/充值/持平/缺口/无法判定）+ 窗口汇总；测试工程独立运行 | [code_map](Source/PuddingLlmUsage/code_map.md) |
 | `Source/PuddingRetrievalEval/` | 检索评测组件（叶子，只依赖 `ISearchProbe` 端口） | [code_map](Source/PuddingRetrievalEval/code_map.md) |
 | `Source/PuddingRetrievalEvalProbe/` | 检索评测探针入口：语料构建 + 混合检索可复现测量；`--mode production` 直驱生产 `IRetrievalPort`，快照与环境冻结 | — |
 | `Source/PuddingBrowser.Abstractions/` | Browser 契约（驱动与 Agent 工具共用） | [code_map](Source/PuddingBrowser.Abstractions/code_map.md) |
