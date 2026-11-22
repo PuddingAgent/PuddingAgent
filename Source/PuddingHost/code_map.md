@@ -33,8 +33,8 @@ Agent 单轮执行 API：`Extensions/PuddingServiceCollectionExtensions.cs` 调�
 | 插件交付 | 用途 |
 |---|---|
 | `Build/PuddingHostContent.props` | 将独立 Worker、SDK、编写指南与示例递归装入 Core 的 `tools/plugin-worker/`，构建顺序引用不形成程序集引用 |
-| `Extensions/PuddingServiceCollectionExtensions.cs` | 装配平台 `PluginAgentApiLeaseFactory` 到插件合同端口；复用既有配置 Store；由 `Tests/PuddingHost.Tests/Hosting/PluginAgentApiCompositionTests.cs` 验证 |
-| `Extensions/PuddingServiceCollectionExtensions.cs` → `../PuddingRuntime/Operators/PublicApi/OperatorServiceCollectionExtensions.cs` | 装配确定性算子、模型资源与分类/验收工厂；由 `Tests/PuddingHost.Tests/Hosting/OperatorApiCompositionTests.cs` 验证组合根及实际插件消费者注入 |
+| `Extensions/PuddingServiceCollectionExtensions.cs` | 装配平台 `PluginAgentApiLeaseFactory` 到插件合同端口（细节见「条目细节」） |
+| `Extensions/PuddingServiceCollectionExtensions.cs` → `../PuddingRuntime/Operators/PublicApi/OperatorServiceCollectionExtensions.cs` | 装配确定性算子、模型资源与分类/验收工厂（细节见「条目细节」） |
 
 | 文件 | 用途 |
 |------|------|
@@ -42,23 +42,23 @@ Agent 单轮执行 API：`Extensions/PuddingServiceCollectionExtensions.cs` 调�
 | `PuddingHostAssemblyMarker.cs` | 程序集标记 |
 | `Services/ReviewWorkerHostedService.cs` · `Services/HostRuntimeLlmChatClient.cs` | 驱动持久评审任务，将已绑定的模型调用交给 Runtime |
 | `Services/SlackConnectorFactory.cs` · `Connectors/SlackConnector.cs` · `Tools/SlackLookupMemberTool.cs` | 在已配置的渠道创建 Slack 连接器，按当前绑定查询成员 |
-| [钉钉 Stream](Services/DingTalkGroupChannel.cs) · [群会话受理](Services/DingTalkConversationIngress.cs) · [执行器](Services/DingTalkTurnExecutor.cs) · [公开 Agent 循环](Services/DingTalkPublicAgent.cs) · [工具](Services/DingTalkTurnTools.cs) · [公开图片](Services/DingTalkPublicMedia.cs) · [回执](Services/DingTalkReplyJournal.cs) | 鲸鲸的持久群会话、来源授权、工具与图片投递；已绑定成员走普通执行器，未绑定成员走访客执行器 |
+| `Services/`（钉钉群链路 7 件） | 鲸鲸的持久群会话、来源授权、工具与图片投递；已绑定成员走普通执行器，未绑定成员走访客执行器 |
 | `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册（见下「关键语义」） |
-| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册；显式装配 `CompactionDiagnosticJournal` 与 `ContextHandoffHook`，扫描 `context_handoff` 工具（见下「关键语义」） |
+| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册（细节见「条目细节」） |
 | `Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs` | 原生图片阅读与预处理工具（见下「关键语义」） |
 | `Tools/ScreenCaptureTool.cs` + `ScreenCapture/` | 🔑 Agent 自用屏幕采集：多屏/区域/窗口三口径、物理像素坐标、GDI + SkiaSharp 编码、结果落 Vision Artifact |
-| `Tools/ComputerObserveTool.cs` | 可见窗口客户区原图/编号图与候选 ID；复用 Vision Artifact，多模态路由不支持时明确无像素；与 Runtime 输入工具共享 ComputerDesktopSession |
+| `Tools/ComputerObserveTool.cs` | 可见窗口客户区原图/编号图与候选 ID（细节见「条目细节」） |
 | `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库 schema 初始化（见下「关键语义」） |
-| `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理；固定语义白名单、服务端预览、批量删除、checkpoint/VACUUM；分析返回前经 `StorageAnalysisEnrichment.Apply` 附上「表 → 数据类」「表 → 保护原因」两个纯增量映射 |
+| `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理（细节见「条目细节」） |
 | `Controllers/StorageManagementController.cs` | `/api/admin/storage/databases` 分析、清理预览与执行 API |
 | `Hosting/StorageManagementAuthorization.cs` | 平台 admin JWT，或 DesktopChild Loopback + ControlToken 的管理策略 |
 | `Controllers/IndexAdminController.cs` | 索引状态只读 API（fullText + codeIndex）（见下「关键语义」） |
 | `Services/HostActivePluginSubscriptionSource.cs` | 从真实 PluginManager 激活+包清单生成插件订阅候选（generation=activation.Revision） |
-| `Services/HostWorkspacePluginEventTarget.cs` | 插件 workspace 事件 Host 适配：把平台 sink 接到真实 `ExecutablePluginService.Manager.PublishWorkspaceEventAsync` |
+| `Services/HostWorkspacePluginEventTarget.cs` | 插件 workspace 事件 Host 适配（细节见「条目细节」） |
 | `Services/CodeIndexStatusProbe.cs` | codeIndex 状态只读探针（见下「关键语义」） |
 | `Services/FullTextIndexStatusProbe.cs` | S-A：`fullText` 块探针（只产块，不再产响应根对象）；响应根对象 `IndexAdminStatusSnapshot` 由控制器组装 |
 | `Controllers/TransportStatusController.cs` | 传输用量只读 API（退役判据证据面）（见下「关键语义」） |
-| `Controllers/SubAgentPoolAdminController.cs` | `GET /api/admin/sub-agent-pool` 池条目只读列表（Admin JWT；空池必须 200 + []，不得用 404 表示空列表；直接查 `agent_pool`，不复用带就绪门的 `SubAgentPool` 单例） |
+| `Controllers/SubAgentPoolAdminController.cs` | `GET /api/admin/sub-agent-pool` 池条目只读列表（细节见「条目细节」） |
 
 **关键语义**
 
@@ -173,7 +173,7 @@ HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 St
 | `Hosting/PuddingHostOptionsFactory.cs` | DesktopChild 固定 `0.0.0.0:<port>` 启动约束 |
 | `Hosting/PuddingServerAddressAccessor.cs` | 全网卡监听地址投影为同端口 Loopback 控制地址 |
 | `Hosting/PuddingApplicationHost.cs` | 组合根与 Kestrel 地址绑定（见下「关键语义」） |
-| `Hosting/AgentAdapterApiDocumentation.cs` | 用 Microsoft.AspNetCore.OpenApi 生成外部 Agent 接口 JSON，包含专用端点和 Bearer 鉴权，沿用外部 API 暴露策略 |
+| `Hosting/AgentAdapterApiDocumentation.cs` | 生成外部 Agent 接口 OpenAPI JSON（细节见「条目细节」） |
 | `Hosting/PuddingDataRootBootstrapper.cs` | DataRoot 解析与引导（见下「关键语义」） |
 | `Config/` | 默认配置 |
 | `default-data/config/voice/providers.json` | 语音默认目录：Qwen Message ASR 与 Qwen3 TTS；不含真实凭据 |
@@ -197,3 +197,17 @@ tasks/workspaces/agents/messages scope+workspace Policies
 `../../Tests/PuddingHost.Tests/` — Browser Bridge、Remote proxy、Storage 管理与 DesktopChild 产品组合根构建验证；组合根测试显式验证 Singleton `task_*` 工具及其命令服务生命周期。
 
 - [BiyingFinanceToolsCompositionTests](../../Tests/PuddingHost.Tests/Tools/BiyingFinanceToolsCompositionTests.cs)：真实 DesktopChild 组合根、四工具发现与共享单例、缺配置的调用错误。
+
+## 条目细节（表格迁出的原文）
+
+- `Extensions/PuddingServiceCollectionExtensions.cs` 用途原文：装配平台 `PluginAgentApiLeaseFactory` 到插件合同端口；复用既有配置 Store；由 `Tests/PuddingHost.Tests/Hosting/PluginAgentApiCompositionTests.cs` 验证
+- `Extensions/PuddingServiceCollectionExtensions.cs`（算子注册） 用途原文：装配确定性算子、模型资源与分类/验收工厂；由 `Tests/PuddingHost.Tests/Hosting/OperatorApiCompositionTests.cs` 验证组合根及实际插件消费者注入
+- `Services/` 文件列表原文：[钉钉 Stream](Services/DingTalkGroupChannel.cs) · [群会话受理](Services/DingTalkConversationIngress.cs) · [执行器](Services/DingTalkTurnExecutor.cs) · [公开 Agent 循环](Services/DingTalkPublicAgent.cs) · [工具](Services/DingTalkTurnTools.cs) · [公开图片](Services/DingTalkPublicMedia.cs)
+  · [回执](Services/DingTalkReplyJournal.cs)
+- `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` 用途原文：成品 Host 的 Runtime/Tool 组合注册；显式装配 `CompactionDiagnosticJournal` 与 `ContextHandoffHook`，扫描 `context_handoff` 工具（见下「关键语义」）
+- `Tools/ComputerObserveTool.cs` 用途原文：可见窗口客户区原图/编号图与候选 ID；复用 Vision Artifact，多模态路由不支持时明确无像素；与 Runtime 输入工具共享 ComputerDesktopSession
+- `Storage/StorageMaintenanceService.cs` 用途原文：🔑 Core 所有的 SQLite/代码索引明细与安全清理；固定语义白名单、服务端预览、批量删除、checkpoint/VACUUM；分析返回前经 `StorageAnalysisEnrichment.Apply` 附上「表 → 数据类」「表 → 保护原因」两个纯增量映射
+- `Services/HostWorkspacePluginEventTarget.cs` 用途原文：插件 workspace 事件 Host 适配：把平台 sink 接到真实 `ExecutablePluginService.Manager.PublishWorkspaceEventAsync`
+- `Controllers/SubAgentPoolAdminController.cs` 用途原文：`GET /api/admin/sub-agent-pool` 池条目只读列表（Admin JWT；空池必须 200 + []，不得用 404 表示空列表；直接查 `agent_pool`，不复用带就绪门的 `SubAgentPool` 单例）
+- `Hosting/AgentAdapterApiDocumentation.cs` 用途原文：用 Microsoft.AspNetCore.OpenApi 生成外部 Agent 接口 JSON，包含专用端点和 Bearer 鉴权，沿用外部 API 暴露策略
+
