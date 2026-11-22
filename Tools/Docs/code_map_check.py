@@ -659,6 +659,7 @@ def analyze_file(root: str, path: str, col_samples, global_unmapped):
     table_lines, entry_rows = 0, 0
     header_counts = {}
     unmapped = set()
+    recognized = set()
     allowed_placeholders = [x.lower() for x in LIMITS["PLACEHOLDER_ALLOWED"]]
 
     for table in tables:
@@ -673,6 +674,8 @@ def analyze_file(root: str, path: str, col_samples, global_unmapped):
         for c in header_cells:
             col = canonical_column(c)
             cols.append(col)
+            if col is not None:
+                recognized.add(col)
             if col is None:
                 nm = normalize_header(c)
                 if nm:
@@ -815,6 +818,7 @@ def analyze_file(root: str, path: str, col_samples, global_unmapped):
         "layer": "L1" if rel == CODE_MAP_NAME else "L2",
         "declared_fingerprint": [{"glob": g, "value": v} for g, v in declared],
         "unmapped_headers": sorted(unmapped)[:30],
+        "recognized_columns": sorted(recognized),
     }
     return per_file, violations
 
@@ -1004,6 +1008,20 @@ def print_summary(report):
     out.append("anti_pattern_categories: %s" % (cats if cats else "none"))
     out.append("anti_pattern_spec_errors (non-gating, spec §6=error): %d"
                % report["anti_pattern_spec_errors"]["count"])
+    pf_all = report.get("per_file") or []
+    zero_rec = [f["path"] for f in pf_all
+                if f.get("tables", 0) > 0 and not f.get("recognized_columns")]
+    with_unm = [f["path"] for f in pf_all if f.get("unmapped_headers")]
+    out.append("unmapped_columns (non-gating, spec §2 fixed column names):")
+    out.append("  distinct=%d  files_with_unmapped=%d  files_with_zero_recognized=%d"
+               % (len(report.get("unmapped_headers") or []), len(with_unm), len(zero_rec)))
+    if zero_rec:
+        head = ", ".join(zero_rec[:8])
+        more = "" if len(zero_rec) <= 8 else " ...(+%d)" % (len(zero_rec) - 8)
+        out.append("  zero_recognized: %s%s" % (head, more))
+    out.append("  note: these column names are NOT subject to §2 field limits"
+               " (用途/关键符号/关联/约束);"
+               " per-file detail in JSON per_file[].unmapped_headers / recognized_columns")
     fpc = report.get("fingerprint_check") or {}
     out.append("fingerprint_check: declared_files=%d globs=%d verified=%d mismatched=%d unverifiable=%d"
                % (fpc.get("files_with_declaration", 0), fpc.get("globs_declared", 0),

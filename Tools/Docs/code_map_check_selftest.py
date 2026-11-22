@@ -222,6 +222,14 @@ def stage_rule_red(mod, dirs):
           rep["rule_hits"]["stale-fingerprint"] == 1)
     check("fixture A: missing-fingerprint does NOT fire",
           rep["rule_hits"]["missing-fingerprint"] == 0)
+    rec = rep["per_file"][0].get("recognized_columns") or []
+    unm = set(rep["per_file"][0].get("unmapped_headers") or [])
+    check("fixture A: recognized_columns is sorted and disjoint from unmapped_headers",
+          rec == sorted(rec) and not (set(rec) & unm),
+          "rec=%s unm=%s" % (rec, sorted(unm)))
+    check("fixture A: recognized_columns captures the canonical column names",
+          "用途" in rec,
+          "rec=%s (empty means the canonical-header mapping never reached per_file)" % rec)
     check("fixture A: gate FAIL and error > 0",
           rep["summary"]["gate"] == "FAIL" and rep["summary"]["error"] > 0,
           "error=%d warn=%d" % (rep["summary"]["error"], rep["summary"]["warn"]))
