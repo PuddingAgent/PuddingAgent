@@ -168,8 +168,8 @@ dotnet build Source/PuddingSsh.Probe/PuddingSsh.Probe.csproj --artifacts-path te
 dotnet test Source/PuddingSshTests/PuddingSshTests.csproj --artifacts-path temp/build/ssh --results-directory temp/test-out/ssh --nologo
 powershell -File TestScripts/ssh-probe/run-ssh-probe.ps1
 
-2026-10-08 实测（完整数字见 [A1 报告](../../Docs/14_reports/2026-10-08-PuddingSsh-A1-库能力实测报告.md)、
-[A2 报告](../../Docs/14_reports/2026-10-08-PuddingSsh-A2-独立测试与信任验证报告.md) 与
+2026-10-08 实测（完整数字见 [A1 记录](../../Docs/00_changelog/2026Year/10/2026-10-08-PuddingSsh组件A1契约与库能力实测.md)、
+[A2 记录](../../Docs/00_changelog/2026Year/10/2026-10-08-PuddingSsh组件A2独立测试与信任验证.md) 与
 [A3 报告](../../Docs/14_reports/2026-10-08-PuddingSsh-A3-协调器与假传输故障矩阵报告.md)）：
 
 - A1 真实协议：错指纹 137 ms 被拒且服务端零认证；取消 1.53 s 收敛并回报 `TERM`；
