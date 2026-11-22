@@ -1,10 +1,11 @@
 # Models
-> 源指纹: *.cs=5-3c254e7dbc07, *.csproj=1-d0a5aa0dc09e · 条目数: 3 · 最近整理: 2026-11-09
+> 源指纹: *.cs=5-3c254e7dbc07, *.csproj=1-d0a5aa0dc09e · 条目数: 6 · 最近整理: 2026-11-09
 
-| File | Responsibility |
-|---|---|
-| `ModelPolicyResolver.cs` | PA-06A effective configuration: instance → workspace → system layering with source/revision per field, unset purposes report `model_policy_missing`, explicit inherit-primary only, typed CAS writes with unsupported fields rejected. |
-| `ModelQuoteService.cs` | PA-06C dispatch-time quote freeze: unknown price is never zero, only ExplicitFree may be free, currency must match, the window is half-open on the dispatch instant, cache-hit tokens are billed once at the cache rate, unknown usage stays unknown. |
-| `ModelLeaseRegistry.cs` | PA-06C generation registry: new generations block new dispatch of revoked generations, downgrades only restrict new admission (active slots are never preempted), release is once-only and slots are freed only after the real attempt completes. |
-`ModelPolicyPatchApplier.cs`: PA-06 06A patch CAS/校验（Set/Clear/InheritPrimary 显式形态；重复/矛盾 patch 拒绝；仅改 instance 层）。
-`QuoteWindowAdjuster.cs`: PA-06C 跨窗口派发：冻结报价仍可用则保留；否则用新报价原子调整预留；差额超出余量或不公平价格则 Block（不复用旧价）；缺失价格不做零映射；提供按 BaseUnit 的 cost 计算（含 cache-hit 单价）。
+| 文件 / 目录 | 用途 | 关键符号 | 关联 | 约束 |
+|---|---|---|---|---|
+| `ModelPolicyResolver.cs` | 模型策略的分层解析与 CAS 写入。 | `ModelPolicyResolver` | `Source/PuddingModels/ModelPolicyPatchApplier.cs` | 未设置用途报 model_policy_missing；不支持字段拒绝。 |
+| `ModelPolicyPatchApplier.cs` | 策略补丁的 CAS 与显式 Set/Clear 应用。 | `ModelPolicyPatchApplier` | `Source/PuddingModels/ModelPolicyResolver.cs` | 重复或矛盾的补丁必须拒绝，只改实例层。 |
+| `ModelQuoteService.cs` | 派发时刻的报价冻结与结算计量。 | `ModelQuoteService`、`ModelSettlement`、`ModelUsage` | `Source/PuddingModels/QuoteWindowAdjuster.cs` | 未知价格不映射为零；窗口在派发瞬间半开；命中按缓存价计一次。 |
+| `QuoteWindowAdjuster.cs` | 跨窗口派发的报价保留与原子调价判定。 | `QuoteWindowAdjuster`、`QuoteAdjustment`、`QuoteDispatchDecision` | `Source/PuddingModels/ModelQuoteService.cs` | 差额超余量或价格不公即 Block，不复用旧价。 |
+| `ModelLeaseRegistry.cs` | 模型代次注册与在飞额度约束。 | `ModelLeaseRegistry`、`ModelLease`、`ModelGeneration` | `Source/PuddingModels/ModelQuoteService.cs` | 新代次阻断被吊销代次的新派发；释放只一次。 |
+| `PuddingModels.csproj` | Models 工程，编译期限定只引用端口与公共契约。 | `EnforceModelsBoundary` | — | 只允许 PuddingModels.Contracts 与 Pudding.Api.Contracts，无包引用。 |
