@@ -104,11 +104,20 @@ RULE_ORDER = [
 
 # §6 反模式词表（机器可执行）；key = §6 表格里的「类别」
 ANTI_PATTERN_WORDS = {
-    "演进叙事": ["本次", "新增了", "修复了", "改为", "原来是", "此前是", "之前是",
-                 "现在改", "已迁移", "TODO"],
+    "演进叙事": ["新增了", "修复了", "原来是", "此前是", "之前是",
+                 "现在改", "TODO"],
     "过度宣称": ["零缺陷", "彻底解决", "完全杜绝", "100%", "O(1)", "确定性检索",
-                 "单一真源", "保证不"],
-    "路线图": ["未来", "计划", "将支持", "下一版"],
+                 "保证不"],
+    "路线图": ["未来", "将支持", "下一版"],
+}
+# §6 词表「按域调整」（2026-11-23）：本仓是调度/计划类产品，`计划` 是核心域名词
+# （实测 27/27 命中为「（计划 §3）」章节引用与「压缩计划/到期计划」等复合词，无一条是路线图承诺）；
+# `改为`/`本次`/`单一真源` 同理（5/5 为变异测试语言、3/3 为「本次运行」类域词、1/1 为架构断言）。
+# 因此把它们移出字面词表，改由下面的**补偿式正例**承担——真正需要抓的那几种语义仍然会被抓到。
+ANTI_PATTERN_PATTERNS = {
+    "演进叙事": [r"本次(?:改为|新增|修复|重构|迁移)", r"(?:已|原来|此前|之前)改为"],
+    "路线图": [r"计划(?:支持|实现|上线|引入|内完成)"],
+    "过度宣称": [r"单一真源(?:保证|承诺)"],
 }
 # §6 的「逐文件免检旁路」标 ⛔ error，而 §7 表把 anti-pattern 定为 warn。
 # 本工具按任务书「等级照 §7 表」执行门禁，并把这些命中单独登记进 anti_pattern_spec_errors。
@@ -751,6 +760,10 @@ def analyze_file(root: str, path: str, col_samples, global_unmapped):
             for w in ANTI_PATTERN_WORDS[category]:
                 if word_occurs(w, scan):
                     violations.append(_ap_vio(rel, idx, category, "word=%s" % w))
+            # 补偿式正例：域名词已移出字面词表，真正的演进/路线图/过度宣称语义靠这些正则抽
+            for pat in ANTI_PATTERN_PATTERNS.get(category, ()):
+                if re.search(pat, scan):
+                    violations.append(_ap_vio(rel, idx, category, "pattern=%s" % pat))
         for w in SKIP_BYPASS_WORDS:
             if word_occurs(w, scan):
                 violations.append(_ap_vio(rel, idx, "逐文件免检旁路", "word=%s" % w))
