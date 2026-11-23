@@ -173,6 +173,28 @@
 - `TriggerSessionCompressedHook_ShouldPublishHookEvent`
 - （其余 8 条同类用例略）
 
+`Tools/AsrToolTests.cs` 覆盖 2 条用例：
+- `ExecuteAsync_AuthorizedWorkspaceArtifact_InvokesTranscription`
+- `ExecuteAsync_UnrelatedAbsolutePath_IsRejected`
+
+`Tools/ImageReaderPreprocessingTests.cs` 覆盖 10 条用例：
+- `MetadataNeedsNoVisionAndReturnsActualFormatWithoutImageContent`
+- `LowCreatesSmallPixelsAndRepeatedReadReusesArtifact`
+- `LargePreviewThenTwoOriginalRegionsPreservesIndependentDetails`
+- `PrepareCombinesCropRotationGrayAndEncodingWithoutImageThenCanRead`
+- `DenoiseSoftensColorBoundaryOnlyWhenRequested`
+- `DetailIsCarriedInTypedToolResult`
+- （其余 4 条同类用例略）
+
+`Tools/ImageReaderToolTests.cs` 覆盖 15 条用例：
+- `VisionCaller_ReturnsNativeImageToolParts`
+- `TextCaller_WithHelperConfigured_StillFailsWithoutDelegation`
+- `ToolSchema_DoesNotOfferModelDelegationModes`
+- `Native_OnNonResponsesProtocol_ReturnsToolOutputNotSupported`
+- `ArtifactReference_ReusesWorkspaceArtifactByContentHash`
+- `ArtifactReference_FromAnotherWorkspace_IsRejectedAsForbidden`
+- （其余 9 条同类用例略）
+
 `UsageSummaryEndpointTests.cs` 覆盖 10 条用例：
 - `TestInit`
 - `TestCleanup`

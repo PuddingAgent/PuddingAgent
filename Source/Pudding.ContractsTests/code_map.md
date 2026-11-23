@@ -80,6 +80,52 @@
 - `NavigateRequest_RequiresAbsoluteUrl`
 - （其余 2 条同类用例略）
 
+`Desktop/BrowserBindingAckTests.cs` 覆盖 2 条用例：
+- `AnAcceptedAckCarriesTheGrantIdAndEpoch`
+- `ARejectedAckKeepsItsDistinguishableReason`
+
+`Desktop/BrowserCallerIdentityProjectionTests.cs` 覆盖 7 条用例：
+- `AnAgentExecutionContextProjectsToAnAgentCaller`
+- `ASubAgentCarriesTheParentTaskSoItsScopeCanBeCheckedAsASubset`
+- `ASubAgentWithoutAParentTaskIsRefused`
+- `AMissingRunIdentityIsRefused`
+- `AMissingCallerIdentityIsRefused`
+- `IdentitiesAreTrimmedSoWhitespaceCannotForgeADifferentActor`
+- （其余 1 条同类用例略）
+
+`Desktop/BrowserCallerKindWireTests.cs` 覆盖 3 条用例：
+- `KindsRoundTripThroughTheWireName`
+- `UnknownWireValuesAreRefusedInsteadOfDefaultingToAKind`
+- `AnUnregisteredEnumValueCannotBeFormatted`
+
+`Desktop/BrowserControlPlaneRequestsTests.cs` 覆盖 2 条用例：
+- `TheApplyRequestCarriesTheWholeBinding`
+- `TheRevokeRequestCarriesTaskAndTargetOnly`
+
+`Desktop/BrowserTabOperationMappingTests.cs` 覆盖 3 条用例：
+- `TabActionsMapSeparately`
+- `TabActivateIsNotDowngradedToTabClose`
+- `CapabilityLevelMappingStillWorksForCallersThatOnlyHaveACapability`
+
+`Desktop/BrowserTaskBindingTests.cs` 覆盖 3 条用例：
+- `ATrustedTaskIdentityIsAccepted`
+- `AUserCallerCannotBeTheGrantee`
+- `AStructureThatGrantsNothingOrForeverIsRefused`
+
+`Desktop/DesktopCallContextCallerTests.cs` 覆盖 7 条用例：
+- `ANonBrowserCallMayOmitTheCaller`
+- `AnAgentCallerWithARunIdentityIsAcceptedForBrowserOperations`
+- `ASubAgentCallerKeepsItsParentTask`
+- `AMissingCallerIsRefusedWithAConcreteReason`
+- `AUserCallerCannotBeUsedToBypassTheAutomationGate`
+- `ACallerWithoutARunIdentityIsRefused`
+- （其余 1 条同类用例略）
+
+`Desktop/DesktopCapabilityOperationsTests.cs` 覆盖 3 条用例：
+- `WebViewCapabilitiesMapToTheirAutomationOperation`
+- `ShellCapabilitiesAreNotBrowserOperations`
+- `EveryWebViewCapabilityInTheCatalogHasAMapping`
+
 `ElementFieldsTests.cs` 覆盖 7 条用例：
 - `Default_KeepsEverything`
 - `CoreFields_SurviveAnyWhitelist`

@@ -3,171 +3,133 @@
 
 测试工程，引用 PuddingCore；用例全部为进程内单测，不需要真实宿主或外部服务。
 
-`AnthropicMessagesLlmGatewayTests.cs` 覆盖 9 条用例：
-- `ChatAsync_BasicRequest_UsesMessagesEndpointHeadersAndTopLevelSystem`
-- `ChatAsync_SystemAndTools_CarryPromptCacheBreakpoints`
-- `ChatAsync_ToolRound_UsesToolUseAndGroupedToolResults`
-- `ChatAsync_Continuation_ReplaysSignedThinkingAndToolUseBlocks`
-- `ChatAsync_ParsesTextThinkingToolsUsageAndContinuation`
-- `ChatStreamAsync_ToolEvents_MapDenseIndexAndPreserveContinuation`
-- （其余 3 条同类用例略）
-
-`ContextUsageCalibrationRelaxationTests.cs` 覆盖 5 条用例：
-- `Higher_Measured_Ratio_Raises_The_Calibration_Immediately`
-- `Lower_Measured_Ratio_Relaxes_Instead_Of_Sticking_At_The_Maximum`
-- `Repeated_Low_Measurements_Converge_To_One_And_Never_Below_It`
-- `Relaxation_Is_Scoped_To_The_Model_That_Reported_It`
-- `A_Higher_Measurement_After_Relaxation_Raises_Again`
-
-`ContextUsageSnapshotAttributionTests.cs` 覆盖 4 条用例：
-- `CaptureLlmRequest_SplitsMessagesIntoMutuallyExclusiveSourceBuckets`
-- `CaptureLlmRequest_CompactionSummaryIsNotCountedAsConversation`
-- `CaptureLlmRequest_WarmPrefixCheckpointIsCountedAsCompactionSummary`
-- `CaptureLlmRequest_ReasoningIsDeductedFromConversationBucket`
-
-`ContextUsageSnapshotRequestAttributionTests.cs` 覆盖 6 条用例：
-- `MeasureLlmRequest_DoesNotPublishPreparedRequest`
-- `RecordProviderUsage_AuxiliaryPurposeDoesNotTouchPreparedOrCalibration`
-- `RecordProviderUsage_MainPurposeWritesSeparateMeasurement`
-- `RecordProviderUsage_LateAuxiliaryUsageDoesNotClobberNewerPreparedRequest`
-- `RecordProviderUsage_MissingUsageWritesNoMeasurement`
-- `InterleavedMainAndAuxiliaryUsage_StaySeparated`
-
-`GoalCheckEvidencePolicyTests.cs` 覆盖 28 条用例：
-- `CleanTestReport_Passes`
-- `SelfReportedPassed_WithoutRunnerId_Fails`
-- `ReportForAnotherCriterion_Fails`
-- `ExitZero_WithZeroTests_CannotPass`
-- `MissingInvocationReference_Fails`
-- `MissingRunReport_Fails`
-- （其余 22 条同类用例略）
-
-`GoalSettlementCriterionAggregationTests.cs` 覆盖 12 条用例：
-- `TwoChecksForOneCriterion_BuildPassedTestFailed_DoesNotAdvance`
-- `TwoChecksForOneCriterion_SameVerdict_WhenOrderIsReversed`
-- `TwoChecksForOneCriterion_BuildPassedTestWaiting_NeverAdvances`
-- `InvalidatedCheck_OutranksPassedSibling`
-- `AllChecksPassed_ForAllRequiredCriteria_Advances`
-- `MissingCriterionResult_DoesNotPass`
-- （其余 6 条同类用例略）
-
-`GoalSettlementDecisionCalculatorTests.cs` 覆盖 10 条用例：
-- `CompletedTurn_WithPlanOnly_DoesNotVerifyWorkUnit`
-- `EmptyContract_IsNeverAVacuousPass`
-- `PartiallyVerifiedCriteria_StayOnCurrentUnit`
-- `FailedCriterion_RepairsCurrentUnit`
-- `StaleRevisionResult_DoesNotCount`
-- `OptionalCriterion_DoesNotBlockAdvance`
-- （其余 4 条同类用例略）
-
-`LlmBodyReasoningProbeTests.cs` 覆盖 4 条用例：
-- `ReadsEffortFromRequestBody`
-- `ReturnsNullWhenReasoningSectionIsAbsent`
-- `ReturnsNullWhenEffortIsNotAString`
-- `ReturnsNullForMalformedOrEmptyInput`
-
-`LlmBodyTextSanitizerTests.cs` 覆盖 5 条用例：
-- `RedactInlineImages_LeavesTextWithoutImagesUntouched`
-- `RedactInlineImages_StripsPayloadAndKeepsSurroundingJson`
-- `RedactInlineImages_CountsEveryImage`
-- `RedactInlineImages_DoesNotTreatAudioPayloadAsImage`
-- `RedactInlineImages_HandlesNullAndEmpty`
-
-`LlmMessageSequenceNormalizerTests.cs` 覆盖 5 条用例：
-- `ProviderProjection_UsesTypedSummaryOnly_AndKeepsRuntimeBoundary`
-- `ProviderProjection_RejectsSummaryWithNativeResponseState`
-- `Normalize_PreservesCompleteToolRound`
-- `Normalize_DowngradesAssistantAndDropsPartialResults_WhenToolRoundIsIncomplete`
-- `Normalize_RemovesEmptyIncompleteAssistantAndOrphanTools`
-
-`LlmRequestBodyFingerprintTests.cs` 覆盖 3 条用例：
-- `Compute_CountsUtf8Bytes_NotCharacters`
-- `Compute_DoesNotNormalizeNewlines`
-- `Compute_IsDeterministicAndMatchesRawSha256`
-
-`LlmRequestCaptureLoggingTests.cs` 覆盖 1 条用例：
-- `WriteAsync_LogsBodyTokensAlongsideTheEstimate`
-
-`LlmRequestCaptureTests.cs` 覆盖 2 条用例：
-- `WriteAsync_WithoutContent_DoesNotThrow`
-- `WriteAsync_PreservesContentTypeAndBytes`
-
-`OpenAiLlmGatewayCompatibilityTests.cs` 覆盖 6 条用例：
-- `ChatStreamAsync_MissingIdsAndMultiCallChunk_EmitsEveryCallWithStableUniqueIds`
-- `ChatStreamAsync_LateProviderId_ReplacesTemporarySyntheticId`
-- `ChatStreamAsync_DuplicateProviderIds_RepairsTheSecondCall`
-- `ChatAsync_MissingAndDuplicateIds_ReturnsProtocolSafeToolCalls`
-- `ChatStreamAsync_StampsProviderDispatchAndHeadersTimings`
-- `ChatStreamAsync_ChunkWithoutModelPayload_DoesNotEmitDelta`
-
-`PromptCalibrationConvergenceTests.cs` 覆盖 5 条用例：
-- `Ratio_FallsBelowOne_WhenProviderReportsFewerTokens`
-- `Ratio_StopsAtFloor_WhenProviderStaysLow`
-- `Ratio_RisesImmediately_WhenProviderReportsMoreTokens`
-- `Ratio_IgnoresImplausiblyHighObservation`
-- `Ratio_IgnoresObservationWhenCacheReadParticipated`
-
-`ReasoningEffortPolicyTests.cs` 覆盖 16 条用例：
-- `ManualLevelsMapOneToOne`
-- `ManualLevelBeatsConfigured`
-- `AutoPrefersConfiguredOverModelDefault`
-- `AutoWithoutConfiguredUsesModelDefault`
-- `AutoWithNothingSpecifiedDefaultsToHigh`
-- `InvalidConfiguredIsRejectedAndReported`
-- （其余 10 条同类用例略）
-
-`RequestAttributionIdentityTests.cs` 覆盖 8 条用例：
-- `LateUsageForEarlierRequest_DoesNotRewriteNewerPreparedSnapshot_NorCalibrateWithItsRaw`
-- `UnknownIdentityUsage_GoesToUnpairedLedger_WithoutCalibrationOrOverwrite`
-- `LastMeasuredProjection_AdvancesByRequestSequence_NotArrivalOrder`
-- `RepeatedUsageForSameAttempt_IsIdempotent`
-- `SameInvocationDifferentAttempt_PairsPerAttempt`
-- `AuxiliaryUsage_NeitherCalibratesNorBorrowsMainSlot`
-- （其余 2 条同类用例略）
-
-`RequestAttributionStrictPairingTests.cs` 覆盖 5 条用例：
-- `UnknownAttempt_DoesNotFallBackToKnownAttempt`
-- `AttemptWithMismatchedInvocation_IsUnpaired`
-- `InvocationOnlyFallback_RequiresUniqueness`
-- `AuxiliaryUsage_DoesNotBorrowMainPreparedRecord`
-- `RetriedAttempts_PairPerAttempt`
-
-`ResponsesLlmGatewayReasoningEffortTests.cs` 覆盖 2 条用例：
-- `ChatAsync_WritesReasoningEffortIntoTheRequestBody`
-- `ChatAsync_OmitsReasoningSectionWhenEffortIsAbsent`
-
-`ResponsesLlmGatewayTests.cs` 覆盖 45 条用例：
-- `CompactedToolLoop_ProjectsCheckpointAsInputAndPreservesNativeReplay`
-- `DeepSeekRequest_UsesCompactUnicodeAndPlaintextReasoningReplay`
-- `ChatStreamAsync_TerminalEventCompletesWithoutWaitingForEof`
-- `ChatStreamAsync_EofBeforeTerminalDoesNotReportPartialReplyAsSuccess`
-- `ChatAsync_BasicRequest_UsesResponsesStatePolicy`
-- `ChatAsync_ToolRound_UsesFunctionCallAndFunctionCallOutputItems`
-- （其余 39 条同类用例略）
-
-`SkillDistillationContractTests.cs` 覆盖 21 条用例：
-- `ValidProduct_ShouldPass_WithNoViolations`
-- `MissingApplicabilitySection_ShouldViolate`
-- `MissingPitfallSection_ShouldViolate`
-- `HeadingMatch_ShouldIgnoreHashPrefixAndWhitespace`
-- `IdentityLiteralInContent_ShouldViolate`
-- `IdentityLiteralInKeyword_ShouldViolate`
-- （其余 15 条同类用例略）
-
-`SkillFamilyClusteringTests.cs` 覆盖 21 条用例：
-- `Tokenize_ShouldLowercaseTrimAndDropShortTokens`
-- `Tokenize_ShouldDropTokensShorterThanPolicyMinimum`
-- `Tokenize_ShouldReturnEmptySet_ForNullOrWhitespaceName`
-- `Tokenize_ShouldTakeSeparatorsFromPolicy_NotFromHardcodedSet`
-- `Jaccard_ShouldReturnIntersectionOverUnion`
-- `Jaccard_ShouldBeZeroWheneverEitherSideIsEmpty`
-- （其余 15 条同类用例略）
-
-`SkillKeywordNormalizationTests.cs` 覆盖 9 条用例：
-- `Collect_ShouldTakeKeywordsTagsSkillIdAndNameTokensTogether`
-- `Collect_ShouldDeduplicateCaseInsensitively`
-- `Collect_ShouldAlwaysIncludeSkillId_EvenWhenBlank`
-- `Collect_ShouldSplitName_AndDropSingleCharacterTokens`
-- `Collect_ShouldAddFullName_EvenWhenEveryTokenIsTooShort`
-- `NameTokenSeparators_ShouldEqualFamilyTokenizationSeparators`
-- （其余 3 条同类用例略）
+`Agents/AgentProfileProviderTests.cs` 覆盖 3 条用例。
+`Agents/AgentWorkspaceGuardTests.cs` 覆盖 14 条用例。
+`AnthropicMessagesLlmGatewayTests.cs` 覆盖 9 条用例。
+`Classification/ToolCallClassificationContractTests.cs` 覆盖 7 条用例。
+`Configuration/AtomicFileWriterTests.cs` 覆盖 9 条用例。
+`Configuration/LlmProfileResolverTests.cs` 覆盖 7 条用例。
+`Configuration/PuddingBuildOutputSyncTests.cs` 覆盖 13 条用例。
+`Configuration/PuddingDataPathsTests.cs` 覆盖 3 条用例。
+`Configuration/PuddingDesktopBootstrapConfigTests.cs` 覆盖 2 条用例。
+`Configuration/PuddingFileConfigLoaderTests.cs` 覆盖 15 条用例。
+`Configuration/PuddingFileLlmConfigServiceTests.cs` 覆盖 7 条用例。
+`Configuration/SubconsciousOffPeakWindowTests.cs` 覆盖 12 条用例。
+`Configuration/SubconsciousRhythmPolicyTests.cs` 覆盖 22 条用例。
+`ContextUsageCalibrationRelaxationTests.cs` 覆盖 5 条用例。
+`ContextUsageSnapshotAttributionTests.cs` 覆盖 4 条用例。
+`ContextUsageSnapshotRequestAttributionTests.cs` 覆盖 6 条用例。
+`Core/DefaultDistillerTests.cs` 覆盖 18 条用例。
+`Core/GitSnapshotServiceTests.cs` 覆盖 23 条用例。
+`Core/PermissionGuardTests.cs` 覆盖 20 条用例。
+`Core/ProjectContextTests.cs` 覆盖 16 条用例。
+`Core/ToolRegistryTests.cs` 覆盖 10 条用例。
+`Documents/DocumentFileReaderTests.cs` 覆盖 9 条用例。
+`Events/EventSchemaRegistryScopeTests.cs` 覆盖 8 条用例。
+`GoalCheckEvidencePolicyTests.cs` 覆盖 28 条用例。
+`GoalSettlementCriterionAggregationTests.cs` 覆盖 12 条用例。
+`GoalSettlementDecisionCalculatorTests.cs` 覆盖 10 条用例。
+`Goals/GoalCommandTextParserTests.cs` 覆盖 23 条用例。
+`Goals/GoalContractProposalTests.cs` 覆盖 13 条用例。
+`Goals/GoalStateMachineTests.cs` 覆盖 11 条用例。
+`Improvement/ImprovementContractTests.cs` 覆盖 29 条用例。
+`LlmBodyReasoningProbeTests.cs` 覆盖 4 条用例。
+`LlmBodyTextSanitizerTests.cs` 覆盖 5 条用例。
+`LlmMessageSequenceNormalizerTests.cs` 覆盖 5 条用例。
+`LlmRequestBodyFingerprintTests.cs` 覆盖 3 条用例。
+`LlmRequestCaptureLoggingTests.cs` 覆盖 1 条用例。
+`LlmRequestCaptureTests.cs` 覆盖 2 条用例。
+`Memory/MemoryMaintenancePlanValidatorTests.cs` 覆盖 6 条用例。
+`Memory/MemoryWriteCommandValidatorTests.cs` 覆盖 5 条用例。
+`MessageFabric/AgentReplyImageDirectiveTests.cs` 覆盖 4 条用例。
+`MessageFabric/AgentReplyImageGenerationDirectiveTests.cs` 覆盖 7 条用例。
+`MessageFabric/AgentReplyVoiceDirectiveTests.cs` 覆盖 4 条用例。
+`MessageFabric/MessageDeliveryPolicyTests.cs` 覆盖 4 条用例。
+`MessageFabric/MessageFabricModelTests.cs` 覆盖 3 条用例。
+`Observability/LoggingFoundationTests.cs` 覆盖 7 条用例。
+`Observability/RuntimeTraceContextTests.cs` 覆盖 2 条用例。
+`Observability/SizeRollingFileSinkRetentionTests.cs` 覆盖 1 条用例。
+`Observability/StartupSchemaSafetyTests.cs` 覆盖 1 条用例。
+`OpenAiLlmGatewayCompatibilityTests.cs` 覆盖 6 条用例。
+`Orchestration/AgentOrchestrationComponentContractsTests.cs` 覆盖 10 条用例。
+`Orchestration/AgentOrchestrationEdgeValidationTests.cs` 覆盖 36 条用例。
+`Orchestration/AgentOrchestrationGraphCompilerTests.cs` 覆盖 5 条用例。
+`Orchestration/AgentOrchestrationNodeValidationTests.cs` 覆盖 9 条用例。
+`Orchestration/DesignCouncilOrchestrationGraphAdapterTests.cs` 覆盖 4 条用例。
+`Orchestration/DesignCouncilPlanCompilerTests.cs` 覆盖 8 条用例。
+`Orchestration/DesignCouncilRunStateMachineTests.cs` 覆盖 9 条用例。
+`Panels/FilePanelCanvasStoreTests.cs` 覆盖 7 条用例。
+`Panels/PanelAnnotationFileReaderTests.cs` 覆盖 13 条用例。
+`Panels/PanelCanvasStoreTests.cs` 覆盖 11 条用例。
+`Platform/BuiltInAgentTemplatesTests.cs` 覆盖 4 条用例。
+`Platform/ConversationTranscriptFoldTests.cs` 覆盖 21 条用例。
+`Platform/EntropyProbeTests.cs` 覆盖 2 条用例。
+`Platform/ExactTokenizerRequestMeasurementTests.cs` 覆盖 2 条用例。
+`Platform/LlmOptionsTokenizerRegressionTests.cs` 覆盖 4 条用例。
+`Platform/RsiEventTimestampTests.cs` 覆盖 2 条用例。
+`Platform/ToolProfileConfigTests.cs` 覆盖 5 条用例。
+`PromptCalibrationConvergenceTests.cs` 覆盖 5 条用例。
+`ReasoningEffortPolicyTests.cs` 覆盖 16 条用例。
+`RequestAttributionIdentityTests.cs` 覆盖 8 条用例。
+`RequestAttributionStrictPairingTests.cs` 覆盖 5 条用例。
+`ResponsesLlmGatewayReasoningEffortTests.cs` 覆盖 2 条用例。
+`ResponsesLlmGatewayTests.cs` 覆盖 45 条用例。
+`Runtime/ContextTierPlannerTests.cs` 覆盖 14 条用例。
+`Runtime/ExecutionProgressRegistryTests.cs` 覆盖 3 条用例。
+`Runtime/PrefixCacheSnapshotBuilderTests.cs` 覆盖 5 条用例。
+`Runtime/RuntimeContractTests.cs` 覆盖 13 条用例。
+`Runtime/RuntimeControlServiceTests.cs` 覆盖 9 条用例。
+`Runtime/RuntimeDispatchResultPrefixSnapshotTests.cs` 覆盖 1 条用例。
+`Runtime/ToolCallIdTests.cs` 覆盖 11 条用例。
+`Serialization/PuddingJsonContractsTests.cs` 覆盖 3 条用例。
+`Services/AgentContextEnvelopeRendererTests.cs` 覆盖 1 条用例。
+`Services/ReasoningCompactCodecTests.cs` 覆盖 15 条用例。
+`SkillDistillationContractTests.cs` 覆盖 21 条用例。
+`SkillFamilyClusteringTests.cs` 覆盖 21 条用例。
+`SkillKeywordNormalizationTests.cs` 覆盖 9 条用例。
+`Skills/SkillRegistryTests.cs` 覆盖 20 条用例。
+`SubAgents/SubAgentAddressResolverTests.cs` 覆盖 6 条用例。
+`SubAgents/SubAgentOutputContractInspectorTests.cs` 覆盖 10 条用例。
+`SubAgents/SubAgentParentReportBudgetTests.cs` 覆盖 11 条用例。
+`SubAgents/SubAgentParentReportLedgerTests.cs` 覆盖 6 条用例。
+`SubAgents/SubAgentProgressReportPolicyTests.cs` 覆盖 12 条用例。
+`SubAgents/SubAgentRunModelsTests.cs` 覆盖 8 条用例。
+`SubAgents/SubAgentSteerPlannerTests.cs` 覆盖 6 条用例。
+`SubAgents/SubAgentSteeringTargetTests.cs` 覆盖 4 条用例。
+`Swarm/ContractManagerTests.cs` 覆盖 14 条用例。
+`Swarm/FileSwarmTransportTests.cs` 覆盖 12 条用例。
+`Swarm/Integration/ContractFirstWorkflowTests.cs` 覆盖 7 条用例。
+`Swarm/Integration/ScopeIsolationTests.cs` 覆盖 12 条用例。
+`Swarm/ScopedFileToolTests.cs` 覆盖 20 条用例。
+`Swarm/SwarmOrchestratorTests.cs` 覆盖 19 条用例。
+`Swarm/WorkerManagerTests.cs` 覆盖 8 条用例。
+`TaskPlanning/TaskPlanningModelTests.cs` 覆盖 7 条用例。
+`Tasks/TaskStateMachineTests.cs` 覆盖 4 条用例。
+`Tasks/WorkspaceTaskCoreTests.cs` 覆盖 23 条用例。
+`Tools/PuddingToolBaseOfTResultTests.cs` 覆盖 8 条用例。
+`Tools/Retrieval/RetrievalGlobMatcherTests.cs` 覆盖 15 条用例。
+`Tools/Retrieval/RetrievalMatcherTests.cs` 覆盖 18 条用例。
+`Tools/SchemaAstTests.cs` 覆盖 22 条用例。
+`Tools/SystemCommandParserTests.cs` 覆盖 17 条用例。
+`Tools/ToolApprovalWireAuditEventTypeTests.cs` 覆盖 2 条用例。
+`Tools/ToolDefinitionTests.cs` 覆盖 13 条用例。
+`Tools/ToolResultMaterializerTests.cs` 覆盖 17 条用例。
+`Tools/ToolSchemaValidatorTests.cs` 覆盖 15 条用例。
+`Vision/AnthropicMessagesLlmGatewayVisualWireTests.cs` 覆盖 4 条用例。
+`Vision/DashScopeVisualReasoningProviderTests.cs` 覆盖 3 条用例。
+`Vision/DeepSeekFilesApiClientTests.cs` 覆盖 14 条用例。
+`Vision/DeepSeekImageRequestLimitTests.cs` 覆盖 2 条用例。
+`Vision/DefaultVisualReasoningServiceTests.cs` 覆盖 4 条用例。
+`Vision/OfficialVisionLimitsTests.cs` 覆盖 3 条用例。
+`Vision/OpenAiLlmGatewayVisualWireTests.cs` 覆盖 5 条用例。
+`Vision/ProviderFileRefRecordTests.cs` 覆盖 4 条用例。
+`Vision/ResponsesLlmGatewayVisualWireTests.cs` 覆盖 5 条用例。
+`Vision/VisionCapabilityContractTests.cs` 覆盖 5 条用例。
+`Vision/VisionPreprocessingWireTests.cs` 覆盖 4 条用例。
+`Vision/VisionTextContinuationTests.cs` 覆盖 3 条用例。
+`Vision/VisualInputRequestBudgetTests.cs` 覆盖 8 条用例。
+`Vision/VisualPipelineContractTests.cs` 覆盖 21 条用例。
+`Vision/VisualReasoningModelTests.cs` 覆盖 5 条用例。
+`Voice/OmniRealtimeModelTests.cs` 覆盖 4 条用例。
+`Voice/VoiceRecognitionModelTests.cs` 覆盖 5 条用例。
+`Voice/VoiceSynthesisModelTests.cs` 覆盖 4 条用例。
