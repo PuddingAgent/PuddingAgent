@@ -146,7 +146,7 @@ public sealed class SubAgentPoolAdminControllerTests
     }
 
     [TestMethod]
-    public void Controller_AllowsOnlyGetAndDelete_AndRequiresAdminJwt()
+    public void Controller_RoutesAreWhitelisted_AndRequiresAdminJwt()
     {
         var type = typeof(SubAgentPoolAdminController);
 
@@ -159,45 +159,47 @@ public sealed class SubAgentPoolAdminControllerTests
         Assert.AreEqual("admin", authorize!.Roles);
         Assert.AreEqual("Bearer", authorize.AuthenticationSchemes);
 
-        // 白名单而不是黑名单（2026-11-24 起）：本切片新增 DELETE（销毁条目），
-        // 但仍未实现 POST/PUT/PATCH —— 它们需要服务层新能力，
-        // CreateAsync 要求 LlmConfig / LlmProfile 两个调用入口解析出的不可变快照，
-        // Web 端拿不到也不该伪造。因此把「允许什么」写死，而不是只拿黑名单拦。
-        var forbidden = new[]
+        // 白名单精确到「动词 + 路由模板」，而不是只到动词。
+        // 只锁动词的话，POST 一经开放就能被挂到任意路径；锁到模板后，
+        // 每新增一个动作都必须同时改这张表 —— 想偷加也绕不过。
+        // 2026-11-24 的集合：列表 / 销毁 / 休眠。
+        var allowed = new HashSet<string>
         {
-            typeof(HttpPostAttribute),
-            typeof(HttpPutAttribute),
-            typeof(HttpPatchAttribute),
+            "GET|",
+            "DELETE|{name}",
+            "POST|{name}/sleep",
         };
 
-        var actions = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-            .Where(m => !m.IsSpecialName)
-            .Select(m => new
-            {
-                m.Name,
-                Attrs = m.GetCustomAttributes().Select(a => a.GetType()).ToArray(),
-            })
-            .ToList();
-
-        Assert.IsTrue(actions.Count > 0, "控制器至少应有一个动作");
-        foreach (var action in actions)
+        var actual = new List<string>();
+        foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                     .Where(m => !m.IsSpecialName))
         {
-            var bad = action.Attrs.Where(t => forbidden.Contains(t)).ToList();
-            Assert.AreEqual(
-                0,
-                bad.Count,
-                $"动作 {action.Name} 使用了服务层尚未提供的能力（POST/PUT/PATCH）；不得先开口子再补能力");
+            var verb = method.GetCustomAttributes()
+                .Select(a => a switch
+                {
+                    HttpGetAttribute g => ((string?)"GET", (string?)g.Template),
+                    HttpPostAttribute p => ((string?)"POST", (string?)p.Template),
+                    HttpPutAttribute u => ((string?)"PUT", (string?)u.Template),
+                    HttpPatchAttribute pa => ((string?)"PATCH", (string?)pa.Template),
+                    HttpDeleteAttribute d => ((string?)"DELETE", (string?)d.Template),
+                    _ => ((string?)null, (string?)null),
+                })
+                .FirstOrDefault(t => t.Item1 is not null);
 
-            var declared = action.Attrs.Any(t => t == typeof(HttpGetAttribute) || t == typeof(HttpDeleteAttribute));
-            Assert.IsTrue(declared, $"动作 {action.Name} 必须显式声明 GET 或 DELETE");
+            Assert.IsNotNull(verb.Item1, $"动作 {method.Name} 必须显式声明 HTTP 动词");
+
+            // PUT / PATCH 一个都不允许：属性修改类语义尚未实现，先开口子会误导调用方。
+            Assert.IsFalse(
+                verb.Item1 is "PUT" or "PATCH",
+                $"动作 {method.Name} 使用了尚未实现的 {verb.Item1}；属性修改类语义必须先有服务层支持");
+
+            actual.Add($"{verb.Item1}|{verb.Item2}");
         }
 
-        Assert.IsTrue(
-            actions.Any(a => a.Attrs.Contains(typeof(HttpGetAttribute))),
-            "必须保留只读列表 GET");
-        Assert.IsTrue(
-            actions.Any(a => a.Attrs.Contains(typeof(HttpDeleteAttribute))),
-            "必须提供销毁 DELETE");
+        CollectionAssert.AreEquivalent(
+            allowed.ToList(),
+            actual,
+            $"动作路由集合必须与白名单完全一致（多一个或漏一个都算越界）；实际: [{string.Join("; ", actual)}]");
     }
 
     [TestMethod]
@@ -272,6 +274,67 @@ public sealed class SubAgentPoolAdminControllerTests
 
         Assert.IsInstanceOfType<BadRequestObjectResult>(result);
         pool.VerifyNoOtherCalls();
+    }
+
+    [TestMethod]
+    public async Task Sleep_WhenPoolSleeps_Returns204_AndForwardsName()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        var pool = new Mock<ISubAgentPool>();
+        pool.Setup(p => p.GetSnapshotAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PooledSubAgent>)Array.Empty<PooledSubAgent>());
+        pool.Setup(p => p.SleepAsync("frontend-ui", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var controller = new SubAgentPoolAdminController(scope.Factory, pool.Object);
+
+        var result = await controller.Sleep("frontend-ui", CancellationToken.None);
+
+        Assert.IsInstanceOfType<NoContentResult>(result, "休眠成功必须返回 204，与销毁同语义同码");
+        pool.Verify(
+            p => p.SleepAsync("frontend-ui", It.IsAny<CancellationToken>()),
+            Times.Once,
+            "休眠必须把列表里的 name 原样传给池");
+    }
+
+    [TestMethod]
+    public async Task Sleep_WhenPoolRejects_Returns409_NotSilentSuccess()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        var pool = new Mock<ISubAgentPool>();
+        pool.Setup(p => p.GetSnapshotAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PooledSubAgent>)Array.Empty<PooledSubAgent>());
+        pool.Setup(p => p.SleepAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        var controller = new SubAgentPoolAdminController(scope.Factory, pool.Object);
+
+        var result = await controller.Sleep("ghost", CancellationToken.None);
+
+        var conflict = result as ObjectResult;
+        Assert.IsNotNull(conflict, "池拒绝时必须给出可见的冲突响应，不得静默当作已休眠");
+        Assert.AreEqual(StatusCodes.Status409Conflict, conflict!.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Sleep_WhenPoolNotReady_Returns503_AndDoesNotCallSleep()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        var pool = new Mock<ISubAgentPool>();
+        pool.Setup(p => p.GetSnapshotAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new PoolNotReadyException("load failed", PoolReadiness.Failed));
+        var controller = new SubAgentPoolAdminController(scope.Factory, pool.Object);
+
+        var result = await controller.Sleep("frontend-ui", CancellationToken.None);
+
+        var status = result as ObjectResult;
+        Assert.IsNotNull(status);
+        Assert.AreEqual(
+            StatusCodes.Status503ServiceUnavailable,
+            status!.StatusCode,
+            "池未就绪是「暂时不可用」，不能报成 409");
+        pool.Verify(
+            p => p.SleepAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "未就绪时不得尝试休眠：内存里看不到条目时 SleepAsync 会误报 false");
     }
 
     private static async Task<TestDatabaseScope> CreateDatabaseAsync()

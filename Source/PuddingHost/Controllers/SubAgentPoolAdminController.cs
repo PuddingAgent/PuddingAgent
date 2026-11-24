@@ -149,6 +149,56 @@ public sealed class SubAgentPoolAdminController(
                      "若列表里看得见它，说明它由另一进程创建或本进程尚未加载。",
         });
     }
+
+    /// <summary>
+    /// 休眠池条目：库迁 <c>sleeping</c>（<b>不</b>写 <c>deleted_at</c>）→ 改内存状态。
+    /// <para>
+    /// 与 DELETE 的区别要说清楚：休眠后条目仍在池里，下次 <c>ExecuteAsync</c> 仍会复用
+    /// 同一 <c>sub_session_id</c>（KV-cache 就靠这个）；销毁则彻底退出，名字可被新条目占用。
+    /// </para>
+    /// <para>
+    /// <b>为什么是 POST 而不是 PATCH：</b>休眠是一次带副作用的状态转换（会取消当前执行令牌），
+    /// 不是对属性的幂等修改。用 PATCH 会让调用方以为可以随便重试。
+    /// </para>
+    /// </summary>
+    /// <param name="name">池内展示名（未软删时唯一）。</param>
+    /// <param name="ct">取消令牌。</param>
+    [HttpPost("{name}/sleep")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> Sleep(string name, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return BadRequest(new { error = "name_required", detail = "池条目名不能为空。" });
+        }
+
+        try
+        {
+            await subAgentPool.GetSnapshotAsync(ct).ConfigureAwait(false);
+        }
+        catch (PoolNotReadyException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new { error = "pool_not_ready", detail = ex.Message });
+        }
+
+        var slept = await subAgentPool.SleepAsync(name, ct).ConfigureAwait(false);
+        if (slept)
+        {
+            return NoContent();
+        }
+
+        return Conflict(new
+        {
+            error = "sleep_rejected",
+            detail = "无法休眠：条目不在本进程池内、已 dead、或库拒绝了状态迁移。" +
+                     "若列表里看得见它，说明它由另一进程创建或本进程尚未加载。",
+        });
+    }
 }
 
 /// <summary>
