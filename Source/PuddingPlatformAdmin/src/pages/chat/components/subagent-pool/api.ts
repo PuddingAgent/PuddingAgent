@@ -55,3 +55,23 @@ export async function fetchSubAgentPool(): Promise<SubAgentPoolEntry[]> {
 
   return result as SubAgentPoolEntry[];
 }
+
+/**
+ * 休眠池条目：库迁 `sleeping`（不写 `deleted_at`）。
+ * 条目仍在池里，下次执行仍复用同一 `subSessionId`（KV-cache 靠这个）。
+ */
+export async function sleepSubAgentPoolEntry(name: string): Promise<void> {
+  await request(`${SUB_AGENT_POOL_ENDPOINT}/${encodeURIComponent(name)}/sleep`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * 销毁池条目：库迁 `dead` 并写 `deleted_at`。
+ * 名字随后可被新条目占用；若条目正在执行，后端会级联取消。
+ */
+export async function destroySubAgentPoolEntry(name: string): Promise<void> {
+  await request(`${SUB_AGENT_POOL_ENDPOINT}/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+}

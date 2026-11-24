@@ -5,13 +5,17 @@
 //   error !== null     → 只渲染错误态 + 重试；**绝不显示「暂无子代理」**
 //   成功 && 空数组      → 只渲染空态；**绝不显示错误，也不显示加载中**
 import { ReloadOutlined, RobotOutlined, SearchOutlined } from '@ant-design/icons';
-import { Button, Input, Modal, Spin } from 'antd';
+import { Button, Input, Modal, Spin, message } from 'antd';
 import dayjs from 'dayjs';
 import React, { useMemo, useState } from 'react';
 import { deriveAvatar } from './avatar';
-import type { SubAgentPoolEntry } from './api';
+import {
+  destroySubAgentPoolEntry,
+  sleepSubAgentPoolEntry,
+  type SubAgentPoolEntry,
+} from './api';
 import { useSubAgentPoolStyles } from './SubAgentPoolPanel.styles';
-import { useSubAgentPool } from './useSubAgentPool';
+import { describeSubAgentPoolError, useSubAgentPool } from './useSubAgentPool';
 
 type StatusTone = 'idle' | 'busy' | 'sleeping' | 'dead';
 
@@ -140,7 +144,86 @@ const DetailRow: React.FC<{ label: string; value: string }> = ({
   );
 };
 
-const EntryDetail: React.FC<{ entry: SubAgentPoolEntry }> = ({ entry }) => {
+/**
+ * 管理面动作：休眠与销毁。
+ *
+ * 产品边界（用户 2026-11-24 裁定）：主代理驱动子代理，本界面只做**管理与查看**。
+ * 所以这里没有「创建」与「派任务」—— 那两条属于 Agent 侧（spawn_sub_agent）；
+ * 从管理界面建出来的条目拿不到恰当的 owner，恰好会落进池的「无主」降级分支。
+ */
+const EntryActions: React.FC<{
+  entry: SubAgentPoolEntry;
+  onChanged: () => void;
+}> = ({ entry, onChanged }) => {
+  const [busy, setBusy] = useState<null | 'sleep' | 'destroy'>(null);
+
+  const run = async (
+    kind: 'sleep' | 'destroy',
+    action: () => Promise<void>,
+    successText: string,
+  ) => {
+    setBusy(kind);
+    try {
+      await action();
+      message.success(successText);
+      onChanged();
+    } catch (caught: unknown) {
+      message.error(describeSubAgentPoolError(caught));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const confirmDestroy = () => {
+    Modal.confirm({
+      title: `销毁「${entry.name}」？`,
+      content:
+        '销毁后条目退出池，名字可被新条目占用；若它正在执行，执行会被取消。' +
+        '与「休眠」不同，销毁不可恢复。',
+      okText: '销毁',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: () =>
+        run('destroy', () => destroySubAgentPoolEntry(entry.name), '已销毁'),
+    });
+  };
+
+  return (
+    <div
+      data-testid="subagent-pool-actions"
+      style={{ display: 'flex', gap: 8, marginTop: 12 }}
+    >
+      <Button
+        size="small"
+        loading={busy === 'sleep'}
+        disabled={
+          busy !== null || entry.status === 'dead' || entry.status === 'sleeping'
+        }
+        onClick={() =>
+          run('sleep', () => sleepSubAgentPoolEntry(entry.name), '已休眠')
+        }
+        data-testid="subagent-action-sleep"
+      >
+        休眠
+      </Button>
+      <Button
+        size="small"
+        danger
+        loading={busy === 'destroy'}
+        disabled={busy !== null || entry.status === 'dead'}
+        onClick={confirmDestroy}
+        data-testid="subagent-action-destroy"
+      >
+        销毁
+      </Button>
+    </div>
+  );
+};
+
+const EntryDetail: React.FC<{
+  entry: SubAgentPoolEntry;
+  onChanged: () => void;
+}> = ({ entry, onChanged }) => {
   const { styles } = useSubAgentPoolStyles();
   return (
     <section
@@ -170,6 +253,8 @@ const EntryDetail: React.FC<{ entry: SubAgentPoolEntry }> = ({ entry }) => {
       <DetailRow label="最近使用" value={formatTimestamp(entry.lastUsedAt)} />
       <DetailRow label="最近成功" value={describeLastSuccess(entry)} />
       <DetailRow label="创建时间" value={formatTimestamp(entry.createdAt)} />
+
+      <EntryActions entry={entry} onChanged={onChanged} />
     </section>
   );
 };
@@ -303,7 +388,7 @@ export const SubAgentPoolPanel: React.FC = () => {
         </ul>
 
         {selectedEntry ? (
-          <EntryDetail entry={selectedEntry} />
+          <EntryDetail entry={selectedEntry} onChanged={reload} />
         ) : (
           <section
             className={styles.detail}
