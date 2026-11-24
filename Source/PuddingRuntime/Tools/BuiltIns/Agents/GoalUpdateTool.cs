@@ -28,6 +28,18 @@ namespace PuddingRuntime.Services.Tools;
     safety: ToolSafetyFlags.None)]
 public sealed class GoalUpdateTool : PuddingToolBase<GoalUpdateArgs>
 {
+    /// <summary>
+    /// 严格 UTF-8：遇到无效字节抛 <see cref="DecoderFallbackException"/>，而不是静默替换成 U+FFFD。
+    /// 静默替换会把上游的编码损坏包装成「写入成功」，是 2026-11-25 goal.md 被写坏 1747 处替换字符的直接放大器。
+    /// </summary>
+    private static readonly UTF8Encoding StrictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
+    /// <summary>
+    /// 写入用 UTF-8：不带 BOM。goal.md 约定禁 BOM，而 <see cref="Encoding.UTF8"/> 静态实例会写 BOM。
+    /// </summary>
+    private static readonly UTF8Encoding NoBomUtf8 = new(encoderShouldEmitUTF8Identifier: false);
+
     private readonly PuddingDataPaths _paths;
     private readonly ILogger<GoalUpdateTool> _logger;
 
@@ -52,13 +64,20 @@ public sealed class GoalUpdateTool : PuddingToolBase<GoalUpdateArgs>
             {
                 try
                 {
-                    content = Encoding.UTF8.GetString(Convert.FromBase64String(args.ContentBase64!));
+                    var raw = Convert.FromBase64String(args.ContentBase64!);
+                    content = StrictUtf8.GetString(raw);
                     mode = "override";
                 }
                 catch (FormatException)
                 {
                     return Task.FromResult(ToolExecutionResult.Fail(
                         "content_base64 解码失败：不是有效的 Base64 字符串。"));
+                }
+                catch (DecoderFallbackException)
+                {
+                    return Task.FromResult(ToolExecutionResult.Fail(
+                        "content_base64 是合法 Base64，但解出的字节流不是有效 UTF-8（疑似传入了压缩流或二进制）。"
+                        + "已拒绝写入，以免用替换字符污染 goal.md。"));
                 }
             }
             else if (!string.IsNullOrWhiteSpace(args.Append))
@@ -72,6 +91,24 @@ public sealed class GoalUpdateTool : PuddingToolBase<GoalUpdateArgs>
                 return Task.FromResult(ToolExecutionResult.Fail(
                     "至少需要 append 或 content_base64 之一。"
                     + "append=\"内容\" 追加到文件末尾；content_base64=\"...\" 完全覆盖文件。"));
+            }
+
+            // 守卫：U+FFFD 替换字符是编码损坏的痕迹。写进 goal.md 只会把损坏变成「看起来正常的坏文件」，
+            // 而调用方仍收到成功回执。2026-11-25 事故即此形态，故此处 fail-closed。
+            var fffdCount = 0;
+            var fffdFirstIndex = -1;
+            for (var i = 0; i < content!.Length; i++)
+            {
+                if (content[i] != '\uFFFD') continue;
+                fffdCount++;
+                if (fffdFirstIndex < 0) fffdFirstIndex = i;
+            }
+
+            if (fffdCount > 0)
+            {
+                return Task.FromResult(ToolExecutionResult.Fail(
+                    $"内容含 {fffdCount} 处 U+FFFD 替换字符（首个位于第 {fffdFirstIndex} 个字符），"
+                    + "通常是上游编码损坏的痕迹。已拒绝写入以免污染 goal.md，请重新生成内容。"));
             }
 
             var result = WriteGoalFile(mode, content!, agentInstanceId, workspaceId);
@@ -120,9 +157,20 @@ public sealed class GoalUpdateTool : PuddingToolBase<GoalUpdateArgs>
                 newContent = content;
             }
 
-            // Atomic write: .tmp then Move
+            // 原子写 + 写后自检：先落 .tmp、按字节读回比对、一致才 Move。
+            // 「写盘工具的回显不是验收证据」——下面日志里的 size 是字符数，与磁盘字节数无关。
             var tmpPath = filePath + ".tmp." + Guid.NewGuid().ToString("N")[..8];
-            File.WriteAllText(tmpPath, newContent, Encoding.UTF8);
+            var expectedBytes = NoBomUtf8.GetBytes(newContent);
+            File.WriteAllBytes(tmpPath, expectedBytes);
+
+            var readBackBytes = File.ReadAllBytes(tmpPath);
+            if (!readBackBytes.AsSpan().SequenceEqual(expectedBytes))
+            {
+                try { File.Delete(tmpPath); } catch { /* 清理失败不掩盖主错误 */ }
+                throw new InvalidOperationException(
+                    $"写入自检失败：期望 {expectedBytes.Length} 字节，回读 {readBackBytes.Length} 字节，已放弃写入。");
+            }
+
             File.Move(tmpPath, filePath, overwrite: true);
 
             var pathLabel = isAgentPath
@@ -171,11 +219,9 @@ public sealed class GoalUpdateTool : PuddingToolBase<GoalUpdateArgs>
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[GoalUpdate] Failed to update goal.md");
-            return JsonSerializer.Serialize(new
-            {
-                status = "error",
-                message = ex.Message,
-            });
+            // 必须让调用方看到失败：此前这里返回 {"status":"error"} 但外层仍包装成 Success=true，
+            // 等于写失败也回「成功」，与本次事故同一类静默。
+            throw;
         }
     }
 }
