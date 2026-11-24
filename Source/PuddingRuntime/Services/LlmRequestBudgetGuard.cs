@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
+using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Runtime;
 using PuddingCode.Platform;
@@ -65,10 +66,12 @@ public sealed record LlmInputLimitDerivation(
     /// <summary>
     /// 结构矛盾判据 —— 不是阈值猜测：窗口减去预留输出与安全缓冲后不足 1，
     /// 说明这个模型连自己的预留输出都装不下。此时该改模型配置，而不是继续裁历史。
+    /// 比较表达式真源在 <see cref="LlmTokenBudgetDefaults.LeavesNoInputRoom"/>，
+    /// 与配置加载期的拒绝判据共用，避免两处边界值各写一遍。
     /// </summary>
     public bool WindowCannotCoverReservedOutput =>
         ContextWindow is > 0
-        && ContextWindow.Value - ReservedOutput - SafetyBuffer < 1;
+        && LlmTokenBudgetDefaults.LeavesNoInputRoom(ContextWindow.Value, ReservedOutput, SafetyBuffer);
 }
 
 public sealed class LlmInputBudgetExceededException : InvalidOperationException
@@ -150,7 +153,12 @@ public sealed class LlmInputBudgetExceededException : InvalidOperationException
 /// </summary>
 public static partial class LlmRequestBudgetGuard
 {
-    public const int DefaultSafetyBufferTokens = 1_024;
+    /// <summary>
+    /// 为 token 估算误差预留的缓冲。数字真源在
+    /// <see cref="LlmTokenBudgetDefaults.SafetyBufferTokens"/>（PuddingCore），
+    /// 与配置加载期校验共用。
+    /// </summary>
+    public const int DefaultSafetyBufferTokens = LlmTokenBudgetDefaults.SafetyBufferTokens;
     private const int ProtectedTailMessages = 8;
 
     [GeneratedRegex(@"Range\s+of\s+input\s+length\s+should\s+be\s+\[\s*1\s*,\s*(?<max>[0-9_]+)\s*\]", RegexOptions.IgnoreCase)]

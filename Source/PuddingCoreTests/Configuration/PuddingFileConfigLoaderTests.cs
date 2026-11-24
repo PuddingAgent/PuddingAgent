@@ -663,6 +663,133 @@ public sealed class PuddingFileConfigLoaderTests
         Assert.AreEqual(512, vision.EstimatedTokensPerImageUpperBound);
     }
 
+    [TestMethod]
+    public async Task LoadLlmProvidersAsync_WindowCannotCoverReservedOutput_Fails()
+    {
+        // 配置矛盾：窗口 32k 却登记 393k 输出能力 → 预留被夹到 64000，
+        // 运行期会把输入上限夹到 1，该模型对任何真实请求都报 input is too large。
+        // 加载期必须挡下来，而不是等第一次请求才暴露（2026-08-24 id=1030 的形态）。
+        using var temp = new TempDirectory();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        Directory.CreateDirectory(paths.ConfigRoot);
+        await File.WriteAllTextAsync(paths.SystemConfigFile("llm.providers.json"), """
+            {
+              "providers": [
+                {
+                  "providerId": "deepseek",
+                  "name": "DeepSeek",
+                  "baseUrl": "https://api.deepseek.com",
+                  "apiKey": "key",
+                  "isEnabled": true,
+                  "models": [
+                    {
+                      "modelId": "broken-window",
+                      "name": "broken-window",
+                      "protocol": "responses",
+                      "maxContextTokens": 32000,
+                      "maxOutputTokens": 393216,
+                      "isDefault": true,
+                      "sortOrder": 1
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        var loader = new PuddingFileConfigLoader(paths);
+
+        var result = await loader.LoadLlmProvidersAsync();
+
+        Assert.IsFalse(result.Success);
+        var error = result.Errors.Single(e => e.Contains("leave no input room"));
+        StringAssert.Contains(error, "'broken-window'");
+        StringAssert.Contains(error, "maxContextTokens=32000");
+        StringAssert.Contains(error, "(64000)");
+        StringAssert.Contains(error, "(1024)");
+        StringAssert.Contains(error, "raise maxContextTokens or lower maxOutputTokens");
+    }
+
+    [TestMethod]
+    public async Task LoadLlmProvidersAsync_WindowExactlyCoversReservedOutput_IsAccepted()
+    {
+        // 边界：窗口 = 预留 64000 + 缓冲 1024 + 1 → 输入恰好剩 1，不得判为矛盾。
+        // 这条钉住的是判据方向（>= 1 通过），去掉它则无法区分「恰好够」与「不够」。
+        using var temp = new TempDirectory();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        Directory.CreateDirectory(paths.ConfigRoot);
+        await File.WriteAllTextAsync(paths.SystemConfigFile("llm.providers.json"), """
+            {
+              "providers": [
+                {
+                  "providerId": "deepseek",
+                  "name": "DeepSeek",
+                  "baseUrl": "https://api.deepseek.com",
+                  "apiKey": "key",
+                  "isEnabled": true,
+                  "models": [
+                    {
+                      "modelId": "tight-window",
+                      "name": "tight-window",
+                      "protocol": "responses",
+                      "maxContextTokens": 65025,
+                      "maxOutputTokens": 393216,
+                      "isDefault": true,
+                      "sortOrder": 1
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        var loader = new PuddingFileConfigLoader(paths);
+
+        var result = await loader.LoadLlmProvidersAsync();
+
+        Assert.IsTrue(result.Success, string.Join(" | ", result.Errors));
+        Assert.AreEqual(65025, result.Config!.Providers[0].Models[0].MaxContextTokens);
+    }
+
+    [TestMethod]
+    public async Task LoadLlmProvidersAsync_NoDeclaredWindow_SkipsTokenWindowCheck()
+    {
+        // 未声明窗口 → 运行期不做窗口推导，不存在该矛盾；不得仅仅因为
+        // maxOutputTokens 很大就报错（那会把合法的「不登记窗口」配置误杀）。
+        using var temp = new TempDirectory();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        Directory.CreateDirectory(paths.ConfigRoot);
+        await File.WriteAllTextAsync(paths.SystemConfigFile("llm.providers.json"), """
+            {
+              "providers": [
+                {
+                  "providerId": "deepseek",
+                  "name": "DeepSeek",
+                  "baseUrl": "https://api.deepseek.com",
+                  "apiKey": "key",
+                  "isEnabled": true,
+                  "models": [
+                    {
+                      "modelId": "no-window",
+                      "name": "no-window",
+                      "protocol": "responses",
+                      "maxOutputTokens": 393216,
+                      "isDefault": true,
+                      "sortOrder": 1
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        var loader = new PuddingFileConfigLoader(paths);
+
+        var result = await loader.LoadLlmProvidersAsync();
+
+        Assert.IsTrue(result.Success, string.Join(" | ", result.Errors));
+    }
+
     private sealed class TempDirectory : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(

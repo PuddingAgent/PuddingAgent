@@ -1,3 +1,5 @@
+using PuddingCode.Configuration;
+
 namespace PuddingRuntime.Services;
 
 /// <summary>
@@ -12,8 +14,10 @@ internal static class LlmReplyBudget
     /// <summary>
     /// 单轮回复上限：≈ 十万量级字符，远超任何单轮答复；产品口径只需改这一处。
     /// 1M 窗口下预留占比 6.4%（旧口径 39.3%）。
+    /// 数字真源在 <see cref="LlmTokenBudgetDefaults.PerTurnOutputCapTokens"/>（PuddingCore），
+    /// 以便配置加载期校验与运行期推导共用同一份常量，不各写一遍。
     /// </summary>
-    internal const int PerTurnOutputCapTokens = 64_000;
+    internal const int PerTurnOutputCapTokens = LlmTokenBudgetDefaults.PerTurnOutputCapTokens;
 
     /// <summary>本轮实际申请的 max_tokens：登记值取小者；未登记（null）或 0 原样透传，交给网关默认。</summary>
     internal static int? ResolveRequestTokens(int? registeredMaxOutputTokens)

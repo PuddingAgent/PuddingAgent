@@ -132,6 +132,37 @@ public sealed class LlmRequestBudgetGuardLimitDerivationTests
     }
 
     [TestMethod]
+    public void WindowCannotCoverReservedOutput_BoundaryIsExactlyOneTokenOfRoom()
+    {
+        // 边界：窗口 = 预留输出 + 缓冲 + 1 ⇒ 输入恰好剩 1 token，不算结构矛盾；
+        // 再少 1 token（剩 0）才算。这条锁的是判据方向，防止把「恰好够」误判成矛盾。
+        // 判据真源与配置加载期共用 LlmTokenBudgetDefaults.LeavesNoInputRoom，
+        // 所以这里也兼作「两边共用同一个边界」的回归位。
+        var buffer = LlmTokenBudgetDefaults.SafetyBufferTokens;
+        const int Reserved = 1_000;
+
+        var exactlyOne = new LlmInputLimitDerivation(
+            ContextWindow: Reserved + buffer + 1,
+            ReservedOutput: Reserved,
+            SafetyBuffer: buffer,
+            ProviderLimit: int.MaxValue,
+            DerivedContextLimit: 1);
+        Assert.IsFalse(
+            exactlyOne.WindowCannotCoverReservedOutput,
+            "输入恰好剩 1 token 时不得判为结构矛盾");
+
+        var oneShort = new LlmInputLimitDerivation(
+            ContextWindow: Reserved + buffer,
+            ReservedOutput: Reserved,
+            SafetyBuffer: buffer,
+            ProviderLimit: int.MaxValue,
+            DerivedContextLimit: 1);
+        Assert.IsTrue(
+            oneShort.WindowCannotCoverReservedOutput,
+            "输入剩 0 token 时必须判为结构矛盾");
+    }
+
+    [TestMethod]
     public void ResolveEffectiveInputLimit_AgreesWithDerivationEntryPoint()
     {
         // 两个入口必须是**同一算法**：失败路径若自己重算一遍，

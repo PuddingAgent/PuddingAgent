@@ -1,5 +1,5 @@
 # PuddingCore CodeMAP
-> 源指纹: Source/PuddingCore/**=443-783751bc9e55 · 条目数: 145 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingCore/**=446-94ac8657ad32 · 条目数: 145 · 最近整理: 2026-10-22
 
 > 核心抽象与契约 | 接口 · 模型 · 配置 · 序列化 · Agent 定义
 
@@ -257,6 +257,7 @@ RetrievalGlobMatcher 合同：`public static`，API 为 `Matches/MatchesFileName
 | `Configuration/` | 配置抽象与 `llm.providers.json` 解析 |
 | `Configuration/PuddingConfigModels.cs` | 系统配置记录；`desktop.guardian` 与 `desktop.bootstrap` 端口分离（细节见「条目细节」） |
 | `Configuration/AtomicFileWriter.cs` | 原子配置写入：严格无 BOM UTF-8；Windows 可安全重试的文件占用错误有界退避，读取允许替换；失败保留原文件并携带尝试次数/系统错误码 |
+| `Configuration/LlmTokenBudgetDefaults.cs` | 输入预算口径：输出预留 64000 / 安全缓冲 1024 / 「窗口装不下自身预留」判据 |
 | `Serialization/` | 序列化契约 |
 | `Skills/` | 技能系统抽象 |
 | `Skills/Portfolio/` | G3 组合预算策略（`IVersionedCriterion` 阈值外置） |
@@ -268,6 +269,7 @@ RetrievalGlobMatcher 合同：`public static`，API 为 `Matches/MatchesFileName
 
 **`Configuration/`**：配置抽象；`PuddingDataPaths` 提供临时子代理目录隔离根；`PuddingBuildOutputSync` 提供同卷暂存、逐文件回滚、路径边界和 SHA-256 点火部署原语；`llm.providers.json` 支持每模型协议与版本化 `priceWindows/profileVersion/sourceUrl`，供低价自动调度 fail-closed 解析；
 V5-T2：模型条目可选 `vision` 合同节（`PuddingVisionCapabilityConfig`，字节口径显式区分解码后/wire）由 `ValidateVisionContract` fail-fast 校验（存在即必须完整有效），`PuddingFileLlmConfigService.GetAllModels()` 投影为 `LlmModelInfo.VisionContract`
+V5-T7（2026-11-25）：模型窗口算术由 `ValidateTokenWindow` 在加载期 fail-fast —— 窗口减「输出预留 + 安全缓冲」不足 1 即配置矛盾（运行期会把输入上限夹到 1，该模型对任何请求都报 input is too large）；常量与判据真源为 `LlmTokenBudgetDefaults`，Runtime 侧 `LlmReplyBudget`/`LlmRequestBudgetGuard` 引用同一份，不各写一遍。
 **`Skills/Portfolio/`**：🆕 G3 组合预算策略：`SkillPortfolioPolicy`（`IVersionedCriterion`，只含**被消费**的阈值）+ `AppliedPortfolioPolicy` + `SkillScoreSnapshot`（两态：`Observed`/`Unavailable` —— `Unavailable` **无 `Score` 字段** ⇒ “把无数据当低分”在类型上不可表达）。默认 `ZeroRegressionDefault(实测启用数, headroom)`。
 ⚠️ 该目录**不在**算子架构门禁扫描范围（门禁只扫 `PuddingCore/Operators/**` 与 `PuddingRuntime/Operators/**`）⇒ 门禁 PASS **不构成**本目录纯净性证据
 **`Skills/Curation/`**：🆕 G7 提炼产物契约：`SkillCurationPolicy`（`IVersionedCriterion`，`MinRetainedValueRatio`/`ApplicabilityHeadings`/`PitfallHeadings`/`MinMarkdownLength`；

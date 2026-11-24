@@ -153,6 +153,7 @@ public sealed class PuddingFileConfigLoader
                     errors.Add($"llm.providers.json provider '{provider.ProviderId}' model '{model.ModelId}' maxConcurrentRequests must be greater than zero.");
                 ValidatePriceWindows(provider.ProviderId, model, errors);
                 ValidateVisionContract(provider.ProviderId, model, errors);
+                ValidateTokenWindow(provider.ProviderId, model, errors);
             }
         }
 
@@ -214,6 +215,43 @@ public sealed class PuddingFileConfigLoader
         // so dangling role aliases must not prevent the provider/model registry from starting.
 
         return errors;
+    }
+
+    /// <summary>
+    /// 窗口算术校验：模型声明的上下文窗口必须容得下它自己的输出预留加安全缓冲。
+    ///
+    /// 为何在加载期拦：运行期把上限算成 <c>max(1, window − reservedOutput − buffer)</c>，
+    /// 所以「窗口装不下自己的预留」会被静默夹到 1 —— 该模型此后对任何真实请求都报
+    /// <c>input is too large</c>，而根因是配置矛盾。2026-08-24 的 id=1030
+    /// （<c>estimated=18154, limit=1</c>）就是这个形态。只在第一次请求时暴露太晚。
+    ///
+    /// 数字真源与运行期同为 <see cref="LlmTokenBudgetDefaults"/>：两个判据各写一份常量，
+    /// 就会出现「加载期通过、运行期算出 1」的漂移。
+    ///
+    /// 未声明窗口（null 或 ≤ 0）一律跳过 —— 此时运行期不做窗口推导，不存在这个矛盾。
+    /// </summary>
+    private static void ValidateTokenWindow(
+        string providerId,
+        PuddingLlmModelConfig model,
+        ICollection<string> errors)
+    {
+        if (model.MaxContextTokens is not > 0)
+            return;
+
+        var contextWindow = model.MaxContextTokens.Value;
+        var reservedOutput = Math.Min(
+            Math.Max(0, model.MaxOutputTokens ?? 0),
+            LlmTokenBudgetDefaults.PerTurnOutputCapTokens);
+        var safetyBuffer = LlmTokenBudgetDefaults.SafetyBufferTokens;
+
+        if (!LlmTokenBudgetDefaults.LeavesNoInputRoom(contextWindow, reservedOutput, safetyBuffer))
+            return;
+
+        errors.Add(
+            $"llm.providers.json provider '{providerId}' model '{model.ModelId}' declares maxContextTokens={contextWindow}, "
+            + $"but its own output reservation ({reservedOutput}) plus safety buffer ({safetyBuffer}) leave no input room "
+            + $"({contextWindow} − {reservedOutput} − {safetyBuffer} < 1). The runtime would clamp the input limit to 1 and reject "
+            + "every request; raise maxContextTokens or lower maxOutputTokens.");
     }
 
     /// <summary>
