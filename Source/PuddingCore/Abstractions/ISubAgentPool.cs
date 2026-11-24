@@ -63,4 +63,18 @@ public interface ISubAgentPool
 
     /// <summary>异步取快照（会等待/触发加载）。未就绪且恢复失败时抛 <see cref="PoolNotReadyException"/>。</summary>
     Task<IReadOnlyList<PooledSubAgent>> GetSnapshotAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// 读取条目声明的模型路由（<c>provider/model</c>），用于「派活未显式指定 model 时继承」。
+    /// <para>
+    /// 默认实现返回 <c>null</c>（即「没有声明」），所以纯内存实现与测试替身不需要改：
+    /// 「未声明」与「读不到」在调用方是同一个处置（走平台默认路由）。
+    /// </para>
+    /// <para>
+    /// 不抛业务异常：条目不存在、库不可用都返回 <c>null</c>。
+    /// 这条路径是增强而不是派活前置——做成可失败会让一次库抖动直接打断执行。
+    /// </para>
+    /// </summary>
+    Task<string?> GetDeclaredModelIdAsync(string name, CancellationToken ct = default)
+        => Task.FromResult<string?>(null);
 }

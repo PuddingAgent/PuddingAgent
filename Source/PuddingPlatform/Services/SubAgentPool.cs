@@ -543,6 +543,33 @@ public sealed class SubAgentPool : ISubAgentPool
         return Task.FromResult<PooledSubAgent?>(null);
     }
 
+    /// <summary>
+    /// 读取条目声明的模型路由。只读一次库（内存视图不持有 model_id，它是展示/声明列）。
+    /// <para>
+    /// 刻意不缓存：这一列可被 PATCH 改，缓存会让「刚改完就该生效」变成「重启才生效」。
+    /// 一次按主键的读换正确性，比省略一次查重要便宜。
+    /// </para>
+    /// </summary>
+    public async Task<string?> GetDeclaredModelIdAsync(string name, CancellationToken ct = default)
+    {
+        if (_entryStore is null)
+            return null; // 纯内存模式：没有持久化列，就没有可声明的模型
+        if (!_pool.TryGetValue(name, out var entry))
+            return null;
+
+        try
+        {
+            var row = await _entryStore.GetByIdAsync(entry.PoolId, ct);
+            return string.IsNullOrWhiteSpace(row?.ModelId) ? null : row!.ModelId;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 继承是增强：读不到就用平台默认，不把库抖动升级成派活失败。
+            _logger.LogDebug(ex, "[SubAgentPool] 读取条目 {Name} 的声明模型失败，本次不继承", name);
+            return null;
+        }
+    }
+
     // ════════════════════════════════════════════════════════
     // 执行
     // ════════════════════════════════════════════════════════

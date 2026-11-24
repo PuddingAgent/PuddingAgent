@@ -27,7 +27,12 @@ public sealed record AgentPoolEntrySnapshot(
     int TaskCount,
     bool? LastSuccess,
     DateTimeOffset CreatedAt,
-    DateTimeOffset LastUsedAt);
+    DateTimeOffset LastUsedAt,
+    // 条目声明的模型路由（provider/model），可为空。
+    // 这是「这个成员固定用哪个模型」的唯一持久化记录：执行路径必须能读到它，
+    // 否则界面上把它设成 Claude 也会被平台默认模型盖掉，而使用者看不出差异。
+    // 带默认值以免破坏既有构造点（恢复与测试只关心运行时列）。
+    string? ModelId = null);
 
 /// <summary>
 /// 插入一条池条目的入参。

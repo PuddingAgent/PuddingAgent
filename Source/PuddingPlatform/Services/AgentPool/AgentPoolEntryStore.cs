@@ -378,7 +378,8 @@ public sealed class AgentPoolEntryStore(
         row.TaskCount,
         row.LastSuccess,
         ParseTime(row.CreatedAt),
-        ParseTime(row.LastUsedAt));
+        ParseTime(row.LastUsedAt),
+        row.ModelId);
 
     /// <summary>
     /// 时间写入口径：ISO-8601 往返格式（含偏移量），与 S1 建表的 TEXT 列一致。

@@ -274,6 +274,35 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             }
         }
 
+        // 2026-11-24 (P2)：池化执行必须继承条目声明的模型路由。
+        // 与续跑继承是同一个理由：条目上的 model_id 是「这个成员固定用哪个模型」的唯一记录，
+        // 执行路径不读它，界面上设成 Claude 也会被平台默认路由盖掉，而使用者从结果里看不出差异
+        // —— 那比不提供这个设置更糟。显式 model 仍优先（调用方明确意图）；条目没声明时退回平台默认。
+        var inheritedPoolModelRoute = false;
+        if (!string.IsNullOrWhiteSpace(args.PoolName)
+            && string.IsNullOrWhiteSpace(modelId)
+            && ResolveAllowModelSelection())
+        {
+            var poolForRoute = _services.GetService<ISubAgentPool>();
+            if (poolForRoute is not null)
+            {
+                try
+                {
+                    var declared = await poolForRoute.GetDeclaredModelIdAsync(args.PoolName, ct);
+                    if (!string.IsNullOrWhiteSpace(declared))
+                    {
+                        modelId = declared;
+                        inheritedPoolModelRoute = true;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // 继承失败不阻断派活：条目不存在 / 池未就绪由 ExecuteAsync 统一渲染。
+                    _logger.LogDebug(ex, "[SubAgent] 池条目模型继承查询失败 name={Name}", args.PoolName);
+                }
+            }
+        }
+
         var fallbackModel = GetStringProp(json, "fallback_model")
                         ?? GetStringProp(json, "fallbackModel")
                         ?? request.Parameters.GetValueOrDefault("fallback_model");
@@ -368,6 +397,12 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         {
             routeAdvisories.Add(
                 $"ℹ️ [spawn_sub_agent] 续跑已继承原模型路由 " +
+                $"'{childLlmRoute.Profile.ProviderId}/{childLlmRoute.Profile.ModelId}'（未显式指定 model）。");
+        }
+        if (inheritedPoolModelRoute)
+        {
+            routeAdvisories.Add(
+                $"ℹ️ [spawn_sub_agent] 池条目继承了声明的模型路由 " +
                 $"'{childLlmRoute.Profile.ProviderId}/{childLlmRoute.Profile.ModelId}'（未显式指定 model）。");
         }
 
