@@ -201,12 +201,18 @@ public sealed class SubAgentPoolAdminController(
     }
 
     /// <summary>
-    /// 修改池条目的展示字段（备注 / 头像键）。
+    /// 修改池条目的展示字段（备注 / 头像键 / 模型路由）。
     /// <para>
-    /// <b>这里可以直接写库、不经过池实例</b>，因为这两个字段不在
+    /// <b>这里可以直接写库、不经过池实例</b>，因为这三个字段都不在
     /// <see cref="PooledSubAgent"/> 快照里 —— 内存缓存根本不持有它们，
     /// 「库改了内存没改」不构成分叉。状态类字段（status / task_count /
     /// active_execution_id）恰好相反：它们就在内存里，必须走池。
+    /// </para>
+    /// <para>
+    /// <b>模型路由目前是「声明」而非「生效配置」：</b>执行路径（<c>SubAgentPool.ExecuteAsync</c>）
+    /// 用的是派发方当轮解析出的 <c>LlmProfile</c>，<b>不会</b>回读本列。
+    /// 所以这里改的是一条可查、可审计的团队约定，不是「下次一定用它跑」。
+    /// 要让本列真正生效，需要改路由解析顺序（执行前先查条目再解析），属独立切片。
     /// </para>
     /// <para>
     /// <b>只做部分更新</b>：请求体里没给的字段保持原值，不把 null 当成「清空」。
@@ -237,6 +243,30 @@ public sealed class SubAgentPoolAdminController(
             return BadRequest(new { error = "avatar_key_too_long", detail = "头像键最长 32 字符。" });
         }
 
+        // 空串是「清空 → 跟随派发方」，不参与格式校验；非空必须是 providerId/modelId。
+        if (body.ModelId is { Length: > 0 } modelId)
+        {
+            if (modelId.Length > 128)
+            {
+                return BadRequest(new
+                {
+                    error = "model_id_too_long",
+                    detail = "模型路由最长 128 字符（形如 providerId/modelId）。",
+                });
+            }
+
+            var slash = modelId.IndexOf('/', StringComparison.Ordinal);
+            if (slash <= 0 || slash == modelId.Length - 1 ||
+                modelId.IndexOf('/', slash + 1) >= 0)
+            {
+                return BadRequest(new
+                {
+                    error = "model_id_invalid",
+                    detail = "模型路由必须写成 providerId/modelId，例如 deepseek/deepseek-flash。",
+                });
+            }
+        }
+
         await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
 
         var entity = await db.AgentPool
@@ -260,6 +290,13 @@ public sealed class SubAgentPoolAdminController(
             entity.AvatarKey = body.AvatarKey;
         }
 
+        if (body.ModelId is not null)
+        {
+            // 空串归一化成 NULL：「跟随派发方」在库里有且只有一种表示，
+            // 否则会出现 NULL 与 '' 两种「都没设」的写法，读回时要各自处理。
+            entity.ModelId = body.ModelId.Length == 0 ? null : body.ModelId;
+        }
+
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
         return NoContent();
     }
@@ -268,7 +305,7 @@ public sealed class SubAgentPoolAdminController(
 /// <summary>
 /// 修改池条目展示字段的请求体。
 /// <para>
-/// 两个字段都是可选的：「没传」= 保持原值。要清空必须显式传空字符串 ——
+/// 三个字段都是可选的：「没传」= 保持原值。要清空必须显式传空字符串 ——
 /// 把 null 当成「清空」会让一次只改头像的请求顺手抹掉备注。
 /// </para>
 /// </summary>
@@ -279,6 +316,15 @@ public sealed class UpdateSubAgentPoolEntryRequest
 
     /// <summary>预设图形键（最长 32 字符）。</summary>
     public string? AvatarKey { get; init; }
+
+    /// <summary>
+    /// 模型路由 <c>providerId/modelId</c>（最长 128 字符）；传空字符串表示清空（跟随派发方）。
+    /// <para>
+    /// 只校验形状，不校验该路由是否在资源池注册：控制器拿不到 LLM 注册表，
+    /// 而在这里伪造一个「存在性校验」的自由文本会更糟。真正解析失败会在派发时暴露。
+    /// </para>
+    /// </summary>
+    public string? ModelId { get; init; }
 }
 
 /// <summary>
@@ -317,7 +363,14 @@ public sealed class SubAgentPoolEntryDto
     /// <summary>预设图形键；为空时前端按 <c>Name + PoolId</c> 确定性生成头像。</summary>
     public string? AvatarKey { get; init; }
 
-    /// <summary>默认模型路由 <c>providerId/modelId</c>；为空表示跟随派发方。</summary>
+    /// <summary>
+    /// 团队约定的模型路由 <c>providerId/modelId</c>；为空表示跟随派发方。
+    /// <para>
+    /// <b>如实说明：本列目前不被执行路径读取。</b>派发时用的是调用方当轮解析出的
+    /// <c>LlmProfile</c>，因此它是一条「声明/审计」信息，不是生效配置 ——
+    /// 不写这一句，界面把它当默认模型显示就会骗人。
+    /// </para>
+    /// </summary>
     public string? ModelId { get; init; }
 
     /// <summary>创建该条目所用的 agent 模板 id。</summary>

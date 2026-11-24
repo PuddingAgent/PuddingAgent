@@ -297,6 +297,147 @@ public sealed class SubAgentPoolAdminControllerTests
     }
 
     [TestMethod]
+    public async Task Update_SetsModelRoute_Returns204()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.Add(new AgentPoolEntity
+            {
+                PoolId = "pool-model",
+                OwnerWorkspaceId = "default",
+                Name = "advisor",
+                SubSessionId = "sub-model",
+                TemplateId = "global:task",
+                Status = AgentPoolEntity.StatusIdle,
+                CreatedAt = "2026-11-01T00:00:00Z",
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+        var result = await controller.Update(
+            "advisor",
+            new UpdateSubAgentPoolEntryRequest { ModelId = "fastrouter-claude/claude-opus-5-5" },
+            CancellationToken.None);
+
+        Assert.IsInstanceOfType<NoContentResult>(result);
+
+        await using var verify = await scope.Factory.CreateDbContextAsync();
+        var saved = await verify.AgentPool.SingleAsync(e => e.Name == "advisor");
+        Assert.AreEqual("fastrouter-claude/claude-opus-5-5", saved.ModelId);
+    }
+
+    [TestMethod]
+    public async Task Update_EmptyModelId_ClearsToNull_NotEmptyString()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.Add(new AgentPoolEntity
+            {
+                PoolId = "pool-clear",
+                OwnerWorkspaceId = "default",
+                Name = "scout",
+                SubSessionId = "sub-clear",
+                TemplateId = "global:task",
+                ModelId = "deepseek/deepseek-flash",
+                Status = AgentPoolEntity.StatusIdle,
+                CreatedAt = "2026-11-01T00:00:00Z",
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+        var result = await controller.Update(
+            "scout",
+            new UpdateSubAgentPoolEntryRequest { ModelId = string.Empty },
+            CancellationToken.None);
+
+        Assert.IsInstanceOfType<NoContentResult>(result);
+
+        await using var verify = await scope.Factory.CreateDbContextAsync();
+        var saved = await verify.AgentPool.SingleAsync(e => e.Name == "scout");
+        // 「跟随派发方」在库里只能有一种表示：空串会被读回当成「设了一个空路由」，
+        // 于是同一个语义出现两种存储写法，读侧就必须两套判定。这里锁死 NULL。
+        Assert.IsNull(saved.ModelId, "空串必须归一化成 NULL，不得落成空字符串");
+    }
+
+    [TestMethod]
+    public async Task Update_ModelIdWithoutProviderSlash_Returns400()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.Add(new AgentPoolEntity
+            {
+                PoolId = "pool-bad",
+                OwnerWorkspaceId = "default",
+                Name = "reviewer",
+                SubSessionId = "sub-bad",
+                TemplateId = "global:task",
+                Status = AgentPoolEntity.StatusIdle,
+                CreatedAt = "2026-11-01T00:00:00Z",
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+
+        // 裸 modelId 在多个 provider 注册同名模型时会解析失败（实测过），
+        // 所以入口就拒掉，不要让它存进去到派发时才炸。
+        foreach (var bad in new[] { "deepseek-flash", "/x", "a/", "a/b/c" })
+        {
+            var result = await controller.Update(
+                "reviewer",
+                new UpdateSubAgentPoolEntryRequest { ModelId = bad },
+                CancellationToken.None);
+
+            Assert.IsInstanceOfType<BadRequestObjectResult>(result, $"'{bad}' 应被拒绝");
+        }
+
+        await using var verify = await scope.Factory.CreateDbContextAsync();
+        var saved = await verify.AgentPool.SingleAsync(e => e.Name == "reviewer");
+        Assert.IsNull(saved.ModelId, "被拒的请求不得写入任何值");
+    }
+
+    [TestMethod]
+    public async Task Update_OmittedModelId_DoesNotClearExisting()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.Add(new AgentPoolEntity
+            {
+                PoolId = "pool-keep-model",
+                OwnerWorkspaceId = "default",
+                Name = "keeper-model",
+                SubSessionId = "sub-keep-model",
+                TemplateId = "global:task",
+                ModelId = "deepseek/deepseek-flash",
+                AvatarKey = "avatar-fox",
+                Status = AgentPoolEntity.StatusIdle,
+                CreatedAt = "2026-11-01T00:00:00Z",
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+        var result = await controller.Update(
+            "keeper-model",
+            new UpdateSubAgentPoolEntryRequest { Responsibility = "只改备注" },
+            CancellationToken.None);
+
+        Assert.IsInstanceOfType<NoContentResult>(result);
+
+        await using var verify = await scope.Factory.CreateDbContextAsync();
+        var saved = await verify.AgentPool.SingleAsync(e => e.Name == "keeper-model");
+        Assert.AreEqual(
+            "deepseek/deepseek-flash", saved.ModelId, "没传 modelId 不得被清空");
+        Assert.AreEqual("avatar-fox", saved.AvatarKey);
+    }
+
+    [TestMethod]
     public async Task Delete_WhenPoolDestroys_Returns204_AndForwardsName()
     {
         await using var scope = await CreateDatabaseAsync();
