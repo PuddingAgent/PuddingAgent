@@ -151,6 +151,22 @@ describe('SubAgentPoolPanel', () => {
     ).toBe('负责对 diff 做独立评审');
   });
 
+  it('未声明模型路由时右栏写「跟随派发方」，不写「—」', () => {
+    // 池里的 model_id 只是声明的偏好；执行时未声明就走派发方当轮解析的路由。
+    // 因此空值不能被渲染成「—」——那会被读成「字段缺失 / 坏了」，与真实行为相反。
+    setPoolState({
+      data: [entry({ poolId: 'p-inherit', name: '跟随者', modelId: null })],
+      loading: false,
+      error: null,
+    });
+    render(<SubAgentPoolPanel />);
+
+    fireEvent.click(screen.getByTestId('subagent-pool-item-p-inherit'));
+
+    const detail = screen.getByTestId('subagent-pool-detail');
+    expect(within(detail).getByText('跟随派发方')).toBeTruthy();
+  });
+
   it('四个状态各自独立渲染文案，不合并成一个模糊状态', () => {
     setPoolState({
       data: [

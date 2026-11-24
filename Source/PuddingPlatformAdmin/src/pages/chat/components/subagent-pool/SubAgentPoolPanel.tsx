@@ -50,6 +50,19 @@ const textOrDash = (value: string | null | undefined): string => {
 };
 
 /**
+ * 模型路由：池表里的 model_id 是【声明的偏好】，不是执行时的硬绑定。
+ *
+ * 执行时若未显式传 model，会继承条目声明的路由；条目也没声明，就用派发方当轮解析的路由。
+ * 因此空值不是一个“坏掉的字段”，而是「跟随派发方」——写「—」会被读成「未知 / 缺失」，
+ * 与实际行为相反。语义已由 e2e 验证：不传 model 且条目声明 deepseek/deepseek-flash 时，
+ * 派发输出 advisory 并确实走该路由。
+ */
+const describeModel = (value: string | null | undefined): string => {
+  const trimmed = (value ?? '').trim();
+  return trimmed.length > 0 ? trimmed : '跟随派发方';
+};
+
+/**
  * 模型路由是否合法：恰好一个斜杠，且两侧都非空（`providerId/modelId`）。
  *
  * 用 split 而不是正则：要同时拒掉 `/x`、`a/`、`a/b/c` 三种形态；
@@ -376,7 +389,7 @@ const EntryDetail: React.FC<{
       </header>
 
       <DetailRow label="角色" value={textOrDash(entry.role)} />
-      <DetailRow label="模型" value={textOrDash(entry.modelId)} />
+      <DetailRow label="模型" value={describeModel(entry.modelId)} />
       <DetailRow label="模板" value={textOrDash(entry.templateId)} />
       <DetailRow label="任务数" value={String(entry.taskCount ?? 0)} />
       <DetailRow label="最近使用" value={describeLastUsed(entry)} />
