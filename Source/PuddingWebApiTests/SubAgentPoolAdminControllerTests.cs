@@ -876,6 +876,68 @@ public sealed class SubAgentPoolAdminControllerTests
         Assert.IsFalse(fullPayload.Truncated, "刚好返回全量时不得报告截断");
     }
 
+    /// <summary>
+    /// 花费汇总：已计价与未计价必须分开数。
+    /// <para>
+    /// 这个用例存在的理由是一个真实且重大的计量缺陷：资源池缺价格时账本写
+    /// <c>TotalCost = 0</c>，与「真的免费」在库里完全一样（实测 claude-opus 24M token 全记为 $0）。
+    /// 如果汇总只返回金额，界面就会把「价格未知」显示成「花费为零」——
+    /// 那是把一个已知缺陷放大成看板数字。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task GetRuns_SeparatesPricedFromUnpriced_AndZeroTokenRowsCountAsNeither()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.Add(PoolRow("pool-s", "spender", "sub-spender"));
+            seed.SubAgentRuns.Add(RunRow("run-s1", "sub-spender", "completed"));
+            seed.TokenUsageEvents.AddRange(
+                LedgerRow("sub-spender", tokens: 1000, cost: 0.5m),
+                LedgerRow("sub-spender", tokens: 2000, cost: 0m),
+                LedgerRow("sub-spender", tokens: 0, cost: 0m),
+                LedgerRow("sub-other", tokens: 999999, cost: 99m));
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+        var result = await controller.GetRuns("spender", 20, CancellationToken.None);
+        var payload = ((OkObjectResult)result.Result!).Value as SubAgentRunsPageDto;
+
+        Assert.IsNotNull(payload?.Spend, "有账本行时必须返回汇总，而不是 null");
+        var spend = payload!.Spend!;
+        Assert.AreEqual(3000L, spend.TotalTokens, "token 合计必须包含未计价行，但不得包含别的子会话");
+        Assert.AreEqual(0.5m, spend.PricedCostUsd, "金额只能是已计价行的和；未计价行不得被当成 0 元汇进总额");
+        Assert.AreEqual(1, spend.PricedCalls);
+        Assert.AreEqual(1, spend.UnpricedCalls, "缺价且有用量的行必须被单独数出来（TotalTokens=0 的失败请求不算）");
+    }
+
+    /// <summary>
+    /// 没有任何账本行时返回 <c>null</c>，而不是四个 0。
+    /// <para>
+    /// null 与 0 是两个事实：「从未产生过账本」 vs 「有记录但一条都没计价」。
+    /// 前端据此决定不显示汇总行，还是显示「全部未计价」警告。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task GetRuns_SpendIsNull_WhenNoLedgerRowsExist()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.Add(PoolRow("pool-n", "quiet", "sub-quiet"));
+            seed.SubAgentRuns.Add(RunRow("run-n1", "sub-quiet", "completed"));
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+        var result = await controller.GetRuns("quiet", 20, CancellationToken.None);
+        var payload = ((OkObjectResult)result.Result!).Value as SubAgentRunsPageDto;
+
+        Assert.IsNull(payload?.Spend, "零账本行必须返回 null，用四个 0 无法区分「没记录」与「没计价」");
+    }
+
     /// <summary>造一条池条目：只填必填列，展示列留空。</summary>
     private static AgentPoolEntity PoolRow(
         string poolId,
@@ -918,6 +980,28 @@ public sealed class SubAgentPoolAdminControllerTests
         TotalToolCalls = tools,
         TotalDurationMs = durationMs,
     };
+
+    /// <summary>
+    /// 造一条账本行。只填汇总用到的列与必填列。
+    /// <para>
+    /// <c>SourceId</c> 有唯一索引 <c>(SourceType, SourceId)</c>，所以每条必须不同；
+    /// 用递增序号而不是 Guid，失败时的日志更可读。
+    /// </para>
+    /// </summary>
+    private static TokenUsageEventEntity LedgerRow(string subAgentId, long tokens, decimal cost) => new()
+    {
+        SourceType = "agent_llm",
+        SourceId = $"ledger-{Interlocked.Increment(ref _ledgerSeq)}",
+        SubAgentId = subAgentId,
+        YearMonth = "2026-11",
+        OccurredAtUtc = new DateTimeOffset(2026, 11, 25, 0, 0, 0, TimeSpan.Zero),
+        PromptTokens = tokens,
+        TotalTokens = tokens,
+        TotalCost = cost,
+        CreatedAtUtc = new DateTimeOffset(2026, 11, 25, 0, 0, 0, TimeSpan.Zero),
+    };
+
+    private static int _ledgerSeq;
 
     /// <summary>构造一个内存快照条目：只有 <c>Name</c> 参与判定，其余字段填得能通过必填校验。</summary>
     private static PooledSubAgent PoolEntry(string name) => new()

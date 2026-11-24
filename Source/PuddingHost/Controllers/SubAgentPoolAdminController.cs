@@ -441,11 +441,45 @@ public sealed class SubAgentPoolAdminController(
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
+        // 花费汇总与运行历史是同一批 run 的两面：汇总是「这个成员一共花了多少」，
+        // 历史是「每一次花了多少」。归集键用 sub_session_id —— 账本的 SubAgentId 列
+        // 存的正是这个值（FileSubAgentRunStore 写入时同源），因此改名/换模板都不会断开。
+        //
+        // ⚠️ 未计价是**真实存在**的状态，不是边界情况：资源池 pricePer1MTokens 缺失时
+        // TokenUsageRecorder 只能把 TotalCost 写成 0，与「真的花了 0 元」在库里长得一样。
+        // 因此这里额外数出未计价行数，让界面能说「还有 N 次没有价格」，
+        // 而不是把「价格未知」静默汇进总额。
+        // 投影两列后在内存聚合，而不是 SQL 端 SUM/COUNT：
+        // SQLite 提供程序把 decimal 存为 TEXT，SQL 端对 decimal 求 SUM 不受支持，
+        // 而 SUM(CASE WHEN decimal > 0 ...) 会退化为字符串比较（"0.0000" > "0" 误判为真）。
+        // 代价是把这个子会话的全部账本行拉回内存；它是一个片区的历史（实测最大百行量级），
+        // 且本端点只在管理面板打开时调用。若将来单条目行数过万，应改为
+        // 「SQL 端按 double 求和 + 显式精度取舍」，而不是把这里改成不完整采样。
+        var ledger = await db.TokenUsageEvents
+            .AsNoTracking()
+            .Where(e => e.SubAgentId == entry.SubSessionId)
+            .Select(e => new { e.TotalTokens, e.TotalCost })
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        SubAgentSpendDto? spend = null;
+        if (ledger.Count > 0)
+        {
+            spend = new SubAgentSpendDto
+            {
+                TotalTokens = ledger.Sum(x => x.TotalTokens),
+                PricedCostUsd = ledger.Sum(x => x.TotalCost),
+                PricedCalls = ledger.Count(x => x.TotalCost > 0m),
+                UnpricedCalls = ledger.Count(x => x.TotalCost == 0m && x.TotalTokens > 0),
+            };
+        }
+
         return Ok(new SubAgentRunsPageDto
         {
             Items = runs,
             Total = total,
             Truncated = total > runs.Count,
+            Spend = spend,
         });
     }
 }
@@ -568,6 +602,42 @@ public sealed class SubAgentRunsPageDto
 
     /// <summary>是否因 <c>limit</c> 截断；等价于 <c>Total &gt; Items.Count</c>。</summary>
     public bool Truncated { get; init; }
+
+    /// <summary>
+    /// 该条目全部历史调用的花费汇总；无任何账本行时为 <c>null</c>。
+    /// <para>
+    /// <b>null ≠ 零：</b>null 表示「这个子会话从未产生过账本记录」，零表示「有记录但一条都没计价」。
+    /// 前端据此决定是「不显示汇总」还是「全部未计价」。
+    /// </para>
+    /// </summary>
+    public SubAgentSpendDto? Spend { get; init; }
+}
+
+/// <summary>
+/// 子代理花费汇总（来自 <c>TokenUsageEvents</c> 账本）。
+/// <para>
+/// <b>为什么金额与未计价计数必须一起返回：</b>资源池缺价格时
+/// <c>TokenUsageRecorder</c> 只能写 <c>TotalCost = 0</c>，与「确实免费」在库里无法区分。
+/// 只返回金额的看板会把 85M token 的模型花费显示成 $0（实测：claude-sonnet $49M / claude-opus $24M
+/// 全部计为 0）。带上未计价计数，界面才能说「$X，另有 N 次没有价格」。
+/// </para>
+/// </summary>
+public sealed class SubAgentSpendDto
+{
+    /// <summary>全部账本行的 token 合计（含未计价行）。</summary>
+    public long TotalTokens { get; init; }
+
+    /// <summary>已计价行的金额合计（USD）；未计价行贡献 0。</summary>
+    public decimal PricedCostUsd { get; init; }
+
+    /// <summary>已计价调用数（<c>TotalCost &gt; 0</c>）。</summary>
+    public int PricedCalls { get; init; }
+
+    /// <summary>
+    /// 未计价调用数（<c>TotalCost == 0</c> 但 <c>TotalTokens &gt; 0</c>）。
+    /// <para>TotalTokens 为 0 的行不算未计价：那是没有可计量用量的失败请求，不是缺价。</para>
+    /// </summary>
+    public int UnpricedCalls { get; init; }
 }
 
 /// <summary>

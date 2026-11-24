@@ -15,7 +15,7 @@ draft: false
 
 
 # PuddingHost CodeMAP
-> 源指纹: Source/PuddingHost/**=219-7c72a1af7612 · 条目数: 63 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingHost/**=219-6eb31df1c4e9 · 条目数: 63 · 最近整理: 2026-10-22
 
 > 唯一 Host 组合根 | Console 与 Desktop 共用 DI · Browser Bridge · 飞书连接器
 > 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingHost-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingHost-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
@@ -58,7 +58,7 @@ Agent 单轮执行 API：`Extensions/PuddingServiceCollectionExtensions.cs` 调�
 | `Services/CodeIndexStatusProbe.cs` | codeIndex 状态只读探针（见下「关键语义」） | `CodeIndexStatusDetailSnapshot`、`CodeIndexProjectStatusSnapshot` | — | — |
 | `Services/FullTextIndexStatusProbe.cs` | S-A：`fullText` 块探针（只产块，不再产响应根对象）；响应根对象 `IndexAdminStatusSnapshot` 由控制器组装 | `FullTextIndexStatusDetailSnapshot`、`FullTextIndexMaintenanceStatusSnapshot` | — | — |
 | `Controllers/TransportStatusController.cs` | 传输用量只读 API（退役判据证据面）（见下「关键语义」） | `TransportStatusController`、`DesktopTransportStatusSnapshot` | — | — |
-| `Controllers/SubAgentPoolAdminController.cs` | `GET /api/admin/sub-agent-pool` 池条目只读列表（细节见「条目细节」） | `SubAgentPoolAdminController`、`SubAgentPoolEntryDto` | — | — |
+| `Controllers/SubAgentPoolAdminController.cs` | 子代理池管理面：条目列表、运行历史（含花费汇总与未计价计数）、休眠、销毁、改展示字段（细节见「条目细节」） | `SubAgentPoolAdminController`、`SubAgentPoolEntryDto`、`SubAgentRunsPageDto`、`SubAgentSpendDto` | — | — |
 
 **关键语义**
 
@@ -207,6 +207,6 @@ tasks/workspaces/agents/messages scope+workspace Policies
 - `Tools/ComputerObserveTool.cs` 用途原文：可见窗口客户区原图/编号图与候选 ID；复用 Vision Artifact，多模态路由不支持时明确无像素；与 Runtime 输入工具共享 ComputerDesktopSession
 - `Storage/StorageMaintenanceService.cs` 用途原文：🔑 Core 所有的 SQLite/代码索引明细与安全清理；固定语义白名单、服务端预览、批量删除、checkpoint/VACUUM；分析返回前经 `StorageAnalysisEnrichment.Apply` 附上「表 → 数据类」「表 → 保护原因」两个纯增量映射
 - `Services/HostWorkspacePluginEventTarget.cs` 用途原文：插件 workspace 事件 Host 适配：把平台 sink 接到真实 `ExecutablePluginService.Manager.PublishWorkspaceEventAsync`
-- `Controllers/SubAgentPoolAdminController.cs` 用途原文：`GET /api/admin/sub-agent-pool` 池条目只读列表（Admin JWT；空池必须 200 + []，不得用 404 表示空列表；直接查 `agent_pool`，不复用带就绪门的 `SubAgentPool` 单例）
+- `Controllers/SubAgentPoolAdminController.cs` 用途原文：子代理池管理面：条目列表（Admin JWT；空池必须 200 + []，不得用 404 表示空列表；直接查 `agent_pool`，不复用带就绪门的 `SubAgentPool` 单例）、运行历史 `GET {name}/runs`（花费汇总的金额与未计价计数并列返回）、`POST {name}/sleep`、`DELETE {name}`、`PATCH {name}`
 - `Hosting/AgentAdapterApiDocumentation.cs` 用途原文：用 Microsoft.AspNetCore.OpenApi 生成外部 Agent 接口 JSON，包含专用端点和 Bearer 鉴权，沿用外部 API 暴露策略
 
