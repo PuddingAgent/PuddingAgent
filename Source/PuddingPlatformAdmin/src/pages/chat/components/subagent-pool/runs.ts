@@ -1,7 +1,7 @@
 // ── 运行历史的纯展示逻辑 ────────────────────────────────────────
 // 纯函数，不依赖 React / antd，便于单测（与 avatar.ts / errors.ts 同一约定）。
 import dayjs from 'dayjs';
-import type { SubAgentRun } from './api';
+import type { SubAgentRun, SubAgentSpend } from './api';
 
 const DASH = '—';
 
@@ -69,3 +69,73 @@ export const describeRunSummary = (
     `${run.totalToolCalls ?? 0} 次工具`,
     describeRunDuration(run.totalDurationMs),
   ].join(' · ');
+
+/**
+ * 美元金额。
+ *
+ * **精度随量级变化是故意的：** 子代理一次调用实测低至 $0.0033，
+ * 统一 `toFixed(2)` 会把它显示成 `$0.00` —— 那是把「花了一点」说成「没花」，
+ * 而用户看这列正是为了判断花了多少。所以量级越小给的有效位越多，
+ * 低于万分之一时改用不等式，而不是默不作声地归零。
+ */
+export const formatUsd = (value: number): string => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return DASH;
+  if (value === 0) return '$0';
+  if (value >= 1) return `$${value.toFixed(2)}`;
+  if (value >= 0.01) return `$${value.toFixed(3)}`;
+  if (value >= 0.0001) return `$${value.toFixed(4)}`;
+  return '<$0.0001';
+};
+
+/** token 数的粗粒度展示：`17.13M`、`291.7K`。保留两位是为了能看出量级差异而不是精确值。 */
+export const formatTokenCount = (value: number): string => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return DASH;
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return String(value);
+};
+
+/** 花费汇总的展示形状；`null` 表示「不该渲染这一块」。 */
+export interface SpendSummary {
+  /** 金额（或「全部未计价」/「无可计量用量」这类非金额结论）。 */
+  amount: string;
+  /** 辅助行：token 总量与调用次数。 */
+  detail: string;
+  /** 需要人知道的限定；没有则为 null。 */
+  warning: string | null;
+}
+
+/**
+ * 花费汇总展示。
+ *
+ * 四种状态必须分开，不能归并成一条金额：
+ * - `spend` 为空 → 从未产生账本记录（不渲染）
+ * - 有已计价、有未计价 → 金额 + 「另有 N 次没有价格」
+ * - 全部未计价 → 「全部未计价」（而不是 `$0`）
+ * - 有记录但既无已计价也无未计价 → 「无可计量用量」（失败请求，不是缺价）
+ *
+ * 把后两种显示成 `$0` 会在两个不同原因上给出同一个错误结论：
+ * 前者是「价格没登记」，后者是「根本没量」，都不是「免费」。
+ */
+export const describeSpend = (
+  spend: SubAgentSpend | null | undefined,
+): SpendSummary | null => {
+  if (!spend) return null;
+
+  const priced = typeof spend.pricedCalls === 'number' ? spend.pricedCalls : 0;
+  const unpriced = typeof spend.unpricedCalls === 'number' ? spend.unpricedCalls : 0;
+  const totalTokens = typeof spend.totalTokens === 'number' ? spend.totalTokens : 0;
+  const calls = priced + unpriced;
+
+  let amount: string;
+  if (priced > 0) amount = formatUsd(spend.pricedCostUsd);
+  else if (unpriced > 0) amount = '全部未计价';
+  else amount = '无可计量用量';
+
+  const detail = `${formatTokenCount(totalTokens)} tokens · ${calls} 次调用`;
+  const warning =
+    unpriced > 0 && priced > 0 ? `另有 ${unpriced} 次没有价格，未计入金额` : null;
+
+  return { amount, detail, warning };
+};

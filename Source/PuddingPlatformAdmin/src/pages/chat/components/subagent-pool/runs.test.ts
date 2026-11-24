@@ -5,7 +5,10 @@ import {
   describeRunDuration,
   describeRunStatus,
   describeRunSummary,
+  describeSpend,
   formatRunStartedAt,
+  formatTokenCount,
+  formatUsd,
 } from './runs';
 
 describe('describeRunStatus', () => {
@@ -74,5 +77,96 @@ describe('describeRunSummary', () => {
     expect(summary).toContain('运行中');
     expect(summary).toContain('—');
     expect(summary).not.toContain('0.0s');
+  });
+});
+
+describe('formatUsd', () => {
+  // 为什么不能统一 toFixed(2)：子代理一次调用实测低至 $0.0033，
+  // 两位小数会把它显示成 $0.00 —— 把「花了一点」说成「没花」。
+  it('小额保留足够有效位，不归零成 $0.00', () => {
+    expect(formatUsd(0.0033)).toBe('$0.0033');
+    expect(formatUsd(0.152166)).toBe('$0.152');
+    expect(formatUsd(0.0033)).not.toBe('$0.00');
+  });
+
+  it('按量级切换精度', () => {
+    expect(formatUsd(1.555588)).toBe('$1.56');
+    expect(formatUsd(12.3)).toBe('$12.30');
+    expect(formatUsd(0)).toBe('$0');
+  });
+
+  it('低于万分之一用不等式表达，而不是默默归零', () => {
+    expect(formatUsd(0.00001)).toBe('<$0.0001');
+  });
+
+  it('非法输入返回破折号', () => {
+    expect(formatUsd(Number.NaN)).toBe('—');
+    expect(formatUsd(-1)).toBe('—');
+  });
+});
+
+describe('formatTokenCount', () => {
+  it('按量级缩写', () => {
+    expect(formatTokenCount(17_128_349)).toBe('17.13M');
+    expect(formatTokenCount(291_706)).toBe('291.7K');
+    expect(formatTokenCount(999)).toBe('999');
+    expect(formatTokenCount(2_500_000_000)).toBe('2.50B');
+  });
+});
+
+describe('describeSpend', () => {
+  it('无账本记录时返回 null（不渲染），而不是 $0', () => {
+    expect(describeSpend(null)).toBeNull();
+    expect(describeSpend(undefined)).toBeNull();
+  });
+
+  it('已计价 + 未计价：给出金额同时列出未计价次数', () => {
+    const summary = describeSpend({
+      totalTokens: 17_128_349,
+      pricedCostUsd: 1.555588,
+      pricedCalls: 125,
+      unpricedCalls: 3,
+    });
+
+    expect(summary?.amount).toBe('$1.56');
+    expect(summary?.detail).toBe('17.13M tokens · 128 次调用');
+    expect(summary?.warning).toContain('3 次没有价格');
+  });
+
+  it('全部未计价：说「全部未计价」而不是 $0', () => {
+    const summary = describeSpend({
+      totalTokens: 49_000_000,
+      pricedCostUsd: 0,
+      pricedCalls: 0,
+      unpricedCalls: 5,
+    });
+
+    expect(summary?.amount).toBe('全部未计价');
+    expect(summary?.amount).not.toBe('$0');
+    expect(summary?.warning).toBeNull();
+  });
+
+  it('有记录但无任何可计量用量：与「缺价」区分开', () => {
+    const summary = describeSpend({
+      totalTokens: 0,
+      pricedCostUsd: 0,
+      pricedCalls: 0,
+      unpricedCalls: 0,
+    });
+
+    expect(summary?.amount).toBe('无可计量用量');
+    expect(summary?.warning).toBeNull();
+  });
+
+  it('仅已计价时不给未计价告警', () => {
+    const summary = describeSpend({
+      totalTokens: 1_000,
+      pricedCostUsd: 0.5,
+      pricedCalls: 2,
+      unpricedCalls: 0,
+    });
+
+    expect(summary?.amount).toBe('$0.500');
+    expect(summary?.warning).toBeNull();
   });
 });

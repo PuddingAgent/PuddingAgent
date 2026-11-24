@@ -80,6 +80,13 @@ interface RunsState {
   runs?: unknown[] | null;
   total?: number;
   truncated?: boolean;
+  /** 花费汇总；默认 null = 从未产生账本，与后端无账本时的返回值一致。 */
+  spend?: {
+    totalTokens: number;
+    pricedCostUsd: number;
+    pricedCalls: number;
+    unpricedCalls: number;
+  } | null;
   loading?: boolean;
   error?: string | null;
   reload?: () => void;
@@ -93,6 +100,7 @@ const setRunsState = (state: RunsState = {}): void => {
     runs: [],
     total: 0,
     truncated: false,
+    spend: null,
     loading: false,
     error: null,
     reload: jest.fn(),
@@ -585,5 +593,53 @@ describe('SubAgentPoolPanel', () => {
     fireEvent.click(screen.getByTestId('subagent-pool-item-p1'));
 
     expect(screen.queryByTestId('subagent-run-truncated')).toBeNull();
+  });
+
+  // ── 累计花费：后端早已返回，前端此前未声明、未渲染 ────────────
+  // 这两条用例锁住「链路真的接到界面」：只改类型声明而不加渲染，或渲染到
+  // 一个没人看得见的容器里，都应该红。
+
+  it('有账本时右栏渲染累计花费、token 量与未计价告警', () => {
+    setPoolState({
+      data: [entry({ poolId: 'p1', name: '检索助手' })],
+      loading: false,
+      error: null,
+    });
+    setRunsState({
+      runs: [],
+      loading: false,
+      error: null,
+      spend: {
+        totalTokens: 17_128_349,
+        pricedCostUsd: 1.555588,
+        pricedCalls: 125,
+        unpricedCalls: 3,
+      },
+    });
+    render(<SubAgentPoolPanel />);
+
+    fireEvent.click(screen.getByTestId('subagent-pool-item-p1'));
+
+    expect(screen.getByTestId('subagent-spend-amount').textContent).toBe('$1.56');
+    expect(screen.getByTestId('subagent-spend-detail').textContent).toContain('17.13M');
+    expect(screen.getByTestId('subagent-spend-detail').textContent).toContain('128 次调用');
+    expect(screen.getByTestId('subagent-spend-warning').textContent).toContain(
+      '3 次没有价格',
+    );
+  });
+
+  it('无账本时不渲染花费块，而不是渲染成 $0', () => {
+    setPoolState({
+      data: [entry({ poolId: 'p1', name: '检索助手' })],
+      loading: false,
+      error: null,
+    });
+    setRunsState({ runs: [], loading: false, error: null, spend: null });
+    render(<SubAgentPoolPanel />);
+
+    fireEvent.click(screen.getByTestId('subagent-pool-item-p1'));
+
+    expect(screen.queryByTestId('subagent-spend')).toBeNull();
+    expect(screen.queryByText(/^\$/)).toBeNull();
   });
 });

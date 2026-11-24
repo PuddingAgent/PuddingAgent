@@ -117,6 +117,24 @@ export interface SubAgentRun {
 }
 
 /**
+ * 子代理花费汇总（与后端 `SubAgentSpendDto` 一一对应）。
+ *
+ * **金额与未计价计数必须一起看：** 资源池缺价格时 `TokenUsageRecorder` 只能写
+ * `TotalCost = 0`，与「确实免费」在库里无法区分。只显示金额会把一次真实花费
+ * 说成 $0，所以 `unpricedCalls` 不是附赠字段，是金额可信度的前提。
+ */
+export interface SubAgentSpend {
+  /** 全部账本行的 token 合计（含未计价行）。 */
+  totalTokens: number;
+  /** 已计价行的金额合计（USD）；未计价行贡献 0。 */
+  pricedCostUsd: number;
+  /** 已计价调用数。 */
+  pricedCalls: number;
+  /** 未计价调用数（有 token 但没有价格）；这些**不在** `pricedCostUsd` 里。 */
+  unpricedCalls: number;
+}
+
+/**
  * 拉取某条目的运行历史（按自增 Id 倒序，最近的在前）。
  *
  * 与花名册同一套语义：空 items 是正常结果（这个成员没干过活）。
@@ -132,6 +150,13 @@ export interface SubAgentRunsPage {
   total: number;
   /** 是否因 limit 被截断；等价于 total > items.length。 */
   truncated: boolean;
+  /**
+   * 花费汇总；`null` 或缺失表示「从未产生账本记录」。
+   *
+   * 用可选而不是必选：后端在无账本时返回 null，但不排除更旧的部署根本没有这个字段，
+   * 前端不应因此把整页历史判为格式错误。
+   */
+  spend?: SubAgentSpend | null;
 }
 
 export async function fetchSubAgentRuns(

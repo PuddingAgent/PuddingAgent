@@ -17,7 +17,7 @@ import {
 } from './api';
 import { useSubAgentPoolStyles } from './SubAgentPoolPanel.styles';
 import { describeSubAgentPoolActionError } from './errors';
-import { describeRunSummary } from './runs';
+import { describeRunSummary, describeSpend } from './runs';
 import { useSubAgentPool } from './useSubAgentPool';
 import { useSubAgentRuns } from './useSubAgentRuns';
 
@@ -415,8 +415,10 @@ const EntryActions: React.FC<{
  * 失败时也不许显示成「从未执行」——前者要刷新，后者要建任务，下一步完全不同。
  */
 const RunHistory: React.FC<{ name: string }> = ({ name }) => {
-  const { runs, total, truncated, loading, error, reload } = useSubAgentRuns(name);
+  const { runs, total, truncated, loading, error, reload, spend } = useSubAgentRuns(name);
   const muted = { fontSize: 12, color: 'var(--pudding-text-secondary, #888)' } as const;
+  // 花费与列表同源（同一个响应），但不从属于某一行：它描述的是这个成员的累计。
+  const spendSummary = describeSpend(spend);
 
   return (
     <section
@@ -478,6 +480,35 @@ const RunHistory: React.FC<{ name: string }> = ({ name }) => {
           ))}
         </ul>
       )}
+
+      {/* 累计花费：与 load / error / 空态同一套三态纪律 —— 没拿到结果时不渲染。
+          不把它塞进某一行：一行是一条执行，这笔钱是整个子会话（含池复用后的所有派发）。 */}
+      {!loading && error === null && spendSummary !== null ? (
+        <div
+          data-testid="subagent-spend"
+          style={{
+            marginTop: 8,
+            paddingTop: 8,
+            borderTop: '1px dashed var(--pudding-chat-border, #eee)',
+          }}
+        >
+          <div style={{ fontSize: 13 }}>
+            <span style={muted}>累计花费 </span>
+            <strong data-testid="subagent-spend-amount">{spendSummary.amount}</strong>
+          </div>
+          <div data-testid="subagent-spend-detail" style={muted}>
+            {spendSummary.detail}
+          </div>
+          {spendSummary.warning !== null ? (
+            <div
+              data-testid="subagent-spend-warning"
+              style={{ ...muted, color: '#b9770e' }}
+            >
+              {spendSummary.warning}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* 截断提示放在列表外：它描述的是「你看到的不是全部」，
           而不是某一条记录的性质。放进列表就会凭空多出一个假行。 */}
