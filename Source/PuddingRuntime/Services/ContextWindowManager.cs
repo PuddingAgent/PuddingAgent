@@ -508,6 +508,7 @@ public sealed class ContextWindowManager
         var registrations = new List<(ChatMessage Message, string MessageId)>(orderedEntities.Count);
         foreach (var entity in orderedEntities)
         {
+            var identity = CanonicalChatTranscriptSynchronizer.ReadCanonicalIdentity(entity);
             var message = new ChatMessage(
                 string.Equals(entity.ContentType, ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase)
                     ? ChatRole.Assistant
@@ -522,6 +523,8 @@ public sealed class ContextWindowManager
             {
                 IsContextSummary = string.Equals(entity.ContentType,
                     ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase),
+                SourceMessageId = identity.MessageId,
+                SourceTurnId = identity.TurnId,
                 SourceContentHash = ParseChatRole(entity.Role) == ChatRole.User
                     ? HistoryPrefixReconciler.ComputeSourceHash(
                         entity.Content, ContentPartsEnvelope.Decode(entity.AttachmentsJson))

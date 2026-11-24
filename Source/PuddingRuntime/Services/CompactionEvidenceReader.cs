@@ -36,7 +36,7 @@ public sealed class CompactionEvidenceReader(IDbContextFactory<MemoryDbContext> 
             if (!rows.TryGetValue(id, out var row))
                 return new CompactionSourceReference(id, query.SessionId, null, null, null, "missing");
             var child = children.SingleOrDefault(c => c.FinalSummaryId == id)?.CompactionId;
-            var turn = ReadCanonicalTurnId(row);
+            var turn = CanonicalChatTranscriptSynchronizer.ReadCanonicalIdentity(row).TurnId;
             return new CompactionSourceReference(id, query.SessionId, row.Role, turn, child,
                 child is not null ? "checkpoint" : turn is not null ? "turn" : "archived_source");
         }).ToArray();
@@ -58,20 +58,13 @@ public sealed class CompactionEvidenceReader(IDbContextFactory<MemoryDbContext> 
         var content = JsonSerializer.Serialize(new
         {
             row.Role, row.Content, row.ToolCallsJson, row.ToolResultJson, row.AttachmentsJson,
-            row.ThinkingJson, turnId = ReadCanonicalTurnId(row),
+            row.ThinkingJson, turnId = CanonicalChatTranscriptSynchronizer.ReadCanonicalIdentity(row).TurnId,
         });
         var offset = Math.Clamp(contentOffset, 0, content.Length);
         var length = Math.Min(Math.Clamp(windowSize, 1, 32768), content.Length - offset);
         var end = offset + length;
         return new("ok", content.Substring(offset, length), content.Length,
             end < content.Length ? end : null, row.ContentType);
-    }
-
-    private static string? ReadCanonicalTurnId(MessageEntity row)
-    {
-        if (row.Source != "chat_transcript" || row.Metadata is null) return null;
-        var separator = row.Metadata.IndexOf('\n');
-        return separator > 0 ? row.Metadata[..separator] : null;
     }
 
     private static async Task<(string Status, CompactionCoverageManifestEntity? Manifest, string[] Ids)> LoadManifestAsync(

@@ -1549,7 +1549,7 @@ public sealed partial class AgentExecutionService
                         : null;
                     history.Add(new ChatMessage(ChatRole.Assistant, reply,
                         ReasoningContent: assistantReasoningContent,
-                        ContinuationState: continuationState));
+                        ContinuationState: continuationState) { SourceTurnId = request.ExecutionIdentity?.TurnId });
                     if (round < maxRounds - 1)
                     {
                         var lateSteeringCount = await TryInjectSteeringMessageAsync(

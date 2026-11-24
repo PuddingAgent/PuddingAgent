@@ -820,6 +820,7 @@ public sealed partial class AgentExecutionService
                     ["compaction_diagnostic_file"] = diagnosticFile is null ? "unavailable" : "compaction/" + diagnosticFile,
                     ["compaction_capture_complete"] = diagnosticCaptureComplete.ToString().ToLowerInvariant(),
                     ["compaction_unresolved_sources"] = unresolvedSourceCount.ToString(),
+                    ["compaction_source_problem_count"] = (sourceProblems?.Count ?? 0).ToString(),
                     ["compaction_source_problems"] = string.Join(",", (sourceProblems ?? []).Take(8)),
                     ["compaction_measured_after_bytes"] = verification.AfterTextBytes?.ToString() ?? "unavailable",
                     ["compaction_summary_budget_tokens"] = plan.SummaryAllowance?.Tokens.ToString() ?? "unavailable",

@@ -173,6 +173,17 @@ internal static class CanonicalChatTranscriptSynchronizer
     internal static string BuildCanonicalIdentity(ChatMessageRow row) =>
         $"{row.TurnId ?? string.Empty}\n{row.MessageId}";
 
+    internal static (string? TurnId, string? MessageId) ReadCanonicalIdentity(MessageEntity row)
+    {
+        if (row.Source != "chat_transcript" || row.Metadata is not { } metadata)
+            return default;
+        var separator = metadata.IndexOf('\n');
+        if (separator < 0)
+            return default;
+        return (separator == 0 ? null : metadata[..separator],
+            separator == metadata.Length - 1 ? null : metadata[(separator + 1)..]);
+    }
+
     private static long ReadPersistedHighWatermark(string? metadata)
     {
         if (string.IsNullOrWhiteSpace(metadata))

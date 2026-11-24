@@ -432,6 +432,22 @@ public sealed class WarmPrefixCompactionApplyTests
     }
 
     [TestMethod]
+    public void VerifyApplication_IdenticalReplyFromAnotherTurn_RejectsFrozenHistory()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+        var index = history.FindIndex(message => message.Role == ChatRole.Assistant);
+        history[index] = history[index] with { SourceTurnId = "turn-one" };
+        var plan = CreatePlan(store, history);
+        history[index] = history[index] with { SourceTurnId = "turn-two" };
+
+        var verification = WarmPrefixCompaction.VerifyApplication(store, SessionId, history, null,
+            BuildConfig(), plan, "digest", CurrentValuesFor(plan, history));
+        Assert.AreEqual("history_revision_changed", verification.Reason);
+        Assert.IsFalse(verification.CanApply);
+    }
+
+    [TestMethod]
     public void ContinuationOnlyMutation_InvalidatesFrozenRevision()
     {
         var before = new ChatMessage(ChatRole.Assistant, null,

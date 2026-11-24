@@ -469,6 +469,101 @@ public sealed class WarmPrefixCheckpointCommitTests
     }
 
     [TestMethod]
+    [DataRow("input-m5", true)]
+    [DataRow("input-m7", false)]
+    [DataRow("unknown", false)]
+    public async Task Commit_LegacyRepeatedReply_RequiresAdjacentDurableUserAnchors(string followingInput, bool expectedCommit)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = await SeedRepeatedRepliesAsync(connection);
+        var result = await CreateService(options).CommitWarmPrefixCheckpointAsync(CreateRequest(0, []) with
+        {
+            SourceMessages =
+            [
+                new(new(ChatRole.User, "rendered input") { SourceMessageId = "input-m3" }),
+                new(new(ChatRole.Assistant, null, ToolCalls: [new ToolCall("c", "lookup", "{}")])),
+                new(new(ChatRole.Tool, "result", ToolCallId: "c")),
+                new(new(ChatRole.Assistant, "same reply")),
+                new(new(ChatRole.User, "rendered input") { SourceMessageId = followingInput }),
+            ],
+        });
+        Assert.AreEqual(expectedCommit, result.Committed);
+        await using var verify = new MemoryDbContext(options);
+        var covered = await verify.Messages.Where(m => m.Source == "chat_transcript" && m.CompactedBy != null)
+            .OrderBy(m => m.Sequence).Select(m => m.MessageId).ToArrayAsync();
+        CollectionAssert.AreEqual(expectedCommit ? new[] { "m3", "m4", "m5" } : Array.Empty<string>(), covered);
+        if (expectedCommit)
+            Assert.AreEqual(4, result.ArchivedMessageCount, "Both rendered inputs and both tool frames are retained.");
+        else
+        {
+            CollectionAssert.AreEqual(new[] { "source[3]:Assistant:ambiguous:3" }, result.ProblemMessageIds!.ToArray());
+            Assert.AreEqual(7, await verify.Messages.CountAsync());
+            Assert.AreEqual(0, await verify.CompactionCoverageManifests.CountAsync());
+            Assert.AreEqual(0, (await verify.Sessions.SingleAsync()).CompactionGeneration);
+        }
+    }
+
+    [TestMethod]
+    [DataRow("turn-m4", "m4")]
+    [DataRow("turn-m", null)]
+    public async Task Commit_RepeatedReplyWithTurnId_OnlyCoversItsOwnTranscript(string turnId, string? expectedId)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = await SeedRepeatedRepliesAsync(connection);
+        var reply = new ChatMessage(ChatRole.Assistant, "same reply") { SourceTurnId = turnId };
+        Assert.IsFalse(System.Text.Json.JsonSerializer.Serialize(reply).Contains(turnId, StringComparison.Ordinal));
+        var result = await CreateService(options).CommitWarmPrefixCheckpointAsync(CreateRequest(0, []) with
+        {
+            SourceMessages = [new(reply)],
+        });
+        Assert.IsTrue(result.Committed);
+        await using var verify = new MemoryDbContext(options);
+        var covered = await verify.Messages.Where(m => m.Source == "chat_transcript" && m.CompactedBy != null)
+            .Select(m => m.MessageId).ToArrayAsync();
+        CollectionAssert.AreEqual(expectedId is null ? Array.Empty<string>() : new[] { expectedId }, covered);
+        Assert.AreEqual(expectedId is null ? 1 : 0, result.ArchivedMessageCount);
+    }
+
+    private static async Task<DbContextOptions<MemoryDbContext>> SeedRepeatedRepliesAsync(SqliteConnection connection)
+    {
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedAsync(db, 7);
+        foreach (var row in await db.Messages.ToListAsync())
+        {
+            row.Source = "chat_transcript";
+            row.Metadata = row.Role == "user" ? "\ninput-" + row.MessageId : $"turn-{row.MessageId}\noutput-{row.MessageId}";
+            row.Content = row.Role == "user" ? "same input" : "same reply";
+        }
+        await db.SaveChangesAsync();
+        return options;
+    }
+
+    [TestMethod]
+    public async Task Commit_TwoIdenticalCanonicalRepliesInOneTurn_RejectsWholeCandidate()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = await SeedRepeatedRepliesAsync(connection);
+        await using var db = new MemoryDbContext(options);
+        var second = await db.Messages.SingleAsync(row => row.MessageId == "m6");
+        second.Metadata = "turn-m4\noutput-m6";
+        await db.SaveChangesAsync();
+        var result = await CreateService(options).CommitWarmPrefixCheckpointAsync(CreateRequest(0, []) with
+        {
+            SourceMessages = [new(new(ChatRole.User, "input"), "m3"),
+                new(new(ChatRole.Assistant, "same reply") { SourceTurnId = "turn-m4" })],
+        });
+        Assert.AreEqual(WarmPrefixCheckpointCommitStatus.CoveredMessagesNotFound, result.Status);
+        CollectionAssert.AreEqual(new[] { "source[1]:Assistant:ambiguous:2" }, result.ProblemMessageIds!.ToArray());
+        Assert.AreEqual(0, await db.Messages.CountAsync(m => m.CompactedBy != null));
+        Assert.AreEqual(0, await db.CompactionCoverageManifests.CountAsync());
+    }
+
+    [TestMethod]
     public async Task Commit_ArchiveInsertedThenCoverageWriteFails_RollsBackEverything()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

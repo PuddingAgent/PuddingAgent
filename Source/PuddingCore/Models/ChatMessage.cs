@@ -41,4 +41,8 @@ public sealed record ChatMessage(
     /// <summary>Canonical ingress ID before envelope rendering; local provenance, never a provider field.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public string? SourceMessageId { get; init; }
+
+    /// <summary>Runtime turn that produced an assistant reply, for local transcript reconciliation.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? SourceTurnId { get; init; }
 }

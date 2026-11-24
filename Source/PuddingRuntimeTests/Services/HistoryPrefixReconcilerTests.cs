@@ -8,6 +8,17 @@ namespace PuddingRuntimeTests.Services;
 public sealed class HistoryPrefixReconcilerTests
 {
     [TestMethod]
+    public void IdenticalTextFromDifferentCanonicalTurnsOrIngressIds_DoesNotRebindHistory()
+    {
+        var reply = new ChatMessage(ChatRole.Assistant, "OK") { SourceTurnId = "turn-1" };
+        var input = User("continue", "continue") with { SourceMessageId = "input-1" };
+        Assert.IsFalse(HistoryPrefixReconciler.TryAppendCanonicalTail([reply],
+            [reply with { SourceTurnId = "turn-2" }], out _));
+        Assert.IsFalse(HistoryPrefixReconciler.TryAppendCanonicalTail([input],
+            [input with { SourceMessageId = "input-2" }], out _));
+    }
+
+    [TestMethod]
     public void KeepsExactModelMessagesAndAppendsOnlyNewCanonicalTail()
     {
         var user = User("wrapped input with runtime date and fence", "original input");

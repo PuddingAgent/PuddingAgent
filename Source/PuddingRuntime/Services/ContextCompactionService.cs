@@ -418,6 +418,83 @@ public sealed class ContextCompactionService : IContextCompactionService
             _ => nameof(ChatRole.User),
         };
 
+    private static bool IsToolProtocol(ChatMessage message)
+        => message.Role == ChatRole.Tool || message.ToolCalls is { Count: > 0 };
+
+    private static IReadOnlyList<MessageEntity>[] MatchWarmPrefixSources(
+        IReadOnlyList<WarmPrefixSourceMessage> sources, IReadOnlyList<MessageEntity> sessionRows)
+    {
+        var byId = sessionRows.ToDictionary(row => row.MessageId, StringComparer.Ordinal);
+        var active = sessionRows.Where(row => row.CompactedBy == null).ToArray();
+        var byText = active.GroupBy(ActiveRowKey, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+        var transcript = active.Where(row => row.Source == "chat_transcript").OrderBy(row => row.Sequence).ToArray();
+        var byIngress = transcript.ToLookup(row =>
+            (CanonicalRoleToken(row.Role), CanonicalChatTranscriptSynchronizer.ReadCanonicalIdentity(row).MessageId));
+        var matches = new IReadOnlyList<MessageEntity>[sources.Count];
+        for (var i = 0; i < sources.Count; i++)
+        {
+            var source = sources[i];
+            var message = source.Message;
+            if (!string.IsNullOrWhiteSpace(source.DurableMessageId))
+                matches[i] = byId.TryGetValue(source.DurableMessageId, out var exact) ? [exact] : [];
+            else if (IsToolProtocol(message))
+                matches[i] = [];
+            else if (!string.IsNullOrWhiteSpace(message.SourceMessageId))
+                matches[i] = byIngress[(message.Role.ToString(), message.SourceMessageId)].ToArray();
+            else if (message.Role == ChatRole.User && !string.IsNullOrWhiteSpace(message.SourceContentHash))
+                matches[i] = active.Where(row => CanonicalRoleToken(row.Role) == nameof(ChatRole.User)
+                    && HistoryPrefixReconciler.ComputeSourceHash(row.Content, ContentPartsEnvelope.Decode(row.AttachmentsJson))
+                        == message.SourceContentHash).ToArray();
+            else
+            {
+                var candidates = byText.GetValueOrDefault($"{message.Role}\u001f{message.Content ?? string.Empty}") ?? [];
+                matches[i] = message.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(message.SourceTurnId)
+                    ? candidates.Where(row => CanonicalChatTranscriptSynchronizer.ReadCanonicalIdentity(row).TurnId
+                        == message.SourceTurnId).ToArray()
+                    : candidates;
+            }
+        }
+
+        // Older warm replies lack turn provenance. Match a complete user/reply/user triple on
+        // both timelines. Native tool frames have no transcript row and are archived separately.
+        var projected = Enumerable.Range(0, sources.Count).Where(i => !IsToolProtocol(sources[i].Message)).ToArray();
+        var positions = transcript.Select((row, pos) => (row.MessageId, pos)).ToDictionary(x => x.MessageId, x => x.pos);
+        for (var i = 1; i + 1 < projected.Length; i++)
+        {
+            var index = projected[i];
+            var reply = sources[index].Message;
+            if (matches[index].Count < 2 || reply.Role != ChatRole.Assistant || reply.IsContextSummary
+                || !string.IsNullOrEmpty(reply.SourceTurnId) || !string.IsNullOrEmpty(reply.SourceMessageId))
+                continue;
+
+            var left = InputPosition(projected[i - 1]);
+            var right = InputPosition(projected[i + 1]);
+            if (left < 0 || right != left + 2)
+                continue;
+            var middle = transcript[left + 1];
+            // A gap can hide an already covered turn. In that case the neighbors do not prove identity.
+            if (middle.Sequence - transcript[left].Sequence == 1 && transcript[right].Sequence - middle.Sequence == 1
+                && (left == 0 || transcript[left - 1].Sequence < transcript[left].Sequence)
+                && (right + 1 == transcript.Length || transcript[right].Sequence < transcript[right + 1].Sequence)
+                && transcript[left].BranchType == middle.BranchType && middle.BranchType == transcript[right].BranchType
+                && matches[index].Contains(middle))
+                matches[index] = [middle];
+        }
+        return matches;
+
+        int InputPosition(int i)
+        {
+            var source = sources[i];
+            if (source.Message.Role != ChatRole.User || matches[i].Count != 1
+                || (string.IsNullOrWhiteSpace(source.DurableMessageId) && string.IsNullOrWhiteSpace(source.Message.SourceMessageId)))
+                return -1;
+            var row = matches[i][0];
+            return CanonicalRoleToken(row.Role) == nameof(ChatRole.User) && positions.TryGetValue(row.MessageId, out var pos)
+                ? pos : -1;
+        }
+    }
+
     /// <summary>
     /// F2：把 warm-prefix checkpoint 落库。**不取锁**（调用方已持压缩提交单飞租约，再取会自死锁），
     /// **不调用模型**（候选与摘要由调用方产出），只做「同一事务写入」。
@@ -460,11 +537,7 @@ public sealed class ContextCompactionService : IContextCompactionService
             var sessionRows = await db.Messages.AsNoTracking()
                 .Where(m => m.SessionId == request.SessionId && (m.CompactedBy == null || sourceIds.Contains(m.MessageId)))
                 .ToListAsync(ct);
-            var activeRows = sessionRows.Where(m => m.CompactedBy == null).ToArray();
-            var byId = sessionRows.ToDictionary(m => m.MessageId, StringComparer.Ordinal);
-            var byKey = activeRows
-                .GroupBy(ActiveRowKey, StringComparer.Ordinal)
-                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+            var sourceMatches = MatchWarmPrefixSources(sources, sessionRows);
             var resolved = new List<string>(sources.Count);
             var problems = new List<string>();
             var sequence = await db.Messages.Where(m => m.SessionId == request.SessionId)
@@ -473,35 +546,18 @@ public sealed class ContextCompactionService : IContextCompactionService
             {
                 var source = sources[index];
                 var message = source.Message;
-                MessageEntity? matched = null;
-                var native = message.Role == ChatRole.Tool || message.ToolCalls is { Count: > 0 };
-                if (!string.IsNullOrWhiteSpace(source.DurableMessageId))
+                var matches = sourceMatches[index];
+                if (matches.Count == 0 && !string.IsNullOrWhiteSpace(source.DurableMessageId))
                 {
-                    if (!byId.TryGetValue(source.DurableMessageId, out matched))
-                    {
-                        problems.Add($"source[{index}]:{message.Role}:missing_id");
-                        continue;
-                    }
+                    problems.Add($"source[{index}]:{message.Role}:missing_id");
+                    continue;
                 }
-                else if (!native)
+                if (matches.Count > 1)
                 {
-                    // A tool's text is not an identity. Ingress IDs survive envelope rendering.
-                    var matches = !string.IsNullOrWhiteSpace(message.SourceMessageId)
-                        ? activeRows.Where(m => m.Source == "chat_transcript"
-                            && m.Metadata?.EndsWith("\n" + message.SourceMessageId, StringComparison.Ordinal) == true).ToList()
-                        : message.Role == ChatRole.User && !string.IsNullOrWhiteSpace(message.SourceContentHash)
-                            ? activeRows.Where(m => CanonicalRoleToken(m.Role) == nameof(ChatRole.User)
-                                && HistoryPrefixReconciler.ComputeSourceHash(m.Content, ContentPartsEnvelope.Decode(m.AttachmentsJson))
-                                    == message.SourceContentHash).ToList()
-                            : byKey.GetValueOrDefault($"{message.Role}\u001f{message.Content ?? string.Empty}") ?? [];
-                    if (matches.Count > 1)
-                    {
-                        // Only position/role/reason, never user content in diagnostics.
-                        problems.Add($"source[{index}]:{message.Role}:ambiguous:{matches.Count}");
-                        continue;
-                    }
-                    matched = matches.SingleOrDefault();
+                    problems.Add($"source[{index}]:{message.Role}:ambiguous:{matches.Count}");
+                    continue;
                 }
+                var matched = matches.SingleOrDefault();
                 if (matched is not null)
                 {
                     if (resolved.Contains(matched.MessageId, StringComparer.Ordinal))
@@ -514,7 +570,7 @@ public sealed class ContextCompactionService : IContextCompactionService
                 // Preserve exact runtime evidence missing from the canonical projection,
                 // including empty tool calls, reasoning, continuation and typed parts.
                 // Archive rows become covered in the SAME transaction as the checkpoint.
-                if (matched is null || native || message.ReasoningContent is not null
+                if (matched is null || IsToolProtocol(message) || message.ReasoningContent is not null
                     || message.ContinuationState is not null || message.Content != matched.Content)
                 {
                     var snapshot = JsonSerializer.Serialize(message, JsonOptions);
@@ -529,7 +585,8 @@ public sealed class ContextCompactionService : IContextCompactionService
                             ? ContentPartsEnvelope.Encode(message.ContentParts) : null,
                         Source = "warm_prefix_checkpoint", CanonicalContentHash = CompositionSnapshot.Sha256Hex(snapshot),
                         Metadata = JsonSerializer.Serialize(new { request.CompactionId, sourceIndex = index,
-                            sourceMessageId = message.SourceMessageId, canonicalMessageId = matched?.MessageId }, JsonOptions),
+                            sourceMessageId = message.SourceMessageId, sourceTurnId = message.SourceTurnId,
+                            canonicalMessageId = matched?.MessageId }, JsonOptions),
                     });
                 }
             }

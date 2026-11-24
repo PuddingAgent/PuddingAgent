@@ -406,6 +406,10 @@ internal static class WarmPrefixCompaction
         if (message.ContinuationState is not null)
             builder.Append('\u001f').Append(System.Text.Json.JsonSerializer.Serialize(message.ContinuationState));
 
+        if (message.SourceTurnId is not null || message.SourceMessageId is not null)
+            builder.Append("\u001fsource:").Append(message.SourceTurnId?.Length ?? -1)
+                .Append(':').Append(message.SourceTurnId).Append(':').Append(message.SourceMessageId);
+
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
         return Convert.ToHexStringLower(hash);
     }

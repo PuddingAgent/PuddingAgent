@@ -1682,7 +1682,7 @@ if (effectiveLlmConfig is not null)
 
                 history.Add(new ChatMessage(ChatRole.Assistant, rawText,
                     ReasoningContent: llmResp.ReasoningContent,
-                    ContinuationState: llmResp.ContinuationState));
+                    ContinuationState: llmResp.ContinuationState) { SourceTurnId = request.ExecutionIdentity?.TurnId });
 
                 // Steering may arrive while the model is producing what would otherwise be
                 // the final response. Consume it at this safe boundary and keep the same Turn

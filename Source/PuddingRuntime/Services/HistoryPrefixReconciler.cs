@@ -71,6 +71,10 @@ internal static class HistoryPrefixReconciler
     {
         if (live.Role != persisted.Role)
             return false;
+        if (live.SourceMessageId is { } liveId && persisted.SourceMessageId is { } persistedId && liveId != persistedId)
+            return false;
+        if (live.SourceTurnId is { } liveTurn && persisted.SourceTurnId is { } persistedTurn && liveTurn != persistedTurn)
+            return false;
 
         if (live.Role == ChatRole.User
             && !string.IsNullOrEmpty(live.SourceContentHash)

@@ -114,7 +114,7 @@
 | `Services/ContextAssemblyService.cs` | 上下文合成的稳定对外契约 | `IContextAssemblyService` | `Services/ContextPipeline.cs` | — |
 | `Services/ContextBudgetAllocator.cs` | 上下文预算的算术与压缩档位 | `ContextBudgetAllocator` | `Services/ContextWindowManager.cs` | — |
 | `Services/ContextCompactionOptions.cs` | 上下文压缩的配置选项 | `ContextCompactionOptions` | `Services/ContextCompactionService.cs` | — |
-| `Services/ContextCompactionService.cs` | 上下文压缩执行与覆盖清单写入 | `IContextCompactionService` | `Services/CurrentTurnCompactionGuard.cs` | 围栏 Turn 落入候选时须在任何写入前 fail-closed；warm-prefix 按逐条 ID 覆盖，未投影原文、附件规范信封与摘要、清单、代次原子归档 |
+| `Services/ContextCompactionService.cs` | 上下文压缩执行与覆盖清单写入 | `IContextCompactionService` | `Services/CurrentTurnCompactionGuard.cs` | 围栏 Turn 落入候选时须在任何写入前 fail-closed；warm-prefix 按持久 ID 或转录身份覆盖，同文旧回复可由前后两个精确用户身份定位，未投影原文、附件规范信封与摘要、清单、代次原子归档 |
 | `Services/ContextCompactionService.TokenEstimation.cs` | 压缩服务的 Token 估算（partial） | `ContextCompactionService` | `Services/ContextCompactionService.cs` | — |
 | `Services/ContextCompactionStrategy.cs` | 压缩策略的选择与分级填充 | `ContextCompactionStrategy` | `Services/ContextWindowManager.cs` | — |
 | `Services/ContextHealthEvaluator.cs` | 上下文健康度的评估 | `ContextHealthEvaluator` | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | 占用率分母 = 模型窗口、门禁分母 = 有效输入窗口，两者不可混用；容量分量与来源须如实输出，回退输出预算单列而不得冒充用户预算（见下「关键语义」） |

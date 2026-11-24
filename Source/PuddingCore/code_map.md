@@ -152,7 +152,7 @@ VisionCapabilityContract 细节二：V5-T4 放宽型配置由 `PuddingFileConfig
 
 **关键语义**
 
-**`ChatMessage.cs` / `LlmContentPart.cs` / `ChatMessageMultimodalNormalizer.cs`**：ADR-077 是有序 typed 内容部件（`text`/`image` → Artifact 引用 + detail），与 v1 信封 `ContentPartsEnvelope` 并存；Gateway 渲染统一经 normalizer，旧 `VisualArtifactIds` 派生 `original` 部件。`SourceMessageId` 是**入站来源身份**，不发送给 provider。
+**`ChatMessage.cs` / `LlmContentPart.cs` / `ChatMessageMultimodalNormalizer.cs`**：ADR-077 是有序 typed 内容部件（`text`/`image` → Artifact 引用 + detail），与 v1 信封 `ContentPartsEnvelope` 并存；Gateway 渲染统一经 normalizer，旧 `VisualArtifactIds` 派生 `original` 部件。`SourceMessageId` 和 `SourceTurnId` 在本地核对转录消息及执行轮次，通过 JSON 序列化发送给服务商时会被忽略。
 
 **`Runtime/SubAgentInvocationContracts.cs`**：子代理调用与系统执行预算契约；单一预算域（N00，commit f096bc5）：未显式请求时统一使用系统 profile 默认 600 轮/2400 工具调用/24h，请求可显式携带 `int? MaxRounds/MaxToolCallsTotal/TimeoutSeconds`，无 managed WorkUnit 独立预算域，不存在 32/40/120 隐式截断；显式超过配置护栏（options 上限）显式拒绝；
 收尾宽限 20 轮/30 分钟为加法（不预扣）；父 Agent 可指定 `resume_sub_agent_id` 与可选预算请求字段
