@@ -68,11 +68,13 @@ public sealed class AgentPoolEntryStore(
         var affected = await db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO "agent_pool"
                 ("pool_id", "owner_workspace_id", "name", "sub_session_id", "template_id", "role",
-                 "owner_session_id", "owner_agent_id", "active_execution_id", "status", "status_reason",
+                 "owner_session_id", "owner_agent_id", "model_id", "responsibility", "avatar_key",
+                 "active_execution_id", "status", "status_reason",
                  "task_count", "last_success", "created_at", "last_used_at", "version", "deleted_at")
             VALUES
                 ({request.PoolId}, {request.OwnerWorkspaceId}, {request.Name}, {request.SubSessionId},
                  {request.TemplateId}, {request.Role}, {request.OwnerSessionId}, {request.OwnerAgentId},
+                 {request.ModelId}, {request.Responsibility}, {request.AvatarKey},
                  NULL, {AgentPoolEntity.StatusIdle}, NULL, 0, NULL, {createdAt}, {createdAt}, 0, NULL);
             """, ct);
 

@@ -45,7 +45,14 @@ public sealed record AgentPoolInsertRequest(
     string OwnerWorkspaceId,
     string? OwnerSessionId,
     string? OwnerAgentId,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    // ── 展示字段（S3 才加的列）─────────────────────────────
+    // 带默认值：现有调用方与测试构造不需要改。
+    // 创建时能带就一并带上，否则模型与备注只能事后靠 PATCH 补——
+    // 「advisor 永远用 Claude」这类约定会退化成每次派活靠人工记得。
+    string? ModelId = null,
+    string? Responsibility = null,
+    string? AvatarKey = null);
 
 /// <summary>
 /// <c>agent_pool</c> 表的数据访问契约（S2：只做存储，不改任何运行时行为）。

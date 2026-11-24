@@ -286,6 +286,41 @@ public sealed class AgentPoolEntryStoreTests
         Assert.IsNotNull(dead.DeletedAt, "置 dead 必须同时写 deleted_at，否则唯一索引仍被占住");
     }
 
+    [TestMethod]
+    public async Task TryInsert_PersistsModelAndDisplayFields()
+    {
+        await using var scope = await TestScope.CreateAsync();
+
+        var request = Entry("pool-fields") with
+        {
+            ModelId = "fastrouter-claude/claude-opus-5-5",
+            Responsibility = "只回答判断题，不进入工具循环",
+            AvatarKey = "avatar-owl",
+        };
+
+        Assert.AreEqual(1, await InsertAsync(scope, request));
+
+        await using var db = scope.CreateDbContext();
+        var row = await db.AgentPool.SingleAsync(x => x.PoolId == "pool-fields");
+        Assert.AreEqual("fastrouter-claude/claude-opus-5-5", row.ModelId);
+        Assert.AreEqual("只回答判断题，不进入工具循环", row.Responsibility);
+        Assert.AreEqual("avatar-owl", row.AvatarKey);
+    }
+
+    [TestMethod]
+    public async Task TryInsert_WithoutDisplayFields_WritesNulls()
+    {
+        await using var scope = await TestScope.CreateAsync();
+
+        Assert.AreEqual(1, await InsertAsync(scope, Entry("pool-plain")));
+
+        await using var db = scope.CreateDbContext();
+        var row = await db.AgentPool.SingleAsync(x => x.PoolId == "pool-plain");
+        Assert.IsNull(row.ModelId, "未给模型时必须写 null（表示跟随派发方），不能编造默认值");
+        Assert.IsNull(row.Responsibility);
+        Assert.IsNull(row.AvatarKey);
+    }
+
     // ── 测试脚手架 ──────────────────────────────────────────
 
     private static AgentPoolInsertRequest Entry(

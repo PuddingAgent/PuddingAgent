@@ -494,7 +494,14 @@ public sealed class SubAgentPool : ISubAgentPool
                         OwnerWorkspaceId: request.WorkspaceId,
                         OwnerSessionId: request.ParentSessionId,
                         OwnerAgentId: request.ParentAgentId,
-                        CreatedAt: entry.CreatedAt),
+                        CreatedAt: entry.CreatedAt,
+                        // 模型写完整路由，与 List DTO 的「providerId/modelId」口径一致。
+                        // ProviderId 为空时不编造一个「/model」出来。
+                        ModelId: string.IsNullOrWhiteSpace(request.LlmProfile.ProviderId)
+                            ? null
+                            : $"{request.LlmProfile.ProviderId}/{request.LlmProfile.ModelId}",
+                        Responsibility: request.Responsibility,
+                        AvatarKey: request.AvatarKey),
                     capacity: _maxCapacity,
                     ct);
 
