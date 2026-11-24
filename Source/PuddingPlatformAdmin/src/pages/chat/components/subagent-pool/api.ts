@@ -95,3 +95,46 @@ export async function updateSubAgentPoolEntry(
     data: patch,
   });
 }
+
+/**
+ * 单次运行记录（与后端 `SubAgentRunDto` 一一对应，勿在此处加派生字段）。
+ *
+ * `status` 的取值词表在 `SubAgentRunEntity` 上：非终态只有 `running`，
+ * 终态有 completed / failed / cancelled / paused / budget_exhausted / timed_out / interrupted。
+ * UI 对未知值原样显示而不是猜成「成功」—— 猜错的方向是不对称的。
+ */
+export interface SubAgentRun {
+  runId: string;
+  status: string;
+  templateId: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  totalRounds: number;
+  totalToolCalls: number;
+  /** 毫秒。`running` 期间后端尚未结算，写 0 —— 0 不代表「瞬间完成」。 */
+  totalDurationMs: number;
+  errorMessage: string | null;
+}
+
+/**
+ * 拉取某条目的运行历史（按自增 Id 倒序，最近的在前）。
+ *
+ * 与花名册同一套语义：空数组是正常结果（这个成员没干过活），
+ * 非数组响应视为格式错误并抛出 —— 静默兜底成 [] 会把「接口返回了别的东西」
+ * 伪装成「从未执行」。
+ */
+export async function fetchSubAgentRuns(
+  name: string,
+  limit = 20,
+): Promise<SubAgentRun[]> {
+  const result = await request<SubAgentRun[]>(
+    `${SUB_AGENT_POOL_ENDPOINT}/${encodeURIComponent(name)}/runs`,
+    { method: 'GET', params: { limit } },
+  );
+
+  if (!Array.isArray(result)) {
+    throw new Error('运行历史响应格式不正确（期望数组）');
+  }
+
+  return result as SubAgentRun[];
+}

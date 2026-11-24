@@ -5,8 +5,12 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import * as React from 'react';
 import { SubAgentPoolPanel } from './SubAgentPoolPanel';
 import { useSubAgentPool } from './useSubAgentPool';
+import { useSubAgentRuns } from './useSubAgentRuns';
 
 jest.mock('./useSubAgentPool');
+// 运行历史也是一个取数 hook，同样替掉：本文件测的是渲染契约，
+// 不替会让「选中条目」的用例去发真实请求（api 模块已被 mock，会拿到 undefined）。
+jest.mock('./useSubAgentRuns');
 // 写动作走 api 模块；用 requireMock 而不是 import 绑定，
 // 因为本仓 esbuild+babel 管道在含 jest.mock 的文件里会拒绝「导入绑定用于类型标注」。
 jest.mock('./api');
@@ -72,10 +76,32 @@ const setPoolState = (state: PoolState): void => {
   });
 };
 
+interface RunsState {
+  runs?: unknown[] | null;
+  loading?: boolean;
+  error?: string | null;
+  reload?: () => void;
+}
+
+const mockedUseSubAgentRuns = useSubAgentRuns as unknown as jest.Mock;
+
+/** 运行历史默认「从未执行」：已有用例全都不关心履历，必须让它们拿一个稳定值。 */
+const setRunsState = (state: RunsState = {}): void => {
+  mockedUseSubAgentRuns.mockReturnValue({
+    runs: [],
+    loading: false,
+    error: null,
+    reload: jest.fn(),
+    ...state,
+  });
+};
+
 describe('SubAgentPoolPanel', () => {
   beforeEach(() => {
     mockedUseSubAgentPool.mockReset();
     mockedApi.updateSubAgentPoolEntry.mockReset();
+    mockedUseSubAgentRuns.mockReset();
+    setRunsState();
   });
 
   it('加载中只渲染 loading，不渲染空态或错误', () => {
@@ -383,5 +409,102 @@ describe('SubAgentPoolPanel', () => {
     expect(
       (screen.getByTestId('subagent-edit-model') as HTMLInputElement).value,
     ).toBe('deepseek-flash');
+  });
+
+  // ── 运行历史：与花名册同源的三态纪律 ────────────────────────
+
+  it('无履历时右栏显示「从未执行」，不显示错误也不显示加载中', () => {
+    setPoolState({
+      data: [entry({ poolId: 'p1', name: '检索助手' })],
+      loading: false,
+      error: null,
+    });
+    setRunsState({ runs: [], loading: false, error: null });
+    render(<SubAgentPoolPanel />);
+
+    fireEvent.click(screen.getByTestId('subagent-pool-item-p1'));
+
+    expect(screen.getByTestId('subagent-run-empty')).toBeTruthy();
+    expect(screen.getByText('从未执行过任务')).toBeTruthy();
+    expect(screen.queryByTestId('subagent-run-error')).toBeNull();
+    expect(screen.queryByTestId('subagent-run-loading')).toBeNull();
+    expect(screen.queryByTestId('subagent-run-row')).toBeNull();
+  });
+
+  it('有履历时逐行渲染，失败行带出错误文本且标出状态', () => {
+    setPoolState({
+      data: [entry({ poolId: 'p1', name: '检索助手' })],
+      loading: false,
+      error: null,
+    });
+    setRunsState({
+      loading: false,
+      error: null,
+      runs: [
+        {
+          runId: 'run-2',
+          status: 'failed',
+          templateId: 'workspace-task-agent',
+          startedAt: '2026-11-24T06:33:22+08:00',
+          completedAt: '2026-11-24T06:34:03+08:00',
+          totalRounds: 8,
+          totalToolCalls: 23,
+          totalDurationMs: 41_200,
+          errorMessage: 'budget_exhausted',
+        },
+        {
+          runId: 'run-1',
+          status: 'running',
+          templateId: 'workspace-task-agent',
+          startedAt: '2026-11-24T05:00:00+08:00',
+          completedAt: null,
+          totalRounds: 2,
+          totalToolCalls: 5,
+          totalDurationMs: 0,
+          errorMessage: null,
+        },
+      ],
+    });
+    render(<SubAgentPoolPanel />);
+
+    fireEvent.click(screen.getByTestId('subagent-pool-item-p1'));
+
+    const rows = screen.getAllByTestId('subagent-run-row');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].getAttribute('data-run-status')).toBe('failed');
+    expect(rows[0].textContent).toContain('失败');
+    expect(rows[0].textContent).toContain('8 轮');
+    expect(rows[0].textContent).toContain('41.2s');
+    expect(
+      within(rows[0]).getByTestId('subagent-run-error-text').textContent,
+    ).toContain('budget_exhausted');
+
+    // 运行中的那条没有错误文本，且未结算的耗时显示破折号
+    expect(within(rows[1]).queryByTestId('subagent-run-error-text')).toBeNull();
+    expect(rows[1].textContent).toContain('运行中');
+    expect(rows[1].textContent).not.toContain('0.0s');
+  });
+
+  it('履历加载失败时显示错误与刷新入口，不冒充「从未执行」', async () => {
+    const reload = jest.fn();
+    setPoolState({
+      data: [entry({ poolId: 'p1', name: '检索助手' })],
+      loading: false,
+      error: null,
+    });
+    setRunsState({ runs: null, loading: false, error: '后端 500', reload });
+    render(<SubAgentPoolPanel />);
+
+    fireEvent.click(screen.getByTestId('subagent-pool-item-p1'));
+
+    expect(screen.getByTestId('subagent-run-error')).toBeTruthy();
+    expect(screen.getByText('后端 500')).toBeTruthy();
+    // 「从未执行」与「没读到」是两件事：后者要刷新，前者要建任务
+    expect(screen.queryByText('从未执行过任务')).toBeNull();
+
+    await waitFor(() =>
+      fireEvent.click(screen.getByTestId('subagent-run-reload')),
+    );
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 });

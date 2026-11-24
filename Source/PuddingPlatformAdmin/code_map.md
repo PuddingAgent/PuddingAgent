@@ -1,5 +1,5 @@
 # PuddingPlatformAdmin CodeMAP
-> 源指纹: Source/PuddingPlatformAdmin/*=9-d50e00b1838b, src/**=1000-b0990797b485, public/**=15-7d9c0adcc35a, mock/**=7-15a79f8b3988, config/**=5-de5fb4248a8a, e2e/**=5-b8abc0439ac3, scripts/**=5-356b08dc0055, .husky/**=2-a2d740670ada, .github/**=1-7e41fe33d602 · 条目数: 219 · 最近整理: 2026-11-22
+> 源指纹: Source/PuddingPlatformAdmin/*=9-d50e00b1838b, src/**=1003-9a6879fbf7f6, public/**=15-7d9c0adcc35a, mock/**=7-15a79f8b3988, config/**=5-de5fb4248a8a, e2e/**=5-b8abc0439ac3, scripts/**=5-356b08dc0055, .husky/**=2-a2d740670ada, .github/**=1-7e41fe33d602 · 条目数: 219 · 最近整理: 2026-11-22
 > 指纹覆盖: *、src/**、public/**、mock/**、config/**、e2e/**、scripts/**、.husky/**、.github/**；未纳入 10 项: .commitlintrc.js、.editorconfig、.gitignore、.lintstagedrc、.npmrc、.tmp-b6-build.log、.tmp-b6-tsc-orch.log、.tmp-b6-tsc.log、tests/**、types/**
 
 > React 管理前端 | Ant Design Pro v6 · React 19 · UmiJS
@@ -104,7 +104,7 @@
 | `src/services/platform/api.ts` | 调度 status/policy/actions/evaluate API；Goal 与 Task 继续使用服务端结构化命令，不在浏览器复制状态机 |
 | `src/pages/chat/components/ChatMain.tsx` | Goal 状态控件挂到 WorkspaceNavigationHeader 的「任务看板」旁；消息首屏不再被 Goal 长正文下推；其余余额/推断辅助请求继续 idle 后启动 |
 | `src/services/platform/api.ts` | `getLlmProviderBalance` → `GET /api/llm/providers/{id}/balance`；`LlmProviderBalanceDto`/`LlmBalanceInfoDto` 类型 |
-| `src/pages/chat/components/subagent-pool/` + `src/pages/chat/components/ChatMain.tsx` | 子代理池**管理面**：80% 宽高模态，左树 320px + 右详情；休眠/销毁/改备注与角色与模型；`useSubAgentPool` 三态互斥；`errors.ts` 优先读后端 `detail`，动作失败按动作兜底；`avatarKey` 空按 name+poolId 生成；`lastSuccess` 三态不伪造时间 |
+| `src/pages/chat/components/subagent-pool/` + `src/pages/chat/components/ChatMain.tsx` | 子代理池**管理面**：80% 宽高模态，左树 320px + 右详情；休眠/销毁/改备注与角色与模型；`useSubAgentPool` 三态互斥；`useSubAgentRuns` 三态；`runs.ts` 未知态透出、零耗时显示 —；`errors.ts` 优先读后端 `detail`，动作失败按动作兜底；`avatarKey` 空按 name+poolId 生成；`lastSuccess` 三态不伪造时间 |
 
 **关键语义**
 

@@ -17,7 +17,9 @@ import {
 } from './api';
 import { useSubAgentPoolStyles } from './SubAgentPoolPanel.styles';
 import { describeSubAgentPoolActionError } from './errors';
+import { describeRunSummary } from './runs';
 import { useSubAgentPool } from './useSubAgentPool';
+import { useSubAgentRuns } from './useSubAgentRuns';
 
 type StatusTone = 'idle' | 'busy' | 'sleeping' | 'dead';
 
@@ -405,6 +407,81 @@ const EntryActions: React.FC<{
   );
 };
 
+/**
+ * 运行历史（履历）。
+ *
+ * 展示「这个人跑过什么」：状态 / 轮次 / 工具数 / 耗时 / 失败原因。
+ * 三态纪律与花名册同源：空数组是「从未执行」（成功态），不是错误也不是加载中；
+ * 失败时也不许显示成「从未执行」——前者要刷新，后者要建任务，下一步完全不同。
+ */
+const RunHistory: React.FC<{ name: string }> = ({ name }) => {
+  const { runs, loading, error, reload } = useSubAgentRuns(name);
+  const muted = { fontSize: 12, color: 'var(--pudding-text-secondary, #888)' } as const;
+
+  return (
+    <section
+      data-testid="subagent-run-history"
+      aria-label={`${name} 运行历史`}
+      style={{
+        marginTop: 16,
+        paddingTop: 12,
+        borderTop: '1px solid var(--pudding-chat-border, #eee)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+        <span style={muted}>运行历史</span>
+        <Button
+          size="small"
+          type="text"
+          icon={<ReloadOutlined />}
+          onClick={reload}
+          data-testid="subagent-run-reload"
+        >
+          刷新
+        </Button>
+      </div>
+
+      {loading ? (
+        <div data-testid="subagent-run-loading" style={muted}>
+          <Spin size="small" /> <span style={{ marginLeft: 8 }}>正在加载运行历史…</span>
+        </div>
+      ) : error !== null ? (
+        <div data-testid="subagent-run-error" style={{ ...muted, color: '#c0392b' }}>
+          {error}
+        </div>
+      ) : (runs?.length ?? 0) === 0 ? (
+        <div data-testid="subagent-run-empty" style={muted}>
+          从未执行过任务
+        </div>
+      ) : (
+        <ul
+          data-testid="subagent-run-list"
+          style={{ margin: 0, padding: 0, listStyle: 'none' }}
+        >
+          {(runs ?? []).map((run) => (
+            <li
+              key={run.runId}
+              data-testid="subagent-run-row"
+              data-run-status={run.status}
+              style={{ padding: '4px 0', fontSize: 12 }}
+            >
+              <span>{describeRunSummary(run)}</span>
+              {run.errorMessage ? (
+                <div
+                  data-testid="subagent-run-error-text"
+                  style={{ color: '#c0392b', marginTop: 2 }}
+                >
+                  {run.errorMessage}
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+};
+
 const EntryDetail: React.FC<{
   entry: SubAgentPoolEntry;
   onChanged: () => void;
@@ -440,6 +517,9 @@ const EntryDetail: React.FC<{
       <DetailRow label="创建时间" value={formatTimestamp(entry.createdAt)} />
 
       <EntryActions entry={entry} onChanged={onChanged} />
+
+      {/* 履历放在动作之后：条目履历会变长，按钮位置必须稳定在上方。 */}
+      <RunHistory name={entry.name} />
     </section>
   );
 };
