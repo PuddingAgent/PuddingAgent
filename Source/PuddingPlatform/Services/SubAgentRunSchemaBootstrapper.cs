@@ -27,6 +27,19 @@ public static class SubAgentRunSchemaBootstrapper
     /// <summary>「父 Turn + 状态」复合索引，服务「按父 Turn 统计运行中子代理」查询。</summary>
     public const string ParentTurnStatusIndex = "IX_sub_agent_runs_parent_turn_id_status";
 
+    /// <summary>复用的子会话 ID 列（池条目复用同一 <c>sub_session_id</c>）。</summary>
+    public const string SubSessionIdColumn = "sub_session_id";
+
+    /// <summary>
+    /// 子会话索引，服务管理视图的「按池条目查最近运行」查询。
+    /// <para>
+    /// 查询形态是 <c>WHERE sub_session_id = ? ORDER BY id DESC LIMIT n</c>。
+    /// SQLite 的索引尾部隐含 rowid，因此单列索引即可同时满足过滤与倒序，
+    /// 不需要额外复合 <c>id</c>，索引也保持最小。
+    /// </para>
+    /// </summary>
+    public const string SubSessionIdIndex = "IX_sub_agent_runs_sub_session_id";
+
     public static async Task EnsureCreatedAsync(
         PlatformDbContext db,
         ILogger? logger = null,
@@ -53,6 +66,14 @@ public static class SubAgentRunSchemaBootstrapper
             ct);
 
         logger?.LogDebug("[SubAgentRunSchema] Ensured index {Index}", ParentTurnStatusIndex);
+
+        // 同样未在 EF 模型（PlatformDbContext）中声明，新库与旧库都靠这里补齐。
+        // 缺这条索引时上面的查询会退化成全表扫描（实测 EXPLAIN QUERY PLAN 为 SCAN）。
+        await db.Database.ExecuteSqlRawAsync(
+            $"CREATE INDEX IF NOT EXISTS \"{SubSessionIdIndex}\" ON \"{TableName}\" (\"{SubSessionIdColumn}\");",
+            ct);
+
+        logger?.LogDebug("[SubAgentRunSchema] Ensured index {Index}", SubSessionIdIndex);
     }
 
     private static async Task<bool> TableExistsAsync(PlatformDbContext db, CancellationToken ct)
