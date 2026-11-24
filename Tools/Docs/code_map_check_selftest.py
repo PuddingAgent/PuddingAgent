@@ -656,6 +656,40 @@ def stage_anti_pattern_skip_bypass(mod):
 DETAIL_ROW_RE = re.compile(r"^\| `([a-z][a-z-]+)` \| (?:error|warn|info) \| \d+ \|")
 
 
+def stage_noise_exclusion(mod):
+    """§4 exclude 名单的可失败断言（2026-11-24）。
+
+    背景：`TestResults` 是 MSTest 每次运行都重写的产物目录（`Deploy_<host> <ts>_<pid>/`、
+    `coverage.*`、`*.trx`）。它一旦漏出名单，就会被递归指纹（`Source/**` / `Tests/**`）收进去，
+    于是**每跑一次测试源指纹就变值**，`stale-fingerprint` 变成永久误报 ——
+    一个每次都会红的检查等于没有检查。
+
+    判据必须能取红：只断言「TestResults 被排除」会被「把整个仓都排除」蒙过去，
+    所以同时断言正对照 —— 普通源码路径**不得**被排除。
+    """
+    names = mod.LIMITS["EXCLUDE_DIR_NAMES"]
+    check("noise: TestResults is an excluded dir name", "TestResults" in names,
+          "names=%d" % len(names))
+    check("noise: path under TestResults is excluded",
+          mod._path_is_excluded("Source/PuddingRuntimeTests/TestResults/coverage.json"))
+    check("noise: POSITIVE CONTROL normal source path is NOT excluded",
+          not mod._path_is_excluded("Source/PuddingRuntime/Services/ContextCompactionService.cs"))
+    check("noise: POSITIVE CONTROL csproj is NOT excluded",
+          not mod._path_is_excluded("Source/PuddingRuntime/PuddingRuntime.csproj"))
+    # 单一真源一致性：`path_noise.DIR_NAMES` 与 checker 的 LIMITS 不得各自漂移
+    try:
+        pn = getattr(mod, "path_noise", None)
+        if pn is None:
+            import path_noise as pn  # noqa: PLC0415
+        check("noise: single source of truth (path_noise.DIR_NAMES) contains TestResults",
+              "TestResults" in pn.DIR_NAMES)
+        check("noise: path_noise.DIR_NAMES and LIMITS agree",
+              set(pn.DIR_NAMES) == set(names),
+              "path_noise=%d limits=%d" % (len(pn.DIR_NAMES), len(names)))
+    except Exception as exc:  # noqa: BLE001
+        check_inconclusive("noise: cannot import path_noise", repr(exc))
+
+
 def detail_rows(md):
     """只数 §5「每文件违规清单」里的明细行 —— §2 的规则命中表首列同样是规则 ID，必须排除。"""
     start = md.find("## 5.")
@@ -719,6 +753,7 @@ def main():
         rep_c = stage_missing_metadata_red(mod, dirs)
         stage_rule_coverage(mod, rep_a, rep_c)
         stage_fingerprint_algorithm(mod, dirs)
+        stage_noise_exclusion(mod)
         stage_anti_pattern_prose_scope(mod, dirs)
         stage_anti_pattern_identifier_boundary(mod)
         stage_list_items_parallel_phrases(mod)
