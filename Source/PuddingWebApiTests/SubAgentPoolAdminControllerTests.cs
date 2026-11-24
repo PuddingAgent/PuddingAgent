@@ -159,18 +159,17 @@ public sealed class SubAgentPoolAdminControllerTests
         Assert.AreEqual("admin", authorize!.Roles);
         Assert.AreEqual("Bearer", authorize.AuthenticationSchemes);
 
-        // 白名单精确到「动词 + 路由模板」，而不是只到动词。
-        // 只锁动词的话，POST 一经开放就能被挂到任意路径；锁到模板后，
-        // 每新增一个动作都必须同时改这张表 —— 想偷加也绕不过。
-        // 2026-11-24 的集合：列表 / 销毁 / 休眠。
-        var allowed = new HashSet<string>
+        // 读不限：GET 有几个都不管（读接口没有副作用，锁死它们只会碍事）。
+        // 写动作精确匹配：每新增一个写动作必须同时往这张表加一行 ——
+        // 否则「临时调试时加的删除接口忘了删」这类事就没人拦得住。
+        var writeRoutes = new HashSet<string>
         {
-            "GET|",
             "DELETE|{name}",
             "POST|{name}/sleep",
+            "PATCH|{name}",
         };
 
-        var actual = new List<string>();
+        var actualWrites = new List<string>();
         foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
                      .Where(m => !m.IsSpecialName))
         {
@@ -188,18 +187,113 @@ public sealed class SubAgentPoolAdminControllerTests
 
             Assert.IsNotNull(verb.Item1, $"动作 {method.Name} 必须显式声明 HTTP 动词");
 
-            // PUT / PATCH 一个都不允许：属性修改类语义尚未实现，先开口子会误导调用方。
-            Assert.IsFalse(
-                verb.Item1 is "PUT" or "PATCH",
-                $"动作 {method.Name} 使用了尚未实现的 {verb.Item1}；属性修改类语义必须先有服务层支持");
+            if (verb.Item1 == "GET")
+            {
+                continue;
+            }
 
-            actual.Add($"{verb.Item1}|{verb.Item2}");
+            actualWrites.Add($"{verb.Item1}|{verb.Item2}");
         }
 
         CollectionAssert.AreEquivalent(
-            allowed.ToList(),
-            actual,
-            $"动作路由集合必须与白名单完全一致（多一个或漏一个都算越界）；实际: [{string.Join("; ", actual)}]");
+            writeRoutes.ToList(),
+            actualWrites,
+            $"写动作路由集合必须与白名单完全一致（多一个或漏一个都算越界）；实际: [{string.Join("; ", actualWrites)}]");
+    }
+
+    [TestMethod]
+    public async Task Update_ChangesDisplayFields_Returns204()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.Add(new AgentPoolEntity
+            {
+                PoolId = "pool-edit",
+                OwnerWorkspaceId = "default",
+                Name = "frontend-ui",
+                SubSessionId = "sub-edit",
+                TemplateId = "global:task",
+                Status = AgentPoolEntity.StatusIdle,
+                CreatedAt = "2026-11-01T00:00:00Z",
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+        var result = await controller.Update(
+            "frontend-ui",
+            new UpdateSubAgentPoolEntryRequest { Responsibility = "新的备注" },
+            CancellationToken.None);
+
+        Assert.IsInstanceOfType<NoContentResult>(result);
+
+        await using var verify = await scope.Factory.CreateDbContextAsync();
+        var saved = await verify.AgentPool.SingleAsync(e => e.Name == "frontend-ui");
+        Assert.AreEqual("新的备注", saved.Responsibility);
+    }
+
+    [TestMethod]
+    public async Task Update_DoesNotClearFieldThatWasNotProvided()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.Add(new AgentPoolEntity
+            {
+                PoolId = "pool-keep",
+                OwnerWorkspaceId = "default",
+                Name = "keeper",
+                SubSessionId = "sub-keep",
+                TemplateId = "global:task",
+                AvatarKey = "avatar-fox",
+                Status = AgentPoolEntity.StatusIdle,
+                CreatedAt = "2026-11-01T00:00:00Z",
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+        // 只改备注，不传 avatarKey —— 头像必须保持不变，不能被 null 当成「清空」。
+        var result = await controller.Update(
+            "keeper",
+            new UpdateSubAgentPoolEntryRequest { Responsibility = "只改备注" },
+            CancellationToken.None);
+
+        Assert.IsInstanceOfType<NoContentResult>(result);
+
+        await using var verify = await scope.Factory.CreateDbContextAsync();
+        var saved = await verify.AgentPool.SingleAsync(e => e.Name == "keeper");
+        Assert.AreEqual("只改备注", saved.Responsibility);
+        Assert.AreEqual("avatar-fox", saved.AvatarKey, "没传的字段不得被清空");
+    }
+
+    [TestMethod]
+    public async Task Update_MissingEntry_Returns404()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+
+        var result = await controller.Update(
+            "ghost",
+            new UpdateSubAgentPoolEntryRequest { Responsibility = "x" },
+            CancellationToken.None);
+
+        Assert.IsInstanceOfType<NotFoundObjectResult>(result);
+    }
+
+    [TestMethod]
+    public async Task Update_OverlongResponsibility_Returns400()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+
+        var result = await controller.Update(
+            "frontend-ui",
+            new UpdateSubAgentPoolEntryRequest { Responsibility = new string('长', 201) },
+            CancellationToken.None);
+
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result);
     }
 
     [TestMethod]

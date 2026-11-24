@@ -199,6 +199,86 @@ public sealed class SubAgentPoolAdminController(
                      "若列表里看得见它，说明它由另一进程创建或本进程尚未加载。",
         });
     }
+
+    /// <summary>
+    /// 修改池条目的展示字段（备注 / 头像键）。
+    /// <para>
+    /// <b>这里可以直接写库、不经过池实例</b>，因为这两个字段不在
+    /// <see cref="PooledSubAgent"/> 快照里 —— 内存缓存根本不持有它们，
+    /// 「库改了内存没改」不构成分叉。状态类字段（status / task_count /
+    /// active_execution_id）恰好相反：它们就在内存里，必须走池。
+    /// </para>
+    /// <para>
+    /// <b>只做部分更新</b>：请求体里没给的字段保持原值，不把 null 当成「清空」。
+    /// 要清空得显式传空字符串，这与「没传」是两件事。
+    /// </para>
+    /// </summary>
+    [HttpPatch("{name}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Update(
+        string name,
+        [FromBody] UpdateSubAgentPoolEntryRequest body,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return BadRequest(new { error = "name_required", detail = "池条目名不能为空。" });
+        }
+
+        if (body.Responsibility is { Length: > 200 })
+        {
+            return BadRequest(new { error = "responsibility_too_long", detail = "备注最长 200 字。" });
+        }
+
+        if (body.AvatarKey is { Length: > 32 })
+        {
+            return BadRequest(new { error = "avatar_key_too_long", detail = "头像键最长 32 字符。" });
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+
+        var entity = await db.AgentPool
+            .FirstOrDefaultAsync(e => e.Name == name && e.DeletedAt == null, ct)
+            .ConfigureAwait(false);
+
+        if (entity is null)
+        {
+            // 这里 404 是诚实的：本端点在库里找，不依赖进程内缓存，
+            // 所以「找不到」就是真的不存在，而不是「本进程没加载」。
+            return NotFound(new { error = "not_found", detail = $"不存在名为 '{name}' 的池条目。" });
+        }
+
+        if (body.Responsibility is not null)
+        {
+            entity.Responsibility = body.Responsibility;
+        }
+
+        if (body.AvatarKey is not null)
+        {
+            entity.AvatarKey = body.AvatarKey;
+        }
+
+        await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        return NoContent();
+    }
+}
+
+/// <summary>
+/// 修改池条目展示字段的请求体。
+/// <para>
+/// 两个字段都是可选的：「没传」= 保持原值。要清空必须显式传空字符串 ——
+/// 把 null 当成「清空」会让一次只改头像的请求顺手抹掉备注。
+/// </para>
+/// </summary>
+public sealed class UpdateSubAgentPoolEntryRequest
+{
+    /// <summary>一句话备注（自由文本，最长 200 字）。</summary>
+    public string? Responsibility { get; init; }
+
+    /// <summary>预设图形键（最长 32 字符）。</summary>
+    public string? AvatarKey { get; init; }
 }
 
 /// <summary>
