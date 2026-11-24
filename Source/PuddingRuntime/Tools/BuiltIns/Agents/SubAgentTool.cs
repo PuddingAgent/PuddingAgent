@@ -195,6 +195,66 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             };
         }
 
+        // === 池管理动作（全局只读 + 条目生命周期）===
+        // 与 cancel / logs / steer 同理放在 task 解析之前：这三条都不消费任务正文。
+        // 教训（2026-11-24 实测）：它们曾被「task 必填」挡在门外——连只读的 list 都要传一个假任务。
+        // 更糟的是 destroy / sleep 在旧位置会先过委派深度与并发守卫，等于「想销毁条目却先被创建类守卫拒绝」。
+        // 另外，给了 pool_action 却漏了 pool_name 时旧代码会静默落进一次性派发分支（写错参数等于没事发生）。
+        var managementAction = args.PoolAction?.Trim().ToLowerInvariant();
+        if (managementAction is "list" or "destroy" or "sleep")
+        {
+            var managementPool = _services.GetService<ISubAgentPool>();
+            if (managementPool is null)
+                return Fail("? SubAgentPool 服务未注册。请检查 DI 配置。");
+
+            // list 是全局视图，不需要条目名；destroy / sleep 作用于具名条目。
+            if (managementAction is not "list" && string.IsNullOrWhiteSpace(args.PoolName))
+                return Fail($"pool_action={managementAction} 需要 pool_name。先用 pool_action=list 查看可用条目名。");
+
+            try
+            {
+                switch (managementAction)
+                {
+                    case "list":
+                    {
+                        // 未就绪时 List() 按契约抛 PoolNotReadyException，**不返回空集合**——
+                        // 因为「还没加载完」与「池里确实为空」处置相反（前者等，后者创建）。
+                        // 所以「池为空」只可能出现在真正 Ready 且确实没有条目时；
+                        // 未就绪由下面的 catch 渲染成「池未就绪 / 恢复失败」，不会伪装成空池。
+                        var agents = managementPool.List();
+                        if (agents.Count == 0)
+                            return Success("池为空。使用 pool_name=\"<name>\" pool_action=\"create\" 创建新的池化子代理。");
+                        var listing = new StringBuilder();
+                        listing.AppendLine($"## 子代理池状态 ({agents.Count} 个)\n");
+                        listing.AppendLine("| 名称 | 状态 | 角色 | 任务数 | 最后使用 | SubSessionId |");
+                        listing.AppendLine("|------|------|------|--------|----------|-------------|");
+                        foreach (var entry in agents)
+                            listing.AppendLine($"| {entry.Name} | {entry.Status} | {entry.Role ?? "-"} | {entry.TaskCount} | {entry.LastUsedAt:HH:mm:ss} | {entry.SubSessionId?.Substring(0, Math.Min(8, entry.SubSessionId.Length))}... |");
+                        return Success(listing.ToString());
+                    }
+
+                    case "destroy":
+                        // false 是「确认没有这个条目」，与「未就绪（还不知道有没有）」是相反的事实，
+                        // 所以单独给「未命中 + 下一步」，不并进通用失败文案。
+                        return await managementPool.DestroyAsync(args.PoolName, ct)
+                            ? Success($"? 池化子代理 '{args.PoolName}' 已销毁。")
+                            : Fail(DescribePoolEntryMissing(args.PoolName, "destroy"));
+
+                    default: // sleep
+                        // 同 destroy：false 表示名字未命中或条目已死，不是「池不可用」。
+                        return await managementPool.SleepAsync(args.PoolName, ct)
+                            ? Success($"? 池化子代理 '{args.PoolName}' 已休眠。")
+                            : Fail(DescribePoolEntryMissing(args.PoolName, "sleep"));
+                }
+            }
+            catch (InvalidOperationException ex)
+            {
+                // 与主 switch 的 catch 同一渲染，保证未就绪 / 归属 / 忙 / 池满四类文案不因入口不同而漂移。
+                return Fail(DescribePoolFailure(ex, args.PoolName)
+                    ?? $"? 池操作失败: {ex.Message}\n\n提示: 使用 pool_name=\"{args.PoolName}\" pool_action=\"list\" 查看当前池状态。");
+            }
+        }
+
         var task = GetStringProp(json, "task")
                 ?? GetStringProp(json, "prompt")
                 ?? request.Parameters.GetValueOrDefault("task");
@@ -479,42 +539,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                             });
                     }
 
-                    case "destroy":
-                    {
-                        var destroyed = await pool.DestroyAsync(args.PoolName, ct);
-                        return destroyed
-                            ? Success($"? 池化子代理 '{args.PoolName}' 已销毁。")
-                            // false 是「确认没有这个条目」，与「未就绪（还不知道有没有）」是相反的事实，
-                            // 所以这里单独给「未命中 + 下一步」，不并进通用失败文案。
-                            : Fail(DescribePoolEntryMissing(args.PoolName, "destroy"));
-                    }
-
-                    case "sleep":
-                    {
-                        var slept = await pool.SleepAsync(args.PoolName, ct);
-                        return slept
-                            ? Success($"? 池化子代理 '{args.PoolName}' 已休眠。")
-                            // 同 destroy：false 表示名字未命中或条目已死，不是「池不可用」。
-                            : Fail(DescribePoolEntryMissing(args.PoolName, "sleep"));
-                    }
-
-                    case "list":
-                    {
-                        // 未就绪时 List() 按契约抛 PoolNotReadyException，**不返回空集合**——
-                        // 因为「还没加载完」与「池里确实为空」处置相反（前者等，后者创建）。
-                        // 所以「池为空」只可能出现在真正 Ready 且确实没有条目时；
-                        // 未就绪由末尾的 catch 渲染成「池未就绪 / 恢复失败」，不会伪装成空池。
-                        var agents = pool.List();
-                        if (agents.Count == 0)
-                            return Success("池为空。使用 pool_name=\"<name>\" pool_action=\"create\" 创建新的池化子代理。");
-                        var sb = new StringBuilder();
-                        sb.AppendLine($"## 子代理池状态 ({agents.Count} 个)\n");
-                        sb.AppendLine("| 名称 | 状态 | 角色 | 任务数 | 最后使用 | SubSessionId |");
-                        sb.AppendLine("|------|------|------|--------|----------|-------------|");
-                        foreach (var a in agents)
-                            sb.AppendLine($"| {a.Name} | {a.Status} | {a.Role ?? "-"} | {a.TaskCount} | {a.LastUsedAt:HH:mm:ss} | {a.SubSessionId?.Substring(0, Math.Min(8, a.SubSessionId.Length))}... |");
-                        return Success(sb.ToString());
-                    }
+                    // list / destroy / sleep 已在 task 解析之前统一处理（见上方「池管理动作」分支）：
+                    // 它们不消费任务正文，也不该先过委派深度与并发守卫。
 
                     case "cleanup":
                     {

@@ -229,6 +229,83 @@ public sealed class SubAgentToolPoolFailureTests
             string.Join(" || ", messages.Select(kv => $"{kv.Key}={kv.Value.Split('\n')[0]}")));
     }
 
+    // === 池管理动作不消费任务正文（2026-11-24 修）===
+    // 缺陷现场：只读的 pool_action=list 也要传 task，模型只能编一个假任务才能看一眼池状态；
+    // destroy / sleep 更糟——它们在旧位置先过委派深度与并发守卫，等于「想销毁条目却先被创建类守卫拒绝」。
+
+    [TestMethod]
+    public async Task List_WithoutTaskOrPoolName_Succeeds()
+    {
+        var pool = new FakeSubAgentPool
+        {
+            Entries =
+            [
+                new PooledSubAgent
+                {
+                    Name = "p1",
+                    SubSessionId = "sess-parent-sub-p1",
+                    TemplateId = "workspace-task-agent",
+                    CreatedAt = DateTimeOffset.UnixEpoch,
+                    LastUsedAt = DateTimeOffset.UnixEpoch,
+                    Status = PooledSubAgentStatus.Idle,
+                    TaskCount = 0,
+                },
+            ],
+        };
+
+        var result = await ExecuteToolAsync(pool, """{"pool_action":"list"}""");
+
+        Assert.IsTrue(result.Success, $"list 不应要求 task / pool_name：{result.Error}");
+        StringAssert.Contains(result.Output ?? string.Empty, "p1");
+    }
+
+    [TestMethod]
+    public async Task Destroy_WithoutTask_Succeeds()
+    {
+        var pool = new FakeSubAgentPool { DestroyResult = true };
+
+        var result = await ExecuteToolAsync(pool, """{"pool_name":"p1","pool_action":"destroy"}""");
+
+        Assert.IsTrue(result.Success, $"destroy 不应要求 task：{result.Error}");
+        StringAssert.Contains(result.Output ?? string.Empty, "已销毁");
+    }
+
+    [TestMethod]
+    public async Task Sleep_WithoutTask_Succeeds()
+    {
+        var pool = new FakeSubAgentPool { SleepResult = true };
+
+        var result = await ExecuteToolAsync(pool, """{"pool_name":"p1","pool_action":"sleep"}""");
+
+        Assert.IsTrue(result.Success, $"sleep 不应要求 task：{result.Error}");
+        StringAssert.Contains(result.Output ?? string.Empty, "已休眠");
+    }
+
+    [TestMethod]
+    public async Task Destroy_WithoutPoolName_AsksForPoolName()
+    {
+        var result = await ExecuteToolAsync(new FakeSubAgentPool(), """{"pool_action":"destroy"}""");
+
+        Assert.IsFalse(result.Success);
+        var error = result.Error ?? string.Empty;
+
+        StringAssert.Contains(error, "pool_name");
+        // 旧行为：给了 pool_action 却漏了 pool_name 会静默落进一次性派发分支，
+        // 等于「写错参数什么也没发生」。现在必须明说。
+        StringAssert.Contains(error, "destroy");
+        Assert.IsFalse(error.Contains("必需的"), $"被 task 必填拦下（说明没走到管理分支）：{error}");
+    }
+
+    [TestMethod]
+    public async Task Execute_WithoutTask_StillRequiresTask()
+    {
+        var result = await ExecuteToolAsync(new FakeSubAgentPool(), """{"pool_name":"p1"}""");
+
+        Assert.IsFalse(result.Success);
+        // 对照组：放宽管理动作不得顺手放宽执行路径。
+        StringAssert.Contains(result.Error ?? string.Empty, "必需的");
+    }
+
     private static async Task<ToolExecutionResult> ExecuteToolAsync(FakeSubAgentPool pool, string argumentsJson)
     {
         using var provider = new ServiceCollection()
