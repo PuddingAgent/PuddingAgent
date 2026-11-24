@@ -31,6 +31,9 @@ DIR_NAMES = frozenset({
     "bin", "obj", "node_modules", "dist", "dist-dev", "pub",
     # 运行期与工具产物
     "temp", "tmp", ".pudding", "__pycache__", ".venv",
+    # 测试与覆盖率产物：MSTest 每跑一次就新生成 `Deploy_<host> <ts>_<pid>/`、`coverage.*`、`*.trx`，
+    # 若收进指纹（`Source/**` / `Tests/**` 递归 glob 会覆盖到），每跑一次测试都会把源指纹判成陈旧。
+    "TestResults",
     # IDE / VCS
     ".git", ".vs", ".idea",
     # 整仓库归档快照（.gitignore 内；内部链接与相对路径本就不可达）

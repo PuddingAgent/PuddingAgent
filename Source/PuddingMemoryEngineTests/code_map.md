@@ -1,5 +1,5 @@
 # PuddingMemoryEngineTests
-> 源指纹: *.cs=34-6cbc4f8e5e77, *.csproj=1-a3db38e10aea · 条目数: 0 · 最近整理: 2026-11-23
+> 源指纹: *.cs=34-f33edb2cc456, *.csproj=1-a3db38e10aea · 条目数: 0 · 最近整理: 2026-11-23
 
 测试工程，引用 PuddingMemoryEngine、PuddingRuntime；用例全部为进程内单测，不需要真实宿主或外部服务。
 
