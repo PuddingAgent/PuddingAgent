@@ -90,7 +90,11 @@ L2（子工程）与 L1（根）的项目表均使用**固定列序**（列序�
 |---|---|---|
 `index` | 产品代码、入口、契约、对外可依赖的稳定面 | ✅ 需要一行语义条目 |
 `observe` | 生成物、测试夹具/基准语料、大资源、供应商冻结件 —— **只登记路径**，不写语义 | ❌ 不占条目行（可在附录列路径） |
-`exclude` | `bin/` `obj/` `node_modules/` `.pudding/` `temp/` `.work/` `dist/` `dist-dev/` `external/references/` | ❌ 不读不写 |
+`exclude` | 构建/依赖/工具产物与归档快照：`bin/` `obj/` `node_modules/` `dist/` `dist-dev/` `pub/` `temp/` `tmp/` `.pudding/` `__pycache__/` `.venv/` `TestResults/` `.git/` `.vs/` `.idea/` `.work/`，以及仓库相对前缀 `external/references/` | ❌ 不读不写 |
+
+> **单一真源**：以上名单在代码里是 [`Tools/Docs/path_noise.py`](../../Tools/Docs/path_noise.py) 的 `DIR_NAMES`（按目录名，不限层级）与 `PATH_PREFIXES`（按仓库相对前缀）；`code_map_check`、`code_map_fingerprint`、`check_md_links` 都从它导入，**不要在别处再写一份**。
+>
+> **为什么 `TestResults/` 属于 exclude**（2026-11-24 实测）：MSTest 每跑一次就重写 `Deploy_<host> <ts>_<pid>/`、`coverage.*`、`*.trx`。它曾被当成源码收进源指纹 —— `Source/**` 的 5989 个输入里 493 个是产物、`Tests/**` 的 241 里 22 个 —— 于是**每跑一次测试，源指纹就变值**，`stale-fingerprint` 变成永久误报，连带 6 个测试工程把 `TestResults/**` 声明成了指纹输入。一个每次都会红的检查等于没有检查。
 
 **成本判据**：一条条目约 **100~250 token**。当某对象的语义价值低于这个成本（例如"再来一个 markdown 夹具"），它属于 `observe`。
 依据：AOCI `AGENTS.md` *"at roughly 110 tokens per Entry, indexing them would more than double the Whole-Index and buy nothing"*。
