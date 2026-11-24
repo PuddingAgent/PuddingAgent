@@ -113,6 +113,7 @@ public sealed class SubAgentPoolAdminController(
     [HttpDelete("{name}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> Delete(string name, CancellationToken ct)
@@ -122,9 +123,10 @@ public sealed class SubAgentPoolAdminController(
             return BadRequest(new { error = "name_required", detail = "池条目名不能为空。" });
         }
 
+        IReadOnlyList<PooledSubAgent> snapshot;
         try
         {
-            await subAgentPool.GetSnapshotAsync(ct).ConfigureAwait(false);
+            snapshot = await subAgentPool.GetSnapshotAsync(ct).ConfigureAwait(false);
         }
         catch (PoolNotReadyException ex)
         {
@@ -134,19 +136,33 @@ public sealed class SubAgentPoolAdminController(
                 new { error = "pool_not_ready", detail = ex.Message });
         }
 
+        // 快照取自库（真源），因此「快照里没有」= 库里没有这个活着的条目：
+        // 要么名字拼错，要么它已被销毁（软删后不再进快照）。
+        // 这与 409 是两件事 —— 混成一个会让人去查「归属」，而实际只是打错了一个字。
+        var exists = snapshot.Any(e => string.Equals(e.Name, name, StringComparison.Ordinal));
+        if (!exists)
+        {
+            return NotFound(new
+            {
+                error = "not_found",
+                detail = $"池内没有名为 '{name}' 的条目：名字拼错，或它已被销毁。",
+            });
+        }
+
         var destroyed = await subAgentPool.DestroyAsync(name, ct).ConfigureAwait(false);
         if (destroyed)
         {
             return NoContent();
         }
 
-        // DestroyAsync 的 false 有四种来源且不区分：条目不在本进程内存、库拒绝状态迁移、
-        // 条目已 dead、名字拼错。这里不编造细分，只把「可能的原因」交给调用方判断。
+        // 走到这里说明「库里有、本进程销毁不了」。两种可能且不细分：
+        // 条目由另一进程创建（本进程内存里没有它），或库拒绝了状态迁移。
+        // 两者的处置都是「换进程操作 / 先查库里的实际状态」，与名字打错完全不同。
         return Conflict(new
         {
             error = "destroy_rejected",
-            detail = "无法销毁：条目不在本进程池内、已处于 dead、或库拒绝了状态迁移。" +
-                     "若列表里看得见它，说明它由另一进程创建或本进程尚未加载。",
+            detail = "条目在库中存在，但本进程无法完成销毁：它可能由另一进程创建" +
+                     "（本进程内存里没有它），或库拒绝了状态迁移。",
         });
     }
 

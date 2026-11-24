@@ -557,7 +557,7 @@ public sealed class SubAgentPoolAdminControllerTests
         await using var scope = await CreateDatabaseAsync();
         var pool = new Mock<ISubAgentPool>();
         pool.Setup(p => p.GetSnapshotAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<PooledSubAgent>)Array.Empty<PooledSubAgent>());
+            .ReturnsAsync((IReadOnlyList<PooledSubAgent>)new[] { PoolEntry("frontend-ui") });
         pool.Setup(p => p.DestroyAsync("frontend-ui", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
         var controller = new SubAgentPoolAdminController(scope.Factory, pool.Object);
@@ -577,7 +577,7 @@ public sealed class SubAgentPoolAdminControllerTests
         await using var scope = await CreateDatabaseAsync();
         var pool = new Mock<ISubAgentPool>();
         pool.Setup(p => p.GetSnapshotAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<PooledSubAgent>)Array.Empty<PooledSubAgent>());
+            .ReturnsAsync((IReadOnlyList<PooledSubAgent>)new[] { PoolEntry("ghost") });
         pool.Setup(p => p.DestroyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
         var controller = new SubAgentPoolAdminController(scope.Factory, pool.Object);
@@ -587,6 +587,36 @@ public sealed class SubAgentPoolAdminControllerTests
         var conflict = result as ObjectResult;
         Assert.IsNotNull(conflict, "池拒绝时必须给出可见的冲突响应，不得静默当作已删除");
         Assert.AreEqual(StatusCodes.Status409Conflict, conflict!.StatusCode);
+    }
+
+    /// <summary>
+    /// 快照里没有这个名字 ⇒ 404，且<b>不得</b>再去调 <c>DestroyAsync</c>。
+    /// <para>
+    /// 这是名字拼错与「存在但本进程删不掉」的分水岭：前者人只改一个字，后者要换进程操作。
+    /// 若默认实现把两者都报成 409，用户会去查归属，而实际只是拼错了名字。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task Delete_WhenNameMissingFromSnapshot_Returns404_AndDoesNotCallDestroy()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        var pool = new Mock<ISubAgentPool>();
+        pool.Setup(p => p.GetSnapshotAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PooledSubAgent>)new[] { PoolEntry("frontend-ui") });
+        var controller = new SubAgentPoolAdminController(scope.Factory, pool.Object);
+
+        var result = await controller.Delete("frontnd-ui", CancellationToken.None);
+
+        var notFound = result as ObjectResult;
+        Assert.IsNotNull(notFound, "快照里没有该名字时必须给出可见响应");
+        Assert.AreEqual(
+            StatusCodes.Status404NotFound,
+            notFound!.StatusCode,
+            "库（真源）里没有这个条目就是 404；报成 409 会让人去查归属，而实际只是名字拼错");
+        pool.Verify(
+            p => p.DestroyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "名字都不在快照里，不得再去尝试销毁（那只会得到又一个无法解释的 false）");
     }
 
     [TestMethod]
@@ -685,6 +715,18 @@ public sealed class SubAgentPoolAdminControllerTests
             Times.Never,
             "未就绪时不得尝试休眠：内存里看不到条目时 SleepAsync 会误报 false");
     }
+
+    /// <summary>构造一个内存快照条目：只有 <c>Name</c> 参与判定，其余字段填得能通过必填校验。</summary>
+    private static PooledSubAgent PoolEntry(string name) => new()
+    {
+        Name = name,
+        SubSessionId = $"sub-{name}",
+        TemplateId = "workspace-task-agent",
+        CreatedAt = DateTimeOffset.UtcNow,
+        LastUsedAt = DateTimeOffset.UtcNow,
+        Status = PooledSubAgentStatus.Idle,
+        TaskCount = 0,
+    };
 
     private static async Task<TestDatabaseScope> CreateDatabaseAsync()
     {
