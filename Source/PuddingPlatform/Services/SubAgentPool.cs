@@ -278,7 +278,7 @@ public sealed class SubAgentPool : ISubAgentPool
             // S5c：先救「重启前残留的 busy」，再对外宣告就绪。
             // 顺序上选在 Ready 之前：Ready 是「可以对外派活」的承诺，把唤醒提前到复位之前，
             // 第一个调用方就会撞上一条尚未救回的 busy（报「当前忙」而不是真 busy）。
-            await TryRecoverStaleBusyAsync(ct);
+            await TryRecoverStaleBusyAsync(loaded, ct);
 
             _readiness = PoolReadiness.Ready;
             _logger.LogInformation(
@@ -310,28 +310,64 @@ public sealed class SubAgentPool : ISubAgentPool
     /// 「个别条目继续停在 busy」——后者仍有日志可查，且下次重启还会再试一次。
     /// </para>
     /// </summary>
-    private async Task TryRecoverStaleBusyAsync(CancellationToken ct)
+    private async Task TryRecoverStaleBusyAsync(
+        IReadOnlyList<AgentPoolEntrySnapshot> loaded, CancellationToken ct)
     {
         if (_entryStore is null)
             return;
 
-        int reset;
-        try
+        // 只有「确实存在 busy 条目」时才值得重试：正常启动没有 busy，多睡这几轮是白等。
+        var hasBusy = loaded.Any(static row =>
+            string.Equals(row.Status, AgentPoolEntity.StatusBusy, StringComparison.Ordinal));
+
+        // 重试的理由是顺序竞态，不是「上一次失败」：本方法在池就绪之前跑，而把上一进程遗留的
+        // running 收成终态的是 SubAgentConversationProjectionWorker 的启动恢复——那是
+        // BackgroundService，StartAsync 不 await 其主体，所以「注册在它之后」并不等于
+        // 「它恢复完了」。复位先落地时判据还看得见 running，于是返回 0、什么也没改；
+        // 收成终态之后没人再叫一次，条目就停到下次重启。这几轮有限重试就是在补那一次。
+        // 250ms / 500ms / 1000ms：最多多等 1.75 秒，且仅当确实存在 busy 条目时才会走到这里。
+        var retryDelays = new[] { 250, 500, 1000 };
+        var maxAttempts = hasBusy ? retryDelays.Length + 1 : 1;
+        var reset = 0;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            reset = await _entryStore.ResetStaleBusyAsync(DateTimeOffset.UtcNow, ct);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // 不设 Failed：加载已成功，池可用；只是这次的「救条目」没做成。
-            _logger.LogWarning(
-                ex,
-                "[SubAgentPool] Stale-busy recovery failed; pool still becomes Ready " +
-                "(loaded entries are usable, stale busy entries stay stuck until next restart)");
-            return;
+            try
+            {
+                reset = await _entryStore.ResetStaleBusyAsync(DateTimeOffset.UtcNow, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // 不设 Failed：加载已成功，池可用；只是这次的「救条目」没做成。
+                _logger.LogWarning(
+                    ex,
+                    "[SubAgentPool] Stale-busy recovery failed; pool still becomes Ready " +
+                    "(loaded entries are usable, stale busy entries stay stuck until next restart)");
+                return;
+            }
+
+            if (reset > 0 || attempt == maxAttempts)
+                break;
+
+            _logger.LogDebug(
+                "[SubAgentPool] Stale-busy sweep attempt {Attempt}/{Max} reset nothing; " +
+                "retrying after interrupted-run recovery has a chance to finish",
+                attempt, maxAttempts);
+            await Task.Delay(retryDelays[attempt - 1], ct);
         }
 
         if (reset <= 0)
+        {
+            if (hasBusy)
+            {
+                // 重试也用尽：run 还没被收成终态，本轮救不回来。留在日志里，别静默。
+                _logger.LogWarning(
+                    "[SubAgentPool] Stale-busy sweep exhausted {Attempts} attempts without resetting; " +
+                    "entries stay Busy until the next restart",
+                    maxAttempts);
+            }
+
             return;
+        }
 
         IReadOnlyList<AgentPoolEntrySnapshot> rows;
         try
