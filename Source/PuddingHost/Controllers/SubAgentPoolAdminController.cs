@@ -337,6 +337,97 @@ public sealed class SubAgentPoolAdminController(
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
         return NoContent();
     }
+
+    /// <summary>
+    /// 某池条目的运行历史（**只读**，最近的在前）。
+    /// <para>
+    /// <b>为什么这条端点对「管理」是必需的：</b>此前管理视图只够看骨架 ——
+    /// 名字、状态、任务数、最近使用时间。管理者看不到这个成员具体跑过什么、
+    /// 每次跑了多久、用了多少轮工具、失败时报的什么错。没有运行历史的团队管理，
+    /// 与只看花名册没有区别。
+    /// </para>
+    /// <para>
+    /// <b>关联键是 <c>sub_session_id</c>，不是名字：</b><c>sub_agent_runs</c> 里没有池名，
+    /// 而 <c>agent_pool.sub_session_id</c> 正是「复用同一会话」的那个稳定标识
+    /// （池条目休眠/唤醒都保持它）。所以历史天然按会话归集，跨池条目改名也不会丢。
+    /// </para>
+    /// <para>
+    /// <b>排序用自增主键而不是 <c>started_at</c> 文本：</b>后者是 ISO-8601 字符串列，
+    /// 同偏移量下字典序确实等于时间序，但那是「碰巧成立」而不是契约；
+    /// 一旦将来写入方带上非零偏移，排序就会错乱。自增 Id 天然是创建顺序。
+    /// </para>
+    /// <para>
+    /// <b>名字不存在返回 404，条目存在但没有运行历史返回 200 + <c>[]</c>：</b>
+    /// 「这个人从没干过活」与「这个人在不在团队里」是两件事，
+    /// 合并成一个响应会让界面对新成员显示成错误。
+    /// </para>
+    /// </summary>
+    /// <param name="name">池内展示名（未软删时唯一）。</param>
+    /// <param name="limit">最多返回多少条（1..100，越界自动夹取）。</param>
+    /// <param name="ct">取消令牌。</param>
+    [HttpGet("{name}/runs")]
+    [ProducesResponseType<IReadOnlyList<SubAgentRunDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<SubAgentRunDto>>> GetRuns(
+        string name,
+        [FromQuery] int limit = 20,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return BadRequest(new { error = "name_required", detail = "池条目名不能为空。" });
+        }
+
+        var take = Math.Clamp(limit, 1, 100);
+
+        await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+
+        // 只取两列：本端点判定存在性只需要 sub_session_id。
+        var entry = await db.AgentPool
+            .AsNoTracking()
+            .Where(e => e.DeletedAt == null && e.Name == name)
+            .Select(e => new { e.SubSessionId })
+            .FirstOrDefaultAsync(ct)
+            .ConfigureAwait(false);
+
+        if (entry is null)
+        {
+            return NotFound(new
+            {
+                error = "not_found",
+                detail = $"池内没有名为 '{name}' 的条目：名字拼错，或它已被销毁。",
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(entry.SubSessionId))
+        {
+            // 条目存在但还没有会话标识：等价于「零条历史」，不是错误。
+            return Ok(Array.Empty<SubAgentRunDto>());
+        }
+
+        var runs = await db.SubAgentRuns
+            .AsNoTracking()
+            .Where(r => r.SubSessionId == entry.SubSessionId)
+            .OrderByDescending(r => r.Id)
+            .Take(take)
+            .Select(r => new SubAgentRunDto
+            {
+                RunId = r.RunId,
+                Status = r.Status,
+                TemplateId = r.TemplateId,
+                StartedAt = r.StartedAt,
+                CompletedAt = r.CompletedAt,
+                TotalRounds = r.TotalRounds,
+                TotalToolCalls = r.TotalToolCalls,
+                TotalDurationMs = r.TotalDurationMs,
+                ErrorMessage = r.ErrorMessage,
+            })
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        return Ok(runs);
+    }
 }
 
 /// <summary>
@@ -433,4 +524,46 @@ public sealed class SubAgentPoolEntryDto
 
     /// <summary>条目创建时间（ISO-8601 文本）。</summary>
     public string CreatedAt { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// 子代理单次运行的 HTTP 契约（camelCase 由 ASP.NET 默认序列化策略产出）。
+/// <para>
+/// <b>刻意不返回 <c>archive_path</c>：</b>那是本机绝对路径，界面用不上，
+/// 而它在 admin 响应体里出现只会扩大信息面。需要看归档内容时应另开按 runId 读取的端点，
+/// 由后端做路径边界校验，而不是让前端拿着路径自己去拼。
+/// </para>
+/// <para>
+/// 时间列与 <see cref="SubAgentPoolEntryDto"/> 同一口径：原样透出库里的 ISO-8601 文本，
+/// 不转 <see cref="DateTime"/> —— 诊断时恰恰需要看到「库里到底存的是什么」。
+/// </para>
+/// </summary>
+public sealed class SubAgentRunDto
+{
+    /// <summary>运行 id（<c>run_yyyyMMdd_HHmmss_hex</c>）。</summary>
+    public string RunId { get; init; } = string.Empty;
+
+    /// <summary>运行状态；取值词表见 <c>SubAgentRunEntity.TerminalStatuses</c>。</summary>
+    public string Status { get; init; } = string.Empty;
+
+    /// <summary>该次运行使用的 agent 模板 id。</summary>
+    public string TemplateId { get; init; } = string.Empty;
+
+    /// <summary>开始时间（ISO-8601 文本）。</summary>
+    public string StartedAt { get; init; } = string.Empty;
+
+    /// <summary>结束时间（ISO-8601 文本）；非终态为 null。</summary>
+    public string? CompletedAt { get; init; }
+
+    /// <summary>本次运行的 LLM 轮次数。</summary>
+    public int TotalRounds { get; init; }
+
+    /// <summary>本次运行的工具调用次数。</summary>
+    public int TotalToolCalls { get; init; }
+
+    /// <summary>本次运行总耗时（毫秒）。</summary>
+    public long TotalDurationMs { get; init; }
+
+    /// <summary>失败原因；成功为 null。</summary>
+    public string? ErrorMessage { get; init; }
 }

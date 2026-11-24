@@ -716,6 +716,165 @@ public sealed class SubAgentPoolAdminControllerTests
             "未就绪时不得尝试休眠：内存里看不到条目时 SleepAsync 会误报 false");
     }
 
+    [TestMethod]
+    public async Task GetRuns_ReturnsOnlyThatEntriesRuns_OrderedNewestFirst()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.AddRange(
+                PoolRow("pool-a", "alpha", "sub-alpha"),
+                PoolRow("pool-b", "beta", "sub-beta"));
+            seed.SubAgentRuns.AddRange(
+                RunRow("run-a1", "sub-alpha", "completed", rounds: 3, tools: 7, durationMs: 1200),
+                RunRow("run-a2", "sub-alpha", "failed", rounds: 1, tools: 0, durationMs: 300, error: "boom"),
+                RunRow("run-b1", "sub-beta", "completed", rounds: 9, tools: 20, durationMs: 9000));
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+        var result = await controller.GetRuns("alpha", 20, CancellationToken.None);
+
+        Assert.IsInstanceOfType<OkObjectResult>(result.Result);
+        var payload = ((OkObjectResult)result.Result!).Value as IReadOnlyList<SubAgentRunDto>;
+        Assert.IsNotNull(payload, "响应体必须是运行历史数组");
+
+        // 归集键是 sub_session_id：另一条池条目的 run 绝不能串进来。
+        Assert.AreEqual(2, payload!.Count, "只应返回该条目自己会话下的 run");
+
+        // 自增 Id 大的在前 —— 这是「最近优先」的判据，不依赖 started_at 文本排序。
+        Assert.AreEqual("run-a2", payload[0].RunId, "最近创建的 run 必须排在首位");
+        Assert.AreEqual("failed", payload[0].Status);
+        Assert.AreEqual(1, payload[0].TotalRounds);
+        Assert.AreEqual(0, payload[0].TotalToolCalls);
+        Assert.AreEqual(300L, payload[0].TotalDurationMs);
+        Assert.AreEqual("boom", payload[0].ErrorMessage);
+        Assert.AreEqual("workspace-task-agent", payload[0].TemplateId);
+
+        Assert.AreEqual("run-a1", payload[1].RunId);
+        Assert.AreEqual("completed", payload[1].Status);
+        Assert.AreEqual(1200L, payload[1].TotalDurationMs);
+        Assert.IsNull(payload[1].ErrorMessage, "成功运行不得平白长出失败原因");
+    }
+
+    [TestMethod]
+    public async Task GetRuns_EntryWithNoRuns_Returns200WithEmptyArray_Not404()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.Add(PoolRow("pool-new", "newcomer", "sub-newcomer"));
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+        var result = await controller.GetRuns("newcomer", 20, CancellationToken.None);
+
+        // 关键：新成员「从没干过活」不能表现成错误。
+        Assert.IsInstanceOfType<OkObjectResult>(result.Result);
+        var payload = ((OkObjectResult)result.Result!).Value as IReadOnlyList<SubAgentRunDto>;
+        Assert.IsNotNull(payload);
+        Assert.AreEqual(0, payload!.Count, "没有运行历史时必须返回空数组");
+    }
+
+    [TestMethod]
+    public async Task GetRuns_UnknownOrDeletedEntry_Returns404()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            // 软删后的墓碑行：名字看得见（库里有行），但它已经不在团队里。
+            seed.AgentPool.Add(PoolRow(
+                "pool-gone", "ghost", "sub-ghost", deletedAt: "2026-11-25T00:00:00+00:00"));
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+
+        var missing = await controller.GetRuns("nobody", 20, CancellationToken.None);
+        Assert.AreEqual(StatusCodes.Status404NotFound, (missing.Result as ObjectResult)?.StatusCode);
+
+        // 软删条目与「名字拼错」对外应同一语义：都不在团队里。
+        var deleted = await controller.GetRuns("ghost", 20, CancellationToken.None);
+        Assert.AreEqual(
+            StatusCodes.Status404NotFound,
+            (deleted.Result as ObjectResult)?.StatusCode,
+            "已软删的条目必须当作不存在，而不是返回它的历史");
+    }
+
+    [TestMethod]
+    public async Task GetRuns_ClampsLimit_AndBlankNameReturns400()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.Add(PoolRow("pool-c", "chatter", "sub-chatter"));
+            seed.SubAgentRuns.AddRange(
+                RunRow("run-c1", "sub-chatter", "completed"),
+                RunRow("run-c2", "sub-chatter", "completed"),
+                RunRow("run-c3", "sub-chatter", "completed"));
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+
+        var one = await controller.GetRuns("chatter", 1, CancellationToken.None);
+        var onePayload = ((OkObjectResult)one.Result!).Value as IReadOnlyList<SubAgentRunDto>;
+        Assert.AreEqual(1, onePayload!.Count, "limit 必须真的生效");
+        Assert.AreEqual("run-c3", onePayload[0].RunId, "截断保留的是最新的那些");
+
+        // limit=0 被夹到 1 而不是「返回全部」：负数/零不能变成「不限量」。
+        var zero = await controller.GetRuns("chatter", 0, CancellationToken.None);
+        var zeroPayload = ((OkObjectResult)zero.Result!).Value as IReadOnlyList<SubAgentRunDto>;
+        Assert.AreEqual(1, zeroPayload!.Count, "limit=0 必须夹到 1，不得退化成不限量");
+
+        var blank = await controller.GetRuns("   ", 20, CancellationToken.None);
+        Assert.AreEqual(StatusCodes.Status400BadRequest, (blank.Result as ObjectResult)?.StatusCode);
+    }
+
+    /// <summary>造一条池条目：只填必填列，展示列留空。</summary>
+    private static AgentPoolEntity PoolRow(
+        string poolId,
+        string name,
+        string subSessionId,
+        string? deletedAt = null) => new()
+    {
+        PoolId = poolId,
+        OwnerWorkspaceId = "default",
+        Name = name,
+        SubSessionId = subSessionId,
+        TemplateId = "workspace-task-agent",
+        Status = AgentPoolEntity.StatusIdle,
+        CreatedAt = "2026-11-25T00:00:00+00:00",
+        LastUsedAt = "2026-11-25T00:00:00+00:00",
+        DeletedAt = deletedAt,
+    };
+
+    /// <summary>造一条运行索引行：文件归档不重要，本测试只看数据库索引。</summary>
+    private static SubAgentRunEntity RunRow(
+        string runId,
+        string subSessionId,
+        string status,
+        int rounds = 0,
+        int tools = 0,
+        long durationMs = 0,
+        string? error = null) => new()
+    {
+        RunId = runId,
+        ParentSessionId = "parent-session",
+        SubSessionId = subSessionId,
+        WorkspaceId = "default",
+        AgentInstanceId = "default.global_general-assistant.6a8",
+        TemplateId = "workspace-task-agent",
+        Status = status,
+        StartedAt = "2026-11-25T00:00:00+00:00",
+        ArchivePath = $"/archive/{runId}",
+        ErrorMessage = error,
+        TotalRounds = rounds,
+        TotalToolCalls = tools,
+        TotalDurationMs = durationMs,
+    };
+
     /// <summary>构造一个内存快照条目：只有 <c>Name</c> 参与判定，其余字段填得能通过必填校验。</summary>
     private static PooledSubAgent PoolEntry(string name) => new()
     {
