@@ -415,7 +415,7 @@ const EntryActions: React.FC<{
  * 失败时也不许显示成「从未执行」——前者要刷新，后者要建任务，下一步完全不同。
  */
 const RunHistory: React.FC<{ name: string }> = ({ name }) => {
-  const { runs, loading, error, reload } = useSubAgentRuns(name);
+  const { runs, total, truncated, loading, error, reload } = useSubAgentRuns(name);
   const muted = { fontSize: 12, color: 'var(--pudding-text-secondary, #888)' } as const;
 
   return (
@@ -478,6 +478,14 @@ const RunHistory: React.FC<{ name: string }> = ({ name }) => {
           ))}
         </ul>
       )}
+
+      {/* 截断提示放在列表外：它描述的是「你看到的不是全部」，
+          而不是某一条记录的性质。放进列表就会凭空多出一个假行。 */}
+      {!loading && error === null && truncated ? (
+        <div data-testid="subagent-run-truncated" style={{ ...muted, marginTop: 6 }}>
+          仅显示最近 {runs?.length ?? 0} 条，共 {total} 条
+        </div>
+      ) : null}
     </section>
   );
 };

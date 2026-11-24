@@ -78,6 +78,8 @@ const setPoolState = (state: PoolState): void => {
 
 interface RunsState {
   runs?: unknown[] | null;
+  total?: number;
+  truncated?: boolean;
   loading?: boolean;
   error?: string | null;
   reload?: () => void;
@@ -89,6 +91,8 @@ const mockedUseSubAgentRuns = useSubAgentRuns as unknown as jest.Mock;
 const setRunsState = (state: RunsState = {}): void => {
   mockedUseSubAgentRuns.mockReturnValue({
     runs: [],
+    total: 0,
+    truncated: false,
     loading: false,
     error: null,
     reload: jest.fn(),
@@ -506,5 +510,80 @@ describe('SubAgentPoolPanel', () => {
       fireEvent.click(screen.getByTestId('subagent-run-reload')),
     );
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('历史被 limit 截断时明确指出「不是全部」', async () => {
+    setPoolState({
+      data: [entry({ poolId: 'p1', name: '检索助手' })],
+      loading: false,
+      error: null,
+    });
+    // 库里 137 条，本次只取 2 条 —— 界面必须说清楚，
+    // 否则看到 2 条就会得出「总共跑了 2 次」这个错结论。
+    setRunsState({
+      runs: [
+        {
+          runId: 'run-t2',
+          status: 'completed',
+          templateId: 'workspace-task-agent',
+          startedAt: '2026-11-25T00:10:00+08:00',
+          completedAt: '2026-11-25T00:12:00+08:00',
+          totalRounds: 3,
+          totalToolCalls: 7,
+          totalDurationMs: 120000,
+          errorMessage: null,
+        },
+        {
+          runId: 'run-t1',
+          status: 'completed',
+          templateId: 'workspace-task-agent',
+          startedAt: '2026-11-25T00:00:00+08:00',
+          completedAt: '2026-11-25T00:01:00+08:00',
+          totalRounds: 1,
+          totalToolCalls: 2,
+          totalDurationMs: 60000,
+          errorMessage: null,
+        },
+      ],
+      total: 137,
+      truncated: true,
+    });
+    render(<SubAgentPoolPanel />);
+
+    fireEvent.click(screen.getByTestId('subagent-pool-item-p1'));
+
+    const notice = screen.getByTestId('subagent-run-truncated').textContent ?? '';
+    expect(notice).toContain('2');
+    expect(notice).toContain('137');
+  });
+
+  it('未截断时不显示截断提示（恒显示等于谎报）', async () => {
+    setPoolState({
+      data: [entry({ poolId: 'p1', name: '检索助手' })],
+      loading: false,
+      error: null,
+    });
+    setRunsState({
+      runs: [
+        {
+          runId: 'run-s1',
+          status: 'completed',
+          templateId: 'workspace-task-agent',
+          startedAt: '2026-11-25T00:00:00+08:00',
+          completedAt: '2026-11-25T00:01:00+08:00',
+          totalRounds: 1,
+          totalToolCalls: 2,
+          totalDurationMs: 60000,
+          errorMessage: null,
+        },
+      ],
+      total: 1,
+      truncated: false,
+    });
+    render(<SubAgentPoolPanel />);
+
+    fireEvent.click(screen.getByTestId('subagent-pool-item-p1'));
+
+    expect(screen.queryByTestId('subagent-run-truncated')).toBeNull();
   });
 });

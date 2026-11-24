@@ -736,25 +736,27 @@ public sealed class SubAgentPoolAdminControllerTests
         var result = await controller.GetRuns("alpha", 20, CancellationToken.None);
 
         Assert.IsInstanceOfType<OkObjectResult>(result.Result);
-        var payload = ((OkObjectResult)result.Result!).Value as IReadOnlyList<SubAgentRunDto>;
-        Assert.IsNotNull(payload, "响应体必须是运行历史数组");
+        var payload = ((OkObjectResult)result.Result!).Value as SubAgentRunsPageDto;
+        Assert.IsNotNull(payload, "响应体必须是运行历史信封");
 
         // 归集键是 sub_session_id：另一条池条目的 run 绝不能串进来。
-        Assert.AreEqual(2, payload!.Count, "只应返回该条目自己会话下的 run");
+        Assert.AreEqual(2, payload!.Items.Count, "只应返回该条目自己会话下的 run");
+        Assert.AreEqual(2, payload.Total, "total 是全量计数，此处恰好全量可见");
+        Assert.IsFalse(payload.Truncated, "未截断时不得报告截断");
 
         // 自增 Id 大的在前 —— 这是「最近优先」的判据，不依赖 started_at 文本排序。
-        Assert.AreEqual("run-a2", payload[0].RunId, "最近创建的 run 必须排在首位");
-        Assert.AreEqual("failed", payload[0].Status);
-        Assert.AreEqual(1, payload[0].TotalRounds);
-        Assert.AreEqual(0, payload[0].TotalToolCalls);
-        Assert.AreEqual(300L, payload[0].TotalDurationMs);
-        Assert.AreEqual("boom", payload[0].ErrorMessage);
-        Assert.AreEqual("workspace-task-agent", payload[0].TemplateId);
+        Assert.AreEqual("run-a2", payload.Items[0].RunId, "最近创建的 run 必须排在首位");
+        Assert.AreEqual("failed", payload.Items[0].Status);
+        Assert.AreEqual(1, payload.Items[0].TotalRounds);
+        Assert.AreEqual(0, payload.Items[0].TotalToolCalls);
+        Assert.AreEqual(300L, payload.Items[0].TotalDurationMs);
+        Assert.AreEqual("boom", payload.Items[0].ErrorMessage);
+        Assert.AreEqual("workspace-task-agent", payload.Items[0].TemplateId);
 
-        Assert.AreEqual("run-a1", payload[1].RunId);
-        Assert.AreEqual("completed", payload[1].Status);
-        Assert.AreEqual(1200L, payload[1].TotalDurationMs);
-        Assert.IsNull(payload[1].ErrorMessage, "成功运行不得平白长出失败原因");
+        Assert.AreEqual("run-a1", payload.Items[1].RunId);
+        Assert.AreEqual("completed", payload.Items[1].Status);
+        Assert.AreEqual(1200L, payload.Items[1].TotalDurationMs);
+        Assert.IsNull(payload.Items[1].ErrorMessage, "成功运行不得平白长出失败原因");
     }
 
     [TestMethod]
@@ -772,9 +774,11 @@ public sealed class SubAgentPoolAdminControllerTests
 
         // 关键：新成员「从没干过活」不能表现成错误。
         Assert.IsInstanceOfType<OkObjectResult>(result.Result);
-        var payload = ((OkObjectResult)result.Result!).Value as IReadOnlyList<SubAgentRunDto>;
+        var payload = ((OkObjectResult)result.Result!).Value as SubAgentRunsPageDto;
         Assert.IsNotNull(payload);
-        Assert.AreEqual(0, payload!.Count, "没有运行历史时必须返回空数组");
+        Assert.AreEqual(0, payload!.Items.Count, "没有运行历史时必须返回空数组");
+        Assert.AreEqual(0, payload.Total);
+        Assert.IsFalse(payload.Truncated, "零条历史不可能是「被截断」");
     }
 
     [TestMethod]
@@ -819,17 +823,57 @@ public sealed class SubAgentPoolAdminControllerTests
         var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
 
         var one = await controller.GetRuns("chatter", 1, CancellationToken.None);
-        var onePayload = ((OkObjectResult)one.Result!).Value as IReadOnlyList<SubAgentRunDto>;
-        Assert.AreEqual(1, onePayload!.Count, "limit 必须真的生效");
-        Assert.AreEqual("run-c3", onePayload[0].RunId, "截断保留的是最新的那些");
+        var onePayload = ((OkObjectResult)one.Result!).Value as SubAgentRunsPageDto;
+        Assert.AreEqual(1, onePayload!.Items.Count, "limit 必须真的生效");
+        Assert.AreEqual("run-c3", onePayload.Items[0].RunId, "截断保留的是最新的那些");
 
         // limit=0 被夹到 1 而不是「返回全部」：负数/零不能变成「不限量」。
         var zero = await controller.GetRuns("chatter", 0, CancellationToken.None);
-        var zeroPayload = ((OkObjectResult)zero.Result!).Value as IReadOnlyList<SubAgentRunDto>;
-        Assert.AreEqual(1, zeroPayload!.Count, "limit=0 必须夹到 1，不得退化成不限量");
+        var zeroPayload = ((OkObjectResult)zero.Result!).Value as SubAgentRunsPageDto;
+        Assert.AreEqual(1, zeroPayload!.Items.Count, "limit=0 必须夹到 1，不得退化成不限量");
 
         var blank = await controller.GetRuns("   ", 20, CancellationToken.None);
         Assert.AreEqual(StatusCodes.Status400BadRequest, (blank.Result as ObjectResult)?.StatusCode);
+    }
+
+    /// <summary>
+    /// 截断必须被显式告知：total 是全量，items 是本次返回。
+    /// <para>
+    /// 这个用例的判据是「两个数字不同」，而不仅是「条数正确」——
+    /// 只断言条数的用例在 truncated 恒为 false 时仍然是绿的，
+    /// 而那正是这个缺陷当初的形态：界面显示 20 条，看著就像只有 20 条。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task GetRuns_ReportsTotalAndTruncated_WhenLimitCutsHistory()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.Add(PoolRow("pool-t", "talker", "sub-talker"));
+            seed.SubAgentRuns.AddRange(
+                RunRow("run-t1", "sub-talker", "completed"),
+                RunRow("run-t2", "sub-talker", "completed"),
+                RunRow("run-t3", "sub-talker", "completed"),
+                RunRow("run-t4", "sub-talker", "completed"),
+                RunRow("run-t5", "sub-talker", "completed"));
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+
+        var cut = await controller.GetRuns("talker", 2, CancellationToken.None);
+        var cutPayload = ((OkObjectResult)cut.Result!).Value as SubAgentRunsPageDto;
+        Assert.AreEqual(2, cutPayload!.Items.Count, "items 受 limit 约束");
+        Assert.AreEqual(5, cutPayload.Total, "total 必须是全量，不能被 limit 影响");
+        Assert.IsTrue(cutPayload.Truncated, "5 条只返回 2 条时必须报告截断");
+
+        // 对照组：limit 恰好盖住全量时不得误报截断（恒为 true 也是缺陷）。
+        var full = await controller.GetRuns("talker", 5, CancellationToken.None);
+        var fullPayload = ((OkObjectResult)full.Result!).Value as SubAgentRunsPageDto;
+        Assert.AreEqual(5, fullPayload!.Items.Count);
+        Assert.AreEqual(5, fullPayload.Total);
+        Assert.IsFalse(fullPayload.Truncated, "刚好返回全量时不得报告截断");
     }
 
     /// <summary>造一条池条目：只填必填列，展示列留空。</summary>

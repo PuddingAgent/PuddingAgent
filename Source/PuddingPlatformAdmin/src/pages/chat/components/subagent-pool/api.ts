@@ -119,22 +119,37 @@ export interface SubAgentRun {
 /**
  * 拉取某条目的运行历史（按自增 Id 倒序，最近的在前）。
  *
- * 与花名册同一套语义：空数组是正常结果（这个成员没干过活），
- * 非数组响应视为格式错误并抛出 —— 静默兜底成 [] 会把「接口返回了别的东西」
- * 伪装成「从未执行」。
+ * 与花名册同一套语义：空 items 是正常结果（这个成员没干过活）。
+ * 形状不符抛错而不是静默处理：把「接口返回了别的东西」伪装成「从未执行」，
+ * 下一步动作就完全反了（后者要建任务，前者要查接口）。
+ *
+ * `total` / `truncated` 存在的唯一理由：让「还有更早的记录没显示」可见。
+ * 只拿数组的话，跑过 200 次的成员与跑过 20 次的在界面上完全一样。
  */
+export interface SubAgentRunsPage {
+  items: SubAgentRun[];
+  /** 该条目全量记录条数，不受 limit 影响。 */
+  total: number;
+  /** 是否因 limit 被截断；等价于 total > items.length。 */
+  truncated: boolean;
+}
+
 export async function fetchSubAgentRuns(
   name: string,
   limit = 20,
-): Promise<SubAgentRun[]> {
-  const result = await request<SubAgentRun[]>(
+): Promise<SubAgentRunsPage> {
+  const result = await request<SubAgentRunsPage>(
     `${SUB_AGENT_POOL_ENDPOINT}/${encodeURIComponent(name)}/runs`,
     { method: 'GET', params: { limit } },
   );
 
-  if (!Array.isArray(result)) {
-    throw new Error('运行历史响应格式不正确（期望数组）');
+  if (
+    result === null ||
+    typeof result !== 'object' ||
+    !Array.isArray((result as SubAgentRunsPage).items)
+  ) {
+    throw new Error('运行历史响应格式不正确（期望 { items, total, truncated }）');
   }
 
-  return result as SubAgentRun[];
+  return result as SubAgentRunsPage;
 }

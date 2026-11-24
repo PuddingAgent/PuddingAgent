@@ -7,14 +7,18 @@
 //
 // 「从未执行」是成功态的一种。把它渲染成错误或加载中，都会让人去查一个不存在的问题。
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchSubAgentRuns, type SubAgentRun } from './api';
+import { fetchSubAgentRuns, type SubAgentRun, type SubAgentRunsPage } from './api';
 import { describeSubAgentPoolError } from './errors';
 
 const RUNS_ERROR_FALLBACK = '加载运行历史失败';
 
 export interface UseSubAgentRunsResult {
-  /** 请求成功后的结果；未成功（未选中 / 加载中 / 失败）时为 null。 */
+  /** 请求成功后的本次返回条目；未成功（未选中 / 加载中 / 失败）时为 null。 */
   runs: SubAgentRun[] | null;
+  /** 全量记录条数；未成功时为 0。仅用于判断截断，不要当成「已加载条数」。 */
+  total: number;
+  /** 是否因 limit 截断；未成功时为 false —— 没拿到结果时不能声称「完整」。 */
+  truncated: boolean;
   loading: boolean;
   /** 失败文案；成功或未选中时为 null。 */
   error: string | null;
@@ -22,7 +26,7 @@ export interface UseSubAgentRunsResult {
 }
 
 export function useSubAgentRuns(name: string | null): UseSubAgentRunsResult {
-  const [runs, setRuns] = useState<SubAgentRun[] | null>(null);
+  const [page, setPage] = useState<SubAgentRunsPage | null>(null);
   const [loading, setLoading] = useState(name !== null);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -34,7 +38,7 @@ export function useSubAgentRuns(name: string | null): UseSubAgentRunsResult {
     if (name === null) {
       // 清空上一条目的残留：否则切回空态时会闪出别人的履历。
       requestSeq.current += 1;
-      setRuns(null);
+      setPage(null);
       setError(null);
       setLoading(false);
       return;
@@ -46,17 +50,17 @@ export function useSubAgentRuns(name: string | null): UseSubAgentRunsResult {
 
     setLoading(true);
     setError(null);
-    setRuns(null);
+    setPage(null);
 
     fetchSubAgentRuns(name)
       .then((result) => {
         if (!alive || requestSeq.current !== seq) return;
-        setRuns(result);
+        setPage(result);
         setLoading(false);
       })
       .catch((caught: unknown) => {
         if (!alive || requestSeq.current !== seq) return;
-        setRuns(null);
+        setPage(null);
         setError(describeSubAgentPoolError(caught, RUNS_ERROR_FALLBACK));
         setLoading(false);
       });
@@ -70,5 +74,12 @@ export function useSubAgentRuns(name: string | null): UseSubAgentRunsResult {
     setReloadToken((token) => token + 1);
   }, []);
 
-  return { runs, loading, error, reload };
+  return {
+    runs: page?.items ?? null,
+    total: page?.total ?? 0,
+    truncated: page?.truncated ?? false,
+    loading,
+    error,
+    reload,
+  };
 }

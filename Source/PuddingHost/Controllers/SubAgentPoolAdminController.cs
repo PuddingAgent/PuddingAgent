@@ -362,14 +362,21 @@ public sealed class SubAgentPoolAdminController(
     /// 合并成一个响应会让界面对新成员显示成错误。
     /// </para>
     /// </summary>
+    /// <para>
+    /// <b>返回分页信封而不是裸数组：</b>数组无法表达「被截断了」。
+    /// 一个跑过 200 次的成员，界面拿到 20 条会显示得像「就这 20 条」，
+    /// 于是「总共跑了 20 次」这个错误结论没有任何地方可以纠正它。
+    /// <c>total</c> 是全量计数，<c>truncated</c> 是 <c>total &gt; items.Count</c> 的直接结论。
+    /// </para>
+    /// </summary>
     /// <param name="name">池内展示名（未软删时唯一）。</param>
     /// <param name="limit">最多返回多少条（1..100，越界自动夹取）。</param>
     /// <param name="ct">取消令牌。</param>
     [HttpGet("{name}/runs")]
-    [ProducesResponseType<IReadOnlyList<SubAgentRunDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<SubAgentRunsPageDto>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<IReadOnlyList<SubAgentRunDto>>> GetRuns(
+    public async Task<ActionResult<SubAgentRunsPageDto>> GetRuns(
         string name,
         [FromQuery] int limit = 20,
         CancellationToken ct = default)
@@ -403,8 +410,16 @@ public sealed class SubAgentPoolAdminController(
         if (string.IsNullOrWhiteSpace(entry.SubSessionId))
         {
             // 条目存在但还没有会话标识：等价于「零条历史」，不是错误。
-            return Ok(Array.Empty<SubAgentRunDto>());
+            // 但仍需返回信封形状 —— 让前端只处理一种响应结构，而不是两种。
+            return Ok(new SubAgentRunsPageDto());
         }
+
+        // total 是同一谓词下的全量计数：与下面 Take 之前的过滤条件必须逐字一致，
+        // 否则 truncated 会凭空为真或为假。
+        var total = await db.SubAgentRuns
+            .AsNoTracking()
+            .CountAsync(r => r.SubSessionId == entry.SubSessionId, ct)
+            .ConfigureAwait(false);
 
         var runs = await db.SubAgentRuns
             .AsNoTracking()
@@ -426,7 +441,12 @@ public sealed class SubAgentPoolAdminController(
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
-        return Ok(runs);
+        return Ok(new SubAgentRunsPageDto
+        {
+            Items = runs,
+            Total = total,
+            Truncated = total > runs.Count,
+        });
     }
 }
 
@@ -524,6 +544,30 @@ public sealed class SubAgentPoolEntryDto
 
     /// <summary>条目创建时间（ISO-8601 文本）。</summary>
     public string CreatedAt { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// 运行历史的 HTTP 契约：分页信封。
+/// <para>
+/// <b>为什么不是裸数组：</b>数组只能表达「有什么」，不能表达「还差什么」。
+/// 没有 <see cref="Total"/> 与 <see cref="Truncated"/>，界面就只能把截断后的结果
+/// 当成全量展示 —— 那是「仪器谎报」最典型的一种：数字没错，含义错了。
+/// </para>
+/// <para>
+/// <b>时间顺序由 <c>Items</c> 自身的顺序表达：</b>最近的在前，由后端
+/// <c>ORDER BY Id DESC</c> 保证，前端不应重排（重排会引入第二套口径）。
+/// </para>
+/// </summary>
+public sealed class SubAgentRunsPageDto
+{
+    /// <summary>本次返回的运行记录，最近的在前。</summary>
+    public IReadOnlyList<SubAgentRunDto> Items { get; init; } = Array.Empty<SubAgentRunDto>();
+
+    /// <summary>该条目全量运行记录条数（不受 <c>limit</c> 影响）。</summary>
+    public int Total { get; init; }
+
+    /// <summary>是否因 <c>limit</c> 截断；等价于 <c>Total &gt; Items.Count</c>。</summary>
+    public bool Truncated { get; init; }
 }
 
 /// <summary>
