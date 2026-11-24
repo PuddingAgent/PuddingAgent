@@ -309,11 +309,11 @@ public sealed class ContextCompactionServiceTests
         Assert.AreEqual(150_000, health.LastMeasuredPromptTokens);
         Assert.AreEqual("session-provider-usage:trace:1:agent", health.LastMeasuredInvocationId);
 
-        // 安全没有被削弱：Provider 实测远大于本地估算 ⇒ 保守校准仍被学到（下一次估算会抬高）。
-        Assert.IsGreaterThan(
+        // 即便这条异常报数不参与后续校准，健康视图仍须展示它的原始值。
+        Assert.AreEqual(
             1.0,
             usageStore.GetPromptCalibrationRatio("session-provider-usage", prepared.ModelId),
-            "Provider 报数远大于估算时必须学到保守校准");
+            "跨数量级的异常报数必须保留原校准系数");
     }
 
     [TestMethod]

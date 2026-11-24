@@ -238,12 +238,12 @@ public sealed class RequestAttributionIdentityTests
             "s8", Messages(2, 100), tools: null, "model-B",
             LlmCallPurposes.Agent, invocationId: "inv-B", attemptId: "inv-B:a0");
 
-        // 只回报 A 的实测：A 学 5 倍，B 保持 1.0
+        // 采用可参与校准的实测比率，验证路由隔离。
         store.RecordProviderUsage(
-            "s8", new TokenUsageDto { PromptTokens = preparedA.RawEstimatedTokens * 5 },
+            "s8", new TokenUsageDto { PromptTokens = preparedA.RawEstimatedTokens * 3 },
             LlmCallPurposes.Agent, "inv-A", "inv-A:a0");
 
-        Assert.AreEqual(5.0, store.GetPromptCalibrationRatio("s8", "model-A"), 1e-6);
+        Assert.AreEqual(3.0, store.GetPromptCalibrationRatio("s8", "model-A"), 1e-6);
         Assert.AreEqual(1.0, store.GetPromptCalibrationRatio("s8", "model-B"), 1e-9, "B 的校准必须隔离");
         Assert.IsTrue(preparedB.RawEstimatedTokens > 0);
     }
