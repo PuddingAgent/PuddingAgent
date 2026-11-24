@@ -27,14 +27,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
     private readonly ILogger<FilePatchTool> _logger;
     private readonly FileMutationQueue _mutationQueue;
 
-    /// <summary>
-    /// 严格 UTF-8（不带 BOM，非法字节抛 <see cref="DecoderFallbackException"/>）。
-    /// 补丁是「整文件读入 → 改 → 整文件重写」；宽松解码会先把非法字节换成 U+FFFD 再落盘，
-    /// 等于无提示地把用户原有字节永久销毁。宁可直接失败。
-    /// </summary>
-    private static readonly UTF8Encoding StrictUtf8 = new(
-        encoderShouldEmitUTF8Identifier: false,
-        throwOnInvalidBytes: true);
+    // 严格 UTF-8 解码统一走 StrictUtf8Text.ReadAllText：见该类型的注释（剥 BOM + 拒绝非法字节）。
 
     public FilePatchTool()
         : this(CreateDefaultDataPaths(), new AuditLogger(CreateDefaultDataPaths()), NullLogger<FilePatchTool>.Instance, new FileMutationQueue())
@@ -156,8 +149,8 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 string original;
                 try
                 {
-                    // 严格解码：见 StrictUtf8 注释。
-                    original = StrictUtf8.GetString(File.ReadAllBytes(fullPath));
+                    // 严格解码：见 StrictUtf8Text 注释。
+                    original = StrictUtf8Text.ReadAllText(fullPath);
                 }
                 catch (DecoderFallbackException)
                 {
@@ -1325,6 +1318,31 @@ internal sealed record UnifiedDiffHunk(int OldStart, int OldCount, int NewStart,
 internal sealed record UnifiedDiffLine(char Kind, string Text);
 
 /// <summary>
+/// 严格 UTF-8 文本读取 —— file_patch 两条路径（operations 与 patch_text）的唯一解码入口。
+///
+/// 两个候选写法各错一半，所以只能自己写：
+///   · <c>File.ReadAllText(path, Encoding.UTF8)</c>：会剥 BOM，但<b>宽松解码</b> —— 非法字节静默变
+///     U+FFFD，随后整文件重写就把用户原有字节永久销毁（实锤：41 42 FF 43 44 → 41 42 EF BF BD 43 44）。
+///   · <c>Encoding.UTF8.GetString(bytes)</c>：严格解码，但<b>不剥 BOM</b> —— 首行会带 U+FEFF，
+///     原本能匹配的 old_string / hunk 全部失配（已由 FilePatchToolDryRunDefaultTests 抓到）。
+///
+/// 本方法：严格解码 + 剥掉开头单个 UTF-8 BOM；非法字节抛 <see cref="DecoderFallbackException"/>，
+/// 由调用方转为工具错误，不得回退为宽松解码。
+/// </summary>
+internal static class StrictUtf8Text
+{
+    private static readonly UTF8Encoding Strict = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
+
+    public static string ReadAllText(string path)
+    {
+        var text = Strict.GetString(File.ReadAllBytes(path));
+        return text.Length > 0 && text[0] == '\uFEFF' ? text[1..] : text;
+    }
+}
+
+/// <summary>
 /// Renders the human-readable preview diff that file_patch echoes back. Rows are aligned by a
 /// cursor walk that skips common lines and recognises pure insertions/deletions, so inserting one
 /// line is reported as exactly one added row. The previous renderer compared oldLines[i] with
@@ -1601,7 +1619,24 @@ internal static class UnifiedDiffPatchRunner
             // Large file check: patch logic requires full text for hunk matching; log size for diagnostics
             var diffFileLength = new FileInfo(fullPath).Length;
             // Note: static context — no ILogger available; size check recorded for future streaming optimization
-            var original = File.ReadAllText(fullPath, Encoding.UTF8);
+            string original;
+            try
+            {
+                // 严格解码：见 StrictUtf8Text 注释。统一 diff 路径同样是「整文件读入 → 改 → 整文件重写」
+                // （临时文件 + File.Move 覆盖），宽松解码会把非法字节换成 U+FFFD 后永久落盘。
+                original = StrictUtf8Text.ReadAllText(fullPath);
+            }
+            catch (DecoderFallbackException)
+            {
+                audit.Write(fileZone, toolId, context.AgentInstanceId,
+                    patch.Path, reason, false, 0, context.Trace);
+                return ToolExecutionResult.Fail(
+                    $"Refusing to patch '{fullPath}': the file is not valid UTF-8. " +
+                    "A lossy decode followed by a whole-file rewrite would silently replace its bytes with U+FFFD. " +
+                    "Convert the file to UTF-8 first.",
+                    status: ToolResultStatuses.ContractError);
+            }
+
             var applyResult = UnifiedDiffApplier.Apply(original, patch);
             if (!applyResult.Success)
             {

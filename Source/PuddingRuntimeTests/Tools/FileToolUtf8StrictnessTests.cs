@@ -127,6 +127,86 @@ public sealed class FileToolUtf8StrictnessTests
         Assert.AreEqual("XY", File.ReadAllText(path, Encoding.UTF8));
     }
 
+    // ── file_patch 统一 diff 路径（patch_text，与 apply_patch 共用）──
+
+    /// <summary>
+    /// 统一 diff 路径的坏件：非法字节放在第 2 行，第 1 行保持合法且可匹配的 "alpha"，
+    /// 与 FilePatchToolTests 的 patch_text 用例同一形状。
+    ///
+    /// 变异取红的实测结论（不要改写成更漂亮的说法）：把严格解码换回 Encoding.UTF8 后本用例确实转红，
+    /// 但红在「Hunk ... did not match」而不是「UTF-8」—— 说明宽松解码本身<b>不会</b>拒绝这个文件，
+    /// 拦住它的是编码守卫而非 diff 匹配。因此本用例证明的是「解码边界确实在起作用」，
+    /// 不证明「该固件在宽松解码下一定会被改写落盘」；后者需要一个 hunk 在替换字符文本上仍能匹配的固件，
+    /// 迄今没构造出来（两次尝试均以 hunk 不匹配告终）。
+    /// </summary>
+    // "alpha\n" + 0xFF + "tail\n"
+    private static readonly byte[] InvalidUtf8BytesMultiLine =
+        [0x61, 0x6C, 0x70, 0x68, 0x61, 0x0A, 0xFF, 0x74, 0x61, 0x69, 0x6C, 0x0A];
+
+    [TestMethod]
+    public async Task FilePatch_PatchText_RefusesNonUtf8File_AndLeavesBytesUntouched()
+    {
+        var path = Path.Combine(_tempDir, "legacy.txt");
+        File.WriteAllBytes(path, InvalidUtf8BytesMultiLine);
+
+        var result = await ExecuteAsync(new FilePatchTool(), new Dictionary<string, object?>
+        {
+            ["path"] = "legacy.txt",
+            ["patch_text"] = "--- a/legacy.txt\n+++ b/legacy.txt\n@@ -1 +1 @@\n-alpha\n+beta\n",
+        });
+
+        Assert.IsFalse(result.Success,
+            "applying a unified diff to a non-UTF-8 file must fail rather than mangle it");
+        StringAssert.Contains(result.Error, "UTF-8");
+        CollectionAssert.AreEqual(InvalidUtf8BytesMultiLine, File.ReadAllBytes(path),
+            "a refused unified diff must not touch a single byte of the original file");
+    }
+
+    [TestMethod]
+    public async Task FilePatch_PatchText_StillWorksOnValidUtf8()
+    {
+        var path = Path.Combine(_tempDir, "plain.txt");
+        File.WriteAllText(path, "alpha\n", new UTF8Encoding(false));
+
+        var result = await ExecuteAsync(new FilePatchTool(), new Dictionary<string, object?>
+        {
+            ["path"] = "plain.txt",
+            ["patch_text"] = "--- a/plain.txt\n+++ b/plain.txt\n@@ -1 +1 @@\n-alpha\n+beta\n",
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("beta\n", File.ReadAllText(path, Encoding.UTF8));
+    }
+
+    // ── 带 BOM 的合法文件：必须照常打补丁 ──
+
+    /// <summary>
+    /// 回归守卫：把严格解码写成 <c>Strict.GetString(File.ReadAllBytes(..))</c> 时**不剥 BOM**，
+    /// 首行变成 "\uFEFFalpha"，逐行比对的 hunk 全部失配。
+    /// 提交门禁就是用 4 个既有用例（FilePatchToolDryRunDefaultTests 写文件时传了 Encoding.UTF8，会写 BOM）
+    /// 把这个回归抓出来的。
+    ///
+    /// 只留 patch_text 一侧的用例：实测把 BOM 剥除变异掉之后，operations 路径的可替换旧字符串
+    /// 仍然能作为子串命中（"alpha" 就在 "\uFEFFalpha" 里），所以那种用例突变后依然绿，是个假门禁。
+    /// 逐行比对的统一 diff 路径才能真取红。
+    /// </summary>
+    [TestMethod]
+    public async Task FilePatch_PatchText_StillWorksOnUtf8WithBom()
+    {
+        var path = Path.Combine(_tempDir, "bom2.txt");
+        File.WriteAllText(path, "alpha\n", Encoding.UTF8);
+        Assert.AreEqual(0xEF, File.ReadAllBytes(path)[0], "fixture must really start with a UTF-8 BOM");
+
+        var result = await ExecuteAsync(new FilePatchTool(), new Dictionary<string, object?>
+        {
+            ["path"] = "bom2.txt",
+            ["patch_text"] = "--- a/bom2.txt\n+++ b/bom2.txt\n@@ -1 +1 @@\n-alpha\n+beta\n",
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("beta\n", File.ReadAllText(path, Encoding.UTF8));
+    }
+
     // ── Helper ──
 
     private static Task<ToolExecutionResult> ExecuteAsync<TArgs>(
