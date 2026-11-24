@@ -1631,7 +1631,15 @@ internal static class UnifiedDiffPatchRunner
                     fullPath, dataPaths, context.WorkspaceId, context.AgentInstanceId);
                 audit.Write(zone, toolId, context.AgentInstanceId,
                     patch.Path, reason, false, 0, context.Trace);
-                return ToolExecutionResult.Fail($"File not found: {patch.Path}");
+                // 本条路径只处理统一 diff：目标来自 diff 头部，与入参 path 无关。
+                // 实测（2026-11-25）：给了合法 path + 相对头部名时报「File not found: rt_d_ok.txt」，
+                // 模型无法从该文本推断「是我另一个参数被忽略了」。
+                var missing = MissingPathDiagnostics.Append(
+                    $"File not found: {patch.Path}", patch.Path, fullPath);
+                return ToolExecutionResult.Fail(
+                    $"{missing} — in patch_text mode the target comes from the diff header ('--- ' line), " +
+                    "not from the 'path' argument; put an absolute path in the header if the diff is not " +
+                    "relative to the execution working directory.");
             }
 
             var fileZone = OperationZoneClassifier.ClassifyPath(

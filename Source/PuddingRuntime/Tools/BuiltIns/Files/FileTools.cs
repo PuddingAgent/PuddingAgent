@@ -292,7 +292,8 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
             return ToolExecutionResult.Fail(error);
 
         if (!File.Exists(fullPath))
-            return ToolExecutionResult.Fail($"File not found: {args.Path}");
+            return ToolExecutionResult.Fail(
+                MissingPathDiagnostics.Append($"File not found: {args.Path}", args.Path, fullPath));
 
         try
         {
@@ -614,7 +615,8 @@ public sealed class ListDirectoryTool : PuddingToolBase<ListDirectoryArgs>
             return Task.FromResult(ToolExecutionResult.Fail(error));
 
         if (!Directory.Exists(fullPath))
-            return Task.FromResult(ToolExecutionResult.Fail($"Directory not found: {path}"));
+            return Task.FromResult(ToolExecutionResult.Fail(
+                MissingPathDiagnostics.Append($"Directory not found: {path}", path, fullPath)));
 
         var recursive = args.Recursive == true;
         var includeHidden = args.IncludeHidden == true;
