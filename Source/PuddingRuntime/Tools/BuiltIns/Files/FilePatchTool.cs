@@ -27,6 +27,15 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
     private readonly ILogger<FilePatchTool> _logger;
     private readonly FileMutationQueue _mutationQueue;
 
+    /// <summary>
+    /// 严格 UTF-8（不带 BOM，非法字节抛 <see cref="DecoderFallbackException"/>）。
+    /// 补丁是「整文件读入 → 改 → 整文件重写」；宽松解码会先把非法字节换成 U+FFFD 再落盘，
+    /// 等于无提示地把用户原有字节永久销毁。宁可直接失败。
+    /// </summary>
+    private static readonly UTF8Encoding StrictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
+
     public FilePatchTool()
         : this(CreateDefaultDataPaths(), new AuditLogger(CreateDefaultDataPaths()), NullLogger<FilePatchTool>.Instance, new FileMutationQueue())
     {
@@ -144,7 +153,20 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 if (fileLength > FileChunkService.LargeFileByteThreshold)
                     _logger.LogWarning("[FilePatchTool] large file detected ({Bytes} bytes > {Threshold}), full load required for patch operations: {Path}",
                         fileLength, FileChunkService.LargeFileByteThreshold, fullPath);
-                var original = File.ReadAllText(fullPath, Encoding.UTF8);
+                string original;
+                try
+                {
+                    // 严格解码：见 StrictUtf8 注释。
+                    original = StrictUtf8.GetString(File.ReadAllBytes(fullPath));
+                }
+                catch (DecoderFallbackException)
+                {
+                    return ToolExecutionResult.Fail(
+                        $"Refusing to patch '{fullPath}': the file is not valid UTF-8. " +
+                        "A lossy decode followed by a whole-file rewrite would silently replace its bytes with U+FFFD. " +
+                        "Convert the file to UTF-8 first.",
+                        status: ToolResultStatuses.ContractError);
+                }
                 var replacementCount = 0;
                 var errors = new List<string>();
                 var relPath = Path.GetRelativePath(HostFileToolPaths.WorkspaceRoot, fullPath);

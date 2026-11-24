@@ -468,6 +468,15 @@ public sealed class FileWriteTool : PuddingToolBase<FileWriteArgs>
     private readonly AuditLogger _audit;
     private readonly ILogger<FileWriteTool> _logger;
 
+    /// <summary>
+    /// 严格 UTF-8（不带 BOM，非法字节抛 <see cref="DecoderFallbackException"/>）。
+    /// append 语义是「读整个文件 + 追加 + 整体重写」；若用宽松解码，原文件里的非法字节
+    /// 会被静默替换成 U+FFFD 再落盘 —— 等于无提示地销毁用户原有字节。宁可直写失败。
+    /// </summary>
+    private static readonly UTF8Encoding StrictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
+
     public FileWriteTool()
         : this(CreateDefaultDataPaths(), new AuditLogger(CreateDefaultDataPaths()), NullLogger<FileWriteTool>.Instance)
     {
@@ -522,7 +531,8 @@ public sealed class FileWriteTool : PuddingToolBase<FileWriteArgs>
             var tmpPath = fullPath + ".tmp." + Guid.NewGuid().ToString("N")[..8];
             if (args.Append == true && File.Exists(fullPath))
             {
-                var existing = File.ReadAllText(fullPath, Encoding.UTF8);
+                // 严格解码：见 StrictUtf8 注释。非法字节必须让本次写入失败，而不能被静默替换。
+                var existing = StrictUtf8.GetString(File.ReadAllBytes(fullPath));
                 File.WriteAllText(tmpPath, existing + (args.Content ?? string.Empty), new UTF8Encoding(false));
             }
             else
@@ -535,6 +545,15 @@ public sealed class FileWriteTool : PuddingToolBase<FileWriteArgs>
             _audit.Write(zone, "file_write", context.AgentInstanceId,
                 args.Path, args.Reason, true, sw.ElapsedMilliseconds, context.Trace);
             return Task.FromResult(ToolExecutionResult.Ok($"Wrote {args.Path}"));
+        }
+        catch (DecoderFallbackException)
+        {
+            _audit.Write(zone, "file_write", context.AgentInstanceId,
+                args.Path, args.Reason, false, sw.ElapsedMilliseconds, context.Trace);
+            return Task.FromResult(ToolExecutionResult.Fail(
+                $"Refusing to append to '{args.Path}': the file is not valid UTF-8. " +
+                "Rewriting it would silently replace its bytes with U+FFFD. " +
+                "Convert the file to UTF-8 first, or write the whole file explicitly."));
         }
         catch (Exception ex)
         {
