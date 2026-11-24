@@ -1428,7 +1428,8 @@ public sealed partial class AgentExecutionService
                         await _tokenUsageRecorder.RecordAttributedRequiredAsync(
                             usage,
                             sourceType: "agent_llm",
-                            sourceId: $"{request.SessionId}:{streamTrace.TraceId}:{round + 1}",
+                            // 同 Buffered 路径：并入 RunId，避免同父 Turn 多派发时账本键相撞。
+                            sourceId: $"{request.SessionId}:{streamTrace.TraceId}:{request.ExecutionIdentity?.RunId ?? "no-run"}:{round + 1}",
                             workspaceId: request.WorkspaceId,
                             sessionId: request.SessionId,
                             providerId: request.LlmProfile?.ProviderId ?? request.LlmConfig?.Endpoint,

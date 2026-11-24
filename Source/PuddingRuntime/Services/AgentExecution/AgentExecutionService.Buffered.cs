@@ -1029,7 +1029,11 @@ if (effectiveLlmConfig is not null)
                         await _tokenUsageRecorder.RecordAttributedRequiredAsync(
                             usage,
                             sourceType: "agent_llm",
-                            sourceId: $"{request.SessionId}:{execTrace.TraceId}:{round + 1}",
+                            // RunId 必须并入账本键：子代理运行的 TraceId 继承自父 Turn，同一父 Turn
+                            // 内对同一池条目派发多次会得到相同 {Session}:{Trace}:{round}，撞
+                            // UNIQUE(SourceType, SourceId) 导致第二次起的用量无法落库。
+                            // 同一 run 的重试键不变（保留幂等），不同派发各自不同。
+                            sourceId: $"{request.SessionId}:{execTrace.TraceId}:{request.ExecutionIdentity?.RunId ?? "no-run"}:{round + 1}",
                             workspaceId: request.WorkspaceId,
                             sessionId: request.SessionId,
                             providerId: request.LlmProfile?.ProviderId ?? request.LlmConfig?.Endpoint,
