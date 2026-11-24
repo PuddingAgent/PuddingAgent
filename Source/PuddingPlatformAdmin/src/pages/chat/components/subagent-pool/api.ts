@@ -75,3 +75,19 @@ export async function destroySubAgentPoolEntry(name: string): Promise<void> {
     method: 'DELETE',
   });
 }
+
+/**
+ * 修改池条目的展示字段（备注 / 头像键）。
+ *
+ * 只传要改的字段：没传的后端保持原值。要清空必须传空字符串——
+ * 「不传」与「清空」是两件事，不要靠传 null 表达后者。
+ */
+export async function updateSubAgentPoolEntry(
+  name: string,
+  patch: { responsibility?: string; avatarKey?: string },
+): Promise<void> {
+  await request(`${SUB_AGENT_POOL_ENDPOINT}/${encodeURIComponent(name)}`, {
+    method: 'PATCH',
+    data: patch,
+  });
+}

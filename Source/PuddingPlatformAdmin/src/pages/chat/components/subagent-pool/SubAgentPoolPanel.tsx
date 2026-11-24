@@ -12,6 +12,7 @@ import { deriveAvatar } from './avatar';
 import {
   destroySubAgentPoolEntry,
   sleepSubAgentPoolEntry,
+  updateSubAgentPoolEntry,
   type SubAgentPoolEntry,
 } from './api';
 import { useSubAgentPoolStyles } from './SubAgentPoolPanel.styles';
@@ -155,10 +156,12 @@ const EntryActions: React.FC<{
   entry: SubAgentPoolEntry;
   onChanged: () => void;
 }> = ({ entry, onChanged }) => {
-  const [busy, setBusy] = useState<null | 'sleep' | 'destroy'>(null);
+  const [busy, setBusy] = useState<null | 'sleep' | 'destroy' | 'patch'>(null);
+  // NULL = 未编辑；字符串 = 正在编辑该条目的备注草稿。
+  const [draft, setDraft] = useState<string | null>(null);
 
   const run = async (
-    kind: 'sleep' | 'destroy',
+    kind: 'sleep' | 'destroy' | 'patch',
     action: () => Promise<void>,
     successText: string,
   ) => {
@@ -189,34 +192,74 @@ const EntryActions: React.FC<{
   };
 
   return (
-    <div
-      data-testid="subagent-pool-actions"
-      style={{ display: 'flex', gap: 8, marginTop: 12 }}
-    >
-      <Button
-        size="small"
-        loading={busy === 'sleep'}
-        disabled={
-          busy !== null || entry.status === 'dead' || entry.status === 'sleeping'
-        }
-        onClick={() =>
-          run('sleep', () => sleepSubAgentPoolEntry(entry.name), '已休眠')
-        }
-        data-testid="subagent-action-sleep"
+    <>
+      <div
+        data-testid="subagent-pool-actions"
+        style={{ display: 'flex', gap: 8, marginTop: 12 }}
       >
-        休眠
-      </Button>
-      <Button
-        size="small"
-        danger
-        loading={busy === 'destroy'}
-        disabled={busy !== null || entry.status === 'dead'}
-        onClick={confirmDestroy}
-        data-testid="subagent-action-destroy"
+        <Button
+          size="small"
+          disabled={busy !== null || entry.status === 'dead'}
+          onClick={() => setDraft(entry.responsibility ?? '')}
+          data-testid="subagent-action-edit"
+        >
+          改备注
+        </Button>
+        <Button
+          size="small"
+          loading={busy === 'sleep'}
+          disabled={
+            busy !== null || entry.status === 'dead' || entry.status === 'sleeping'
+          }
+          onClick={() =>
+            run('sleep', () => sleepSubAgentPoolEntry(entry.name), '已休眠')
+          }
+          data-testid="subagent-action-sleep"
+        >
+          休眠
+        </Button>
+        <Button
+          size="small"
+          danger
+          loading={busy === 'destroy'}
+          disabled={busy !== null || entry.status === 'dead'}
+          onClick={confirmDestroy}
+          data-testid="subagent-action-destroy"
+        >
+          销毁
+        </Button>
+      </div>
+
+      <Modal
+        open={draft !== null}
+        title={`编辑「${entry.name}」的备注`}
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={busy === 'patch'}
+        onCancel={() => {
+          if (busy === null) setDraft(null);
+        }}
+        onOk={() => {
+          const value = draft ?? '';
+          setDraft(null);
+          run(
+            'patch',
+            () => updateSubAgentPoolEntry(entry.name, { responsibility: value }),
+            '备注已更新',
+          );
+        }}
       >
-        销毁
-      </Button>
-    </div>
+        <Input.TextArea
+          rows={3}
+          maxLength={200}
+          showCount
+          value={draft ?? ''}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="一句话说明它负责什么（留空则清空备注）"
+          data-testid="subagent-edit-responsibility"
+        />
+      </Modal>
+    </>
   );
 };
 
