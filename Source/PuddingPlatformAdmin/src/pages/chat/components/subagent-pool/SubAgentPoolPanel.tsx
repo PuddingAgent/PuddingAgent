@@ -50,6 +50,21 @@ const textOrDash = (value: string | null | undefined): string => {
 };
 
 /**
+ * 模型路由是否合法：恰好一个斜杠，且两侧都非空（`providerId/modelId`）。
+ *
+ * 用 split 而不是正则：要同时拒掉 `/x`、`a/`、`a/b/c` 三种形态；
+ * 分段后逐段判空比写一条带 `+?` 与转义的正则更难写错。
+ */
+const isValidModelRoute = (value: string): boolean => {
+  const parts = value.split('/');
+  return (
+    parts.length === 2 &&
+    parts[0].trim().length > 0 &&
+    parts[1].trim().length > 0
+  );
+};
+
+/**
  * 「最近成功」有两个可能的来源：任务书约定的 `lastSuccessAt` 时间戳，
  * 与后端实际 DTO 的三态 `lastSuccess`（库里没有时刻列）。两者都支持，
  * 绝不用一个恒空的时间字段把人唬成「从未成功」。
@@ -156,12 +171,16 @@ const EntryActions: React.FC<{
   entry: SubAgentPoolEntry;
   onChanged: () => void;
 }> = ({ entry, onChanged }) => {
-  const [busy, setBusy] = useState<null | 'sleep' | 'destroy' | 'patch'>(null);
+  const [busy, setBusy] = useState<null | 'sleep' | 'destroy' | 'patch' | 'model'>(
+    null,
+  );
   // NULL = 未编辑；字符串 = 正在编辑该条目的备注草稿。
   const [draft, setDraft] = useState<string | null>(null);
+  // 模型路由单独一份草稿：它与备注是两个独立弹窗，共用一个 state 会互相覆盖。
+  const [modelDraft, setModelDraft] = useState<string | null>(null);
 
   const run = async (
-    kind: 'sleep' | 'destroy' | 'patch',
+    kind: 'sleep' | 'destroy' | 'patch' | 'model',
     action: () => Promise<void>,
     successText: string,
   ) => {
@@ -204,6 +223,14 @@ const EntryActions: React.FC<{
           data-testid="subagent-action-edit"
         >
           改备注
+        </Button>
+        <Button
+          size="small"
+          disabled={busy !== null || entry.status === 'dead'}
+          onClick={() => setModelDraft(entry.modelId ?? '')}
+          data-testid="subagent-action-model"
+        >
+          改模型
         </Button>
         <Button
           size="small"
@@ -258,6 +285,44 @@ const EntryActions: React.FC<{
           placeholder="一句话说明它负责什么（留空则清空备注）"
           data-testid="subagent-edit-responsibility"
         />
+      </Modal>
+
+      <Modal
+        open={modelDraft !== null}
+        title={`设置「${entry.name}」的模型路由`}
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={busy === 'model'}
+        onCancel={() => {
+          if (busy === null) setModelDraft(null);
+        }}
+        onOk={() => {
+          const value = (modelDraft ?? '').trim();
+          // 在前端先拦形状：裸 modelId 在多 provider 注册同名模型时会解析失败，
+          // 存进去也是等派发时才炸，不如当场告诉用户格式。
+          if (value !== '' && !isValidModelRoute(value)) {
+            message.error('模型路由要写成 providerId/modelId，例如 deepseek/deepseek-flash');
+            return; // 不关弹窗，让用户接着改
+          }
+
+          setModelDraft(null);
+          run(
+            'model',
+            () => updateSubAgentPoolEntry(entry.name, { modelId: value }),
+            value === '' ? '已改为跟随派发方' : '模型路由已更新',
+          );
+        }}
+      >
+        <Input
+          maxLength={128}
+          value={modelDraft ?? ''}
+          onChange={(event) => setModelDraft(event.target.value)}
+          placeholder="providerId/modelId，如 deepseek/deepseek-flash（留空 = 跟随派发方）"
+          data-testid="subagent-edit-model"
+        />
+        <div style={{ marginTop: 8, color: 'var(--pudding-text-secondary, #888)', fontSize: 12 }}>
+          注意：本列目前是团队约定与审计信息，派发时仍以调用方当轮解析出的模型为准。
+        </div>
       </Modal>
     </>
   );

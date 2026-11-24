@@ -1,12 +1,18 @@
 // ── 子代理池面板三态测试（任务 B）────────────────────────────────
 // 三态互斥是本组件的核心契约：空池不得显示成错误，失败不得显示成空池，
 // 加载中不得显示成任何终态。取数 hook 被替换为可控返回值，测的是渲染契约。
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as React from 'react';
 import { SubAgentPoolPanel } from './SubAgentPoolPanel';
 import { useSubAgentPool } from './useSubAgentPool';
 
 jest.mock('./useSubAgentPool');
+// 写动作走 api 模块；用 requireMock 而不是 import 绑定，
+// 因为本仓 esbuild+babel 管道在含 jest.mock 的文件里会拒绝「导入绑定用于类型标注」。
+jest.mock('./api');
+const mockedApi = jest.requireMock('./api') as {
+  updateSubAgentPoolEntry: jest.Mock;
+};
 
 // 本仓 @umijs/test 的 esbuild+babel 管道在含 jest.mock 的文件里会拒绝
 // 「导入绑定用于类型标注」（Cannot transform the imported binding ...），
@@ -69,6 +75,7 @@ const setPoolState = (state: PoolState): void => {
 describe('SubAgentPoolPanel', () => {
   beforeEach(() => {
     mockedUseSubAgentPool.mockReset();
+    mockedApi.updateSubAgentPoolEntry.mockReset();
   });
 
   it('加载中只渲染 loading，不渲染空态或错误', () => {
@@ -229,5 +236,63 @@ describe('SubAgentPoolPanel', () => {
       target: { value: '不存在的关键字' },
     });
     expect(screen.getByTestId('subagent-pool-list-empty')).toBeTruthy();
+  });
+
+  it('「改模型」预填当前路由，保存时把新路由交给后端', async () => {
+    setPoolState({
+      data: [
+        entry({ poolId: 'p-model', name: '顾问', modelId: 'deepseek/deepseek-flash' }),
+      ],
+      loading: false,
+      error: null,
+    });
+    mockedApi.updateSubAgentPoolEntry.mockResolvedValue(undefined);
+    render(<SubAgentPoolPanel />);
+
+    fireEvent.click(screen.getByTestId('subagent-pool-item-p-model'));
+    fireEvent.click(screen.getByTestId('subagent-action-model'));
+
+    const input = screen.getByTestId('subagent-edit-model') as HTMLInputElement;
+    // 预填当前值是关键：否则用户改模型时看不到现在用的是哪个，只能靠记忆。
+    expect(input.value).toBe('deepseek/deepseek-flash');
+
+    fireEvent.change(input, {
+      target: { value: 'fastrouter-claude/claude-opus-5-5' },
+    });
+    // antd 在两个汉字的按钮文案里插了一个空格（「保 存」），
+    // 所以用 role + 正则匹配，不用精确文本。
+    fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateSubAgentPoolEntry).toHaveBeenCalledWith('顾问', {
+        modelId: 'fastrouter-claude/claude-opus-5-5',
+      }),
+    );
+  });
+
+  it('裸 modelId 在前端被拦下，一个请求也不发', async () => {
+    setPoolState({
+      data: [entry({ poolId: 'p-bad', name: '探针', modelId: null })],
+      loading: false,
+      error: null,
+    });
+    render(<SubAgentPoolPanel />);
+
+    fireEvent.click(screen.getByTestId('subagent-pool-item-p-bad'));
+    fireEvent.click(screen.getByTestId('subagent-action-model'));
+    fireEvent.change(screen.getByTestId('subagent-edit-model'), {
+      target: { value: 'deepseek-flash' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }));
+
+    // 拦住的是「写入」，所以断言两件事：没发请求，且弹窗没关（用户能继续改）。
+    // 不断言 message 文案：antd message 走 portal + CSSMotion，在 jsdom 里
+    // 需要额外 holder 才稳定渲染 —— 那是提醒方式，不是被验证的行为。
+    await waitFor(() =>
+      expect(mockedApi.updateSubAgentPoolEntry).not.toHaveBeenCalled(),
+    );
+    expect(
+      (screen.getByTestId('subagent-edit-model') as HTMLInputElement).value,
+    ).toBe('deepseek-flash');
   });
 });
