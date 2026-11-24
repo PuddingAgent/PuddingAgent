@@ -91,7 +91,72 @@ public sealed class SubAgentPoolAdminController(
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
+        // 花费随列表一次带回，而不是让前端对每个成员各发一次 /runs：
+        // 「团队里谁最贵」是个排行榜问题，逐条往返会把它变成 N 次请求 + N 次等待。
+        // 账本行的 SubAgentId 列存的正是条目的 sub_session_id（写入时同源），
+        // 所以按它归集；改名、换模板都不会断开。
+        var sessionIds = entries
+            .Select(e => e.SubSessionId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (sessionIds.Count > 0)
+        {
+            var ledgerRows = await db.TokenUsageEvents
+                .AsNoTracking()
+                .Where(e => e.SubAgentId != null && sessionIds.Contains(e.SubAgentId))
+                .Select(e => new { e.SubAgentId, e.TotalTokens, e.TotalCost })
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+
+            var spendBySession = ledgerRows
+                .GroupBy(x => x.SubAgentId!, StringComparer.Ordinal)
+                .ToDictionary(
+                    g => g.Key,
+                    g => SummarizeSpend(g.Select(x => (x.TotalTokens, x.TotalCost)).ToList()),
+                    StringComparer.Ordinal);
+
+            foreach (var item in entries)
+            {
+                if (!string.IsNullOrWhiteSpace(item.SubSessionId)
+                    && spendBySession.TryGetValue(item.SubSessionId, out var entrySpend))
+                {
+                    item.Spend = entrySpend;
+                }
+            }
+        }
+
         return Ok(entries);
+    }
+
+    /// <summary>
+    /// 把一批账本行汇总成界面契约。
+    /// <para>
+    /// <b>两处调用方（列表与运行历史）必须共用这一个实现：</b>各写一份同义公式，
+    /// 同一位成员在两个界面显示不同金额只是时间问题。
+    /// </para>
+    /// <para>
+    /// 未计价 = <c>cost == 0 且 tokens &gt; 0</c>。资源池没登记价格时账本只能写 0，
+    /// 与「确实没花钱」在库里长得一样，所以必须单独数出来，而不是折进总额。
+    /// </para>
+    /// </summary>
+    /// <returns>没有任何账本行时返回 <c>null</c>：没有账本不等于花了 0 元。</returns>
+    private static SubAgentSpendDto? SummarizeSpend(
+        IReadOnlyCollection<(long TotalTokens, decimal TotalCost)> rows)
+    {
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        return new SubAgentSpendDto
+        {
+            TotalTokens = rows.Sum(x => x.TotalTokens),
+            PricedCostUsd = rows.Sum(x => x.TotalCost),
+            PricedCalls = rows.Count(x => x.TotalCost > 0m),
+            UnpricedCalls = rows.Count(x => x.TotalCost == 0m && x.TotalTokens > 0),
+        };
     }
 
     /// <summary>
@@ -462,17 +527,7 @@ public sealed class SubAgentPoolAdminController(
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
-        SubAgentSpendDto? spend = null;
-        if (ledger.Count > 0)
-        {
-            spend = new SubAgentSpendDto
-            {
-                TotalTokens = ledger.Sum(x => x.TotalTokens),
-                PricedCostUsd = ledger.Sum(x => x.TotalCost),
-                PricedCalls = ledger.Count(x => x.TotalCost > 0m),
-                UnpricedCalls = ledger.Count(x => x.TotalCost == 0m && x.TotalTokens > 0),
-            };
-        }
+        var spend = SummarizeSpend(ledger.Select(x => (x.TotalTokens, x.TotalCost)).ToList());
 
         return Ok(new SubAgentRunsPageDto
         {
@@ -578,6 +633,18 @@ public sealed class SubAgentPoolEntryDto
 
     /// <summary>条目创建时间（ISO-8601 文本）。</summary>
     public string CreatedAt { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 该条目全部历史调用的花费汇总；无任何账本行时为 <c>null</c>。
+    /// <para>
+    /// <b>为什么用 <c>set</c> 而不是 <c>init</c>：</b>聚合需要先知道有哪些 sub_session_id，
+    /// 只能在这条查询之后算；本类其余字段都是 <c>init</c>，此处例外是刻意的。
+    /// </para>
+    /// <para>
+    /// <b>null ≠ 零：</b>null 表示从未产生账本记录，零表示有记录但一条都没计价。
+    /// </para>
+    /// </summary>
+    public SubAgentSpendDto? Spend { get; set; }
 }
 
 /// <summary>

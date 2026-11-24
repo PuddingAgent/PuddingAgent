@@ -15,7 +15,7 @@ draft: false
 
 
 # PuddingHost CodeMAP
-> 源指纹: Source/PuddingHost/**=219-6eb31df1c4e9 · 条目数: 63 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingHost/**=219-7544a73f8517 · 条目数: 63 · 最近整理: 2026-10-22
 
 > 唯一 Host 组合根 | Console 与 Desktop 共用 DI · Browser Bridge · 飞书连接器
 > 历史变更与门禁记录已迁至 [`Docs/00_changelog/2026Year/10/2026-10-02-PuddingHost-code_map迁出的变更记录.md`](../../Docs/00_changelog/2026Year/10/2026-10-02-PuddingHost-code_map迁出的变更记录.md)。本文件只保留索引，不再追加日志。
@@ -208,5 +208,6 @@ tasks/workspaces/agents/messages scope+workspace Policies
 - `Storage/StorageMaintenanceService.cs` 用途原文：🔑 Core 所有的 SQLite/代码索引明细与安全清理；固定语义白名单、服务端预览、批量删除、checkpoint/VACUUM；分析返回前经 `StorageAnalysisEnrichment.Apply` 附上「表 → 数据类」「表 → 保护原因」两个纯增量映射
 - `Services/HostWorkspacePluginEventTarget.cs` 用途原文：插件 workspace 事件 Host 适配：把平台 sink 接到真实 `ExecutablePluginService.Manager.PublishWorkspaceEventAsync`
 - `Controllers/SubAgentPoolAdminController.cs` 用途原文：子代理池管理面：条目列表（Admin JWT；空池必须 200 + []，不得用 404 表示空列表；直接查 `agent_pool`，不复用带就绪门的 `SubAgentPool` 单例）、运行历史 `GET {name}/runs`（花费汇总的金额与未计价计数并列返回）、`POST {name}/sleep`、`DELETE {name}`、`PATCH {name}`
+- 列表花费：`GET api/admin/sub-agent-pool` 的每个条目带 `spend`（与 `{name}/runs` 共用 `SummarizeSpend`；无账本行为 null 而非 0）
 - `Hosting/AgentAdapterApiDocumentation.cs` 用途原文：用 Microsoft.AspNetCore.OpenApi 生成外部 Agent 接口 JSON，包含专用端点和 Bearer 鉴权，沿用外部 API 暴露策略
 

@@ -1,5 +1,5 @@
 # PuddingWebApiTests
-> 源指纹: *.cs=28-b23274bb909c, *.csproj=1-bc0c1a44ca61 · 条目数: 0 · 最近整理: 2026-11-23
+> 源指纹: *.cs=28-cedc6efd321e, *.csproj=1-bc0c1a44ca61 · 条目数: 0 · 最近整理: 2026-11-23
 
 测试工程，引用 PuddingAgent；用例全部为进程内单测，不需要真实宿主或外部服务。
 
@@ -150,9 +150,9 @@
 - `UpdateAsync_PreservesUnrelatedKeys_And_WritesOnlyTargetSection`
 - `UpdateAsync_RejectsInvalidValue_WithoutTouchingTheFile`
 - `WrittenValue_IsObservedByAReloadOnChangeConfigurationRoot`
-- （其余 1 条同类用例略）
+- （其余 28 条同类用例略；含 `List_IncludesSpend_PerEntry_AndMatchesRunsEndpoint`：列表花费与 `/runs` 同口径）
 
-`SubAgentPoolAdminControllerTests.cs` 覆盖 3 条用例：
+`SubAgentPoolAdminControllerTests.cs` 覆盖 31 条用例（截至 2026-11-25，逐例以 TRX 为准）：
 - `Get_EmptyPool_Returns200WithEmptyArray_Not404`
 - `Get_ReturnsEntries_MapsEveryField_ExcludesDeleted_AndOrdersByLastUsedDesc`
 - `Controller_IsReadOnly_AndRequiresAdminJwt`

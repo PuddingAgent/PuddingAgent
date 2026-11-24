@@ -938,6 +938,66 @@ public sealed class SubAgentPoolAdminControllerTests
         Assert.IsNull(payload?.Spend, "零账本行必须返回 null，用四个 0 无法区分「没记录」与「没计价」");
     }
 
+    /// <summary>
+    /// 列表也带花费，且与运行历史同口径。
+    /// <para>
+    /// 这是「谁最贵」排行榜的数据源：若列表不带花费，前端只能对每个成员各发一次 <c>/runs</c>，
+    /// 五个成员就是五次往返；而两处若各写一份聚合公式，同一位成员在两个界面
+    /// 显示不同金额只是时间问题 —— 本用例同时锁这两件事。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task List_IncludesSpend_PerEntry_AndMatchesRunsEndpoint()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.AddRange(
+                PoolRow("pool-s", "spender", "sub-spender"),
+                PoolRow("pool-q", "quiet", "sub-quiet"));
+            seed.SubAgentRuns.Add(RunRow("run-s1", "sub-spender", "completed"));
+            seed.TokenUsageEvents.AddRange(
+                LedgerRow("sub-spender", tokens: 1000, cost: 0.5m),
+                LedgerRow("sub-spender", tokens: 2000, cost: 0m),
+                LedgerRow("sub-spender", tokens: 0, cost: 0m),
+                LedgerRow("sub-other", tokens: 999999, cost: 99m));
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+        var listResult = await controller.Get(CancellationToken.None);
+        var entries = ((OkObjectResult)listResult.Result!).Value as IReadOnlyList<SubAgentPoolEntryDto>;
+        Assert.IsNotNull(entries);
+
+        var spender = entries!.Single(e => e.Name == "spender");
+        var quiet = entries.Single(e => e.Name == "quiet");
+
+        Assert.IsNotNull(spender.Spend, "有账本行的条目必须带出汇总");
+        Assert.AreEqual(3000L, spender.Spend!.TotalTokens, "别的子会话的账本行不得串进来");
+        Assert.AreEqual(0.5m, spender.Spend.PricedCostUsd);
+        Assert.AreEqual(1, spender.Spend.PricedCalls);
+        Assert.AreEqual(1, spender.Spend.UnpricedCalls, "缺价且有用量的行必须被单独数出来");
+
+        Assert.IsNull(quiet.Spend, "零账本行必须是 null，而不是四个 0");
+        Assert.IsTrue(
+            entries.All(e => e.Spend?.PricedCostUsd != 99m),
+            "未进入池的 sub-other 不得出现在任何条目上");
+
+        // 同一份账本，两个端点必须给出同一组数字（共用 SummarizeSpend）。
+        var pool = new Mock<ISubAgentPool>();
+        pool.Setup(p => p.GetSnapshotAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<PooledSubAgent>)new[] { PoolEntry("spender") });
+        var runsController = new SubAgentPoolAdminController(scope.Factory, pool.Object);
+        var runsResult = await runsController.GetRuns("spender", 20, CancellationToken.None);
+        var page = ((OkObjectResult)runsResult.Result!).Value as SubAgentRunsPageDto;
+        Assert.IsNotNull(page?.Spend, "运行历史侧应当也有汇总");
+
+        Assert.AreEqual(spender.Spend.TotalTokens, page!.Spend!.TotalTokens, "列表与运行历史必须同口径");
+        Assert.AreEqual(spender.Spend.PricedCostUsd, page.Spend.PricedCostUsd);
+        Assert.AreEqual(spender.Spend.PricedCalls, page.Spend.PricedCalls);
+        Assert.AreEqual(spender.Spend.UnpricedCalls, page.Spend.UnpricedCalls);
+    }
+
     /// <summary>造一条池条目：只填必填列，展示列留空。</summary>
     private static AgentPoolEntity PoolRow(
         string poolId,
