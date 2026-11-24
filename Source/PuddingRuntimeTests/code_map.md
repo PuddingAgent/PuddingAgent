@@ -115,6 +115,7 @@
 `Services/LlmInvocationServiceCancellationTests.cs` 覆盖 3 条用例。
 `Services/LlmReplyBudgetTests.cs` 覆盖 3 条用例。
 `Services/LlmRequestBudgetGuardDeterministicPruneTests.cs` 覆盖 4 条用例。
+`Services/LlmRequestBudgetGuardLimitDerivationTests.cs` 覆盖 4 条用例。
 `Services/LlmRequestBudgetGuardTests.cs` 覆盖 21 条用例。
 `Services/LlmRequestBudgetGuardToolPayloadEvictionTests.cs` 覆盖 4 条用例。
 `Services/LlmRequestTextBudgetTests.cs` 覆盖 12 条用例。

@@ -42,22 +42,53 @@ public sealed record LlmInputBudgetBreakdown(
     int ProtectedTailTokens,
     int RemovableCandidateTokens);
 
+/// <summary>
+/// 有效输入上限的推导分量（原始口径，不含 provider 校准比）。
+/// 目的：区分两种诊断含义完全相反的失败 ——
+/// ①「历史真的太大」；②「模型配置装不下自己预留的输出」，此时 limit 会被夹到 1。
+/// 2026-11-25 取自真实数据：<c>sub_agent_runs</c> id=1030 报
+/// <c>estimated=18154, limit=1</c> —— 18k 输入在任何一个现代窗口里都算不上大，
+/// 是 limit 本身坏了。旧文案把这种情形说成「请求太大」，会把运维引向裁历史这条错路。
+/// </summary>
+/// <param name="ContextWindow">模型登记的上下文窗口；null 表示未登记（不做窗口推导）。</param>
+/// <param name="ReservedOutput">本轮真实申请的输出预留（不是模型能力上限）。</param>
+/// <param name="SafetyBuffer">为估算误差预留的缓冲。</param>
+/// <param name="ProviderLimit">provider 侧输入上限与 WorkUnit 容量取小后的值。</param>
+/// <param name="DerivedContextLimit">窗口推导出的上限（已做 <c>max(1, …)</c> 夹取）；null 表示未做窗口推导。</param>
+public sealed record LlmInputLimitDerivation(
+    int? ContextWindow,
+    int ReservedOutput,
+    int SafetyBuffer,
+    int ProviderLimit,
+    int? DerivedContextLimit)
+{
+    /// <summary>
+    /// 结构矛盾判据 —— 不是阈值猜测：窗口减去预留输出与安全缓冲后不足 1，
+    /// 说明这个模型连自己的预留输出都装不下。此时该改模型配置，而不是继续裁历史。
+    /// </summary>
+    public bool WindowCannotCoverReservedOutput =>
+        ContextWindow is > 0
+        && ContextWindow.Value - ReservedOutput - SafetyBuffer < 1;
+}
+
 public sealed class LlmInputBudgetExceededException : InvalidOperationException
 {
     public LlmInputBudgetExceededException(int estimatedTokens, int effectiveInputLimit)
-        : this(estimatedTokens, effectiveInputLimit, breakdown: null)
+        : this(estimatedTokens, effectiveInputLimit, breakdown: null, limitDerivation: null)
     {
     }
 
     public LlmInputBudgetExceededException(
         int estimatedTokens,
         int effectiveInputLimit,
-        LlmInputBudgetBreakdown? breakdown)
-        : base(BuildMessage(estimatedTokens, effectiveInputLimit, breakdown))
+        LlmInputBudgetBreakdown? breakdown,
+        LlmInputLimitDerivation? limitDerivation = null)
+        : base(BuildMessage(estimatedTokens, effectiveInputLimit, breakdown, limitDerivation))
     {
         EstimatedTokens = estimatedTokens;
         EffectiveInputLimit = effectiveInputLimit;
         Breakdown = breakdown;
+        LimitDerivation = limitDerivation;
     }
 
     public int EstimatedTokens { get; }
@@ -66,24 +97,51 @@ public sealed class LlmInputBudgetExceededException : InvalidOperationException
     /// <summary>不可裁剪地板分解；null 表示调用方未提供分解（两参构造保持既有文案不变）。</summary>
     public LlmInputBudgetBreakdown? Breakdown { get; }
 
+    /// <summary>有效上限的推导分量；null 表示调用方未提供。</summary>
+    public LlmInputLimitDerivation? LimitDerivation { get; }
+
     private static string BuildMessage(
         int estimatedTokens,
         int effectiveInputLimit,
-        LlmInputBudgetBreakdown? breakdown)
+        LlmInputBudgetBreakdown? breakdown,
+        LlmInputLimitDerivation? limitDerivation)
     {
         // 既有前缀保持不变（现有日志/告警文案依赖它），只在其后追加分解信息。
         var message = $"LLM request input is too large after history trimming: estimated={estimatedTokens}, limit={effectiveInputLimit}.";
-        if (breakdown is null)
-            return message;
+        if (breakdown is not null)
+        {
+            message = message
+                + " breakdown(rawEstimate):"
+                + $" systemMessages={breakdown.SystemMessageTokens},"
+                + $" toolDefinitions={breakdown.ToolDefinitionTokens},"
+                + $" protectedTail={breakdown.ProtectedTailTokens},"
+                + $" removableCandidates={breakdown.RemovableCandidateTokens}"
+                + " (protectedTail = messages history trimming may never remove).";
+        }
 
-        return message
-            + " breakdown(rawEstimate):"
-            + $" systemMessages={breakdown.SystemMessageTokens},"
-            + $" toolDefinitions={breakdown.ToolDefinitionTokens},"
-            + $" protectedTail={breakdown.ProtectedTailTokens},"
-            + $" removableCandidates={breakdown.RemovableCandidateTokens}"
-            + " (protectedTail = messages history trimming may never remove).";
+        if (limitDerivation is not null)
+        {
+            message = message
+                + " limitDerivation:"
+                + $" contextWindow={FormatOptional(limitDerivation.ContextWindow)},"
+                + $" reservedOutput={limitDerivation.ReservedOutput},"
+                + $" safetyBuffer={limitDerivation.SafetyBuffer},"
+                + $" providerLimit={limitDerivation.ProviderLimit},"
+                + $" derivedContextLimit={FormatOptional(limitDerivation.DerivedContextLimit)}.";
+
+            // 只在结构矛盾确实成立时才下结论，不猜。
+            if (limitDerivation.WindowCannotCoverReservedOutput)
+            {
+                message = message
+                    + " The model context window cannot accommodate its own reserved output plus the safety buffer;"
+                    + " fix the model configuration (context window / max output tokens) instead of trimming history.";
+            }
+        }
+
+        return message;
     }
+
+    private static string FormatOptional(int? value) => value?.ToString() ?? "<unset>";
 }
 
 /// <summary>
@@ -111,22 +169,49 @@ public static partial class LlmRequestBudgetGuard
         LlmConfig? config,
         int safetyBufferTokens = DefaultSafetyBufferTokens,
         long? workUnitInputCapacity = null)
+        => ResolveEffectiveInputLimitWithDerivation(config, safetyBufferTokens, workUnitInputCapacity).Limit;
+
+    /// <summary>
+    /// 与 <see cref="ResolveEffectiveInputLimit"/> **同一算法**，额外带出推导分量。
+    /// 拆成两个入口是为了保持单一实现：若失败路径自己重算一遍，报出的数字就可能
+    /// 与真正生效的那个不一致，而那正是要诊断的东西。
+    /// 成功路径仍只用轻量的 int 入口（不需要这些数字）。
+    /// </summary>
+    public static (int Limit, LlmInputLimitDerivation Derivation) ResolveEffectiveInputLimitWithDerivation(
+        LlmConfig? config,
+        int safetyBufferTokens = DefaultSafetyBufferTokens,
+        long? workUnitInputCapacity = null)
     {
         var providerLimit = config?.MaxInputTokens is > 0
             ? config.MaxInputTokens.Value
             : int.MaxValue;
         if (workUnitInputCapacity is > 0)
             providerLimit = Math.Min(providerLimit, (int)Math.Min(int.MaxValue, workUnitInputCapacity.Value));
+
+        var safetyBuffer = Math.Max(0, safetyBufferTokens);
+        var requestedOutput = LlmReplyBudget.ResolveReservedTokens(config?.MaxOutputTokens);
+
         if (config?.MaxContextTokens is not > 0)
-            return providerLimit;
+        {
+            return (providerLimit, new LlmInputLimitDerivation(
+                ContextWindow: null,
+                ReservedOutput: requestedOutput,
+                SafetyBuffer: safetyBuffer,
+                ProviderLimit: providerLimit,
+                DerivedContextLimit: null));
+        }
 
         var contextWindow = config.MaxContextTokens.Value;
         // 预留 = 本轮真实申请的输出上限（min(登记值, 单轮上限)），不是模型登记的最大输出能力：
         // 资源池登记的是能力上限（deepseek-flash 393,216），拿它当预留会白锁 39% 窗口。
-        var requestedOutput = LlmReplyBudget.ResolveReservedTokens(config.MaxOutputTokens);
-        var safetyBuffer = Math.Max(0, safetyBufferTokens);
         var contextDerivedLimit = Math.Max(1, contextWindow - requestedOutput - safetyBuffer);
-        return Math.Max(1, Math.Min(contextDerivedLimit, providerLimit));
+        var limit = Math.Max(1, Math.Min(contextDerivedLimit, providerLimit));
+        return (limit, new LlmInputLimitDerivation(
+            ContextWindow: contextWindow,
+            ReservedOutput: requestedOutput,
+            SafetyBuffer: safetyBuffer,
+            ProviderLimit: providerLimit,
+            DerivedContextLimit: contextDerivedLimit));
     }
 
     /// <param name="evictOversizedToolPayloads">
@@ -161,7 +246,8 @@ public static partial class LlmRequestBudgetGuard
 
         var working = messages.ToList();
         var initialCount = working.Count;
-        var effectiveInputLimit = ResolveEffectiveInputLimit(config, safetyBufferTokens, workUnitInputCapacity);
+        var (effectiveInputLimit, limitDerivation) =
+            ResolveEffectiveInputLimitWithDerivation(config, safetyBufferTokens, workUnitInputCapacity);
 
         var snapshot = usageStore.CaptureLlmRequest(
             sessionId,
@@ -251,12 +337,14 @@ public static partial class LlmRequestBudgetGuard
             }
         }
 
-        // 驱逐后仍超限 ⇒ fail-closed 保持不变，但异常自带「不可裁剪地板」分解。
+        // 驱逐后仍超限 ⇒ fail-closed 保持不变，但异常自带「不可裁剪地板」分解
+        // 与上限推导分量（后者用来区分「历史太大」与「模型配置装不下自己的预留输出」）。
         if (snapshot.UsedTokens > effectiveInputLimit)
             throw new LlmInputBudgetExceededException(
                 snapshot.UsedTokens,
                 effectiveInputLimit,
-                BuildBreakdown(working, sessionId, snapshot, config?.ModelId));
+                BuildBreakdown(working, sessionId, snapshot, config?.ModelId),
+                limitDerivation);
 
         return new LlmRequestBudgetResult(
             working,
