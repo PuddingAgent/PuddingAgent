@@ -284,7 +284,8 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 File.Copy(fullPath, backup, overwrite: false);
                 backups.Add((fullPath, backup));
 
-                File.WriteAllText(fullPath, current, new UTF8Encoding(false));
+                // 保持原文件 BOM 形态：备份已建立、原文件尚未覆盖，此刻探测到的是原状态。
+                StrictUtf8Text.WriteAllText(fullPath, current, StrictUtf8Text.HasBom(fullPath));
 
                 var diff = SimpleLineDiff.Render(original, current);
                 var successMsg = $"{relPath}: patched ({replacementCount} replacements)";
@@ -1328,6 +1329,11 @@ internal sealed record UnifiedDiffLine(char Kind, string Text);
 ///
 /// 本方法：严格解码 + 剥掉开头单个 UTF-8 BOM；非法字节抛 <see cref="DecoderFallbackException"/>，
 /// 由调用方转为工具错误，不得回退为宽松解码。
+///
+/// <b>写回必须保持原文件的 BOM 形态</b>：读取剥掉 BOM 后若一律以 <c>new UTF8Encoding(false)</c>
+/// 写回，带 BOM 的文件会在一次 patch 后永久丢掉 BOM（实测：<c>ef bb bf …</c> → <c>…</c>，15 字节变 12）。
+/// 那同样是「读→改→写」静默改变文件编码，与宽松解码同属一类缺陷，只是丢的是开头三字节而非内容。
+/// 因此写路径统一走 <see cref="WriteAllText(string,string,bool)"/>，由调用方按原文件状态传入。
 /// </summary>
 internal static class StrictUtf8Text
 {
@@ -1335,11 +1341,34 @@ internal static class StrictUtf8Text
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
 
+    private static readonly UTF8Encoding NoBom = new(encoderShouldEmitUTF8Identifier: false);
+    private static readonly UTF8Encoding WithBom = new(encoderShouldEmitUTF8Identifier: true);
+
     public static string ReadAllText(string path)
     {
         var text = Strict.GetString(File.ReadAllBytes(path));
         return text.Length > 0 && text[0] == '\uFEFF' ? text[1..] : text;
     }
+
+    /// <summary>
+    /// 探测文件当前是否以 UTF-8 BOM 开头。写回前调用（此时原文件尚未被覆盖），
+    /// 把结果回传给 <see cref="WriteAllText(string,string,bool)"/> 以保持编码形态。
+    /// </summary>
+    public static bool HasBom(string path)
+    {
+        if (!File.Exists(path)) return false;
+        using var stream = File.OpenRead(path);
+        Span<byte> head = stackalloc byte[3];
+        var read = stream.Read(head);
+        return read == 3 && head[0] == 0xEF && head[1] == 0xBB && head[2] == 0xBF;
+    }
+
+    /// <summary>
+    /// 按调用方给的 BOM 状态写回。契约：<paramref name="emitBom"/> 必须来自覆盖前的原文件
+    /// （<see cref="HasBom(string)"/>），否则同样会改变用户原有的编码形态。
+    /// </summary>
+    public static void WriteAllText(string path, string text, bool emitBom)
+        => File.WriteAllText(path, text, emitBom ? WithBom : NoBom);
 }
 
 /// <summary>
@@ -1668,7 +1697,8 @@ internal static class UnifiedDiffPatchRunner
                 var backup = file.FullPath + ".bak." + Guid.NewGuid().ToString("N")[..8];
                 var temp = file.FullPath + ".tmp." + Guid.NewGuid().ToString("N")[..8];
                 File.Copy(file.FullPath, backup, overwrite: false);
-                File.WriteAllText(temp, file.Current, new UTF8Encoding(false));
+                // 临时文件是新建的，其 BOM 必须继承目标文件（覆盖前的）形态，否则 Move 后 BOM 永久丢失。
+                StrictUtf8Text.WriteAllText(temp, file.Current, StrictUtf8Text.HasBom(file.FullPath));
                 backups.Add((file.FullPath, backup, file.Zone, file.Patch.Path));
                 tempFiles.Add(temp);
             }

@@ -207,6 +207,88 @@ public sealed class FileToolUtf8StrictnessTests
         Assert.AreEqual("beta\n", File.ReadAllText(path, Encoding.UTF8));
     }
 
+    // ── BOM 往返：读→改→写不得静默改变编码形态 ──
+
+    /// <summary>
+    /// 实测缺陷（2026-11-25 运行时验收发现）：<c>StrictUtf8Text.ReadAllText</c> 剥掉 BOM，
+    /// 而写回用 <c>new UTF8Encoding(false)</c> —— 于是带 BOM 的文件被 patch 一次就<b>永久丢掉 BOM</b>
+    /// （fixture <c>ef bb bf 61 6c 70 68 61 0a 6f 6d 65 67 61 0a</c>，15 字节 → 12 字节）。
+    /// 这与宽松解码同属「读→改→写」静默改变文件的缺陷，只是丢的是开头三字节。
+    ///
+    /// 上面的 <c>FilePatch_PatchText_StillWorksOnUtf8WithBom</c> 只断言「能 patch 成功」，
+    /// 断言不到 BOM 是否被保留 —— 所以它<b>拦不住</b>这个缺陷。两个用例是互补的，不是重复的。
+    /// </summary>
+    [TestMethod]
+    public async Task FilePatch_Operations_PreservesBom()
+    {
+        var path = Path.Combine(_tempDir, "bom-ops.txt");
+        File.WriteAllText(path, "omega\n", Encoding.UTF8);
+        Assert.IsTrue(StartsWithUtf8Bom(path), "fixture must really start with a UTF-8 BOM");
+
+        var result = await ExecuteAsync(new FilePatchTool(), new Dictionary<string, object?>
+        {
+            ["path"] = "bom-ops.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["old_text"] = "omega", ["new_text"] = "OMEGA" },
+            },
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("OMEGA\n", File.ReadAllText(path, Encoding.UTF8));
+        Assert.IsTrue(StartsWithUtf8Bom(path),
+            "patching a BOM file must not silently drop its BOM (read→edit→write must round-trip the encoding)");
+    }
+
+    [TestMethod]
+    public async Task FilePatch_PatchText_PreservesBom()
+    {
+        var path = Path.Combine(_tempDir, "bom-diff.txt");
+        File.WriteAllText(path, "alpha\n", Encoding.UTF8);
+        Assert.IsTrue(StartsWithUtf8Bom(path), "fixture must really start with a UTF-8 BOM");
+
+        var result = await ExecuteAsync(new FilePatchTool(), new Dictionary<string, object?>
+        {
+            ["path"] = "bom-diff.txt",
+            ["patch_text"] = "--- a/bom-diff.txt\n+++ b/bom-diff.txt\n@@ -1 +1 @@\n-alpha\n+beta\n",
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("beta\n", File.ReadAllText(path, Encoding.UTF8));
+        Assert.IsTrue(StartsWithUtf8Bom(path),
+            "the unified-diff path writes through a temp file, whose BOM must inherit the target's");
+    }
+
+    /// <summary>
+    /// 反向对照：无 BOM 的文件 patch 后也不得<b>新增</b> BOM。
+    /// 否则「一律写 BOM」的实现能通过上面两条用例 —— 那同样是静默改变编码。
+    /// </summary>
+    [TestMethod]
+    public async Task FilePatch_DoesNotIntroduceBom_OnPlainFile()
+    {
+        var path = Path.Combine(_tempDir, "plain-nobom.txt");
+        File.WriteAllText(path, "omega\n", new UTF8Encoding(false));
+        Assert.IsFalse(StartsWithUtf8Bom(path), "fixture must start without a BOM");
+
+        var result = await ExecuteAsync(new FilePatchTool(), new Dictionary<string, object?>
+        {
+            ["path"] = "plain-nobom.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["old_text"] = "omega", ["new_text"] = "OMEGA" },
+            },
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsFalse(StartsWithUtf8Bom(path), "patching must not introduce a UTF-8 BOM that was not there");
+    }
+
+    private static bool StartsWithUtf8Bom(string path)
+    {
+        var bytes = File.ReadAllBytes(path);
+        return bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+    }
+
     // ── Helper ──
 
     private static Task<ToolExecutionResult> ExecuteAsync<TArgs>(
