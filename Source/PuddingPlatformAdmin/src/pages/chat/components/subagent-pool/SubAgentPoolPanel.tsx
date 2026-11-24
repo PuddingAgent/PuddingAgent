@@ -16,7 +16,8 @@ import {
   type SubAgentPoolEntry,
 } from './api';
 import { useSubAgentPoolStyles } from './SubAgentPoolPanel.styles';
-import { describeSubAgentPoolError, useSubAgentPool } from './useSubAgentPool';
+import { describeSubAgentPoolActionError } from './errors';
+import { useSubAgentPool } from './useSubAgentPool';
 
 type StatusTone = 'idle' | 'busy' | 'sleeping' | 'dead';
 
@@ -226,7 +227,8 @@ const EntryActions: React.FC<{
       message.success(successText);
       onChanged();
     } catch (caught: unknown) {
-      message.error(describeSubAgentPoolError(caught));
+      // 按动作选兜底文案：销毁被拒时不能提示「加载失败」，那会让人以为只是列表没刷新。
+      message.error(describeSubAgentPoolActionError(kind, caught));
     } finally {
       setBusy(null);
     }

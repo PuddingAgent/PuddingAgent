@@ -3,7 +3,7 @@
 // 并保证 retry 是重新取数而不是复用上次结果。
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { fetchSubAgentPool } from './api';
-import { describeSubAgentPoolError, useSubAgentPool } from './useSubAgentPool';
+import { useSubAgentPool } from './useSubAgentPool';
 
 jest.mock('./api');
 
@@ -81,14 +81,5 @@ describe('useSubAgentPool', () => {
     expect(result.current.error).toBeNull();
     expect(result.current.data).toEqual([entry('b')]);
     expect(mockedFetch).toHaveBeenCalledTimes(2);
-  });
-
-  it('描述失败文案时优先使用后端 message', () => {
-    expect(
-      describeSubAgentPoolError({
-        response: { data: { message: '无权访问子代理池' } },
-      }),
-    ).toBe('无权访问子代理池');
-    expect(describeSubAgentPoolError(undefined)).toBe('加载子代理池失败');
   });
 });

@@ -6,6 +6,7 @@
 // 「空池」是成功态的一种，不是错误，也不是加载中。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchSubAgentPool, type SubAgentPoolEntry } from './api';
+import { describeSubAgentPoolError } from './errors';
 
 export interface UseSubAgentPoolResult {
   /** 请求成功后的结果；未成功（加载中 / 失败）时为 null。 */
@@ -14,22 +15,6 @@ export interface UseSubAgentPoolResult {
   /** 失败文案；成功时为 null。 */
   error: string | null;
   reload: () => void;
-}
-
-const DEFAULT_ERROR_MESSAGE = '加载子代理池失败';
-
-/** 把 umi-request 的各类失败压成一句可展示的文案（保留后端 message）。 */
-export function describeSubAgentPoolError(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
-
-  const responseMessage = (
-    error as { response?: { data?: { message?: string } } } | undefined
-  )?.response?.data?.message;
-  if (typeof responseMessage === 'string' && responseMessage.length > 0) {
-    return responseMessage;
-  }
-
-  return DEFAULT_ERROR_MESSAGE;
 }
 
 export function useSubAgentPool(): UseSubAgentPoolResult {
