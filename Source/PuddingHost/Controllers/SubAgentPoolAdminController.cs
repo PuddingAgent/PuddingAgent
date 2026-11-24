@@ -201,12 +201,22 @@ public sealed class SubAgentPoolAdminController(
     }
 
     /// <summary>
-    /// 修改池条目的展示字段（备注 / 头像键 / 模型路由）。
+    /// 修改池条目的展示字段（备注 / 头像键 / 角色 / 模型路由）。
     /// <para>
-    /// <b>这里可以直接写库、不经过池实例</b>，因为这三个字段都不在
-    /// <see cref="PooledSubAgent"/> 快照里 —— 内存缓存根本不持有它们，
+    /// <b>这里可以直接写库、不经过池实例</b>：备注、头像键、模型路由都不在
+    /// <see cref="PooledSubAgent"/> 快照里，内存缓存根本不持有它们，
     /// 「库改了内存没改」不构成分叉。状态类字段（status / task_count /
     /// active_execution_id）恰好相反：它们就在内存里，必须走池。
+    /// </para>
+    /// <para>
+    /// <b>唯一的例外是 <c>role</c>，必须如实说明：</b>它<b>确实</b>存在于
+    /// <see cref="PooledSubAgent"/> 快照里（启动恢复时由 <c>LoadAllAsync</c> 带回），
+    /// 但没有任何执行路径读它 —— 全仓只有两处读者：本控制器的列表（直接查库）
+    /// 与 <c>SubAgentTool</c> 的池清单（读内存快照）。状态写入走的是
+    /// <c>TrySetStatusAsync</c> / <c>TryAcquireAsync</c> / <c>TryCompleteAsync</c>
+    /// 这类<b>定向列更新</b>，不会整行回写 role，所以这里改的值不会被后续状态迁移覆盖。
+    /// 代价是：面板立刻看到新值，而 Agent 侧池清单要等进程重启才更新。
+    /// 这是「库是事实源、缓存跟随」的正常表现，不是缺陷；但别把它读成「两处一致」。
     /// </para>
     /// <para>
     /// <b>模型路由目前是「声明」而非「生效配置」：</b>执行路径（<c>SubAgentPool.ExecuteAsync</c>）
@@ -241,6 +251,11 @@ public sealed class SubAgentPoolAdminController(
         if (body.AvatarKey is { Length: > 32 })
         {
             return BadRequest(new { error = "avatar_key_too_long", detail = "头像键最长 32 字符。" });
+        }
+
+        if (body.Role is { Length: > 64 })
+        {
+            return BadRequest(new { error = "role_too_long", detail = "角色标签最长 64 字符。" });
         }
 
         // 空串是「清空 → 跟随派发方」，不参与格式校验；非空必须是 providerId/modelId。
@@ -290,6 +305,12 @@ public sealed class SubAgentPoolAdminController(
             entity.AvatarKey = body.AvatarKey;
         }
 
+        if (body.Role is not null)
+        {
+            // 与 model_id 同一口径：空串归一化成 NULL，库里「没设」只有一种表示。
+            entity.Role = body.Role.Length == 0 ? null : body.Role;
+        }
+
         if (body.ModelId is not null)
         {
             // 空串归一化成 NULL：「跟随派发方」在库里有且只有一种表示，
@@ -305,7 +326,7 @@ public sealed class SubAgentPoolAdminController(
 /// <summary>
 /// 修改池条目展示字段的请求体。
 /// <para>
-/// 三个字段都是可选的：「没传」= 保持原值。要清空必须显式传空字符串 ——
+/// 四个字段都是可选的：「没传」= 保持原值。要清空必须显式传空字符串 ——
 /// 把 null 当成「清空」会让一次只改头像的请求顺手抹掉备注。
 /// </para>
 /// </summary>
@@ -316,6 +337,9 @@ public sealed class UpdateSubAgentPoolEntryRequest
 
     /// <summary>预设图形键（最长 32 字符）。</summary>
     public string? AvatarKey { get; init; }
+
+    /// <summary>能力角色分类短标签（最长 64 字符；仅展示，不参与执行路由）。</summary>
+    public string? Role { get; init; }
 
     /// <summary>
     /// 模型路由 <c>providerId/modelId</c>（最长 128 字符）；传空字符串表示清空（跟随派发方）。

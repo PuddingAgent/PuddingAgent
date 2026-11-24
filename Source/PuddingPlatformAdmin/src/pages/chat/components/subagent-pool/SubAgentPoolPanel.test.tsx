@@ -302,6 +302,31 @@ describe('SubAgentPoolPanel', () => {
     expect(screen.getByTestId('subagent-pool-list-empty')).toBeTruthy();
   });
 
+  it('「改角色」预填当前角色，保存时把新角色交给后端', async () => {
+    setPoolState({
+      data: [entry({ poolId: 'p-role', name: '评审', role: 'reviewer' })],
+      loading: false,
+      error: null,
+    });
+    mockedApi.updateSubAgentPoolEntry.mockResolvedValue(undefined);
+    render(<SubAgentPoolPanel />);
+
+    fireEvent.click(screen.getByTestId('subagent-pool-item-p-role'));
+    fireEvent.click(screen.getByTestId('subagent-action-role'));
+
+    const input = screen.getByTestId('subagent-edit-role') as HTMLInputElement;
+    expect(input.value).toBe('reviewer');
+
+    fireEvent.change(input, { target: { value: 'verifier' } });
+    fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateSubAgentPoolEntry).toHaveBeenCalledWith('评审', {
+        role: 'verifier',
+      }),
+    );
+  });
+
   it('「改模型」预填当前路由，保存时把新路由交给后端', async () => {
     setPoolState({
       data: [

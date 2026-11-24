@@ -205,16 +205,18 @@ const EntryActions: React.FC<{
   entry: SubAgentPoolEntry;
   onChanged: () => void;
 }> = ({ entry, onChanged }) => {
-  const [busy, setBusy] = useState<null | 'sleep' | 'destroy' | 'patch' | 'model'>(
+  const [busy, setBusy] = useState<null | 'sleep' | 'destroy' | 'patch' | 'model' | 'role'>(
     null,
   );
   // NULL = 未编辑；字符串 = 正在编辑该条目的备注草稿。
   const [draft, setDraft] = useState<string | null>(null);
   // 模型路由单独一份草稿：它与备注是两个独立弹窗，共用一个 state 会互相覆盖。
   const [modelDraft, setModelDraft] = useState<string | null>(null);
+  // 角色同样单独一份：三个弹窗各自独立，谁也不能把别人的草稿清掉。
+  const [roleDraft, setRoleDraft] = useState<string | null>(null);
 
   const run = async (
-    kind: 'sleep' | 'destroy' | 'patch' | 'model',
+    kind: 'sleep' | 'destroy' | 'patch' | 'model' | 'role',
     action: () => Promise<void>,
     successText: string,
   ) => {
@@ -257,6 +259,14 @@ const EntryActions: React.FC<{
           data-testid="subagent-action-edit"
         >
           改备注
+        </Button>
+        <Button
+          size="small"
+          disabled={busy !== null || entry.status === 'dead'}
+          onClick={() => setRoleDraft(entry.role ?? '')}
+          data-testid="subagent-action-role"
+        >
+          改角色
         </Button>
         <Button
           size="small"
@@ -319,6 +329,37 @@ const EntryActions: React.FC<{
           placeholder="一句话说明它负责什么（留空则清空备注）"
           data-testid="subagent-edit-responsibility"
         />
+      </Modal>
+
+      <Modal
+        open={roleDraft !== null}
+        title={`设置「${entry.name}」的角色`}
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={busy === 'role'}
+        onCancel={() => {
+          if (busy === null) setRoleDraft(null);
+        }}
+        onOk={() => {
+          const value = (roleDraft ?? '').trim();
+          setRoleDraft(null);
+          run(
+            'role',
+            () => updateSubAgentPoolEntry(entry.name, { role: value }),
+            value === '' ? '已清空角色' : '角色已更新',
+          );
+        }}
+      >
+        <Input
+          maxLength={64}
+          value={roleDraft ?? ''}
+          onChange={(event) => setRoleDraft(event.target.value)}
+          placeholder="能力角色短标签，如 verifier / scout（留空 = 清空）"
+          data-testid="subagent-edit-role"
+        />
+        <div style={{ marginTop: 8, color: 'var(--pudding-text-secondary, #888)', fontSize: 12 }}>
+          角色仅用于展示与分类，不参与派发时的模型选择。
+        </div>
       </Modal>
 
       <Modal

@@ -297,6 +297,120 @@ public sealed class SubAgentPoolAdminControllerTests
     }
 
     [TestMethod]
+    public async Task Update_SetsRole_Returns204()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.Add(new AgentPoolEntity
+            {
+                PoolId = "pool-role",
+                OwnerWorkspaceId = "default",
+                Name = "legacy",
+                SubSessionId = "sub-role",
+                TemplateId = "global:task",
+                Status = AgentPoolEntity.StatusIdle,
+                CreatedAt = "2026-11-01T00:00:00Z",
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+        var result = await controller.Update(
+            "legacy",
+            new UpdateSubAgentPoolEntryRequest { Role = "verifier" },
+            CancellationToken.None);
+
+        Assert.IsInstanceOfType<NoContentResult>(result);
+
+        await using var verify = await scope.Factory.CreateDbContextAsync();
+        var saved = await verify.AgentPool.SingleAsync(e => e.Name == "legacy");
+        Assert.AreEqual("verifier", saved.Role, "role 必须真的落库，而不是只通过校验");
+    }
+
+    [TestMethod]
+    public async Task Update_EmptyRole_ClearsToNull_NotEmptyString()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.Add(new AgentPoolEntity
+            {
+                PoolId = "pool-role-clear",
+                OwnerWorkspaceId = "default",
+                Name = "clearer",
+                SubSessionId = "sub-role-clear",
+                TemplateId = "global:task",
+                Role = "old-role",
+                Status = AgentPoolEntity.StatusIdle,
+                CreatedAt = "2026-11-01T00:00:00Z",
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+        var result = await controller.Update(
+            "clearer",
+            new UpdateSubAgentPoolEntryRequest { Role = string.Empty },
+            CancellationToken.None);
+
+        Assert.IsInstanceOfType<NoContentResult>(result);
+
+        await using var verify = await scope.Factory.CreateDbContextAsync();
+        var saved = await verify.AgentPool.SingleAsync(e => e.Name == "clearer");
+        // 空串与 NULL 必须是同一件事，否则读回时要处理两种「都没设」。
+        Assert.IsNull(saved.Role, "空字符串必须归一化成 NULL，不能存成空串");
+    }
+
+    [TestMethod]
+    public async Task Update_OmittedRole_DoesNotClearExisting()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        await using (var seed = await scope.Factory.CreateDbContextAsync())
+        {
+            seed.AgentPool.Add(new AgentPoolEntity
+            {
+                PoolId = "pool-role-keep",
+                OwnerWorkspaceId = "default",
+                Name = "rolekeeper",
+                SubSessionId = "sub-role-keep",
+                TemplateId = "global:task",
+                Role = "scout",
+                Status = AgentPoolEntity.StatusIdle,
+                CreatedAt = "2026-11-01T00:00:00Z",
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+        // 只改备注，不传 role —— role 必须保持不变。
+        var result = await controller.Update(
+            "rolekeeper",
+            new UpdateSubAgentPoolEntryRequest { Responsibility = "只改备注" },
+            CancellationToken.None);
+
+        Assert.IsInstanceOfType<NoContentResult>(result);
+
+        await using var verify = await scope.Factory.CreateDbContextAsync();
+        var saved = await verify.AgentPool.SingleAsync(e => e.Name == "rolekeeper");
+        Assert.AreEqual("scout", saved.Role, "没传的 role 不得被清空");
+    }
+
+    [TestMethod]
+    public async Task Update_OverlongRole_Returns400()
+    {
+        await using var scope = await CreateDatabaseAsync();
+        var controller = new SubAgentPoolAdminController(scope.Factory, Mock.Of<ISubAgentPool>());
+
+        var result = await controller.Update(
+            "frontend-ui",
+            new UpdateSubAgentPoolEntryRequest { Role = new string('r', 65) },
+            CancellationToken.None);
+
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result);
+    }
+
+    [TestMethod]
     public async Task Update_SetsModelRoute_Returns204()
     {
         await using var scope = await CreateDatabaseAsync();

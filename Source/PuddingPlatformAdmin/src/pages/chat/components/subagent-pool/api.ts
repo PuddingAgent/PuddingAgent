@@ -77,17 +77,18 @@ export async function destroySubAgentPoolEntry(name: string): Promise<void> {
 }
 
 /**
- * 修改池条目的展示字段（备注 / 头像键 / 模型路由）。
+ * 修改池条目的展示字段（备注 / 头像键 / 角色 / 模型路由）。
  *
  * 只传要改的字段：没传的后端保持原值。要清空必须传空字符串——
  * 「不传」与「清空」是两件事，不要靠传 null 表达后者。
  *
  * `modelId` 必须写成 `providerId/modelId`（空串 = 清空 = 跟随派发方）。
  * 注意后端会把空串归一化成 NULL，所以「跟随」在库里只有一种表示。
+ * `role` 同理：空串 = 清空，库里存 NULL。role 只用于展示，不影响派发时的模型选择。
  */
 export async function updateSubAgentPoolEntry(
   name: string,
-  patch: { responsibility?: string; avatarKey?: string; modelId?: string },
+  patch: { responsibility?: string; avatarKey?: string; role?: string; modelId?: string },
 ): Promise<void> {
   await request(`${SUB_AGENT_POOL_ENDPOINT}/${encodeURIComponent(name)}`, {
     method: 'PATCH',
