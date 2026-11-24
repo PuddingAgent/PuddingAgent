@@ -235,3 +235,22 @@ Prefix cache 命中率：
 ```
 
 铁律（已编码进脚本）：agent `default.global_general-assistant.6a8` 挂 task `3bd2a4b0…`（InProgress）的 `active_task_owned` 投影为合法行，任何情况下不进入修复清单；`--apply` 永不触碰 status=4 的 attempt 行。
+
+---
+
+## 前端产物文案探针
+
+打包器会把非 ASCII 字符写成转义，而**三种形态同时存在于同一产物**：原字、四位反斜杠-u、花括号反斜杠-u。
+2026-11-25 实测：同一 chunk 内 `全部未计价` 是四位形、`次没有价格` 是花括号形。
+因此「只搜原字」或「只搜四位小写转义」都会得到 0 —— 那是搜索口径错，不是产物里没有。
+
+```bat
+rem 自检：证明三种形态都能命中（只支持单一口径的解码器会在这里取红）
+py -3 Tools\Diagnostics\probe_js_bundle_strings.py --selftest
+
+rem 核对部署产物里是否真的有这段文案（needles 用 UTF-8 文件传，避免 shell 编码问题）
+py -3 Tools\Diagnostics\probe_js_bundle_strings.py --root <产物 wwwroot\admin> --needles-file temp\needles.txt
+```
+
+判据：`VERDICT all_present=N` 才算进产物；`missing>=1` 时退出码为 1。
+**在自检通过之前，「搜不到」不得当作结论。**
