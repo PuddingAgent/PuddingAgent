@@ -139,3 +139,23 @@ export const describeSpend = (
 
   return { amount, detail, warning };
 };
+
+/**
+ * 列表用的**极简**花费：只给一个能一眼扫完的短串；无账本时返回 `null`（不渲染）。
+ *
+ * 与 `describeSpend` 的区别只在长度，不在结论：金额、未计价、无用量三者分开的口径完全复用后者，
+ * 不另写一套判定（两处各写一遍 ⇒ 同一条目左右两栏会给出不同金额，而两者都「看起来对」）。
+ *
+ * 有未计价调用时把金额写成 `$1.56+`：那笔钱确实**至少**这么多，多出来的部分没有价格。
+ * 已经是下界的不等式（`<$0.0001`）不再叠加 `+`，否则会拼出 `<$0.0001+` 这种自相矛盾的串。
+ */
+export const describeSpendBrief = (
+  spend: SubAgentSpend | null | undefined,
+): string | null => {
+  const summary = describeSpend(spend);
+  if (summary === null) return null;
+  if (summary.warning !== null && summary.amount.startsWith('$')) {
+    return `${summary.amount}+`;
+  }
+  return summary.amount;
+};

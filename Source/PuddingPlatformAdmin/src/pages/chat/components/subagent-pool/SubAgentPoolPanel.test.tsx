@@ -36,6 +36,12 @@ type PoolEntryFixture = {
   lastSuccess?: boolean | null;
   subSessionId: string;
   createdAt: string;
+  spend?: {
+    totalTokens: number;
+    pricedCostUsd: number;
+    pricedCalls: number;
+    unpricedCalls: number;
+  } | null;
 };
 
 interface PoolState {
@@ -306,6 +312,59 @@ describe('SubAgentPoolPanel', () => {
     const used = detailTextAfterClick('p-used');
     expect(used).toContain('2026-11-24 13:50');
     expect(used).not.toContain('从未使用');
+  });
+
+  it('列表条目直接显示花费，无账本时不渲染（不给 $0）', () => {
+    setPoolState({
+      data: [
+        entry({
+          poolId: 'p-priced',
+          name: '花过钱的',
+          spend: {
+            totalTokens: 17_128_349,
+            pricedCostUsd: 1.555588,
+            pricedCalls: 128,
+            unpricedCalls: 0,
+          },
+        }),
+        entry({
+          poolId: 'p-unpriced',
+          name: '价格没登记的',
+          spend: {
+            totalTokens: 49_000_000,
+            pricedCostUsd: 0,
+            pricedCalls: 0,
+            unpricedCalls: 5,
+          },
+        }),
+        entry({ poolId: 'p-noledger', name: '没跑过的', spend: null }),
+      ],
+      loading: false,
+      error: null,
+    });
+    render(<SubAgentPoolPanel />);
+
+    const spendOf = (poolId: string): HTMLElement[] =>
+      within(screen.getByTestId(`subagent-pool-item-${poolId}`)).queryAllByTestId(
+        'subagent-pool-item-spend',
+      );
+
+    // 有已计价：金额出现在列表本身，不必点开详情
+    expect(spendOf('p-priced')[0]?.textContent).toBe('$1.56');
+
+    // 全部未计价：说「全部未计价」而不是 $0——后者会把「价格没登记」说成「免费」
+    expect(spendOf('p-unpriced')[0]?.textContent).toBe('全部未计价');
+    expect(spendOf('p-unpriced')[0]?.textContent).not.toBe('$0');
+
+    // 无账本：整列不渲染（不是 $0，也不是—）
+    expect(spendOf('p-noledger')).toHaveLength(0);
+
+    // 正对照：无账本条目仍保留状态徽标，排除「整个右栏都没渲染」这种假肢解释
+    expect(
+      within(screen.getByTestId('subagent-pool-item-p-noledger')).getByTestId(
+        'subagent-status-idle',
+      ),
+    ).toBeTruthy();
   });
 
   it('搜索框按名称过滤，且不因过滤清空已选详情', () => {

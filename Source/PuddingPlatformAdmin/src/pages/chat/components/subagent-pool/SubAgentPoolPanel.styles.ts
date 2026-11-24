@@ -113,6 +113,28 @@ export const useSubAgentPoolStyles = createStyles(() => ({
     color: 'var(--pudding-chat-text-caption)',
     fontVariantNumeric: 'tabular-nums' as const,
   },
+  /**
+   * 右侧纵列：状态徽标在上、花费在下。
+   *
+   * 不把花费拼进 `itemMeta`：那一行已有「任务 N · 最近使用 时刻」，
+   * 在 320px 宽度下再拼一段就会折行 —— 而 `itemMeta` 没有 nowrap，
+   * 折行会把条目高度拉成两行，列表变得参差不齐。竖排不占横向空间。
+   */
+  itemRail: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'flex-end',
+    gap: 2,
+    flex: '0 0 auto',
+  },
+  /** 与徽标右对齐的金额列；tabular-nums 让多条金额能竖向对齐。 */
+  itemSpend: {
+    fontSize: 11,
+    lineHeight: '14px',
+    color: 'var(--pudding-chat-text-caption)',
+    fontVariantNumeric: 'tabular-nums' as const,
+    whiteSpace: 'nowrap' as const,
+  },
   avatar: {
     flex: '0 0 auto',
     display: 'inline-flex',

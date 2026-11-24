@@ -17,7 +17,7 @@ import {
 } from './api';
 import { useSubAgentPoolStyles } from './SubAgentPoolPanel.styles';
 import { describeSubAgentPoolActionError } from './errors';
-import { describeRunSummary, describeSpend } from './runs';
+import { describeRunSummary, describeSpend, describeSpendBrief } from './runs';
 import { useSubAgentPool } from './useSubAgentPool';
 import { useSubAgentRuns } from './useSubAgentRuns';
 
@@ -153,6 +153,42 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
     >
       <span className={styles.dot} aria-hidden="true" />
       {meta.label}
+    </span>
+  );
+};
+
+/**
+ * 列表右侧纵列：状态徽标在下挂一行花费。
+ *
+ * 为什么单独抽一个组件而不是在 `map` 里算：`visibleEntries.map` 保持简洁箭头体，
+ * 不必为一个右栏把 20 多行 JSX 改成块体（块体会迫使整段重缩进，
+ * 而大段落重缩进的 diff 没人能审）。
+ *
+ * 无账本（`spend` 为 null）时**只渲染徽标**，不渲染 `$0` ———
+ * 「没记过账」与「花了 $0」不是同一件事。
+ */
+const EntryRail: React.FC<{ entry: SubAgentPoolEntry }> = ({ entry }) => {
+  const { styles } = useSubAgentPoolStyles();
+  const brief = describeSpendBrief(entry.spend);
+
+  if (brief === null) return <StatusBadge status={entry.status} />;
+
+  const summary = describeSpend(entry.spend);
+  // 窄栏只放得下一个金额；完整口径（token 总量、调用次数、未计价告警）放悬停提示。
+  const title = [summary?.amount, summary?.detail, summary?.warning]
+    .filter((part): part is string => Boolean(part))
+    .join(' · ');
+
+  return (
+    <span className={styles.itemRail}>
+      <StatusBadge status={entry.status} />
+      <span
+        className={styles.itemSpend}
+        data-testid="subagent-pool-item-spend"
+        title={title}
+      >
+        {brief}
+      </span>
     </span>
   );
 };
@@ -686,7 +722,7 @@ export const SubAgentPoolPanel: React.FC = () => {
                         : '从未使用'}
                     </span>
                   </span>
-                  <StatusBadge status={entry.status} />
+                  <EntryRail entry={entry} />
                 </button>
               </li>
             ))

@@ -34,6 +34,14 @@ export interface SubAgentPoolEntry {
   lastSuccess?: boolean | null;
   subSessionId: string;
   createdAt: string;
+  /**
+   * 该条目的累计花费；`null` 表示从未产生账本记录。
+   *
+   * 由花名册一次性带回（后端按 `SubAgentId IN (...)` 归集），所以列表不必为每个
+   * 成员各发一次请求。与 `GET /{name}/runs` 的 `spend` 是**同一个聚合函数**的产物，
+   * 但两者是两次快照 —— 时间不同就可能差一笔，不要把它们的差异当成缺陷。
+   */
+  spend?: SubAgentSpend | null;
 }
 
 export const SUB_AGENT_POOL_ENDPOINT = '/api/admin/sub-agent-pool';

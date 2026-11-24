@@ -6,6 +6,7 @@ import {
   describeRunStatus,
   describeRunSummary,
   describeSpend,
+  describeSpendBrief,
   formatRunStartedAt,
   formatTokenCount,
   formatUsd,
@@ -168,5 +169,67 @@ describe('describeSpend', () => {
 
     expect(summary?.amount).toBe('$0.500');
     expect(summary?.warning).toBeNull();
+  });
+});
+
+describe('describeSpendBrief', () => {
+  it('无账本时返回 null（不渲染），不给 $0', () => {
+    expect(describeSpendBrief(null)).toBeNull();
+    expect(describeSpendBrief(undefined)).toBeNull();
+  });
+
+  it('全部已计价：原样给金额，不加 +', () => {
+    expect(
+      describeSpendBrief({
+        totalTokens: 17_128_349,
+        pricedCostUsd: 1.555588,
+        pricedCalls: 128,
+        unpricedCalls: 0,
+      }),
+    ).toBe('$1.56');
+  });
+
+  // 有未计价调用时金额只是**下界**：`pricedCostUsd` 不包含那些行。
+  // 不带 `+` 就是在断言「恰好花了这么多」，而那个断言是错的。
+  it('有未计价调用：金额加 + 表示下界', () => {
+    expect(
+      describeSpendBrief({
+        totalTokens: 17_128_349,
+        pricedCostUsd: 1.555588,
+        pricedCalls: 125,
+        unpricedCalls: 3,
+      }),
+    ).toBe('$1.56+');
+  });
+
+  it('已经是下界的不等式不再叠加 +', () => {
+    expect(
+      describeSpendBrief({
+        totalTokens: 900,
+        pricedCostUsd: 0.00001,
+        pricedCalls: 1,
+        unpricedCalls: 2,
+      }),
+    ).toBe('<$0.0001');
+  });
+
+  it('全部未计价 / 无用量：保留短语，不拼成金额', () => {
+    expect(
+      describeSpendBrief({
+        totalTokens: 49_000_000,
+        pricedCostUsd: 0,
+        pricedCalls: 0,
+        unpricedCalls: 5,
+      }),
+    ).toBe('全部未计价');
+
+    expect(
+      describeSpendBrief({
+        totalTokens: 0,
+        pricedCostUsd: 0,
+        pricedCalls: 0,
+        unpricedCalls: 0,
+      }),
+    ).toBe('无可计量用量');
   });
 });
