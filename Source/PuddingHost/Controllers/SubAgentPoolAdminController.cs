@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using PuddingCode.Abstractions;
 using PuddingPlatform.Data;
 
 namespace PuddingHost.Controllers;
@@ -12,8 +13,16 @@ namespace PuddingHost.Controllers;
 /// <para>
 /// 在此之前池条目只存在于 <c>agent_pool</c> 表，Web 侧没有任何端点能读到它，
 /// 于是界面只能显示空列表 —— 有数据和没这个功能，在用户眼里长得一样。
-/// 本控制器只补「读」这一段：创建 / 唤醒 / 销毁属于后续切片，
-/// 因此这里**一个写方法都没有**，也不接受任何请求体。
+/// 本控制器只补「管理端出口」这一段：
+/// <para>
+/// <b>读路径直接查库</b>（理由见下方：内存池有就绪门，读接口不该因未预热而报错）。
+/// </para>
+/// <para>
+/// <b>写路径必须经过池实例</b>：<c>SubAgentPool</c> 的内存缓存与 <c>agent_pool</c> 表是真源/缓存关系，
+/// 绕过池直接 UPDATE 库会让内存缓存永久偏差（直到下一次重启重建）。
+/// 代价是写接口会继承池的就绪门与「条目必须在本进程内存里」这一限制，
+/// 因此写失败时如实返回 503/409，不把「不知道」伪装成「成功」。
+/// </para>
 /// </para>
 /// <para>
 /// **鉴权与路由**照抄 <see cref="SubAgentDelegationAdminController"/>：
@@ -36,7 +45,9 @@ namespace PuddingHost.Controllers;
 [Authorize(
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme,
     Roles = "admin")]
-public sealed class SubAgentPoolAdminController(IDbContextFactory<PlatformDbContext> dbFactory)
+public sealed class SubAgentPoolAdminController(
+    IDbContextFactory<PlatformDbContext> dbFactory,
+    ISubAgentPool subAgentPool)
     : ControllerBase
 {
     /// <summary>
@@ -81,6 +92,62 @@ public sealed class SubAgentPoolAdminController(IDbContextFactory<PlatformDbCont
             .ConfigureAwait(false);
 
         return Ok(entries);
+    }
+
+    /// <summary>
+    /// 销毁池条目：库迁 <c>dead</c>（写 <c>deleted_at</c>）→ 删内存条目 → 若原本 busy 则级联取消执行循环。
+    /// 语义完全透传 <see cref="ISubAgentPool.DestroyAsync"/>，本端点不额外发明行为。
+    /// <para>
+    /// <b>为什么先 <see cref="ISubAgentPool.GetSnapshotAsync"/>：</b>未从库加载时，
+    /// <c>DestroyAsync</c> 会因内存里看不到该条目而返回 false —— 那是「还没读回来」，
+    /// 不是「条目不存在」。先等加载把这两种情况分开，才能给出可信的 404/409。
+    /// </para>
+    /// <para>
+    /// <b>一个必须如实说明的限制：</b>池是进程内缓存，本进程看不到别的进程创建的条目。
+    /// 因此列表里看得见的条目不一定删得掉；后者返回 409 而非 404，因为「存在但本进程无权动它」
+    /// 与「不存在」对调用方是两件不同的事。
+    /// </para>
+    /// </summary>
+    /// <param name="name">池内展示名（未软删时唯一）。</param>
+    /// <param name="ct">取消令牌。</param>
+    [HttpDelete("{name}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> Delete(string name, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return BadRequest(new { error = "name_required", detail = "池条目名不能为空。" });
+        }
+
+        try
+        {
+            await subAgentPool.GetSnapshotAsync(ct).ConfigureAwait(false);
+        }
+        catch (PoolNotReadyException ex)
+        {
+            // 恢复失败不等于没有条目：如实报「池未就绪」，让运维去看启动日志。
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new { error = "pool_not_ready", detail = ex.Message });
+        }
+
+        var destroyed = await subAgentPool.DestroyAsync(name, ct).ConfigureAwait(false);
+        if (destroyed)
+        {
+            return NoContent();
+        }
+
+        // DestroyAsync 的 false 有四种来源且不区分：条目不在本进程内存、库拒绝状态迁移、
+        // 条目已 dead、名字拼错。这里不编造细分，只把「可能的原因」交给调用方判断。
+        return Conflict(new
+        {
+            error = "destroy_rejected",
+            detail = "无法销毁：条目不在本进程池内、已处于 dead、或库拒绝了状态迁移。" +
+                     "若列表里看得见它，说明它由另一进程创建或本进程尚未加载。",
+        });
     }
 }
 
