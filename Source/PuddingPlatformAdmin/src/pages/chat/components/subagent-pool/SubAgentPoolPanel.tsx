@@ -82,6 +82,27 @@ export const describeLastSuccess = (
   return DASH;
 };
 
+/**
+ * 条目是否真的被派过活。
+ *
+ * 判据是任务数与执行态，**不是** `lastUsedAt` 是否有值：建条目时后端把
+ * `LastUsedAt` 初始化成 `CreatedAt`（`SubAgentPool.cs:85`），所以「时间非空」
+ * 对从未使用的条目也成立。只看时间会把创建时刻误读成使用记录。
+ */
+export const hasBeenUsed = (
+  entry: Pick<SubAgentPoolEntry, 'taskCount' | 'status'>,
+): boolean => (entry.taskCount ?? 0) > 0 || entry.status === 'busy';
+
+/**
+ * 「最近使用」的展示值。
+ *
+ * 从未使用时如实说「从未使用」，而不是把创建时间当成使用时间显示 ——
+ * 那种显示与同屏的「任务数 0 / 最近成功 从未执行」自相矛盾。
+ */
+export const describeLastUsed = (
+  entry: Pick<SubAgentPoolEntry, 'lastUsedAt' | 'taskCount' | 'status'>,
+): string => (hasBeenUsed(entry) ? formatTimestamp(entry.lastUsedAt) : '从未使用');
+
 /** 匹配 name / role（大小写不敏感，忽略首尾空白）。 */
 export const filterSubAgentEntries = (
   entries: SubAgentPoolEntry[],
@@ -358,7 +379,7 @@ const EntryDetail: React.FC<{
       <DetailRow label="模型" value={textOrDash(entry.modelId)} />
       <DetailRow label="模板" value={textOrDash(entry.templateId)} />
       <DetailRow label="任务数" value={String(entry.taskCount ?? 0)} />
-      <DetailRow label="最近使用" value={formatTimestamp(entry.lastUsedAt)} />
+      <DetailRow label="最近使用" value={describeLastUsed(entry)} />
       <DetailRow label="最近成功" value={describeLastSuccess(entry)} />
       <DetailRow label="创建时间" value={formatTimestamp(entry.createdAt)} />
 
@@ -484,8 +505,10 @@ export const SubAgentPoolPanel: React.FC = () => {
                       {textOrDash(entry.role)}
                     </span>
                     <span className={styles.itemMeta}>
-                      任务 {entry.taskCount ?? 0} · 最近使用{' '}
-                      {formatTimestamp(entry.lastUsedAt)}
+                      任务 {entry.taskCount ?? 0} ·{' '}
+                      {hasBeenUsed(entry)
+                        ? `最近使用 ${formatTimestamp(entry.lastUsedAt)}`
+                        : '从未使用'}
                     </span>
                   </span>
                   <StatusBadge status={entry.status} />

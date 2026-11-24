@@ -206,6 +206,54 @@ describe('SubAgentPoolPanel', () => {
     expect(detailTextAfterClick('p-fail')).toContain('上次失败');
   });
 
+  it('任务数为 0 时「最近使用」显示从未使用，不把创建时间当成使用时间', () => {
+    setPoolState({
+      data: [
+        entry({
+          poolId: 'p-unused',
+          name: '从未使用者',
+          taskCount: 0,
+          status: 'idle',
+          // 后端建条目时把 LastUsedAt 初始化成 CreatedAt，两者时间完全一样
+          lastUsedAt: '2026-11-24T18:15:00+08:00',
+          createdAt: '2026-11-24T18:15:00+08:00',
+        }),
+        entry({
+          poolId: 'p-used',
+          name: '用过者',
+          taskCount: 2,
+          lastUsedAt: '2026-11-24T13:50:00+08:00',
+          createdAt: '2026-11-10T08:00:00+08:00',
+        }),
+      ],
+      loading: false,
+      error: null,
+    });
+    render(<SubAgentPoolPanel />);
+
+    // 左栏摘要：0 任务不能出现「最近使用 时间」这种与任务数自相矛盾的措辞
+    const summaryUnused =
+      screen.getByTestId('subagent-pool-item-p-unused').textContent ?? '';
+    expect(summaryUnused).toContain('从未使用');
+    expect(summaryUnused).not.toContain('最近使用');
+
+    const detailTextAfterClick = (poolId: string): string => {
+      fireEvent.click(screen.getByTestId(`subagent-pool-item-${poolId}`));
+      return screen.getByTestId('subagent-pool-detail').textContent ?? '';
+    };
+
+    // 详情：最近使用一行说「从未使用」，而创建时间仍照实显示同一个时刻 ——
+    // 因此该时间字串只应出现一次（证明不是把所有时间都藏了）。
+    const unused = detailTextAfterClick('p-unused');
+    expect(unused).toContain('从未使用');
+    expect(unused.split('2026-11-24 18:15').length - 1).toBe(1);
+
+    // 正对照：真用过的条目仍显示时刻
+    const used = detailTextAfterClick('p-used');
+    expect(used).toContain('2026-11-24 13:50');
+    expect(used).not.toContain('从未使用');
+  });
+
   it('搜索框按名称过滤，且不因过滤清空已选详情', () => {
     setPoolState({
       data: [
