@@ -68,7 +68,7 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
             sb.AppendLine($"{icon} `{shortId}` [{sa.Status}]");
             sb.AppendLine($"   模板: {sa.TemplateId ?? "默认"} | 模型: {sa.ModelId ?? "默认"}");
             sb.AppendLine($"   任务: {sa.TaskSummary}");
-            sb.AppendLine($"   创建: {sa.SpawnedAt:HH:mm:ss} | 完成: {sa.CompletedAt?.ToString("HH:mm:ss") ?? "-"}");
+            sb.AppendLine($"   创建: {ToolTimeRendering.RenderMinute(sa.SpawnedAt)} | 完成: {ToolTimeRendering.RenderMinute(sa.CompletedAt)}");
             if (sa.TokenSummary is { } ts)
             {
                 var cacheEligible = ts.CacheHitTokens + ts.CacheMissTokens;
@@ -113,8 +113,8 @@ public sealed class QuerySubAgentsTool : PuddingToolBase<QuerySubAgentsArgs>
         sb.AppendLine($"   模板: {status.TemplateId ?? "默认"}");
         sb.AppendLine($"   模型: {status.ModelId ?? "默认"}");
         sb.AppendLine($"   任务: {status.TaskSummary}");
-        sb.AppendLine($"   创建: {status.SpawnedAt:yyyy-MM-dd HH:mm:ss}");
-        sb.AppendLine($"   完成: {status.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-"}");
+        sb.AppendLine($"   创建: {ToolTimeRendering.RenderSecond(status.SpawnedAt)}");
+        sb.AppendLine($"   完成: {ToolTimeRendering.RenderSecond(status.CompletedAt)}");
         if (status.ResultSummary is not null) sb.AppendLine($"   结果: {SubAgentResultPreview.Condense(status.ResultSummary)}");
         if (status.TokenSummary is { } ts)
         {

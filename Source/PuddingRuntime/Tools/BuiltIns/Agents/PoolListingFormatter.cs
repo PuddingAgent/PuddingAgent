@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using PuddingCode.Abstractions;
 
@@ -39,9 +38,9 @@ internal static class PoolListingFormatter
     /// </para>
     /// </remarks>
     internal static string RenderLastUsed(DateTimeOffset lastUsedAt, Func<DateTimeOffset, DateTimeOffset> toLocal)
-        => lastUsedAt == default
-            ? "-"
-            : toLocal(lastUsedAt).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+        // 格式与「默认转本地」「InvariantCulture」三条不变量都在 ToolTimeRendering 里，
+        // 这里只指定精度 —— 两处各写一遍格式串，同一个时刻迟早会渲染出两种字样。
+        => ToolTimeRendering.RenderMinute(lastUsedAt, toLocal);
 
     /// <summary>
     /// 渲染池状态表。<paramref name="agents"/> 为空时由调用方先说清「本会话没有成员」。
