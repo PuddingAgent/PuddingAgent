@@ -114,6 +114,12 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             if (string.IsNullOrWhiteSpace(targetSubAgentId))
                 return Fail("取消子代理需要 sub_agent_id。先用 query_sub_agents 查看运行中的子代理及其 id。");
 
+            // 归属前置：cancel 按 sub_agent_id 定位，走不到池的 ownerScope。不校验就会出现
+            // 「池操作只能动自己的条目，运行操作却能取消别人的」—— 同一件事两个入口两种结论。
+            var cancelOwnershipError = await CheckRunOwnershipAsync(canceller, targetSubAgentId!, context, ct);
+            if (cancelOwnershipError is not null)
+                return Fail(cancelOwnershipError);
+
             var cancelReason = string.IsNullOrWhiteSpace(args.CancelReason)
                 ? "Cancelled by parent agent"
                 : args.CancelReason!.Trim();
@@ -133,6 +139,16 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             var logTarget = args.SubAgentId?.Trim();
             if (string.IsNullOrWhiteSpace(logTarget))
                 return Fail("查看子代理日志需要 sub_agent_id。先用 query_sub_agents 列出子代理及其 id。");
+
+            // 归属前置（best-effort）：logs 只读磁盘归档，不依赖 ISubAgentManager。
+            // 服务在就做正面归属校验；不在就保持原行为 —— 不为一个诊断入口引入硬依赖。
+            var logsOwnershipManager = _services.GetService<ISubAgentManager>();
+            if (logsOwnershipManager is not null)
+            {
+                var logsOwnershipError = await CheckRunOwnershipAsync(logsOwnershipManager, logTarget, context, ct);
+                if (logsOwnershipError is not null)
+                    return Fail(logsOwnershipError);
+            }
 
             var dataPaths = _services.GetService<PuddingDataPaths>();
             if (dataPaths is null)
@@ -177,6 +193,12 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             var steerManager = _services.GetService<ISubAgentManager>();
             if (steerManager is null)
                 return Fail("? ISubAgentManager 服务未注册。");
+
+            // 归属前置：与 cancel / logs 同一判据。steer 会把正文注入到另一个执行里，
+            // 走错主体比读错更难察觉——写进去的字会直接被当成父代理的指令。
+            var steerOwnershipError = await CheckRunOwnershipAsync(steerManager, steerTarget, context, ct);
+            if (steerOwnershipError is not null)
+                return Fail(steerOwnershipError);
 
             var steered = await steerManager.SteerAsync(
                 steerTarget, steerText!.Trim(), context.AgentInstanceId, ct);
@@ -244,8 +266,13 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                             return Fail("? ISubAgentManager 服务未注册。");
 
                         // 定位键：名字能改、条目销毁后连查都查不到，稳定键只能是 SubSessionId。
-                        // 先问池；条目已销毁时退回调用方给的 sub_agent_id——否则「清理失败」不可重试。
-                        var poolAgent = await managementPool.GetAsync(args.PoolName, ct);
+                        // 归属必须先于解析：GetAsync 是全局入口，用它会把**别的会话**的同名条目
+                        // 先解析出来（后面才由 CleanupAsync 的父会话过滤兜住），于是「清理失败」的
+                        // 原因被写成「归档仍在」而不是「这不是你的条目」。
+                        // 先问池（限定在本会话范围内）；条目已销毁时退回调用方给的 sub_agent_id——
+                        // 否则「清理失败」不可重试。
+                        var poolAgent = managementPool.ListOwnedBy(ownerScope)
+                            .FirstOrDefault(a => string.Equals(a.Name, args.PoolName, StringComparison.Ordinal));
                         var targetSubSessionId = poolAgent?.SubSessionId;
                         if (string.IsNullOrWhiteSpace(targetSubSessionId))
                             targetSubSessionId = string.IsNullOrWhiteSpace(args.SubAgentId)
@@ -1853,6 +1880,52 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         return $"? 子代理池已满：{capacityText}，无法再创建或自动预留 '{entryName}'。\n" +
                "提示：先用 pool_name=\"<不用的条目>\" pool_action=\"destroy\" 销毁不用的条目再重试，" +
                "或降低并发派发的数量。";
+    }
+
+    /// <summary>
+    /// 运行级动作（cancel / logs / steer）的归属前置校验。返回 <c>null</c> 表示放行，否则返回可直接展示的拒绕文案。
+    /// <para>
+    /// <b>为什么需要它：</b>池操作已按 <see cref="PoolOwnerScope"/> 收紧（list / sleep / destroy），
+    /// 但运行级动作靠 <c>sub_agent_id</c> 定位，根本不经过池—— 于是一个会话能取消、读取、注入
+    /// 另一个会话的子代理。同一件事两个入口给出相反结论，而子代理 id 本身就是
+    /// <c>&lt;父会话&gt;-sub-&lt;hash&gt;</c>，拿得到就能用。
+    /// </para>
+    /// <para>
+    /// <b>判据用正面证据：</b>只有查得到状态、且父会话确实不是本会话时才拒绝。
+    /// 查不到状态时保持原行为——把「不知道」当成「不是你的」，会让残留投影行与刚结束的运行
+    /// 一起变成不可取消，而取消是停损手段，宁可放行让它走原有分支给出它自己的答案。
+    /// </para>
+    /// </summary>
+    private async Task<string?> CheckRunOwnershipAsync(
+        ISubAgentManager manager,
+        string subSessionId,
+        ToolExecutionContext context,
+        CancellationToken ct)
+    {
+        var sessionId = context.SessionId;
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return null;
+
+        SubAgentStatus? status;
+        try
+        {
+            status = await manager.GetStatusAsync(subSessionId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 查询失败不等于「不是你的」：错误归因不得到此为止。
+            _logger.LogDebug(ex, "[SubAgent] 运行归属校验查询失败 sub={Sub}", subSessionId);
+            return null;
+        }
+
+        if (status is null || string.IsNullOrWhiteSpace(status.ParentSessionId))
+            return null;
+
+        if (string.Equals(status.ParentSessionId, sessionId, StringComparison.Ordinal))
+            return null;
+
+        return $"? 子代理 {subSessionId} 不属于当前会话（它的父会话是另一个），已拒绝。" +
+               "\n提示：只能取消 / 查看 / 注入本会话的子代理；跨会话操作走管理面。";
     }
 
     /// <summary>

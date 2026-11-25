@@ -591,14 +591,117 @@ public sealed class SubAgentToolPoolFailureTests
             "all 是内部默认值，渲染成「状态=all」会让人以为只清状态名为 all 的条目");
     }
 
+    // ═══════════════════════════════════════════════════════
+    // 运行级动作（cancel / logs / steer）的归属前置
+    // ═══════════════════════════════════════════════════════
+
+    [TestMethod]
+    public async Task Cancel_ForeignRun_IsRejectedBeforeCancel()
+    {
+        var manager = new Mock<ISubAgentManager>(MockBehavior.Strict);
+        manager.Setup(m => m.GetStatusAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(StatusOwnedBy("sess-other"));
+        // CancelAsync 刻意不 Setup：Strict 下被调用即抛，等于断言「一次都没调」。
+
+        var result = await ExecuteCleanupAsync(
+            new Mock<ISubAgentPool>(MockBehavior.Strict).Object, manager.Object, runArchiveStore: null,
+            """{"pool_action":"cancel","sub_agent_id":"sess-other-sub-abcd1234"}""");
+
+        Assert.IsFalse(result.Success, "跨会话取消必须被拒；否则池操作只能动自己的条目、运行操作却能动别人的");
+        StringAssert.Contains(result.Error ?? string.Empty, "不属于当前会话");
+    }
+
+    [TestMethod]
+    public async Task Cancel_OwnRun_Proceeds()
+    {
+        var manager = new Mock<ISubAgentManager>(MockBehavior.Strict);
+        manager.Setup(m => m.GetStatusAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(StatusOwnedBy("sess-parent"));
+        manager.Setup(m => m.CancelAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var result = await ExecuteCleanupAsync(
+            new Mock<ISubAgentPool>(MockBehavior.Strict).Object, manager.Object, runArchiveStore: null,
+            """{"pool_action":"cancel","sub_agent_id":"sess-parent-sub-abcd1234"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+    }
+
+    [TestMethod]
+    public async Task Logs_ForeignRun_IsRejectedBeforeReadingArchive()
+    {
+        var manager = new Mock<ISubAgentManager>(MockBehavior.Strict);
+        manager.Setup(m => m.GetStatusAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(StatusOwnedBy("sess-other"));
+
+        // 本例刻意不注册 PuddingDataPaths：若归属校验被移除，这条会落到「服务未注册」，
+        // 所以断言归属文案同时证明了「校验在读归档之前」。
+        var result = await ExecuteCleanupAsync(
+            new Mock<ISubAgentPool>(MockBehavior.Strict).Object, manager.Object, runArchiveStore: null,
+            """{"pool_action":"logs","sub_agent_id":"sess-other-sub-abcd1234"}""");
+
+        Assert.IsFalse(result.Success, "跨会话读取运行归档必须被拒。");
+        StringAssert.Contains(result.Error ?? string.Empty, "不属于当前会话");
+    }
+
+    [TestMethod]
+    public async Task Steer_ForeignRun_IsRejectedBeforeSteer()
+    {
+        var manager = new Mock<ISubAgentManager>(MockBehavior.Strict);
+        manager.Setup(m => m.GetStatusAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(StatusOwnedBy("sess-other"));
+        // SteerAsync 不 Setup：写进别人的执行比读错更难察觉，必须一次都不调。
+
+        var result = await ExecuteCleanupAsync(
+            new Mock<ISubAgentPool>(MockBehavior.Strict).Object, manager.Object, runArchiveStore: null,
+            """{"pool_action":"steer","sub_agent_id":"sess-other-sub-abcd1234","steer_message":"hi"}""");
+
+        Assert.IsFalse(result.Success, "跨会话注入必须被拒。");
+        StringAssert.Contains(result.Error ?? string.Empty, "不属于当前会话");
+    }
+
+    [TestMethod]
+    public async Task Cleanup_ForeignEntryName_IsTreatedAsMissing()
+    {
+        // 会话内可见列表为空：别的会话的同名条目不在其中。
+        // 旧实现用全局 GetAsync 会把它解析出来，再看 CleanupAsync 清 0 条，
+        // 最后报「归档仍在」——把「不是你的条目」写成「清理失败」。
+        var pool = new Mock<ISubAgentPool>(MockBehavior.Strict);
+        pool.Setup(p => p.ListOwnedBy(It.IsAny<PoolOwnerScope>()))
+            .Returns((PoolOwnerScope _) => (IReadOnlyList<PooledSubAgent>)Array.Empty<PooledSubAgent>());
+        var manager = new Mock<ISubAgentManager>(MockBehavior.Strict);
+
+        var result = await ExecuteCleanupAsync(pool.Object, manager.Object, runArchiveStore: null,
+            """{"pool_name":"p1","pool_action":"cleanup"}""");
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error ?? string.Empty, "未命中");
+        Assert.IsFalse((result.Error ?? string.Empty).Contains("归档"),
+            "不得把「不是你的条目」报成归档层失败：那会让人去查磁盘而不是查归属");
+    }
+
+    private static SubAgentStatus StatusOwnedBy(string parentSessionId) => new()
+    {
+        RunId = "run-owner-probe",
+        ParentSessionId = parentSessionId,
+        SubSessionId = "sub-owner-probe",
+        Status = "running",
+        TaskSummary = "probe",
+        SpawnedAt = DateTimeOffset.UnixEpoch,
+    };
+
     private static ISubAgentPool NewCleanupPool(
         List<string> calls,
         PooledSubAgent? entry,
         bool destroyResult = true)
     {
         var pool = new Mock<ISubAgentPool>(MockBehavior.Strict);
-        pool.Setup(p => p.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(entry);
+        // 目标解析走会话内列表而不是全局 GetAsync：全局入口会把**别的会话**的同名条目
+        // 先解析出来，于是「清理失败」被写成「归档仍在」而不是「这不是你的条目」。
+        pool.Setup(p => p.ListOwnedBy(It.IsAny<PoolOwnerScope>()))
+            .Returns((PoolOwnerScope _) => entry is null
+                ? (IReadOnlyList<PooledSubAgent>)Array.Empty<PooledSubAgent>()
+                : new[] { entry });
         pool.Setup(p => p.DestroyAsync(It.IsAny<string>(), It.IsAny<PoolOwnerScope>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Func<bool>(() =>
             {
