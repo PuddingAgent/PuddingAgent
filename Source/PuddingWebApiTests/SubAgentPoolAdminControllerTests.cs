@@ -54,6 +54,36 @@ public sealed class SubAgentPoolAdminControllerTests
         Assert.AreEqual(0, payload!.Count, "空池必须返回空数组");
     }
 
+    /// <summary>
+    /// 容量端点返回池上限，且<b>不碰就绪门</b>。
+    /// <para>
+    /// 第二条断言才是这条用例的价值所在：如果实现改成先 <c>GetSnapshotAsync</c> 再读容量，
+    /// 那么 Core 刚启动、池未 Ready 时界面就看不到容量 —— 而「看不到上限」正是本端点要解决的问题。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public void GetCapacity_ReturnsPoolMaxCapacity_WithoutTouchingReadinessGate()
+    {
+        var pool = new Mock<ISubAgentPool>();
+        pool.SetupGet(p => p.MaxCapacity).Returns(23);
+        var controller = new SubAgentPoolAdminController(
+            Mock.Of<IDbContextFactory<PlatformDbContext>>(),
+            pool.Object);
+
+        var result = controller.GetCapacity();
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok, "容量端点必须返回 200");
+        var dto = ok!.Value as SubAgentPoolCapacityDto;
+        Assert.IsNotNull(dto, "响应体必须是容量 DTO");
+        Assert.AreEqual(23, dto!.Capacity, "容量必须原样透出池实现上报的上限");
+
+        pool.Verify(
+            p => p.GetSnapshotAsync(It.IsAny<CancellationToken>()),
+            Times.Never,
+            "容量端点不得读快照：未就绪时它也要能回答，否则解决不了「看不到上限」这个问题");
+    }
+
     [TestMethod]
     public async Task Get_ReturnsEntries_MapsEveryField_ExcludesDeleted_AndOrdersByLastUsedDesc()
     {

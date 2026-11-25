@@ -49,6 +49,8 @@ interface PoolState {
   data?: PoolEntryFixture[] | null;
   loading?: boolean;
   error?: string | null;
+  /** 池容量上限；默认 null = 未取到，与后端未响应时的返回值一致。 */
+  capacity?: number | null;
   reload?: () => void;
 }
 
@@ -79,6 +81,9 @@ const setPoolState = (state: PoolState): void => {
     data: null,
     loading: false,
     error: null,
+    // 显式给 null 而不是留空：留空会得到 undefined，而 undefined 与 null 在
+    // `!== null` 类判据下表现不同 —— 默认值必须和生产 hook 的真实返回一致。
+    capacity: null,
     reload: jest.fn(),
     ...state,
   });
@@ -160,6 +165,63 @@ describe('SubAgentPoolPanel', () => {
     expect(screen.queryByTestId('subagent-pool-error')).toBeNull();
     expect(screen.queryByTestId('subagent-pool-loading')).toBeNull();
     expect(screen.queryByTestId('subagent-pool-list')).toBeNull();
+  });
+
+  it('容量已知时在计数旁显示上限', () => {
+    setPoolState({ data: [entry()], loading: false, error: null, capacity: 15 });
+    render(<SubAgentPoolPanel />);
+
+    expect(screen.getByTestId('subagent-pool-capacity').textContent).toContain(
+      '上限 15',
+    );
+    // 未满时不应出现满额提示。
+    expect(screen.queryByTestId('subagent-pool-full-warning')).toBeNull();
+  });
+
+  // 这条守卫的是「宁可不写也不要编」：拿不到上限时该栏直接不渲染，
+  // 而不是留下一个「上限 undefined」。
+  it('容量未知时不渲染上限，也不出现 undefined 字样', () => {
+    setPoolState({ data: [entry()], loading: false, error: null, capacity: null });
+    render(<SubAgentPoolPanel />);
+
+    expect(screen.queryByTestId('subagent-pool-capacity')).toBeNull();
+    expect(screen.getByTestId('subagent-pool-count').textContent).not.toContain(
+      'undefined',
+    );
+  });
+
+  it('列表条数达到上限时给出满额提示', () => {
+    const many = Array.from({ length: 15 }, (_, index) =>
+      entry({ poolId: `pool-${index}`, name: `成员${index}` }),
+    );
+    setPoolState({ data: many, loading: false, error: null, capacity: 15 });
+    render(<SubAgentPoolPanel />);
+
+    const warning = screen.getByTestId('subagent-pool-full-warning').textContent;
+    expect(warning).toContain('15');
+    // 措辞必须是「可能失败」：真实判据是内存池条数，而列表读的是库，
+    // 两者在池未加载完时不等，断不能在这里写成「已满」。
+    expect(warning).toContain('可能失败');
+  });
+
+  // 这条守卫的是 `typeof === 'number'` 而不是 `!== null`：
+  // hook 如果漏返回 capacity（字段缺失、值为 undefined），`!== null` 仍然为 true，
+  // 界面会直接写出「上限 undefined」。setPoolState 默认给 null 造不出这个场景，
+  // 所以这里绕过它直接 mockReturnValue。
+  it('容量字段缺失（undefined）时同样不渲染上限', () => {
+    mockedUseSubAgentPool.mockReturnValue({
+      data: [entry()],
+      loading: false,
+      error: null,
+      // 刻意不给 capacity
+      reload: jest.fn(),
+    });
+    render(<SubAgentPoolPanel />);
+
+    expect(screen.queryByTestId('subagent-pool-capacity')).toBeNull();
+    expect(screen.getByTestId('subagent-pool-count').textContent).not.toContain(
+      'undefined',
+    );
   });
 
   it('返回两条时左栏两条，点击后右栏出现该条 name 与 responsibility', () => {

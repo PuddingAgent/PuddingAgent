@@ -55,6 +55,40 @@ export interface SubAgentPoolEntry {
 export const SUB_AGENT_POOL_ENDPOINT = '/api/admin/sub-agent-pool';
 
 /**
+ * 池容量上限。
+ *
+ * 后端只在达到上限时才报错（「Sub-agent pool is full」），所以这个数字
+ * 在撞墙之前完全不可见 —— 它来自配置 `SubAgentPool:MaxCapacity`，
+ * 平时只出现在启动日志里。
+ *
+ * **只有上限，没有已用数**：真实判据是内存池条目数，而列表读的是库，
+ * 池未加载完时两者不等。已用数就是列表长度，不需要第二个真源。
+ */
+export interface SubAgentPoolCapacity {
+  capacity: number;
+}
+
+/**
+ * 拉取池容量上限。
+ *
+ * 与 {@link fetchSubAgentPool} 分开取：容量拿不到时**不得**让列表降级。
+ * 一个纯展示用的数字没有资格把整个面板变成错误态。
+ */
+export async function fetchSubAgentPoolCapacity(): Promise<number> {
+  const result = await request<SubAgentPoolCapacity>(
+    `${SUB_AGENT_POOL_ENDPOINT}/capacity`,
+    { method: 'GET' },
+  );
+
+  const capacity = (result as SubAgentPoolCapacity | undefined)?.capacity;
+  if (typeof capacity !== 'number' || !Number.isFinite(capacity)) {
+    throw new Error('池容量响应格式不正确（期望 { capacity: number }）');
+  }
+
+  return capacity;
+}
+
+/**
  * 拉取子代理池。
  *
  * 空数组是正常结果；**非数组响应视为格式错误并抛出**——静默兜底成 [] 会把

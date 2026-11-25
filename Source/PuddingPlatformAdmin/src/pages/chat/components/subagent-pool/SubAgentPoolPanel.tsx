@@ -347,6 +347,10 @@ const EntryActions: React.FC<{
             run('sleep', () => sleepSubAgentPoolEntry(entry.name), '已休眠')
           }
           data-testid="subagent-action-sleep"
+          title={
+            '休眠只把状态改为 sleeping：条目仍在池中、仍占用容量，也仍可被派活。' +
+            '要腾出容量请用销毁。'
+          }
         >
           休眠
         </Button>
@@ -632,7 +636,7 @@ const EntryDetail: React.FC<{
 
 export const SubAgentPoolPanel: React.FC = () => {
   const { styles, cx } = useSubAgentPoolStyles();
-  const { data, loading, error, reload } = useSubAgentPool();
+  const { data, loading, error, capacity, reload } = useSubAgentPool();
   const [keyword, setKeyword] = useState('');
   const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null);
 
@@ -707,11 +711,32 @@ export const SubAgentPoolPanel: React.FC = () => {
         />
         <span className={styles.count} data-testid="subagent-pool-count">
           共 {entries.length} 个
+          {/*
+            容量上限平时不可见：只在建到第 N+1 个时才报错的数字，等于一块没标记的墙。
+            拿不到就不显示 —— 宁可不写，不要编一个数字。
+
+            判据用 typeof === 'number' 而不是 !== null：字段缺失（undefined）也能通过
+            !== null，界面会直接写出「上限 undefined」，那正是一种谎报。
+          */}
+          {typeof capacity === 'number' ? (
+            <span data-testid="subagent-pool-capacity"> / 上限 {capacity}</span>
+          ) : null}
           {visibleEntries.length !== entries.length
             ? `（匹配 ${visibleEntries.length} 个）`
             : ''}
         </span>
       </div>
+
+      {/*
+        满额提示用「列表条数 >= 上限」判定：真实判据是内存池条数，而列表读的是库，
+        两者在池未加载完时不等。所以措辞取「可能」而不是断言「已满」—— 少了这一句，
+        用户只会在新建失败后才知道有上限。
+      */}
+      {typeof capacity === 'number' && entries.length >= capacity ? (
+        <div className={styles.stateText} data-testid="subagent-pool-full-warning">
+          列表已有 {entries.length} 个，达到上限 {capacity}；新建成员可能失败。
+        </div>
+      ) : null}
 
       <div className={styles.body}>
         <ul

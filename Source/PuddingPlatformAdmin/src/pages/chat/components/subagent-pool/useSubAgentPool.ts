@@ -5,7 +5,7 @@
 //   loading=false && error=null   → 请求成功：data=[] 即空池，data=[...] 即有数据
 // 「空池」是成功态的一种，不是错误，也不是加载中。
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchSubAgentPool, type SubAgentPoolEntry } from './api';
+import { fetchSubAgentPool, fetchSubAgentPoolCapacity, type SubAgentPoolEntry } from './api';
 import { describeSubAgentPoolError } from './errors';
 
 export interface UseSubAgentPoolResult {
@@ -14,6 +14,14 @@ export interface UseSubAgentPoolResult {
   loading: boolean;
   /** 失败文案；成功时为 null。 */
   error: string | null;
+  /**
+   * 池容量上限；未拿到时为 null。
+   *
+   * **刻意不归入三态**：容量是纯展示用的辅助信息，它的请求失败只让这一栏
+   * 不显示，**不得**把 `error` 置位或让 `data` 变 null。一个数字没有资格
+   * 把一个能正常显示的列表降级成错误页。
+   */
+  capacity: number | null;
   reload: () => void;
 }
 
@@ -21,6 +29,7 @@ export function useSubAgentPool(): UseSubAgentPoolResult {
   const [data, setData] = useState<SubAgentPoolEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [capacity, setCapacity] = useState<number | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   // 只认最后一次请求的结果：重试期间旧的慢响应不得覆盖新状态。
@@ -34,6 +43,20 @@ export function useSubAgentPool(): UseSubAgentPoolResult {
     setLoading(true);
     setError(null);
     setData(null);
+
+    // 容量与列表并行取，但生命周期完全独立：
+    // 列表失败才是失败；容量失败只是「这一栏没数字」。
+    fetchSubAgentPoolCapacity()
+      .then((value) => {
+        if (!alive || requestSeq.current !== seq) return;
+        setCapacity(value);
+      })
+      .catch(() => {
+        // 不设 error：容量拿不到不该把已成功取到的列表变成错误态。
+        // 置 null 而不是保留上一次的值：配置可能已被改小，旧数字会变成谎报。
+        if (!alive || requestSeq.current !== seq) return;
+        setCapacity(null);
+      });
 
     fetchSubAgentPool()
       .then((entries) => {
@@ -57,5 +80,5 @@ export function useSubAgentPool(): UseSubAgentPoolResult {
     setReloadToken((token) => token + 1);
   }, []);
 
-  return { data, loading, error, reload };
+  return { data, loading, error, capacity, reload };
 }

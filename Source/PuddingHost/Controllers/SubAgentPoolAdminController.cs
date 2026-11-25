@@ -132,6 +132,35 @@ public sealed class SubAgentPoolAdminController(
     }
 
     /// <summary>
+    /// 池容量上限（只读）。
+    /// <para>
+    /// <b>为什么要有一个端点：</b>上限来自配置 <c>SubAgentPool:MaxCapacity</c>（缺省 15），
+    /// 平时只出现在启动日志里。达到上限时 <c>CreateAsync</c> 抛
+    /// 「Sub-agent pool is full」—— 界面此前看不到这个数字，用户会在建第 16 个成员时
+    /// 突然撞墙，且不知道墙在哪。
+    /// </para>
+    /// <para>
+    /// <b>只返回上限，不返回已用数：</b>「会不会满」的真实判据是内存池的条目数，
+    /// 而列表读的是库。池尚未加载完时两者不同，用库计数当分子会比不显示更误导。
+    /// 已用数就是列表本身的条数，由界面自己数。
+    /// </para>
+    /// <para>
+    /// <b>休眠不释放容量：</b>只有销毁（写 <c>deleted_at</c>）才让条目退出计数。
+    /// 这条差异由界面在休眠按钮处说明，端点不重复表达。
+    /// </para>
+    /// <para>
+    /// <b>已知保留字：</b>路由段 <c>capacity</c> 是字面量，优先于详情端点的
+    /// <c>{name}</c>。因此名为 <c>capacity</c> 的池条目无法用
+    /// <c>GET /api/admin/sub-agent-pool/capacity</c> 取详情 —— 它会被这里接走。
+    /// </para>
+    /// </summary>
+    /// <returns>容量上限。</returns>
+    [HttpGet("capacity")]
+    [ProducesResponseType<SubAgentPoolCapacityDto>(StatusCodes.Status200OK)]
+    public ActionResult<SubAgentPoolCapacityDto> GetCapacity() =>
+        Ok(new SubAgentPoolCapacityDto { Capacity = subAgentPool.MaxCapacity });
+
+    /// <summary>
     /// 把一批账本行汇总成界面契约。
     /// <para>
     /// <b>两处调用方（列表与运行历史）必须共用这一个实现：</b>各写一份同义公式，
@@ -759,4 +788,18 @@ public sealed class SubAgentRunDto
 
     /// <summary>失败原因；成功为 null。</summary>
     public string? ErrorMessage { get; init; }
+}
+
+/// <summary>
+/// 池容量上限的 HTTP 契约。
+/// <para>
+/// 只有一个字段是刻意的：多一个「已用数」就需要选口径（库计数 vs 内存计数），
+/// 而两者在池未加载完时并不相等。界面上「已用」直接就是列表长度，
+/// 没有第二个真源，也就不存在两个数字对不上的问题。
+/// </para>
+/// </summary>
+public sealed class SubAgentPoolCapacityDto
+{
+    /// <summary>池内条目数上限；达到后新建会失败。</summary>
+    public int Capacity { get; init; }
 }
