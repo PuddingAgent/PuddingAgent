@@ -820,6 +820,35 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         return success ? "completed" : "failed";
     }
 
+    public async Task<int> RemoveSubAgentProjectionsAsync(
+        string parentSessionId,
+        IReadOnlyCollection<string> subSessionIds,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(parentSessionId))
+            throw new ArgumentException("parentSessionId cannot be null or empty.", nameof(parentSessionId));
+        if (subSessionIds is null || subSessionIds.Count == 0)
+            return 0;
+
+        // 去重 + 剔空后再拼 IN：调用方可能把同一子会话传两次（一次来自选中集、
+        // 一次来自回退定位），重复值会让 SQL 变长且毫无意义。
+        var ids = subSessionIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (ids.Count == 0)
+            return 0;
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
+        // 父会话必须一起过滤：投影按父会话归属，只给子会话 id 时
+        // 跨会话重名会删到别人的行。
+        return await db.SessionSubAgents
+            .Where(e => e.ParentSessionId == parentSessionId && ids.Contains(e.SubSessionId))
+            .ExecuteDeleteAsync(ct);
+    }
+
     public async Task<IReadOnlyList<SubAgentStatus>> GetSubAgentsAsync(
         string sessionId, CancellationToken ct = default)
     {

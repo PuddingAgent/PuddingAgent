@@ -949,6 +949,16 @@ public sealed class SubAgentManagerMessageTests
                 return Task.FromResult<IReadOnlyList<SubAgentStatus>>(list.ToList());
             }
         }
+
+        /// <summary>被请求删掉的投影行（父会话 → 子会话集合）。</summary>
+        public List<(string Parent, IReadOnlyCollection<string> Subs)> RemovedProjections { get; } = new();
+
+        public Task<int> RemoveSubAgentProjectionsAsync(
+            string parentSessionId, IReadOnlyCollection<string> subSessionIds, CancellationToken ct = default)
+        {
+            RemovedProjections.Add((parentSessionId, subSessionIds));
+            return Task.FromResult(subSessionIds.Count);
+        }
         public Task<int> GetRunningSubAgentCountAsync(string parentSessionId, CancellationToken ct = default) =>
             Task.FromResult(0);
         

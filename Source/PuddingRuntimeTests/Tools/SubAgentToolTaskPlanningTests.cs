@@ -720,6 +720,11 @@ public sealed class SubAgentToolTaskPlanningTests
         public Task<IReadOnlyList<SubAgentStatus>> GetSubAgentsAsync(
             string sessionId, CancellationToken ct = default) => Task.FromResult(subAgents);
 
+        // 本档只测任务规划元数据映射，不涉及清理：返回 0 即可。
+        public Task<int> RemoveSubAgentProjectionsAsync(
+            string parentSessionId, IReadOnlyCollection<string> subSessionIds, CancellationToken ct = default)
+            => Task.FromResult(0);
+
         public Task<int> GetRunningSubAgentDescendantCountAsync(
             string rootSessionId, CancellationToken ct = default) => Task.FromResult(0);
 

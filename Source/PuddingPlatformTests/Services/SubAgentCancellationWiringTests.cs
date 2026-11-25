@@ -298,6 +298,16 @@ public sealed class SubAgentCancellationWiringTests
         public List<SubAgentStatus> SubAgents { get; } = new();
         public List<string> Completed { get; } = new();
 
+        /// <summary>被请求删掉的投影行（父会话 → 子会话集合）。</summary>
+        public List<(string Parent, IReadOnlyCollection<string> Subs)> RemovedProjections { get; } = new();
+
+        public Task<int> RemoveSubAgentProjectionsAsync(
+            string parentSessionId, IReadOnlyCollection<string> subSessionIds, CancellationToken ct = default)
+        {
+            RemovedProjections.Add((parentSessionId, subSessionIds));
+            return Task.FromResult(subSessionIds.Count);
+        }
+
         public Task<IReadOnlyList<SubAgentStatus>> GetSubAgentsAsync(
             string sessionId, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<SubAgentStatus>>(

@@ -264,6 +264,10 @@ public sealed class SubAgentManagerTerminalStatusMatrixTests
             Task.FromResult<IReadOnlyList<SubAgentStatus>>([]);
         public Task<int> GetRunningSubAgentCountAsync(string parentSessionId, CancellationToken ct = default) =>
             Task.FromResult(0);
+
+        public Task<int> RemoveSubAgentProjectionsAsync(
+            string parentSessionId, IReadOnlyCollection<string> subSessionIds, CancellationToken ct = default) =>
+            Task.FromResult(0);
         public Task<int> RecoverInterruptedSubAgentsAsync(
             DateTimeOffset startedBeforeUtc, int maxRows, CancellationToken ct = default) =>
             Task.FromResult(0);

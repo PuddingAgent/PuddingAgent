@@ -1853,6 +1853,11 @@ public sealed class SubAgentManager : ISubAgentManager
         // 同一套判定写两遍时，改一处漏一处就会出现「先截断后筛选」那类刚好清不掉的回退。
 
         var cleaned = 0;
+        // 需要一并删投影行的子会话：run 行真的没了（删成功或本来就不存在）的那些。
+        // 投影行是 `GET /api/sessions/{id}/sub-agents` 的数据源，前端会话面板直接按它
+        // 渲染子代理条目。只删 run 行时，条目销毁、归档删掉，面板里却仍挂着一个
+        // state=completed 的子代理，且用户没有任何入口能去掉它（2026-11-25 运行时实测）。
+        var projectionCandidates = new List<string>(subAgents.Count);
         foreach (var subAgent in subAgents)
         {
             ct.ThrowIfCancellationRequested();
@@ -1881,17 +1886,74 @@ public sealed class SubAgentManager : ISubAgentManager
             if (deleted)
             {
                 cleaned++;
+                projectionCandidates.Add(subAgent.SubSessionId);
                 _logger.LogDebug(
                     "[SubAgentMgr] CleanupAsync: deleted sub-agent sub={Sub} status={Status} runId={RunId}",
                     subAgent.SubSessionId, subAgent.Status, runId);
+                continue;
+            }
+
+            // false 有两种含义：本来就没有，或删除失败。只有确认「本来就没有」才能连投影
+            // 一起删——删除失败时投影还是那条 run 的最后线索。
+            if (await IsRunArchiveAbsentAsync(runId, subAgent.SubSessionId, ct).ConfigureAwait(false))
+                projectionCandidates.Add(subAgent.SubSessionId);
+        }
+
+        var projectionsRemoved = 0;
+        if (projectionCandidates.Count > 0)
+        {
+            try
+            {
+                projectionsRemoved = await _ssm
+                    .RemoveSubAgentProjectionsAsync(parentSessionId, projectionCandidates, ct)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // 投影删失败不影响 run 归档已经删掉这个事实：退回 cleaned 继续可用，
+                // 但不得报成「清理完成且一切干净」——日志里必须留下行。
+                _logger.LogWarning(ex,
+                    "[SubAgentMgr] CleanupAsync: failed to remove {Count} sub-agent projection row(s)",
+                    projectionCandidates.Count);
             }
         }
 
         _logger.LogInformation(
-            "[SubAgentMgr] CleanupAsync: cleaned {Cleaned}/{Total} sub-agents",
-            cleaned, subAgents.Count);
+            "[SubAgentMgr] CleanupAsync: cleaned {Cleaned}/{Total} sub-agents, projections removed {Projections}",
+            cleaned, subAgents.Count, projectionsRemoved);
 
         return cleaned;
+    }
+
+    /// <summary>
+    /// 运行归档是否确实不存在（而不是「删失败」）。
+    /// </summary>
+    /// <remarks>
+    /// <c>DeleteRunAsync</c> 返回 false 是两义的：没有这条、或者删的时候出错。
+    /// 判断不成立时一律当作「仍然存在」：宁可留一条可重试的投影，
+    /// 也不要在一个还可能存在的 run 上把它最后的定位线索删掉。
+    /// </remarks>
+    private async Task<bool> IsRunArchiveAbsentAsync(string? runId, string subSessionId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(runId))
+            return true;
+
+        // 快照在没有 run 行时会把 RunId 回退成 SubSessionId 这个占位值。
+        // 占位值不可能命中归档，直接当「不存在」，不必多查一次。
+        if (string.Equals(runId, subSessionId, StringComparison.Ordinal))
+            return true;
+
+        try
+        {
+            return await _runStore.GetRunArchiveAsync(runId, ct).ConfigureAwait(false) is null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[SubAgentMgr] CleanupAsync: cannot probe archive existence runId={RunId}; keeping projection",
+                runId);
+            return false;
+        }
     }
 }
 

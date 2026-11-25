@@ -130,6 +130,25 @@ public interface ISessionStateManager
         int maxRows,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// 删除指定子会话的投影行（<c>session_sub_agents</c>）。
+    /// </summary>
+    /// <para>
+    /// 投影行是「每个子会话的当前状态」，而 <c>GET /api/sessions/{id}/sub-agents</c> 直接返回它，
+    /// 前端会话面板据此渲染子代理条目。清理只删 <c>sub_agent_runs</c> 与磁盘归档时，
+    /// 条目销毁、归档删掉，面板里却仍留着一个 state=completed 的子代理——
+    /// 表现为「清理不收敛」，而用户没有任何入口把它去掉（2026-11-25 运行时实测）。
+    /// </para>
+    /// <para>
+    /// <paramref name="parentSessionId"/> 参与过滤：投影按父会话归属，
+    /// 只用子会话 id 时跨会话重名的 id 会删到别人的行。
+    /// </para>
+    /// <returns>被删除的行数。</returns>
+    Task<int> RemoveSubAgentProjectionsAsync(
+        string parentSessionId,
+        IReadOnlyCollection<string> subSessionIds,
+        CancellationToken ct = default);
+
     // ════════════════════════════════════════════════════════
     // 生命周期标记
     // ════════════════════════════════════════════════════════
