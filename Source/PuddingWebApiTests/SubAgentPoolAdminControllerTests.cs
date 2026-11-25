@@ -133,6 +133,7 @@ public sealed class SubAgentPoolAdminControllerTests
         Assert.AreEqual("2026-11-20T10:00:00Z", first.LastUsedAt);
         Assert.AreEqual(true, first.LastSuccess);
         Assert.AreEqual("sub-recent", first.SubSessionId);
+        Assert.AreEqual("owner-session-1", first.OwnerSessionId, "归属会话必须透出：它决定哪个会话能驱动该条目，不是纯展示字段");
         Assert.AreEqual("2026-11-01T00:00:00Z", first.CreatedAt);
 
         var second = payload[1];
@@ -143,6 +144,7 @@ public sealed class SubAgentPoolAdminControllerTests
         Assert.IsNull(second.AvatarKey);
         Assert.IsNull(second.ModelId);
         Assert.AreEqual(string.Empty, second.LastUsedAt);
+        Assert.IsNull(second.OwnerSessionId, "未记录归属时必须是 null，不得用空串或占位值冒充");
     }
 
     [TestMethod]

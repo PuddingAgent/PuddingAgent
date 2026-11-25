@@ -35,6 +35,7 @@ type PoolEntryFixture = {
   lastSuccessAt: string | null;
   lastSuccess?: boolean | null;
   subSessionId: string;
+  ownerSessionId?: string | null;
   createdAt: string;
   spend?: {
     totalTokens: number;
@@ -68,6 +69,7 @@ const entry = (
   lastUsedAt: '2026-11-20T10:00:00Z',
   lastSuccessAt: '2026-11-20T09:55:00Z',
   subSessionId: 'sub-session-1',
+  ownerSessionId: '3f52368a35ef49ab834991e897e8715f',
   createdAt: '2026-11-01T00:00:00Z',
   ...overrides,
 });
@@ -700,5 +702,61 @@ describe('SubAgentPoolPanel', () => {
 
     expect(screen.queryByTestId('subagent-spend')).toBeNull();
     expect(screen.queryByText(/^\$/)).toBeNull();
+  });
+
+  it('右栏显示归属会话的短 id，并把完整值放进 title', () => {
+    setPoolState({
+      data: [
+        entry({
+          poolId: 'p-owned',
+          name: '有主',
+          ownerSessionId: '3f52368a35ef49ab834991e897e8715f',
+        }),
+      ],
+      loading: false,
+      error: null,
+    });
+    render(<SubAgentPoolPanel />);
+
+    fireEvent.click(screen.getByTestId('subagent-pool-item-p-owned'));
+
+    const detail = screen.getByTestId('subagent-pool-detail');
+    expect(detail.textContent).toContain('归属会话');
+    // 短 id：截前 8 位；完整 32 位不进正文（右栏会被撑破）
+    expect(detail.textContent).toContain('3f52368a…');
+    expect(detail.textContent).not.toContain(
+      '3f52368a35ef49ab834991e897e8715f',
+    );
+
+    // 正对照：完整值必须可获取（title），否则用户没法把条目对上具体会话
+    const titled = Array.from(detail.querySelectorAll('[title]')).map(
+      (el) => el.getAttribute('title') ?? '',
+    );
+    expect(
+      titled.some((t) =>
+        t.includes('3f52368a35ef49ab834991e897e8715f'),
+      ),
+    ).toBe(true);
+  });
+
+  it('未记录归属时写「未记录」，不拿名字或模板顶替', () => {
+    setPoolState({
+      data: [entry({ poolId: 'p-legacy', name: '老条目', ownerSessionId: null })],
+      loading: false,
+      error: null,
+    });
+    render(<SubAgentPoolPanel />);
+
+    fireEvent.click(screen.getByTestId('subagent-pool-item-p-legacy'));
+
+    const detail = screen.getByTestId('subagent-pool-detail');
+    expect(detail.textContent).toContain('归属会话');
+    expect(detail.textContent).toContain('未记录');
+    // 不得用同屏其它字段顶替：模板名与条目名都不是归属会话
+    const ownerRow = Array.from(detail.querySelectorAll('div')).find(
+      (el) => (el.textContent ?? '').startsWith('归属会话'),
+    );
+    expect(ownerRow?.textContent).toContain('未记录');
+    expect(ownerRow?.textContent).not.toContain('workspace-task-agent');
   });
 });

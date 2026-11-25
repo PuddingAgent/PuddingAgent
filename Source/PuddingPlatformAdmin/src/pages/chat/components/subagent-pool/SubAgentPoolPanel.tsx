@@ -66,6 +66,19 @@ const describeModel = (value: string | null | undefined): string => {
 };
 
 /**
+ * 归属会话：创建该条目的父会话，空值就写「未记录」，不拿名字或模板顶替。
+ *
+ * 截短是因为完整 id 是 32 位十六进制，在右栏会把行撑破；完整值放在 title 里。
+ * 只截前 8 位仍能区分同屏的几个条目（同一会话建的多条会显示同一个值，这正是要表达的语义）。
+ */
+export const describeOwnerSession = (
+  value: string | null | undefined,
+): string => {
+  const trimmed = (value ?? '').trim();
+  return trimmed.length > 0 ? `${trimmed.slice(0, 8)}…` : '未记录';
+};
+
+/**
  * 模型路由是否合法：恰好一个斜杠，且两侧都非空（`providerId/modelId`）。
  *
  * 用 split 而不是正则：要同时拒掉 `/x`、`a/`、`a/b/c` 三种形态；
@@ -220,15 +233,18 @@ const EntryAvatar: React.FC<{ entry: SubAgentPoolEntry }> = ({ entry }) => {
   );
 };
 
-const DetailRow: React.FC<{ label: string; value: string }> = ({
+const DetailRow: React.FC<{ label: string; value: string; title?: string }> = ({
   label,
   value,
+  title,
 }) => {
   const { styles } = useSubAgentPoolStyles();
   return (
     <div className={styles.detailRow}>
       <span className={styles.detailLabel}>{label}</span>
-      <span className={styles.detailValue}>{value}</span>
+      <span className={styles.detailValue} title={title}>
+        {value}
+      </span>
     </div>
   );
 };
@@ -590,6 +606,16 @@ const EntryDetail: React.FC<{
       <DetailRow label="最近使用" value={describeLastUsed(entry)} />
       <DetailRow label="最近成功" value={describeLastSuccess(entry)} />
       <DetailRow label="创建时间" value={formatTimestamp(entry.createdAt)} />
+      {/* 归属放在时间列之后：它是解释「为何此处驱动不了」的因，不是主体信息。 */}
+      <DetailRow
+        label="归属会话"
+        value={describeOwnerSession(entry.ownerSessionId)}
+        title={
+          entry.ownerSessionId
+            ? `${entry.ownerSessionId}（仅该会话可驱动此成员）`
+            : undefined
+        }
+      />
 
       <EntryActions entry={entry} onChanged={onChanged} />
 

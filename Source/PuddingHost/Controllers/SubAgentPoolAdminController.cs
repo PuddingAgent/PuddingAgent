@@ -86,6 +86,7 @@ public sealed class SubAgentPoolAdminController(
                 LastUsedAt = e.LastUsedAt,
                 LastSuccess = e.LastSuccess,
                 SubSessionId = e.SubSessionId,
+                OwnerSessionId = e.OwnerSessionId,
                 CreatedAt = e.CreatedAt,
             })
             .ToListAsync(ct)
@@ -630,6 +631,17 @@ public sealed class SubAgentPoolEntryDto
 
     /// <summary>复用键：恢复该条目的会话靠它，而不是靠名字。</summary>
     public string SubSessionId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 归属父会话 id（创建它的那个会话），可能为空。
+    /// <para>
+    /// <b>这不只是元数据，是驱动权限：</b><c>SubAgentPool.ExecuteAsync</c> 会用它与
+    /// 派发方的 <c>ParentSessionId</c> 比较，不等即抛 <c>PoolOwnershipMismatchException</c>。
+    /// 也就是说条目是「会话作用域」的，换一个会话就不认；面板显示它，是为了让
+    /// 「为什么在别的对话里用不了这个成员」有据可查，而不是靠猜。
+    /// </para>
+    /// </summary>
+    public string? OwnerSessionId { get; init; }
 
     /// <summary>条目创建时间（ISO-8601 文本）。</summary>
     public string CreatedAt { get; init; } = string.Empty;

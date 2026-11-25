@@ -33,6 +33,14 @@ export interface SubAgentPoolEntry {
    */
   lastSuccess?: boolean | null;
   subSessionId: string;
+  /**
+   * 归属父会话 id（创建它的那个会话），可能为空。
+   *
+   * 这不只是元数据：后端 `ExecuteAsync` 会用它和派发方的 `ParentSessionId` 比较，
+   * 不等即抛 `PoolOwnershipMismatchException`。所以同一个成员**换个会话就驱动不了**，
+   * 面板把它显示出来，是为让「为什么在别的对话里用不了它」有据可查。
+   */
+  ownerSessionId?: string | null;
   createdAt: string;
   /**
    * 该条目的累计花费；`null` 表示从未产生账本记录。

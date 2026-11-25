@@ -1,5 +1,5 @@
 # PuddingWebApiTests
-> 源指纹: *.cs=28-cedc6efd321e, *.csproj=1-bc0c1a44ca61 · 条目数: 0 · 最近整理: 2026-11-23
+> 源指纹: *.cs=28-ffa31b03146a, *.csproj=1-bc0c1a44ca61 · 条目数: 0 · 最近整理: 2026-11-23
 
 测试工程，引用 PuddingAgent；用例全部为进程内单测，不需要真实宿主或外部服务。
 
