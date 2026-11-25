@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using PuddingCode.Abstractions;
 
@@ -24,18 +25,48 @@ internal static class PoolListingFormatter
     internal static string RenderSubSessionId(string? subSessionId)
         => string.IsNullOrWhiteSpace(subSessionId) ? "-" : subSessionId.Trim();
 
-    /// <summary>渲染池状态表。<paramref name="agents"/> 为空时由调用方先说清「本会话没有成员」。</summary>
-    internal static string Format(IReadOnlyList<PooledSubAgent> agents)
+    /// <summary>
+    /// 「最后使用」列的渲染值：<b>本地时区的绝对时间</b>，格式 <c>yyyy-MM-dd HH:mm</c>；未使用过则 <c>-</c>。
+    /// </summary>
+    /// <remarks>
+    /// 原始值来自 <c>DateTimeOffset.UtcNow</c>，库里存的是 <c>2026-11-21T04:26:17+00:00</c> 这种 UTC 文本。
+    /// 直接按 <c>HH:mm:ss</c> 格式化会同时错两件事：<b>丢掉日期</b>（四天前的记录看起来像今天凌晨），
+    /// <b>把 UTC 时刻当成本地时刻</b>（差 8 小时）。两个错都只在跨天/跨时区时才显形，所以能长期不被发现 ——
+    /// 现场五个成员里 <c>frontend-ui</c> 的 last_used 是 11-21，而 list 显示「04:26:17」。
+    /// <para>
+    /// <c>InvariantCulture</c> 不是风格洁癖：某些区域（如 <c>th-TH</c>）的 <c>yyyy</c> 是佛历年份，
+    /// 用当前区域格式化会把 2026 输出成 2569。
+    /// </para>
+    /// </remarks>
+    internal static string RenderLastUsed(DateTimeOffset lastUsedAt, Func<DateTimeOffset, DateTimeOffset> toLocal)
+        => lastUsedAt == default
+            ? "-"
+            : toLocal(lastUsedAt).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// 渲染池状态表。<paramref name="agents"/> 为空时由调用方先说清「本会话没有成员」。
+    /// </summary>
+    /// <param name="toLocal">
+    /// UTC → 本地时区的转换。默认 <see cref="TimeZoneInfo.ConvertTime(DateTimeOffset, TimeZoneInfo)"/> 意义上的本地时区；
+    /// 显式参数是为了让用例能注入确定转换 —— 依赖机器时区的断言等于用实际值证明实际值。
+    /// </param>
+    internal static string Format(
+        IReadOnlyList<PooledSubAgent> agents,
+        Func<DateTimeOffset, DateTimeOffset>? toLocal = null)
     {
+        // 注意：`??` 的右操作数必须括号包裹 —— `toLocal ?? static t => ...` 会被解析为 (toLocal ?? static) t，
+        // 报 CS0106「修饰符 static 对该项无效」+ CS1001。
+        var convert = toLocal ?? (static t => t.ToLocalTime());
         var listing = new StringBuilder();
         listing.AppendLine($"## 子代理池状态 ({agents.Count} 个)\n");
-        listing.AppendLine("| 名称 | 状态 | 角色 | 任务数 | 最后使用 | SubSessionId |");
+        // 表头点明「本地」：不写的话读者无法判断 04:26 是哪个时区。
+        listing.AppendLine("| 名称 | 状态 | 角色 | 任务数 | 最后使用(本地) | SubSessionId |");
         listing.AppendLine("|------|------|------|--------|----------|-------------|");
         foreach (var entry in agents)
         {
             listing.AppendLine(
                 $"| {entry.Name} | {entry.Status} | {entry.Role ?? "-"} | {entry.TaskCount} | " +
-                $"{entry.LastUsedAt:HH:mm:ss} | {RenderSubSessionId(entry.SubSessionId)} |");
+                $"{RenderLastUsed(entry.LastUsedAt, convert)} | {RenderSubSessionId(entry.SubSessionId)} |");
         }
 
         return listing.ToString();

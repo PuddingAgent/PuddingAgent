@@ -86,14 +86,54 @@ public sealed class PoolListingFormatterTests
         [
             Entry("scout", ParentSessionId + "-sub-67d3a424", role: "verifier", taskCount: 7,
                 status: PooledSubAgentStatus.Sleeping),
-        ]);
+        ], static t => t);
 
-        StringAssert.Contains(text, "| 名称 | 状态 | 角色 | 任务数 | 最后使用 | SubSessionId |");
+        StringAssert.Contains(text, "| 名称 | 状态 | 角色 | 任务数 | 最后使用(本地) | SubSessionId |");
         var row = string.Join("\n", text.Split('\n').Where(l => l.StartsWith("| scout |", StringComparison.Ordinal)));
         StringAssert.Contains(row, "Sleeping");
         StringAssert.Contains(row, "verifier");
         StringAssert.Contains(row, "| 7 |");
-        StringAssert.Contains(row, "09:07:05");
+        // 日期必须跟着出现：只给 HH:mm:ss 时，「四天前」与「今天凌晨」在产物上不可区分。
+        StringAssert.Contains(row, "2026-11-25 09:07");
+    }
+
+    [TestMethod]
+    public void RenderLastUsed_UtcValue_RendersLocalDateAndClock()
+    {
+        // 现场真实值：frontend-ui 的 last_used_at 是 2026-11-21T04:26:17Z。
+        var utc = new DateTimeOffset(2026, 11, 21, 4, 26, 17, TimeSpan.Zero);
+
+        var rendered = PoolListingFormatter.RenderLastUsed(utc, t => t.ToOffset(TimeSpan.FromHours(8)));
+
+        Assert.AreEqual("2026-11-21 12:26", rendered);
+        // 旧缺陷形态：只有时分秒，而且那是 UTC 时刻。
+        Assert.IsFalse(rendered.Contains("04:26", StringComparison.Ordinal), $"仍输出 UTC 时刻：{rendered}");
+    }
+
+    [TestMethod]
+    public void RenderLastUsed_Default_RendersDash()
+    {
+        Assert.AreEqual("-", PoolListingFormatter.RenderLastUsed(default, static t => t));
+
+        // 负向不能靠「恒返回 -」通过：有效值必须仍被渲染。
+        Assert.AreEqual("2026-11-25 09:07",
+            PoolListingFormatter.RenderLastUsed(
+                new DateTimeOffset(2026, 11, 25, 9, 7, 5, TimeSpan.FromHours(8)), static t => t));
+    }
+
+    [TestMethod]
+    public void Format_LastUsedColumn_UsesInjectedConverter()
+    {
+        // 端到端：证明 Format 真的把转换器传到了列渲染，而不是各算各的。
+        var utc = new DateTimeOffset(2026, 11, 21, 4, 26, 17, TimeSpan.Zero);
+        var text = PoolListingFormatter.Format(
+            [Entry("frontend-ui", ParentSessionId + "-sub-e3680149", lastUsedAt: utc)],
+            t => t.ToOffset(TimeSpan.FromHours(8)));
+
+        var row = string.Join("\n", text.Split('\n')
+            .Where(l => l.StartsWith("| frontend-ui |", StringComparison.Ordinal)));
+        StringAssert.Contains(row, "| 2026-11-21 12:26 |");
+        Assert.IsFalse(row.Contains("04:26:17", StringComparison.Ordinal), $"端到端仍输出旧形态：{row}");
     }
 
     // ===== 辅助 =====
@@ -110,7 +150,8 @@ public sealed class PoolListingFormatterTests
         string subSessionId,
         string? role = null,
         int taskCount = 0,
-        PooledSubAgentStatus status = PooledSubAgentStatus.Idle)
+        PooledSubAgentStatus status = PooledSubAgentStatus.Idle,
+        DateTimeOffset? lastUsedAt = null)
         => new()
         {
             PoolId = "poolid-" + name,
@@ -119,7 +160,7 @@ public sealed class PoolListingFormatterTests
             TemplateId = "workspace-task-agent",
             Role = role,
             CreatedAt = DateTimeOffset.UnixEpoch,
-            LastUsedAt = new DateTimeOffset(2026, 11, 25, 9, 7, 5, TimeSpan.FromHours(8)),
+            LastUsedAt = lastUsedAt ?? new DateTimeOffset(2026, 11, 25, 9, 7, 5, TimeSpan.FromHours(8)),
             Status = status,
             TaskCount = taskCount,
             OwnerSessionId = ParentSessionId,
