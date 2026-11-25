@@ -152,6 +152,80 @@ public sealed class AgentPoolDeclaredRoleTests
     }
 
     // ═══════════════════════════════════════════════════════
+    // 6. 生效角色必须回传：调用方从自己的入参看不出「继承了」
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 派活未指定角色时，结果里必须带上成员声明的角色。
+    /// <para>
+    /// 继承发生在池内部（<c>executeRequest</c> 构造处），调用方传空与传 null 都会落到继承，
+    /// 所以它<b>无法</b>从自己的入参判断这一单用了谁。不回传的后果是「被当成 worker 干活，
+    /// 而结果里看不出差异」——角色决定提示词与职责，不是展示字段。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task Execute_ReturnsEffectiveRole_WhenInheritedFromMember()
+    {
+        await using var db = await PoolDb.CreateAsync();
+        await db.Store.TryInsertAsync(
+            InsertRequest("pool-a", "agent-a", "sub-1111aaaa", role: "worker"), 0, default);
+
+        var pool = CreatePool(new TestSubAgentManager(), db.Store);
+        await pool.EnsureReadyAsync();
+
+        var result = await pool.ExecuteAsync("agent-a", CreateSpawnRequest(), default);
+
+        Console.WriteLine($"[evidence] result.RoleInPlan={result.RoleInPlan ?? "<null>"}");
+        Assert.AreEqual("worker", result.RoleInPlan,
+            "未指定角色时生效值来自成员声明，必须随结果回传，否则调用方无从确认用了谁");
+    }
+
+    /// <summary>
+    /// 正向对照：显式指定的角色必须原样回传，不能被成员声明值替换。
+    /// <para>没有这一条，「恒返回成员角色」的实现也能通过上一个用例。</para>
+    /// </summary>
+    [TestMethod]
+    public async Task Execute_ReturnsExplicitRole_WhenCallerOverrides()
+    {
+        await using var db = await PoolDb.CreateAsync();
+        await db.Store.TryInsertAsync(
+            InsertRequest("pool-a", "agent-a", "sub-1111aaaa", role: "worker"), 0, default);
+
+        var pool = CreatePool(new TestSubAgentManager(), db.Store);
+        await pool.EnsureReadyAsync();
+
+        var result = await pool.ExecuteAsync(
+            "agent-a",
+            CreateSpawnRequest() with { RoleInPlan = "critic" },
+            default);
+
+        Assert.AreEqual("critic", result.RoleInPlan,
+            "显式角色是一次性覆盖，回传的必须是生效的那个值而不是成员声明值");
+    }
+
+    /// <summary>
+    /// 两边都没有角色时结果为 null，而不是空串。
+    /// <para>
+    /// 空串会被下游当成「有一个角色，只是空」；库里「没设」只有 null 一种表示，这里必须同口径。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task Execute_ReturnsNullRole_WhenNeitherSideDeclaresIt()
+    {
+        await using var db = await PoolDb.CreateAsync();
+        await db.Store.TryInsertAsync(
+            InsertRequest("pool-a", "agent-a", "sub-1111aaaa", role: null), 0, default);
+
+        var pool = CreatePool(new TestSubAgentManager(), db.Store);
+        await pool.EnsureReadyAsync();
+
+        var result = await pool.ExecuteAsync("agent-a", CreateSpawnRequest(), default);
+
+        Assert.IsNull(result.RoleInPlan,
+            "没有角色就该是 null；空串会让「没设」出现两种表示");
+    }
+
+    // ═══════════════════════════════════════════════════════
     // 脚手架
     // ═══════════════════════════════════════════════════════
 

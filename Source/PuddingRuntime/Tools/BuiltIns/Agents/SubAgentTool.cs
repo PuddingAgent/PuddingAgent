@@ -704,6 +704,9 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                             status = result.Status,
                             rawOutput = result.Reply,
                             error = result.Error,
+                            // 池化派活可能继承了成员声明的角色；不回传的话调用方只能看到自己的入参，
+                            // 而「没传」恰恰是继承的触发条件 —— 生效值只有这里能说清。
+                            roleInPlan = result.RoleInPlan,
                         }, JsonOpts);
 
                         return new ToolExecutionResult

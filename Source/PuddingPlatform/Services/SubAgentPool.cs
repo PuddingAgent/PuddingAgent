@@ -1337,7 +1337,11 @@ public sealed class SubAgentPool : ISubAgentPool
             "[SubAgentPool] Execute completed for '{Name}' success={Success} taskCount={TaskCount}",
             name, result.Success, entry.TaskCount);
 
-        return result;
+        // 回传实际生效的角色：继承发生在上面构建 executeRequest 的那一步，调用方从自己的入参
+        // 看不出「没传」与「传了空串」（两者都会落到继承），只有结果里能确认这一单用了谁。
+        return string.IsNullOrWhiteSpace(executeRequest.RoleInPlan)
+            ? result
+            : result with { RoleInPlan = executeRequest.RoleInPlan };
     }
 
     // ════════════════════════════════════════════════════════

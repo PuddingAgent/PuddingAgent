@@ -297,6 +297,17 @@ public sealed record SubAgentExecuteResult
     public string? Reply { get; init; }
     public string? Error { get; init; }
     public TokenUsageDto? Usage { get; init; }
+
+    /// <summary>
+    /// 本次执行<b>实际生效</b>的计划角色。
+    /// <para>
+    /// 与调用方传入的值可能不同：池化派活时，请求未显式指定角色则由成员声明继承
+    /// （见 <c>SubAgentPool.ExecuteAsync</c> 构建 <c>executeRequest</c> 处）。继承发生在池内部，
+    /// 调用方只看自己的入参判断不出「这次到底用了谁」，所以由执行结果回传生效值。
+    /// </para>
+    /// <para>一次性（非池化）执行原样带回请求里的值；两边都没有时为 <c>null</c>。</para>
+    /// </summary>
+    public string? RoleInPlan { get; init; }
 }
 
 /// <summary>子代理查询过滤器。</summary>
