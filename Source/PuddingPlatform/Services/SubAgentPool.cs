@@ -1766,6 +1766,50 @@ public sealed class SubAgentPool : ISubAgentPool
             .ToList();
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// <b>一次查全部，不逐条读：</b>条目上限是池容量（默认 15），逐条 <c>GetByIdAsync</c>
+    /// 会变成 N 次往返；<c>LoadAllAsync</c> 本来就只取未软删的行，与「重建内存视图」同一条查询。
+    /// </remarks>
+    public async Task<IReadOnlyList<PooledSubAgent>> ListOwnedByDeclaredAsync(
+        PoolOwnerScope scope, CancellationToken ct = default)
+    {
+        await EnsureReadyAsync(ct).ConfigureAwait(false);
+
+        if (_entryStore is not null)
+        {
+            try
+            {
+                var rows = await _entryStore.LoadAllAsync(ct).ConfigureAwait(false);
+                var declared = new Dictionary<string, string?>(rows.Count, StringComparer.Ordinal);
+                foreach (var row in rows)
+                    declared[row.PoolId] = row.Role;
+
+                await _stateLock.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    foreach (var entry in _pool.Values)
+                    {
+                        if (declared.TryGetValue(entry.PoolId, out var role))
+                            entry.ApplyDeclaredRole(role);
+                    }
+                }
+                finally
+                {
+                    _stateLock.Release();
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // 列表面过期比列表面直接失败有用：沿用缓存值，下一次调用会再试。
+                _logger.LogWarning(
+                    ex, "[SubAgentPool] 刷新列表的声明角色失败，本次沿用缓存值");
+            }
+        }
+
+        return ListOwnedBy(scope);
+    }
+
     /// <summary>
     /// 快照的归属是否在 <paramref name="scope"/> 之内。
     /// <para>

@@ -123,6 +123,26 @@ public interface ISubAgentPool
     IReadOnlyList<PooledSubAgent> ListOwnedBy(PoolOwnerScope scope);
 
     /// <summary>
+    /// 与 <see cref="ListOwnedBy"/> 同一过滤，但把<b>声明列</b>（角色）从库里刷新回来，
+    /// 并把这个值写回内存缓存。
+    /// <para>
+    /// <b>为什么列表面也要读库：</b>面板 PATCH 直接写库，而快照里的角色是启动时的一次性投影。
+    /// 只刷新派发路径会留下第三种口径——库说 <c>reviewer</c>、派发用 <c>reviewer</c>、
+    /// 而 Agent 自己 list 出来的还是 <c>worker</c>。<b>三个面各说一套时，谁都不像真源。</b>
+    /// </para>
+    /// <para>
+    /// <b>默认实现等于 <see cref="ListOwnedBy"/></b>：纯内存实现与测试替身没有第二个真源，
+    /// 刷新无从谈起；做成必实现只会逼它们各写一遍不成立的逻辑。
+    /// </para>
+    /// <para>
+    /// 读库失败不抛业务异常，退回缓存值——列表面过期比列表面直接失败有用，下一次会再试。
+    /// </para>
+    /// </summary>
+    Task<IReadOnlyList<PooledSubAgent>> ListOwnedByDeclaredAsync(
+        PoolOwnerScope scope, CancellationToken ct = default)
+        => Task.FromResult(ListOwnedBy(scope));
+
+    /// <summary>
     /// 带归属校验的休眠。归属不符时抛 <see cref="PoolOwnershipMismatchException"/>，
     /// 而不是返回 <c>false</c>——<c>false</c> 的契约是「确认没有这个条目」，
     /// 而「存在、但不属于你」处置完全不同（前者去创建，后者去用对自己的名字）。

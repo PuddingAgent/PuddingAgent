@@ -226,6 +226,88 @@ public sealed class AgentPoolDeclaredRoleTests
     }
 
     // ═══════════════════════════════════════════════════════
+    // 7. 列表面也以库为准：一次派发都没有时，三个面也不许各说一套
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 面板改完角色、**还没发生任何派发**时，Agent 侧列出来的角色必须是新值。
+    /// <para>
+    /// 这是三个面里的第三个：库是 <c>reviewer</c>、下一次派发也会继承 <c>reviewer</c>，
+    /// 唯独 Agent 自己 list 出来还是 <c>worker</c>。只刷新派发路径时，这条缺陷恰好只在
+    /// 「改完角色到下一次派发之间」可见——而那正是用户去看面板/让 Agent 确认「改成功了没有」的时刻。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task ListOwnedByDeclared_ReflectsPanelChange_WithoutAnyDispatch()
+    {
+        await using var db = await PoolDb.CreateAsync();
+        await db.Store.TryInsertAsync(
+            InsertRequest("pool-a", "agent-a", "sub-1111aaaa", role: "worker"), 0, default);
+
+        var pool = CreatePool(new TestSubAgentManager(), db.Store);
+        await pool.EnsureReadyAsync();
+        await db.UpdateRoleAsync("agent-a", "reviewer");
+
+        var agents = await pool.ListOwnedByDeclaredAsync(
+            new PoolOwnerScope("parent-session", "default"), default);
+
+        Console.WriteLine($"[evidence] listed role={agents.Single().Role ?? "<null>"}");
+        Assert.AreEqual("reviewer", agents.Single().Role,
+            "列表面以库为准：一次派发都没有时也必须看到面板刚改的值");
+    }
+
+    /// <summary>
+    /// 读库失败时退回缓存角色，既不变空表也不抛异常。
+    /// <para>
+    /// 失败点刻意放在「就绪之后」：<c>EnsureReadyAsync</c> 本身也走 <c>LoadAllAsync</c>，
+    /// 一开始就让它失败测到的是「池起不来」，不是「刷新失败」。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task ListOwnedByDeclared_FallsBackToCache_WhenStoreReadFails()
+    {
+        await using var db = await PoolDb.CreateAsync();
+        await db.Store.TryInsertAsync(
+            InsertRequest("pool-a", "agent-a", "sub-1111aaaa", role: "worker"), 0, default);
+
+        var store = new ReadFailingStore(db.Store);
+        var pool = CreatePool(new TestSubAgentManager(), store);
+        await pool.EnsureReadyAsync();
+
+        store.FailLoadAll = true;
+        var agents = await pool.ListOwnedByDeclaredAsync(
+            new PoolOwnerScope("parent-session", "default"), default);
+
+        Assert.AreEqual(1, agents.Count, "一次读库失败不该把列表面变成空表或异常");
+        Assert.AreEqual("worker", agents.Single().Role, "读不到库就沿用缓存值");
+    }
+
+    /// <summary>
+    /// 刷新声明列不得顺手放宽归属过滤。
+    /// <para>
+    /// 正向对照与负向放在同一个用例里：只断言「别人的看不见」时，一个恒返回空表的实现也能过。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task ListOwnedByDeclared_KeepsScopeFiltering()
+    {
+        await using var db = await PoolDb.CreateAsync();
+        await db.Store.TryInsertAsync(
+            InsertRequest("pool-a", "agent-a", "sub-1111aaaa", role: "worker"), 0, default);
+
+        var pool = CreatePool(new TestSubAgentManager(), db.Store);
+        await pool.EnsureReadyAsync();
+
+        var mine = await pool.ListOwnedByDeclaredAsync(
+            new PoolOwnerScope("parent-session", "default"), default);
+        var stranger = await pool.ListOwnedByDeclaredAsync(
+            new PoolOwnerScope("another-session", "default"), default);
+
+        Assert.AreEqual(1, mine.Count, "归属相符时必须能看到自己的成员");
+        Assert.AreEqual(0, stranger.Count, "刷新声明列不得顺手放宽归属过滤");
+    }
+
+    // ═══════════════════════════════════════════════════════
     // 脚手架
     // ═══════════════════════════════════════════════════════
 
@@ -271,9 +353,15 @@ public sealed class AgentPoolDeclaredRoleTests
         TemplateId = "workspace-task-agent",
     };
 
-    /// <summary>让 <c>GetByIdAsync</c> 抛错的装饰器，其余成员直接委派。</summary>
+    /// <summary>让 <c>GetByIdAsync</c>（总是）与 <c>LoadAllAsync</c>（按开关）抛错的装饰器，其余成员直接委派。</summary>
     private sealed class ReadFailingStore(IAgentPoolEntryStore inner) : IAgentPoolEntryStore
     {
+        /// <summary>
+        /// 置 <c>true</c> 后 <c>LoadAllAsync</c> 也抛错。
+        /// <para>只能在就绪之后打开：就绪本身也走 <c>LoadAllAsync</c>，一开始就失败测到的是「池起不来」。</para>
+        /// </summary>
+        public bool FailLoadAll { get; set; }
+
         public Task<AgentPoolEntrySnapshot?> GetByIdAsync(string poolId, CancellationToken ct)
             => throw new InvalidOperationException("simulated metadata read failure");
 
@@ -327,7 +415,9 @@ public sealed class AgentPoolDeclaredRoleTests
             => inner.ResetStaleBusyAsync(now, ct);
 
         public Task<IReadOnlyList<AgentPoolEntrySnapshot>> LoadAllAsync(CancellationToken ct)
-            => inner.LoadAllAsync(ct);
+            => FailLoadAll
+                ? throw new InvalidOperationException("simulated listing read failure")
+                : inner.LoadAllAsync(ct);
 
         public Task<AgentPoolEntrySnapshot?> GetBySubSessionAsync(string subSessionId, CancellationToken ct)
             => inner.GetBySubSessionAsync(subSessionId, ct);

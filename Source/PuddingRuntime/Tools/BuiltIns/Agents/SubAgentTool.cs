@@ -227,7 +227,9 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         // 未就绪时 ListOwnedBy() 按契约抛 PoolNotReadyException，**不返回空集合**——
                         // 因为「还没加载完」与「本会话确实没有条目」处置相反（前者等，后者创建）。
                         // 未就绪由下面的 catch 渲染成「池未就绪 / 恢复失败」，不会伪装成空池。
-                        var agents = managementPool.ListOwnedBy(ownerScope);
+                        // 用声明版而不是同步版：面板改角色写的是库，同步版返回启动快照——
+                        // 只刷新派发路径会让「库 / 派发 / 列表」三个面各说一套。
+                        var agents = await managementPool.ListOwnedByDeclaredAsync(ownerScope, ct);
                         if (agents.Count == 0)
                             return Success("本会话没有池化子代理（其它会话的成员不在此列出）。" +
                                 "使用 pool_name=\"<name>\" pool_action=\"create\" 创建新的池化子代理。");
