@@ -46,6 +46,7 @@
 `Services/AgentMainSessionResolverTests.cs` 覆盖 6 条用例。
 `Services/AgentModelPolicyApiTests.cs` 覆盖 3 条用例。
 `Services/AgentModelPolicyMapperTests.cs` 覆盖 4 条用例。
+`Services/AgentPoolAutoCreateTests.cs` 覆盖 2 条用例。
 `Services/AgentPoolBusyRecoveryTests.cs` 覆盖 6 条用例。
 `Services/AgentPoolEntryStoreTests.cs` 覆盖 9 条用例。
 `Services/AgentPoolEvictionTests.cs` 覆盖 4 条用例。
