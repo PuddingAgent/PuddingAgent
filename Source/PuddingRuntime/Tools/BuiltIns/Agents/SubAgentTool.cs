@@ -269,6 +269,12 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         if (wasBusy)
                             destroyed = await managementPool.DestroyAsync(args.PoolName, ownerScope, ct);
 
+// 运行归档 id 必须在清理**之前**取：清理会删掉 sub_agent_runs 行，
+                        // 之后快照里的 RunId 会退回 SubSessionId 这个占位值，查归档恒为「不存在」——
+                        // 于是「删成功」与「一条没删」在事后无法区分。
+                        var runArchive = _services.GetService<ISubAgentRunStore>();
+                        var runId = await ResolveRunArchiveIdAsync(subAgentManager, targetSubSessionId, ct);
+
                         // 清理持久化记录：按 SubSessionId 精确清理。只传父会话 + MaxCount=1 时，
                         // 候选集是该会话下所有非运行中的子代理，删到哪一条取决于返回顺序。
                         var dbCleaned = await subAgentManager.CleanupAsync(
@@ -282,19 +288,28 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                             },
                             ct);
 
-                        // 独立复核：CleanupAsync 逐条吞异常、只返回计数，「0 条」既可能是没有可清的，
-                        // 也可能是删失败。读一次快照才知道这条子会话是不是真的不在了。
-                        var remaining = await subAgentManager.GetSubAgentsAsync(request.SessionId, null, ct);
-                        var stillThere = remaining.Any(s =>
-                            string.Equals(s.SubSessionId, targetSubSessionId, StringComparison.Ordinal));
+                        // 复核对象必须是**被删的那个对象**：运行归档。
+                        // CleanupAsync 只删 sub_agent_runs 行与磁盘归档，session_sub_agents 投影行本来就不删；
+                        // 拿投影做验收时这条断言恒为真，于是每次清理都报「没清掉」（2026-11-25 已实测的回归）。
+                        var archivePresent = await ProbeRunArchiveAsync(runArchive, runId, ct);
 
-                        if (!stillThere && !destroyed)
+                        if (archivePresent == false && !destroyed)
                             destroyed = await managementPool.DestroyAsync(args.PoolName, ownerScope, ct);
 
-                        if (stillThere)
+                        // 三个分支的下一步动作不同，不得合并：无法复核要去查服务注册，
+                        // 仍在要原地重试，已删才是完成。
+                        if (archivePresent is null)
                             return Fail(
-                                $"? 子代理 '{args.PoolName}' 的持久化记录没清掉" +
-                                $"（SubSessionId={targetSubSessionId}，清理返回 {dbCleaned} 条），" +
+                                $"? 子代理 '{args.PoolName}' 的运行归档无法复核" +
+                                $"（runId={runId}，ISubAgentRunStore 不可用，清理返回 {dbCleaned} 条）。" +
+                                (destroyed ? "池条目已销毁。" : "池条目已保留。") +
+                                "\n提示：这是可重试状态，原地再调一次 cleanup 即可" +
+                                $"（条目已销毁时用 sub_agent_id=\"{targetSubSessionId}\"）。");
+
+                        if (archivePresent == true)
+                            return Fail(
+                                $"? 子代理 '{args.PoolName}' 的运行归档没删掉" +
+                                $"（runId={runId}，SubSessionId={targetSubSessionId}，清理返回 {dbCleaned} 条）。" +
                                 (destroyed ? "池条目已销毁。" : "池条目已保留。") +
                                 "\n提示：这是可重试状态，原地再调一次 cleanup 即可" +
                                 $"（条目已销毁时用 sub_agent_id=\"{targetSubSessionId}\"）。");
@@ -302,7 +317,9 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         return Success(
                             $"? 子代理 '{args.PoolName}' 已清理。" +
                             (destroyed ? " 池条目已销毁。" : " 池条目不存在或已销毁。") +
-                            $" 持久化记录已清理 {dbCleaned} 条。");
+                            (dbCleaned > 0
+                                ? $" 已删除运行归档 {dbCleaned} 条。"
+                                : " 运行归档本就不存在（此前已清理或从未落盘）。"));
                     }
 
                     case "cleanup-bulk":
@@ -1701,6 +1718,61 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
     /// 而事实是「还不知道」。同理，Failed 是终态，说成「稍后重试」会让人无限等待一个不会自愈的池。
     /// </para>
     /// </summary>
+/// <summary>
+    /// 取该子会话当前那次运行的归档 id，用于清理后的复核。
+    /// <para>
+    /// 必须在清理**之前**调用：<c>GetSubAgentsAsync</c> 把「最新 run 行」join 进快照，
+    /// run 行一删，<c>RunId</c> 就退回 <c>SubSessionId</c> 这个占位值，而按它查归档恒为 null。
+    /// 拿这个 null 当「已删」的证据，等于用「查不到」证明「删掉了」。
+    /// </para>
+    /// <para>
+    /// 查不到快照时退回 <c>SubSessionId</c>：池条目已销毁、投影行又被清过的极端情况下，
+    /// 退化行为是「按子会话 id 查一次归档」，比凭空断言「已清理」安全。
+    /// </para>
+    /// </summary>
+    private static async Task<string> ResolveRunArchiveIdAsync(
+        ISubAgentManager manager,
+        string subSessionId,
+        CancellationToken ct)
+    {
+        try
+        {
+            var status = await manager.GetStatusAsync(subSessionId, ct);
+            if (!string.IsNullOrWhiteSpace(status?.RunId))
+                return status.RunId;
+        }
+        catch (Exception)
+        {
+            // 查不到不是错误：定位键退化到 SubSessionId，复核仍能给出「存在 / 不存在」。
+        }
+
+        return subSessionId;
+    }
+
+    /// <summary>
+    /// 探测运行归档是否仍然存在。<c>null</c> 表示**无法判定**（服务未注册或查询抛异常）。
+    /// <para>
+    /// 三态而不是布尔：把「查不到」折成 false，等价于把「仪器坏了」报成「结论变了」。
+    /// </para>
+    /// </summary>
+    private static async Task<bool?> ProbeRunArchiveAsync(
+        ISubAgentRunStore? runStore,
+        string runId,
+        CancellationToken ct)
+    {
+        if (runStore is null)
+            return null;
+
+        try
+        {
+            return await runStore.GetRunArchiveAsync(runId, ct) is not null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private static string DescribePoolNotReady(PoolNotReadyException ex)
     {
         var (verdict, next) = ex.Readiness switch

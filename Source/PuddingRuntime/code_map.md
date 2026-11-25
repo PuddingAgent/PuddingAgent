@@ -1,6 +1,6 @@
 # PuddingRuntime CodeMAP
 
-> 源指纹: Source/PuddingRuntime/**=445-05c6e204c0c0 · 条目数: 398 · 最近整理: 2026-11-22
+> 源指纹: Source/PuddingRuntime/**=445-353c9bc14983 · 条目数: 398 · 最近整理: 2026-11-22
 > 定位：Agent 运行时核心（Agent Loop / LLM 调用 / 工具系统 / 上下文管线 / 子代理 / 后台学习）；.NET 10 类库，唯一服务注册入口 `DependencyInjection.cs`。
 > 本文件只做本项目文件级索引；跨项目调用链、测试工程索引、架构文档索引、运行时目录与构建入口只在根 [`code_map.md`](../../code_map.md)。
 > 每对象一行；空字段写 `—`。角色 `observe` 的对象只在文末附录列路径。
@@ -345,7 +345,7 @@
 | `Tools/BuiltIns/Agents/GoalUpdateTool.cs` | `goal_update`：追加或整体覆盖目标文件 | `GoalUpdateTool` | `Tools/BuiltIns/Agents/GoalReadTool.cs` | — |
 | `Tools/BuiltIns/Agents/PoolListingFormatter.cs` · `Services/ToolTimeRendering.cs` | 池状态与工具时间渲染 | `PoolListingFormatter`、`ToolTimeRendering`、`FormatEditTime` | `SubAgentTool.cs`、`QuerySubAgentsTool.cs` | SubSessionId 必完整；时间转本地且必带日期（`HH:mm:ss` 丢日期/UTC 当本地）；`default` 渲染 `-`；`InvariantCulture` 防佛历 |
 | `Tools/BuiltIns/Agents/QuerySubAgentsTool.cs` | `query_sub_agents`：查询子代理状态 | `QuerySubAgentsTool` | `Services/ToolTimeRendering.cs` | list/status 的时间走 `ToolTimeRendering`：`HH:mm:ss` 会同时丢日期与把 UTC 当本地（同一 run 与池 list 差 8 小时） |
-| `Tools/BuiltIns/Agents/SubAgentTool.cs` | `spawn_sub_agent` 派生子代理执行任务 | `SubAgentTool`、`SubAgentCleanupFilter.SubSessionId` | `Services/SubAgentInvocationService.cs` | 模型写全 providerId/modelId；交付物外置；list/destroy/sleep/cleanup 在 task 解析前；不消费正文；三动作带 `PoolOwnerScope`（跨会话）；五类失败各渲染、未就绪非空池；模板继承声明（显式优先） |
+| `Tools/BuiltIns/Agents/SubAgentTool.cs` | `spawn_sub_agent` 派生子代理执行任务 | `SubAgentTool`、`SubAgentCleanupFilter.SubSessionId` | `Services/SubAgentInvocationService.cs` | 写全 provider/modelId；交付物外置；四个管理动作先于 task 解析；不消费正文；三动作带 `PoolOwnerScope`；五类失败分渲染、未就绪非空池；模板继承显式优先；cleanup 复核查归档非投影 |
 | `Tools/BuiltIns/CodeIntelligence/CodeOutlineTool.cs` | `code_outline`：文件顶层结构的树形输出 | `CodeOutlineTool` | `Tools/BuiltIns/CodeIntelligence/OutlineSyntaxVisitor.cs` | — |
 | `Tools/BuiltIns/CodeIntelligence/CodeProjectManagementTools.cs` | 代码索引项目的注册与查询工具 | `CodeProjectAddTool` | `Services/Tools/ToolExposurePlanner.cs` | — |
 | `Tools/BuiltIns/CodeIntelligence/CodeQueryTools.cs` | 符号检索与调用关系查询工具集 | `CodeQueryToolHelper` / `ReadIndexFreshness` | `Tools/BuiltIns/CodeIntelligence/CodeSummaryTool.cs` | 新鲜度只有一处口径：四工具共用 `ReadIndexFreshness`；`status` 是注册记录，运行时真相看 `index_freshness.state` |
