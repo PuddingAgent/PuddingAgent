@@ -145,7 +145,26 @@ public sealed class GoalUpdateTool : PuddingToolBase<GoalUpdateArgs>
 
         try
         {
-            var existing = File.Exists(filePath) ? File.ReadAllText(filePath) : "";
+            // append 必须**严格解码**旧内容：宽松的 File.ReadAllText 会把旧文件里的非法字节
+            // 永久替换成 U+FFFD 再整文件写回——一次 append 就把损坏固化下来
+            // （2026-11-25 隔离实验：原文件 0xFF → 落盘 EF BF BD，工具仍报成功）。
+            // 失败时抛错并保留原字节；用户仍可用 content_base64（override）显式修复。
+            var existing = "";
+            if (File.Exists(filePath))
+            {
+                if (mode == "append")
+                {
+                    existing = StrictUtf8Text.ReadAllText(filePath);
+                }
+                else
+                {
+                    // override 是修复损坏文件的**唯一出路**：旧内容只用于回执里的 old_size，
+                    // 解码失败不得阻断覆盖，否则这份文件再也没法用本工具救回来。
+                    try { existing = StrictUtf8Text.ReadAllText(filePath); }
+                    catch (DecoderFallbackException) { existing = ""; }
+                }
+            }
+
             string newContent;
 
             if (mode == "append")

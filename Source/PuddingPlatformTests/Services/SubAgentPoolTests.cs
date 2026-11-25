@@ -565,6 +565,16 @@ public sealed class SubAgentPoolTests
         Assert.IsTrue(manager.CancelledSubSessionIds.Contains(created.SubSessionId),
             "SleepAsync on a Busy entry must cancel the in-flight run; " +
             "changing Status alone leaves the loop spending while the log claims 'force-sleeping'");
+
+        // 取消必须带上本次执行的令牌：subSessionId 在池复用下无法区分代次，
+        // 只按它取消时，A 单已收尾、B 单接了同一子会话，迟到的休眠请求会把 B 打死
+        // （2026-11-25 隔离实验复现）。池的职责是「传对代次」，比对在 SubAgentManager。
+        Assert.IsTrue(manager.CancelExecutionRequests.Count > 0,
+            "休眠取消必须走带代次的入口，而不是只传 subSessionId");
+        var cancelRequest = manager.CancelExecutionRequests[^1];
+        Assert.AreEqual(created.SubSessionId, cancelRequest.SubSessionId);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(cancelRequest.ExpectedExecutionId),
+            "休眠取消必须带执行令牌，否则迟到的取消会命中下一单");
     }
 
     /// <summary>
@@ -754,6 +764,15 @@ public sealed class SubAgentPoolTests
 public sealed class TestSubAgentManager : ISubAgentManager
 {
     public List<string> CancelledSubSessionIds { get; } = new();
+
+    /// <summary>
+    /// 每次取消请求带上来的执行标识（<c>expectedExecutionId</c>），与 subSessionId 成对。
+    /// <para>
+    /// 池的职责是「传对代次」，比对职责在 SubAgentManager。因此桩不模拟命中/不命中，
+    /// 只如实记录收到什么——测试断言池有没有把本次执行的令牌带下来。
+    /// </para>
+    /// </summary>
+    public List<(string SubSessionId, string? ExpectedExecutionId)> CancelExecutionRequests { get; } = new();
     public int DelayMs { get; set; }
     public bool ShouldFail { get; set; }
     private int _spawnCounter;
@@ -802,6 +821,13 @@ public sealed class TestSubAgentManager : ISubAgentManager
         => Task.FromResult(0);
     public Task<bool> CancelAsync(string subSessionId, string reason, CancellationToken ct = default)
     {
+        CancelledSubSessionIds.Add(subSessionId);
+        return Task.FromResult(true);
+    }
+    public Task<bool> CancelExecutionAsync(
+        string subSessionId, string? expectedExecutionId, string reason, CancellationToken ct = default)
+    {
+        CancelExecutionRequests.Add((subSessionId, expectedExecutionId));
         CancelledSubSessionIds.Add(subSessionId);
         return Task.FromResult(true);
     }

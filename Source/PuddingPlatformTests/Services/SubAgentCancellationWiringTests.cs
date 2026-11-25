@@ -240,6 +240,53 @@ public sealed class SubAgentCancellationWiringTests
         Assert.IsFalse(ssm.Completed.Contains("parent-session-sub-sibling"));
     }
 
+    // ═══════════════════════════════════════
+    // 取消代次校验（P1-1）：迟到的取消不得打死下一单
+    // ═══════════════════════════════════════
+
+    /// <summary>
+    /// 池复用同一子会话时，A 单收尾、B 单接上，针对 A 的取消可能迟到。
+    /// 只按 subSessionId 打的取消会把 B 打死（2026-11-25 隔离实验复现）。
+    /// 这里固定「代次不匹配完全 no-op」：不发信号、不写终态。
+    /// </summary>
+    [TestMethod]
+    public async Task CancelExecutionAsync_UnknownExecutionId_DoesNotSignalOrBook()
+    {
+        var registry = new SubAgentRunCancellationRegistry();
+        var ssm = new FakeSessionStateManager();
+        ssm.SubAgents.Add(RunningStatus());
+        var manager = CreateManager(ssm, registry);
+        var token = registry.Register(SubSession, CancellationToken.None);
+
+        var ok = await manager.CancelExecutionAsync(SubSession, "exec-from-previous-run", "late cancel");
+
+        Assert.IsFalse(ok, "代次不匹配必须如实返回 false，不能假装取消成功");
+        Assert.IsFalse(token.IsCancellationRequested,
+            "迟到的取消不得打到当前这一单：同一 subSessionId 已被下一次执行接管");
+        Assert.AreEqual(0, ssm.Completed.Count,
+            "更不能把别人的运行记成 cancelled——那是不可逆的记账污染");
+    }
+
+    /// <summary>
+    /// 正向对照：expected 为空时不做代次校验，与 CancelAsync 等价。
+    /// 没有这一条，一个「一律拒绝」的实现也能让上面的负向用例通过。
+    /// </summary>
+    [TestMethod]
+    public async Task CancelExecutionAsync_NullExecutionId_BehavesLikeCancelAsync()
+    {
+        var registry = new SubAgentRunCancellationRegistry();
+        var ssm = new FakeSessionStateManager();
+        ssm.SubAgents.Add(RunningStatus());
+        var manager = CreateManager(ssm, registry);
+        var token = registry.Register(SubSession, CancellationToken.None);
+
+        var ok = await manager.CancelExecutionAsync(SubSession, null, "no correlation");
+
+        Assert.IsTrue(ok);
+        Assert.IsTrue(token.IsCancellationRequested);
+        Assert.IsTrue(ssm.Completed.Contains(SubSession));
+    }
+
     private sealed class FakeSessionStateManager : ISessionStateManager
     {
         // 默认 0：未设置时不影响既有并发用例。

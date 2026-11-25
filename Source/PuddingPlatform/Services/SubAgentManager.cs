@@ -86,6 +86,19 @@ public sealed class SubAgentManager : ISubAgentManager
     /// <summary>子代理 subSessionId → runId 的内存映射（供异步完成回调使用）。</summary>
     private readonly ConcurrentDictionary<string, string> _runIdMap = new();
 
+    /// <summary>
+    /// 子代理 subSessionId → 发起方给的执行标识（<c>SubAgentSpawnRequest.ExecutionCorrelationId</c>）。
+    /// <para>
+    /// 存在理由：池复用同一个 subSessionId，而取消请求可能迟到。只按 subSessionId 取消时，
+    /// A 单已收尾、B 单已接单，迟到的取消会把 B 打死（2026-11-25 隔离实验复现）。
+    /// 因此取消前必须确认「当前驱动的仍是当初那一单」。
+    /// </para>
+    /// <para>
+    /// 只登记非空值：普通 spawn 不写，取消方也不传 expected，两边行为不变。
+    /// </para>
+    /// </summary>
+    private readonly ConcurrentDictionary<string, string> _runCorrelationMap = new(StringComparer.Ordinal);
+
     // ════════════════════════════════════════════════════════
     // 子代理执行
     // ════════════════════════════════════════════════════════
@@ -112,8 +125,8 @@ public sealed class SubAgentManager : ISubAgentManager
         // 投影失败时立即终结 run，避免留下无法解释的永久 running 归档。
         var runHandle = await CreateTrackedRunAsync(request, subSessionId, spawnedAt, ct);
 
-        // 将 runId 存入内存映射（供完成回调使用）
-        _runIdMap[subSessionId] = runHandle.RunId;
+        // 将 runId 存入内存映射（供完成回调使用），同时记下发起方的执行标识。
+        TrackRun(subSessionId, runHandle.RunId, request);
 
         // 发布内部事件 subagent.run.created（替代旧的 agent.sub_completed styled 事件）
         await _eventBus.PublishAsync(new InternalEvent
@@ -377,7 +390,7 @@ public sealed class SubAgentManager : ISubAgentManager
         var trace = ResolveTrace(request, subSessionId);
         var spawnedAt = DateTimeOffset.UtcNow;
         var runHandle = await CreateTrackedRunAsync(request, subSessionId, spawnedAt, ct);
-        _runIdMap[subSessionId] = runHandle.RunId;
+        TrackRun(subSessionId, runHandle.RunId, request);
 
         var isReusedSession = !string.IsNullOrWhiteSpace(request.ReuseSubSessionId);
 
@@ -501,11 +514,42 @@ public sealed class SubAgentManager : ISubAgentManager
     /// 取消**单个**运行中的子代理。与 CancelAllAsync 共用同一条记账链，
     /// 避免两处各写一遍导致行为漂移。
     /// </summary>
-    public async Task<bool> CancelAsync(
+    public Task<bool> CancelAsync(
         string subSessionId, string reason, CancellationToken ct = default)
+        => CancelCoreAsync(subSessionId, reason, expectedExecutionId: null, ct);
+
+    /// <inheritdoc />
+    public Task<bool> CancelExecutionAsync(
+        string subSessionId,
+        string? expectedExecutionId,
+        string reason,
+        CancellationToken ct = default)
+        => CancelCoreAsync(subSessionId, reason, expectedExecutionId, ct);
+
+    /// <summary>
+    /// 两条取消入口的唯一实现。{@param expectedExecutionId} 非空时先校验代次，
+    /// 不匹配就 no-op —— 连终态也不写。把别人的运行记成被取消，比不取消更糟。
+    /// </summary>
+    private async Task<bool> CancelCoreAsync(
+        string subSessionId, string reason, string? expectedExecutionId, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(subSessionId))
             return false;
+
+        // 代次校验必须发生在任何状态读写之前：迟到的取消命中新一单时，
+        // 后面每一步（发信号、写终态、完结 run）都是错的。
+        if (expectedExecutionId is not null)
+        {
+            _runCorrelationMap.TryGetValue(subSessionId, out var currentCorrelation);
+            if (!string.Equals(currentCorrelation, expectedExecutionId, StringComparison.Ordinal))
+            {
+                _logger.LogInformation(
+                    "[SubAgentMgr] Late cancel ignored sub={Sub} expected={Expected} current={Current}: " +
+                    "that execution is no longer the one running",
+                    subSessionId, expectedExecutionId, currentCorrelation ?? "<none>");
+                return false;
+            }
+        }
 
         var status = await GetStatusAsync(subSessionId, ct);
         if (status is null)
@@ -543,6 +587,10 @@ public sealed class SubAgentManager : ISubAgentManager
     /// </summary>
     private async Task<string?> TakeRunIdAndRevokeAsync(string subSessionId, CancellationToken ct)
     {
+        // 运行身份一旦被取走，该代次也随之失效：此后针对它的迟到取消不应再命中任何东西。
+        // 放在最前而不在分支里，是因为本方法两条路径（内存命中 / 账本回落）都是“取走”。
+        _runCorrelationMap.TryRemove(subSessionId, out _);
+
         string? runId;
         if (_runIdMap.TryRemove(subSessionId, out var inMemoryRunId))
         {
@@ -635,6 +683,28 @@ public sealed class SubAgentManager : ISubAgentManager
             Status = RuntimeActivityStatuses.Cancelled,
             Summary = $"Cancelled sub-agent {sa.SubSessionId}",
         }, ct);
+    }
+
+    /// <summary>
+    /// 登记「这一单」的运行身份：runId（供完成回调）与发起方执行标识（供取消代次校验）。
+    /// <para>
+    /// 两个派发入口（<see cref="SpawnAsync"/> / <see cref="ExecuteSyncAsync"/>）共用此方法，
+    /// 避免只登记一半——只登记 runId 时取消照样会命中下一单，那只修了表象。
+    /// </para>
+    /// </summary>
+    private void TrackRun(string subSessionId, string runId, SubAgentSpawnRequest request)
+    {
+        _runIdMap[subSessionId] = runId;
+
+        if (string.IsNullOrWhiteSpace(request.ExecutionCorrelationId))
+        {
+            // 普通 spawn：不登记代次，但必须清掉可能残留的旧代次，
+            // 否则池针对上一单的迟到取消会把这一单当成目标。
+            _runCorrelationMap.TryRemove(subSessionId, out _);
+            return;
+        }
+
+        _runCorrelationMap[subSessionId] = request.ExecutionCorrelationId!;
     }
 
     /// <summary>

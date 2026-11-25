@@ -55,6 +55,27 @@ public interface ISubAgentManager
         string subSessionId, string reason, CancellationToken ct = default);
 
     /// <summary>
+    /// 只有「该子会话当前驱动的仍是 <paramref name="expectedExecutionId"/> 这一单」时才取消。
+    /// <para>
+    /// 与 <see cref="CancelAsync"/> 的区别是**代次校验**：池复用一个子会话时，A 单收尾后 B 单
+    /// 立即接上同一 <c>subSessionId</c>，而针对 A 的取消请求可能还没送达。只按 subSessionId
+    /// 取消会把 B 打死——2026-11-25 隔离实验复现了这一条（A 在取消送达前正常退出，B 接单，
+    /// 迟到的取消命中了 B）。
+    /// </para>
+    /// <para>
+    /// <paramref name="expectedExecutionId"/> 为空时**不校验代次**，等价于 <see cref="CancelAsync"/>；
+    /// 非空且与当前登记不一致（含「当前没有任何登记」）时一律 no-op 并返回 false，
+    /// 不写终态——把别人的运行记成被取消，比不取消更糟。
+    /// </para>
+    /// </summary>
+    /// <returns>true = 命中该代次并已发出取消；false = 未命中，未做任何改动。</returns>
+    Task<bool> CancelExecutionAsync(
+        string subSessionId,
+        string? expectedExecutionId,
+        string reason,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// 向一个**正在运行**的子代理投递一条 steering 消息。
     /// <para>
     /// 消息写入 session_steering_messages，由子代理 loop 在下一次 LLM 调用前按
@@ -176,6 +197,16 @@ public sealed record SubAgentSpawnRequest
     /// <summary>复用已有子代理会话 ID。非空时跳过新 ID 生成，直接使用此 ID。
     /// 用于子代理池复用场景，保持会话连续以利用 KV-cache。</summary>
     public string? ReuseSubSessionId { get; init; }
+
+    /// <summary>
+    /// 发起方（典型是子代理池）为这一单生成的稳定执行标识，仅用于**取消时的代次校验**。
+    /// <para>
+    /// 复用同一子会话时，subSessionId 无法区分 A 单和 B 单。池把它自己的执行令牌带进来，
+    /// 取消时回传这个值；不匹配就 no-op，从而不会误杀接单的下一单。
+    /// </para>
+    /// <para>为空（普通 spawn）时不做代次校验，行为与今天完全一致。</para>
+    /// </summary>
+    public string? ExecutionCorrelationId { get; init; }
 
     /// <summary>
     /// 派发时预加载的工具 id。子代理是新 session，已加载集为空，默认只能看到

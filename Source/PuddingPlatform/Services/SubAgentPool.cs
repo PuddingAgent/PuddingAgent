@@ -954,6 +954,9 @@ public sealed class SubAgentPool : ISubAgentPool
         {
             ReuseSubSessionId = entry.SubSessionId,
             RoleInPlan = string.IsNullOrWhiteSpace(request.RoleInPlan) ? entry.Role : request.RoleInPlan,
+            // 把本次执行令牌带进执行链：subSessionId 在复用下不能区分代次，
+            // 而休眠 / 销毁发出的取消可能迟到，必须靠这个标识判断“还是不是那一单”。
+            ExecutionCorrelationId = executionId,
         };
 
         SubAgentExecuteResult result;
@@ -1147,8 +1150,9 @@ public sealed class SubAgentPool : ISubAgentPool
 
         try
         {
-            await _subAgentManager.CancelAsync(
+            await _subAgentManager.CancelExecutionAsync(
                 entry.SubSessionId,
+                executionId,
                 "Pooled sub-agent put to sleep",
                 ct);
         }

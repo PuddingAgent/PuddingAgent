@@ -340,4 +340,89 @@ public sealed class GoalUpdateToolTests
             if (Directory.Exists(tmpRoot)) Directory.Delete(tmpRoot, true);
         }
     }
+
+    // ═══════════════════════════════════════
+    // append 不得损失性解码旧文件（P1-4）
+    // ═══════════════════════════════════════
+
+    [TestMethod]
+    public async Task ExecuteCore_AppendOnCorruptExistingFile_FailsAndKeepsOriginalBytes()
+    {
+        // 回归（2026-11-25 隔离实验）：新输入有严格校验，但 append 仍用 File.ReadAllText
+        // 读旧 goal.md——宽松解码把旧的 0xFF 永久换成 U+FFFD 再整文件写回，工具回执成功。
+        // 一次 append 就把损坏固化下来，而且此后每次读到的都是「合法但不真」的内容。
+        var tmpRoot = Path.Combine(Path.GetTempPath(), "pudding-goal-test-" + Guid.NewGuid().ToString("N")[..8]);
+        var paths = PuddingDataPaths.FromRoot(tmpRoot);
+        var tool = new GoalUpdateTool(paths, NullLogger<GoalUpdateTool>.Instance);
+        var context = new ToolExecutionContext
+        {
+            WorkspaceId = "ws-1",
+            SessionId = "session-1",
+            AgentInstanceId = "agent-corrupt",
+        };
+        try
+        {
+            var goalPath = Path.Combine(paths.AgentInstanceRoot("agent-corrupt"), "goal.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(goalPath)!);
+            // 合法 UTF-8 前缀 + 非法字节 0xFF：只看前两百字难以看出异常，正是它危险的地方。
+            var original = new byte[] { 0x23, 0x20, 0x67, 0x6F, 0x61, 0x6C, 0x0A, 0xFF, 0x0A };
+            File.WriteAllBytes(goalPath, original);
+
+            var result = await tool.ExecuteAsync(new ToolExecutionRequest
+            {
+                ToolCallId = "call-1",
+                ArgumentsJson = "{\"append\":\"new line\"}",
+                Context = context,
+            });
+
+            Assert.IsFalse(result.Success, "旧文件含非法字节时 append 必须失败，不能静默改写");
+            CollectionAssert.AreEqual(original, File.ReadAllBytes(goalPath),
+                "拒绝时必须保留原字节：一份还能救的文件不应在失败时变得更坏");
+        }
+        finally
+        {
+            if (Directory.Exists(tmpRoot)) Directory.Delete(tmpRoot, true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteCore_Override_RepairsCorruptFile()
+    {
+        // 正向对照：append 拒绝退化了文件，override 必须是**唯一出路**。
+        // 若 override 也去解析旧内容，这份文件就再也救不回来了。
+        var tmpRoot = Path.Combine(Path.GetTempPath(), "pudding-goal-test-" + Guid.NewGuid().ToString("N")[..8]);
+        var paths = PuddingDataPaths.FromRoot(tmpRoot);
+        var tool = new GoalUpdateTool(paths, NullLogger<GoalUpdateTool>.Instance);
+        var context = new ToolExecutionContext
+        {
+            WorkspaceId = "ws-1",
+            SessionId = "session-1",
+            AgentInstanceId = "agent-repair",
+        };
+        try
+        {
+            var goalPath = Path.Combine(paths.AgentInstanceRoot("agent-repair"), "goal.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(goalPath)!);
+            File.WriteAllBytes(goalPath, new byte[] { 0x23, 0xFF, 0x0A });
+
+            const string body = "# goal\n\n修好了\n";
+            var base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(body));
+
+            var result = await tool.ExecuteAsync(new ToolExecutionRequest
+            {
+                ToolCallId = "call-1",
+                ArgumentsJson = $"{{\"content_base64\":\"{base64}\"}}",
+                Context = context,
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            CollectionAssert.AreEqual(
+                new UTF8Encoding(false).GetBytes(body), File.ReadAllBytes(goalPath),
+                "override 必须能用有效内容整体替换掉已损坏的文件");
+        }
+        finally
+        {
+            if (Directory.Exists(tmpRoot)) Directory.Delete(tmpRoot, true);
+        }
+    }
 }
