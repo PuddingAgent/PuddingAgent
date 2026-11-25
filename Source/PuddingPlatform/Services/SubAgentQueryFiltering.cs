@@ -61,8 +61,17 @@ internal static class SubAgentQueryFiltering
     /// 子代理的运行记录删掉，那条记录是它收尾时唯一的落点。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <c>Take(MaxCount)</c> 必须在所有筛选<b>之后</b>：先截断再筛时，被截掉的可能是
     /// 不匹配的条目，于是「最多清 1 条」变成「最多清 0 条」——正是目标条目被清不掉的成因。
+    /// </para>
+    /// <para>
+    /// <b>截断前必须按 <see cref="SubAgentStatus.SpawnedAt"/> 升序重排。</b>入参来自
+    /// <c>GetSubAgentsAsync</c>，那份结果按 SpawnedAt <b>降序</b>返回（最新的在前）。直接
+    /// <c>Take(MaxCount)</c> 会让 bulk 清理挑走<b>最新</b>的 N 条，恰好与保留策略相反：调用方
+    /// 说「批量清一下」，被删掉的是刚才那批还没看过的历史，而更早的垃圾反而留下。升序后
+    /// 「删最旧的」与 <c>OlderThanDays</c> 的语义一致。
+    /// </para>
     /// </remarks>
     internal static IReadOnlyList<SubAgentStatus> SelectForCleanup(
         IReadOnlyList<SubAgentStatus> all,
@@ -95,7 +104,8 @@ internal static class SubAgentQueryFiltering
         query = query.Where(s => !IsRunning(s.Status));
 
         var maxCount = filter.MaxCount > 0 ? filter.MaxCount : 100;
-        return query.Take(maxCount).ToList();
+        // 见 remarks：入参是最新在前的列表，截断前按最旧在前重排，否则 bulk 会删掉最新的历史。
+        return query.OrderBy(s => s.SpawnedAt).Take(maxCount).ToList();
     }
 
     private static bool IsRunning(string? status)

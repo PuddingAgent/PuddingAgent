@@ -130,6 +130,26 @@ public sealed class SubAgentCleanupScopeTests
             "运行中的记录是它收尾时唯一的落点，不得被清理");
     }
 
+    [TestMethod]
+    public void SelectForCleanup_TakesOldestFirst_EvenWhenInputIsNewestFirst()
+    {
+        // 入参形状取真实调用链：GetSubAgentsAsync 按 SpawnedAt 降序返回。
+        var all = new[]
+        {
+            StatusAt("sub-newest", 1, "completed"),
+            StatusAt("sub-middle", 5, "completed"),
+            StatusAt("sub-oldest", 20, "completed"),
+        };
+
+        var two = SubAgentQueryFiltering.SelectForCleanup(all, new SubAgentCleanupFilter { MaxCount = 2 });
+        CollectionAssert.AreEqual(new[] { "sub-oldest", "sub-middle" }, Ids(two),
+            "bulk 清理必须删最旧的：直接 Take 会挑走最新两条，与保留策略正好相反");
+
+        // 正向对照：不截断时三条都在，证明上面少的不是「筛掉了」。
+        var all3 = SubAgentQueryFiltering.SelectForCleanup(all, new SubAgentCleanupFilter { MaxCount = 3 });
+        CollectionAssert.AreEqual(new[] { "sub-oldest", "sub-middle", "sub-newest" }, Ids(all3));
+    }
+
     // ── 脚手架 ──────────────────────────────────────────────
 
     private static readonly DateTimeOffset Now = new(2026, 11, 25, 0, 0, 0, TimeSpan.Zero);
@@ -144,6 +164,18 @@ public sealed class SubAgentCleanupScopeTests
             TemplateId = templateId,
             TaskSummary = "task of " + subSessionId,
             SpawnedAt = Now.AddHours(-1),
+        };
+
+    private static SubAgentStatus StatusAt(string subSessionId, int hoursAgo, string status)
+        => new()
+        {
+            RunId = "run-" + subSessionId,
+            ParentSessionId = "parent-session",
+            SubSessionId = subSessionId,
+            Status = status,
+            TemplateId = "workspace-task-agent",
+            TaskSummary = "task of " + subSessionId,
+            SpawnedAt = Now.AddHours(-hoursAgo),
         };
 
     private static string[] Ids(IReadOnlyList<SubAgentStatus> list)
