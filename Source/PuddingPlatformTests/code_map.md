@@ -48,6 +48,9 @@
 `Services/AgentModelPolicyMapperTests.cs` 覆盖 4 条用例。
 `Services/AgentPoolAutoCreateTests.cs` 覆盖 2 条用例。
 `Services/AgentPoolBusyRecoveryTests.cs` 覆盖 6 条用例。
+`Services/AgentPoolDeclaredModelTests.cs` 覆盖 5 条用例。
+`Services/AgentPoolDeclaredRoleTests.cs` 覆盖 5 条用例。
+`Services/AgentPoolDeclaredTemplateTests.cs` 覆盖 3 条用例（库优先 / 读失败 / 软删均沿快照）。
 `Services/AgentPoolEntryStoreTests.cs` 覆盖 9 条用例。
 `Services/AgentPoolEvictionTests.cs` 覆盖 4 条用例。
 `Services/AgentPoolReadinessTests.cs` 覆盖 8 条用例。

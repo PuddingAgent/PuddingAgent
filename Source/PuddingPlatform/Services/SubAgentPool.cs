@@ -761,9 +761,19 @@ public sealed class SubAgentPool : ISubAgentPool
     /// 而结果里看不出差异。模型退回默认只是换个路由，模板退回默认是换个人，所以这里多等一次加载。
     /// </para>
     /// <para>
-    /// <b>读到后不必每单回源库：</b>面板 PATCH 只能改 role / model_id / responsibility / avatar_key
-    /// （无 template 字段），所以模板列在条目生命周期内不变，内存快照就是真值。
-    /// 这一点与 <see cref="GetDeclaredModelIdAsync"/> 刚好相反。
+    /// <b>有库则以库为准，与 role / model 同一处置。</b>这里曾经直接返回启动快照并附一条理由：
+    /// 「面板 PATCH 只能改 role / model_id / responsibility / avatar_key，没有 template 字段，
+    /// 所以模板列在条目生命周期内不变」。那句话本身是对的，但它是<b>跨文件假设</b>——
+    /// 一端在 <c>SubAgentPoolAdminController</c> 的字段白名单，一端在本类的缓存，
+    /// 没有任何编译期或测试机制把两端绑住。一旦哪天模板进了 PATCH 白名单，
+    /// 派发会继续用启动快照，而结果里看不出差异：这正是角色已经付过一次代价的缺陷形状
+    /// （见 <see cref="RefreshDeclaredRoleLockedAsync"/> 的注释）。
+    /// 一次按主键的读换掉一个只在注释里成立的约定，代价可以忽略。
+    /// </para>
+    /// <para>
+    /// <b>读不到不阻断派活：</b>库抖动时退回快照。快照可能过期，但「旧模板」比「派活直接失败」
+    /// 代价小得多；下一单会再试一次。库里已经没有该行（软删）时同样退回快照——
+    /// 那种情况由 <c>ExecuteAsync</c> 的抢占谓词统一拒绝，不在这里猜。
     /// </para>
     /// </summary>
     public async Task<string?> GetDeclaredTemplateIdAsync(string name, CancellationToken ct = default)
@@ -779,9 +789,25 @@ public sealed class SubAgentPool : ISubAgentPool
             return null;
         }
 
-        return _pool.TryGetValue(name, out var entry) && !string.IsNullOrWhiteSpace(entry.TemplateId)
-            ? entry.TemplateId
-            : null;
+        if (!_pool.TryGetValue(name, out var entry))
+            return null;
+
+        if (_entryStore is not null)
+        {
+            try
+            {
+                var row = await _entryStore.GetByIdAsync(entry.PoolId, ct).ConfigureAwait(false);
+                if (row is not null)
+                    return string.IsNullOrWhiteSpace(row.TemplateId) ? null : row.TemplateId;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(
+                    ex, "[SubAgentPool] 读取条目 {Name} 的声明模板失败，本次沿用快照", name);
+            }
+        }
+
+        return string.IsNullOrWhiteSpace(entry.TemplateId) ? null : entry.TemplateId;
     }
 
     /// <summary>
