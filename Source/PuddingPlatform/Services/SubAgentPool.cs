@@ -144,6 +144,7 @@ public sealed class SubAgentPool : ISubAgentPool
 
         public PooledSubAgent ToSnapshot() => new()
         {
+            PoolId = PoolId,
             Name = Name,
             SubSessionId = SubSessionId,
             TemplateId = TemplateId,

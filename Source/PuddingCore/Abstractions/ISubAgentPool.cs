@@ -14,6 +14,19 @@ public enum PooledSubAgentStatus
 /// <summary>Read-only snapshot of a reusable child-agent session.</summary>
 public sealed record PooledSubAgent
 {
+    /// <summary>
+    /// 稳定成员 id（<c>agent_pool.pool_id</c>）。
+    /// <para>
+    /// <b>为什么快照要带它：</b><c>name</c> 目前靠全局唯一索引兼作身份，而团队化要把 name 降为
+    /// 「所属范围内唯一」的展示名 —— 那时名字就不能再当寻址键。稳定 id 不由名字派生，
+    /// destroy → create 也不会复用，是唯一能跨改名追同一成员的键。
+    /// </para>
+    /// <para>
+    /// 纯内存模式（未接存储）下与 <see cref="Name"/> 一样只在本进程内有效。
+    /// </para>
+    /// </summary>
+    public required string PoolId { get; init; }
+
     public required string Name { get; init; }
     public required string SubSessionId { get; init; }
     public required string TemplateId { get; init; }

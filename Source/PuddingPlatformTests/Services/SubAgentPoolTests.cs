@@ -142,6 +142,28 @@ public sealed class SubAgentPoolTests
     }
 
     [TestMethod]
+    public async Task GetAsync_SnapshotCarriesStablePoolId()
+    {
+        // 团队化要把 name 降为「所属范围内唯一」的展示名，那时名字就不能再当寻址键；
+        // 快照必须带稳定成员 id，否则调用方连「我要操作哪一个」都表达不出来。
+        var pool = CreatePool();
+        await pool.CreateAsync("agent-a", CreateSpawnRequest());
+        await pool.CreateAsync("agent-b", CreateSpawnRequest());
+
+        var first = await pool.GetAsync("agent-a");
+        var second = await pool.GetAsync("agent-b");
+        var firstAgain = await pool.GetAsync("agent-a");
+
+        Assert.IsNotNull(first);
+        Assert.IsNotNull(second);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(first!.PoolId), "快照必须携带 pool_id");
+        Assert.AreNotEqual(first.PoolId, second!.PoolId, "两个成员不能共用一个 pool_id");
+        Assert.AreEqual(
+            first.PoolId, firstAgain!.PoolId,
+            "pool_id 必须稳定：每次取快照都新生成就追不到同一个成员了");
+    }
+
+    [TestMethod]
     public async Task GetAsync_ReturnsNullForUnknown()
     {
         var pool = CreatePool();

@@ -1098,6 +1098,7 @@ public sealed class SubAgentPoolAdminControllerTests
     /// <summary>构造一个内存快照条目：只有 <c>Name</c> 参与判定，其余字段填得能通过必填校验。</summary>
     private static PooledSubAgent PoolEntry(string name) => new()
     {
+        PoolId = $"poolid-{name}",
         Name = name,
         SubSessionId = $"sub-{name}",
         TemplateId = "workspace-task-agent",

@@ -243,6 +243,7 @@ public sealed class SubAgentToolPoolFailureTests
             [
                 new PooledSubAgent
                 {
+                    PoolId = "poolid-p1",
                     Name = "p1",
                     SubSessionId = "sess-parent-sub-p1",
                     TemplateId = "workspace-task-agent",
@@ -328,6 +329,7 @@ public sealed class SubAgentToolPoolFailureTests
 
     private static PooledSubAgent OwnedEntry(string name, string ownerSessionId) => new()
     {
+        PoolId = $"poolid-{name}",
         Name = name,
         SubSessionId = $"{ownerSessionId}-sub-{name}",
         TemplateId = "workspace-task-agent",
@@ -699,6 +701,7 @@ public sealed class SubAgentToolPoolFailureTests
 
         private static PooledSubAgent Snapshot(string name, SubAgentSpawnRequest? request) => new()
         {
+            PoolId = $"poolid-{name}",
             Name = name,
             SubSessionId = $"{request?.ParentSessionId ?? "sess-parent"}-sub-{name}",
             TemplateId = request?.TemplateId ?? "workspace-task-agent",

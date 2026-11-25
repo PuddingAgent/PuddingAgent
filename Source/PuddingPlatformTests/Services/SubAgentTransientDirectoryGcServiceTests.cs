@@ -194,6 +194,7 @@ public sealed class SubAgentTransientDirectoryGcServiceTests
         public IReadOnlyList<PooledSubAgent> List() => subSessionIds
             .Select((id, index) => new PooledSubAgent
             {
+                PoolId = $"poolid-{index}",
                 Name = $"pooled-{index}",
                 SubSessionId = id,
                 TemplateId = "researcher",
