@@ -502,6 +502,48 @@ public sealed class SubAgentToolPoolFailureTests
     }
 
     [TestMethod]
+    public async Task Cleanup_WhenNameResolvesToDifferentMemberThanSubAgentId_RefusesInsteadOfPickingOne()
+    {
+        // 名字不是稳定键：条目销毁后名字立即释放，可被新成员复用。于是「按名字解析到的成员」
+        // 与「调用方给的 sub_agent_id」可能指向两个不同成员。旧实现让名字优先：这次重试会清掉
+        // 新成员的归档，并把销毁也落到新成员身上——而回执里写的是调用方拼的那个名字。
+        var calls = new List<string>();
+        var reused = OwnedEntry("p1", "sess-parent") with { SubSessionId = "sess-new-p1" };
+        var pool = NewCleanupPool(calls, reused);
+        var manager = NewCleanupManager(calls, cleaned: 1, runId: "run-new-p1");
+        var store = NewArchiveStore(present: false);
+
+        var result = await ExecuteCleanupAsync(pool, manager, store.Object,
+            """{"pool_name":"p1","pool_action":"cleanup","sub_agent_id":"sess-old-p1"}""");
+
+        Assert.IsFalse(result.Success, "两个键指向不同成员时必须拒绝，不能替调用方选一个。");
+        var error = result.Error ?? string.Empty;
+        StringAssert.Contains(error, "sess-old-p1", "必须回显调用方给的 id");
+        StringAssert.Contains(error, "sess-new-p1", "必须回显名字当前解析到的 id");
+        CollectionAssert.DoesNotContain(calls, "cleanup",
+            "歧义时不得清理任何成员：" + string.Join(",", calls));
+        CollectionAssert.DoesNotContain(calls, "destroy",
+            "歧义时不得销毁任何成员：" + string.Join(",", calls));
+        Assert.AreEqual(0, store.Probed.Count, "歧义时连归档都不该探查");
+    }
+
+    [TestMethod]
+    public async Task Cleanup_WhenNameAndSubAgentIdAgree_StillProceeds()
+    {
+        // 对照：两个键一致时不得因为「带了 id」就多拦一次——否则正常重试也会失败。
+        var calls = new List<string>();
+        var pool = NewCleanupPool(calls, OwnedEntry("p1", "sess-parent"));
+        var manager = NewCleanupManager(calls, cleaned: 1, runId: "run-p1");
+        var store = NewArchiveStore(present: false);
+
+        var result = await ExecuteCleanupAsync(pool, manager, store.Object,
+            """{"pool_name":"p1","pool_action":"cleanup","sub_agent_id":"sess-parent-sub-p1"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        CollectionAssert.Contains(calls, "cleanup", "两个键一致时必须照常清理");
+    }
+
+    [TestMethod]
     public async Task Cleanup_BusyEntry_DestroysFirstSoRunningRunCanBeCleaned()
     {
         var calls = new List<string>();

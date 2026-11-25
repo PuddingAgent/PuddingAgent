@@ -280,11 +280,30 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         // 否则「清理失败」不可重试。
                         var poolAgent = managementPool.ListOwnedBy(ownerScope)
                             .FirstOrDefault(a => string.Equals(a.Name, args.PoolName, StringComparison.Ordinal));
-                        var targetSubSessionId = poolAgent?.SubSessionId;
-                        if (string.IsNullOrWhiteSpace(targetSubSessionId))
-                            targetSubSessionId = string.IsNullOrWhiteSpace(args.SubAgentId)
-                                ? null
-                                : args.SubAgentId.Trim();
+
+                        // 名字不是稳定键：条目销毁后名字立即释放（唯一索引只约束未删行），可被新成员复用。
+                        // 于是「按名字解析到的条目」与「调用方显式给的 sub_agent_id」可能指向两个不同成员。
+                        // 冲突时按任一键继续都会作用在调用方没指的那个成员上：按名字会重新定位到新成员、
+                        // 清掉它的归档并把销毁也落到它身上；按 id 同样会把销毁落到新成员。
+                        // 歧义必须拒绝——这条路径删的是不可恢复的运行归档，不能替调用方选一个。
+                        var explicitSubSessionId = string.IsNullOrWhiteSpace(args.SubAgentId)
+                            ? null
+                            : args.SubAgentId.Trim();
+                        var resolvedByNameSubSessionId = string.IsNullOrWhiteSpace(poolAgent?.SubSessionId)
+                            ? null
+                            : poolAgent!.SubSessionId;
+
+                        if (explicitSubSessionId is not null && resolvedByNameSubSessionId is not null
+                            && !string.Equals(explicitSubSessionId, resolvedByNameSubSessionId, StringComparison.Ordinal))
+                            return Fail(
+                                $"? 子代理名 '{args.PoolName}' 与 sub_agent_id 指向不同成员，已拒绝执行。" +
+                                $"\n- 名字当前解析到：{resolvedByNameSubSessionId}" +
+                                $"\n- sub_agent_id 给的是：{explicitSubSessionId}" +
+                                "\n名字在条目销毁后会立即释放、可被新成员复用，两个键冲突时无法判断要清哪一个。" +
+                                "\n提示：只想清显式给的那一个时，先 pool_action=\"list\" 确认该成员当前的名字；" +
+                                "只想清名字解析到的那一个时，去掉 sub_agent_id。");
+
+                        var targetSubSessionId = resolvedByNameSubSessionId ?? explicitSubSessionId;
 
                         if (targetSubSessionId is null)
                             return Fail(
