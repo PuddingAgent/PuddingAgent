@@ -154,7 +154,14 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             if (dataPaths is null)
                 return Fail("? PuddingDataPaths 服务未注册。");
 
-            var snapshot = SubAgentRunLogReader.ReadLatest(dataPaths, logTarget, args.LogsTail ?? 20);
+            // 读范围必须与写范围一致（2026-11-25）：归档写在 <workspace>/agents/<agent>/runs 下，
+            // 而上面的归属校验在「状态查不到」时是放行的。若这里仍按 WorkspacesRoot 全盘扫描，
+            // 那条放行就会把别人的 run 内容读出来 —— 不知道属于谁 ≠ 可以给所有人读。
+            var runScopeRoot = ResolveOwnRunScope(dataPaths, context);
+            if (runScopeRoot is null)
+                return Fail("? 无法确定当前 Agent 的运行归档根（workspace / agent_instance_id 缺失），已拒绝读取子代理日志。");
+
+            var snapshot = SubAgentRunLogReader.ReadLatest(runScopeRoot, logTarget, args.LogsTail ?? 20);
             if (snapshot is null)
                 return Fail($"? 找不到 sub_agent_id={logTarget} 的运行归档（可能尚未创建或已被清理）。");
 
@@ -1883,7 +1890,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
     }
 
     /// <summary>
-    /// 运行级动作（cancel / logs / steer）的归属前置校验。返回 <c>null</c> 表示放行，否则返回可直接展示的拒绕文案。
+    /// 运行级动作（cancel / logs / steer）的归属前置校验。返回 <c>null</c> 表示放行，否则返回可直接展示的拒绝文案。
     /// <para>
     /// <b>为什么需要它：</b>池操作已按 <see cref="PoolOwnerScope"/> 收紧（list / sleep / destroy），
     /// 但运行级动作靠 <c>sub_agent_id</c> 定位，根本不经过池—— 于是一个会话能取消、读取、注入
@@ -1926,6 +1933,29 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
         return $"? 子代理 {subSessionId} 不属于当前会话（它的父会话是另一个），已拒绝。" +
                "\n提示：只能取消 / 查看 / 注入本会话的子代理；跨会话操作走管理面。";
+    }
+
+    /// <summary>
+    /// 当前 Agent 自己的子代理运行归档根（<c>{workspaceRoot}/{workspaceId}/agents/{agentId}/runs</c>）。
+    /// <para>
+    /// 与写入端同一套路径派生（<see cref="PuddingDataPaths.SubAgentRunRoot"/> 也走
+    /// <see cref="PuddingDataPaths.WorkspaceAgentRoot"/>），避免读写两侧各算一遍而默默分叉。
+    /// 取不到身份就返回 null：不知道扫哪里时不展开任意范围。
+    /// </para>
+    /// </summary>
+    internal static string? ResolveOwnRunScope(PuddingDataPaths paths, ToolExecutionContext context)
+    {
+        // 归属根 Agent：委托运行时 AgentInstanceId 是临时子会话身份，归档却写在根 Agent 的目录下。
+        // 与 SendMessageTool 及本工具 :809 用同一套解析，避免「自己写的目录自己读不到」。
+        var agentInstanceId = context.ConfigurationAgentInstanceId is { Length: > 0 } configured
+            ? configured
+            : context.AgentInstanceId;
+
+        if (string.IsNullOrWhiteSpace(agentInstanceId))
+            return null;
+
+        var workspaceId = string.IsNullOrWhiteSpace(context.WorkspaceId) ? "default" : context.WorkspaceId;
+        return Path.Combine(paths.WorkspaceAgentRoot(workspaceId, agentInstanceId), "runs");
     }
 
     /// <summary>

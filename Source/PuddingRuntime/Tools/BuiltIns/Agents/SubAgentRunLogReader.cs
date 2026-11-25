@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using PuddingCode.Configuration;
 using PuddingCode.SubAgents;
 
 namespace PuddingRuntime.Services.Skills;
@@ -60,6 +59,11 @@ public sealed record SubAgentRunLogSnapshot(
 /// 目录名 <c>run_yyyyMMdd_HHmmss_xxx</c> 天然按时间排序，因此从新到旧扫，
 /// 命中即返回，并用 <paramref name="maxScanned"/> 兜住最坏情况（不回退全盘扫描）。
 /// </para>
+/// <para>
+/// 2026-11-25：扫描范围收窄到调用方传入的单个 agent runs 根。旧实现枚举
+/// <c>WorkspacesRoot</c> 下所有 workspace / agent 的 run 目录——「状态查不到即放行」的
+/// 归属校验一旦命中那条分支，别人的运行内容就会被读出来。读范围必须与写范围一致。
+/// </para>
 /// </summary>
 internal static class SubAgentRunLogReader
 {
@@ -67,17 +71,24 @@ internal static class SubAgentRunLogReader
     private const string EventsFile = "events.jsonl";
     private const string ToolsFile = "tools.jsonl";
 
-    /// <summary>按 subSessionId 找最新的 run 目录；找不到返回 null。</summary>
+    /// <summary>
+    /// 在指定 agent 的 runs 根下按 subSessionId 找最新的 run 目录；找不到返回 null。
+    /// <para>
+    /// 只扫传入的根，不越界到其他 workspace / agent。原因：归属校验在「状态查不到」时是放行的
+    /// （不知道属于谁 ≠ 不是你的），若这里仍全盘扫描，那条放行就会把别人的运行内容读出来。
+    /// 读取范围必须与写入范围一致。<param name="maxScanned"/> 依旧兜住最坏情况。
+    /// </para>
+    /// </summary>
     internal static string? TryFindLatestRunDirectory(
-        PuddingDataPaths paths,
+        string agentRunsRoot,
         string subSessionId,
         int maxScanned = 300)
     {
-        if (string.IsNullOrWhiteSpace(subSessionId) || !Directory.Exists(paths.WorkspacesRoot))
+        if (string.IsNullOrWhiteSpace(subSessionId) || string.IsNullOrWhiteSpace(agentRunsRoot))
             return null;
 
         var scanned = 0;
-        foreach (var runDir in EnumerateRunDirectoriesNewestFirst(paths))
+        foreach (var runDir in EnumerateRunDirectoriesNewestFirst(agentRunsRoot))
         {
             if (++scanned > maxScanned)
                 return null;
@@ -122,47 +133,31 @@ internal static class SubAgentRunLogReader
             aggregator.Build(runId));
     }
 
-    /// <summary>一步到位：定位 + 读取。</summary>
-    internal static SubAgentRunLogSnapshot? ReadLatest(PuddingDataPaths paths, string subSessionId, int tail)
+    /// <summary>一步到位：在指定 agent 的 runs 根下定位 + 读取。</summary>
+    internal static SubAgentRunLogSnapshot? ReadLatest(string agentRunsRoot, string subSessionId, int tail)
     {
-        var dir = TryFindLatestRunDirectory(paths, subSessionId);
+        var dir = TryFindLatestRunDirectory(agentRunsRoot, subSessionId);
         return dir is null ? null : Read(dir, tail);
     }
 
-    private static IEnumerable<string> EnumerateRunDirectoriesNewestFirst(PuddingDataPaths paths)
+    private static IEnumerable<string> EnumerateRunDirectoriesNewestFirst(string agentRunsRoot)
     {
-        IEnumerable<string> workspaces;
+        string[] runDirs;
         try
         {
-            workspaces = Directory.GetDirectories(paths.WorkspacesRoot);
+            runDirs = Directory.Exists(agentRunsRoot)
+                ? Directory.GetDirectories(agentRunsRoot, "run_*")
+                : [];
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            yield break;
-        }
-
-        var all = new List<string>();
-        foreach (var workspace in workspaces)
-        {
-            var agentsRoot = Path.Combine(workspace, "agents");
-            if (!Directory.Exists(agentsRoot))
-                continue;
-
-            foreach (var agentDir in Directory.GetDirectories(agentsRoot))
-            {
-                var runsRoot = Path.Combine(agentDir, "runs");
-                if (!Directory.Exists(runsRoot))
-                    continue;
-
-                foreach (var runDir in Directory.GetDirectories(runsRoot, "run_*"))
-                    all.Add(runDir);
-            }
+            runDirs = [];
         }
 
         // 目录名 run_yyyyMMdd_HHmmss_* 字典序即时间序，倒序取最新。
-        all.Sort(StringComparer.Ordinal);
-        for (var i = all.Count - 1; i >= 0; i--)
-            yield return all[i];
+        Array.Sort(runDirs, StringComparer.Ordinal);
+        for (var i = runDirs.Length - 1; i >= 0; i--)
+            yield return runDirs[i];
     }
 
     private static string? ReadSubSessionId(string runJsonPath)

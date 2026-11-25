@@ -25,7 +25,7 @@ public sealed class SubAgentRunLogReaderTests
         var newer = CreateRun(paths, "run_20260101_120000_newer000", SubSessionId, "running");
         CreateRun(paths, "run_20260101_130000_other000", "someone-else", "running");
 
-        var found = SubAgentRunLogReader.TryFindLatestRunDirectory(paths, SubSessionId);
+        var found = SubAgentRunLogReader.TryFindLatestRunDirectory(RunsRoot(paths), SubSessionId);
 
         Assert.IsNotNull(found);
         Assert.AreEqual(newer, found, "同名 subSessionId 有多个 run 时必须取最新那个");
@@ -40,9 +40,10 @@ public sealed class SubAgentRunLogReaderTests
         CreateRun(paths, "run_20260101_100000_only0000", SubSessionId, "running");
 
         // 正向对照：同一个根下已知 id 必须找得到，否则「找不到」不算证据。
-        Assert.IsNotNull(SubAgentRunLogReader.TryFindLatestRunDirectory(paths, SubSessionId));
-        Assert.IsNull(SubAgentRunLogReader.TryFindLatestRunDirectory(paths, "no-such-sub-session"));
-        Assert.IsNull(SubAgentRunLogReader.TryFindLatestRunDirectory(paths, "  "));
+        Assert.IsNotNull(SubAgentRunLogReader.TryFindLatestRunDirectory(RunsRoot(paths), SubSessionId));
+        Assert.IsNull(SubAgentRunLogReader.TryFindLatestRunDirectory(RunsRoot(paths), "no-such-sub-session"));
+        Assert.IsNull(SubAgentRunLogReader.TryFindLatestRunDirectory(RunsRoot(paths), "  "));
+        Assert.IsNull(SubAgentRunLogReader.TryFindLatestRunDirectory("", SubSessionId));
     }
 
     [TestMethod]
@@ -126,7 +127,7 @@ public sealed class SubAgentRunLogReaderTests
 
         Assert.IsNull(SubAgentRunLogReader.Read(Path.Combine(temp.Path, "does-not-exist"), 10));
         Assert.IsNull(SubAgentRunLogReader.Read(null, 10));
-        Assert.IsNull(SubAgentRunLogReader.ReadLatest(PuddingDataPaths.FromRoot(temp.Path), SubSessionId, 10));
+        Assert.IsNull(SubAgentRunLogReader.ReadLatest(RunsRoot(PuddingDataPaths.FromRoot(temp.Path)), SubSessionId, 10));
     }
 
     [TestMethod]
@@ -144,7 +145,7 @@ public sealed class SubAgentRunLogReaderTests
             """{"toolName":"file_search","success":true,"durationMs":9,"outputLength":21843}""",
         ]);
 
-        var snapshot = SubAgentRunLogReader.ReadLatest(paths, SubSessionId, tail: 10);
+        var snapshot = SubAgentRunLogReader.ReadLatest(RunsRoot(paths), SubSessionId, tail: 10);
 
         Assert.IsNotNull(snapshot);
         var text = snapshot.ToDisplayText();
@@ -155,15 +156,48 @@ public sealed class SubAgentRunLogReaderTests
         StringAssert.Contains(text, "file_search ok 9ms 21843B");
     }
 
+    /// <summary>
+    /// 读取范围必须与写入范围一致：另一个 agent 的 runs 根下同名 subSessionId 不得被本 agent 命中。
+    /// <para>
+    /// 守的是那条例外分支——「状态查不到即放行」的归属校验（跨 agent 的历史运行、投影已被清理）。
+    /// 放行不能变成「随便读谁的运行」。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public void FindLatest_StaysInsideGivenRunsRoot()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+
+        // 同一个 subSessionId 写在另一个 agent 的 runs 根下。
+        CreateRun(paths, "run_20260101_100000_foreign0", SubSessionId, "completed", agentId: "default.agent-999");
+
+        // 正向对照：在它自己的根下必须找得到，否则「本 agent 根下找不到」不算证据。
+        Assert.IsNotNull(
+            SubAgentRunLogReader.TryFindLatestRunDirectory(
+                Path.Combine(paths.WorkspaceAgentRoot(WorkspaceId, "default.agent-999"), "runs"),
+                SubSessionId),
+            "对照组失败：同一个 run 在它自己的根下应能命中");
+
+        Assert.IsNull(
+            SubAgentRunLogReader.TryFindLatestRunDirectory(RunsRoot(paths), SubSessionId),
+            "不得越界扫到其他 agent 的 runs 根");
+        Assert.IsNull(SubAgentRunLogReader.ReadLatest(RunsRoot(paths), SubSessionId, 10));
+    }
+
     // ===== 辅助 =====
+
+    private static string RunsRoot(PuddingDataPaths paths) =>
+        Path.Combine(paths.WorkspaceAgentRoot(WorkspaceId, AgentId), "runs");
 
     private static string CreateRun(
         PuddingDataPaths paths,
         string runId,
         string subSessionId,
-        string status)
+        string status,
+        string agentId = AgentId)
     {
-        var runDir = paths.SubAgentRunRoot(WorkspaceId, AgentId, runId);
+        var runDir = paths.SubAgentRunRoot(WorkspaceId, agentId, runId);
         Directory.CreateDirectory(runDir);
 
         var manifest = new
@@ -172,7 +206,7 @@ public sealed class SubAgentRunLogReaderTests
             parentSessionId = "parent-session",
             subSessionId,
             workspaceId = WorkspaceId,
-            agentInstanceId = AgentId,
+            agentInstanceId = agentId,
             templateId = "workspace-task-agent",
             task = "count things",
             status,
