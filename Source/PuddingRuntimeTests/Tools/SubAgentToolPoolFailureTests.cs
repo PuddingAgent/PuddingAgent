@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
@@ -372,6 +373,161 @@ public sealed class SubAgentToolPoolFailureTests
         Assert.IsFalse(result.Success);
         // 对照组：放宽管理动作不得顺手放宽执行路径。
         StringAssert.Contains(result.Error ?? string.Empty, "必需的");
+    }
+
+    // === 单项 cleanup 的顺序与可重试性（P1，2026-11-25）===
+    // 缺陷现场（外部审计隔离复现）：入口先 DestroyAsync 再按父会话清理。清理一旦失败，条目没了，
+    // 唯一稳定定位键（SubSessionId）也就没了——重试只能清 0 条却报「已清理」。
+    // 同时 cleanup 落在 task 解析之后，等于「想清历史先编一个假任务」（与 list/destroy/sleep 同一类缺陷）。
+
+    [TestMethod]
+    public async Task Cleanup_IdleEntry_CleansPersistedRunsBeforeDestroyingEntry()
+    {
+        var calls = new List<string>();
+        var pool = NewCleanupPool(calls, OwnedEntry("p1", "sess-parent"));
+        var manager = NewCleanupManager(calls, remaining: [], cleaned: 1);
+
+        var result = await ExecuteCleanupAsync(pool, manager,
+            """{"pool_name":"p1","pool_action":"cleanup"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        CollectionAssert.AreEqual(
+            new[] { "cleanup", "verify", "destroy" },
+            calls,
+            "空闲条目必须 清理→复核→销毁；先销毁会在清理失败时丢掉唯一定位键：" + string.Join(",", calls));
+    }
+
+    [TestMethod]
+    public async Task Cleanup_WhenPersistedRunsRemain_FailsWithoutDestroyingEntry()
+    {
+        var calls = new List<string>();
+        // 复核仍能看到这条子会话：等于「清理没生效」（CleanupAsync 逐条吞异常，只能看计数）。
+        var pool = NewCleanupPool(calls, OwnedEntry("p1", "sess-parent"));
+        var manager = NewCleanupManager(
+            calls,
+            remaining: ["sess-parent-sub-p1"],
+            cleaned: 0);
+
+        var result = await ExecuteCleanupAsync(pool, manager,
+            """{"pool_name":"p1","pool_action":"cleanup"}""");
+
+        Assert.IsFalse(result.Success, "清理未生效必须失败，不得报「已清理」。");
+        var error = result.Error ?? string.Empty;
+        StringAssert.Contains(error, "sess-parent-sub-p1", "错误文案必须给出重试用的稳定键。");
+        StringAssert.Contains(error, "sub_agent_id", "必须告诉模型下次怎么重试。");
+        StringAssert.Contains(error, "已保留", "清理失败时条目必须保留，否则重试失去入口。");
+        CollectionAssert.DoesNotContain(calls, "destroy",
+            "清理失败时不得销毁条目，否则再无稳定定位键。");
+    }
+
+    [TestMethod]
+    public async Task Cleanup_AfterEntryDestroyed_StillCleansByIdFromSubAgentId()
+    {
+        var calls = new List<string>();
+        // 条目已不在池里（上一轮先销毁后清理失败留下的现场）：只给名字定位不到任何东西。
+        var pool = NewCleanupPool(calls, entry: null, destroyResult: false);
+        var manager = NewCleanupManager(calls, remaining: [], cleaned: 1);
+
+        var result = await ExecuteCleanupAsync(pool, manager,
+            """{"pool_name":"p1","pool_action":"cleanup","sub_agent_id":"sess-parent-sub-p1"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        CollectionAssert.Contains(calls, "cleanup",
+            "条目已销毁时仍必须按 sub_agent_id 清理——否则失败后永远不可重试。");
+    }
+
+    [TestMethod]
+    public async Task Cleanup_BusyEntry_DestroysFirstSoRunningRunCanBeCleaned()
+    {
+        var calls = new List<string>();
+        // 忙碌条目：清理会跳过「运行中」的记录，先清只会清 0 条。
+        var busy = OwnedEntry("p1", "sess-parent") with { Status = PooledSubAgentStatus.Busy };
+        var pool = NewCleanupPool(calls, busy);
+        var manager = NewCleanupManager(calls, remaining: [], cleaned: 1);
+
+        var result = await ExecuteCleanupAsync(pool, manager,
+            """{"pool_name":"p1","pool_action":"cleanup"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        CollectionAssert.AreEqual(
+            new[] { "destroy", "cleanup", "verify" },
+            calls,
+            "忙碌条目必须先销毁（级联取消）再清理：" + string.Join(",", calls));
+    }
+
+    private static ISubAgentPool NewCleanupPool(
+        List<string> calls,
+        PooledSubAgent? entry,
+        bool destroyResult = true)
+    {
+        var pool = new Mock<ISubAgentPool>(MockBehavior.Strict);
+        pool.Setup(p => p.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(entry);
+        pool.Setup(p => p.DestroyAsync(It.IsAny<string>(), It.IsAny<PoolOwnerScope>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Func<bool>(() =>
+            {
+                calls.Add("destroy");
+                return destroyResult;
+            }));
+        return pool.Object;
+    }
+
+    private static ISubAgentManager NewCleanupManager(
+        List<string> calls,
+        IReadOnlyList<string> remaining,
+        int cleaned)
+    {
+        var manager = new Mock<ISubAgentManager>(MockBehavior.Strict);
+        manager.Setup(m => m.CleanupAsync(
+                It.IsAny<string>(), It.IsAny<SubAgentCleanupFilter>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Func<int>(() =>
+            {
+                calls.Add("cleanup");
+                return cleaned;
+            }));
+        manager.Setup(m => m.GetSubAgentsAsync(
+                It.IsAny<string>(), It.IsAny<SubAgentQueryFilter?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Func<IReadOnlyList<SubAgentStatus>>(() =>
+            {
+                calls.Add("verify");
+                return remaining.Select(id => new SubAgentStatus
+                {
+                    RunId = "run-" + id,
+                    ParentSessionId = "sess-parent",
+                    SubSessionId = id,
+                    Status = "completed",
+                    TaskSummary = "probe",
+                    SpawnedAt = DateTimeOffset.UnixEpoch,
+                }).ToList();
+            }));
+        return manager.Object;
+    }
+
+    private static async Task<ToolExecutionResult> ExecuteCleanupAsync(
+        ISubAgentPool pool,
+        ISubAgentManager manager,
+        string argumentsJson)
+    {
+        using var provider = new ServiceCollection()
+            .AddSingleton<ILlmResolver, FakeLlmResolver>()
+            .AddSingleton<ISubAgentInvocationService, NoopSubAgentInvocationService>()
+            .AddSingleton(pool)
+            .AddSingleton(manager)
+            .BuildServiceProvider();
+
+        var tool = new SubAgentTool(provider, NullLogger<SubAgentTool>.Instance);
+
+        return await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "call-cleanup-ordering",
+            ArgumentsJson = argumentsJson,
+            Context = new ToolExecutionContext
+            {
+                AgentInstanceId = "agent_parent",
+                WorkspaceId = "workspace_1",
+                SessionId = "sess-parent",
+            },
+        });
     }
 
     private static async Task<ToolExecutionResult> ExecuteToolAsync(FakeSubAgentPool pool, string argumentsJson)

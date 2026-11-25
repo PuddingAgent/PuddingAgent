@@ -201,7 +201,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         // 更糟的是 destroy / sleep 在旧位置会先过委派深度与并发守卫，等于「想销毁条目却先被创建类守卫拒绝」。
         // 另外，给了 pool_action 却漏了 pool_name 时旧代码会静默落进一次性派发分支（写错参数等于没事发生）。
         var managementAction = args.PoolAction?.Trim().ToLowerInvariant();
-        if (managementAction is "list" or "destroy" or "sleep")
+        if (managementAction is "list" or "destroy" or "sleep" or "cleanup" or "cleanup-bulk")
         {
             var managementPool = _services.GetService<ISubAgentPool>();
             if (managementPool is null)
@@ -214,8 +214,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             // 跨会话操作是管理面的能力，走 admin REST，不走这个工具。
             var ownerScope = new PoolOwnerScope(request.SessionId, request.WorkspaceId);
 
-            // list 不需要条目名；destroy / sleep 作用于具名条目。
-            if (managementAction is not "list" && string.IsNullOrWhiteSpace(args.PoolName))
+            // list 不需要条目名；cleanup-bulk 按父会话整批清理，也不需要。
+            if (managementAction is not ("list" or "cleanup-bulk") && string.IsNullOrWhiteSpace(args.PoolName))
                 return Fail($"pool_action={managementAction} 需要 pool_name。先用 pool_action=list 查看可用条目名。");
 
             try
@@ -238,6 +238,99 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         foreach (var entry in agents)
                             listing.AppendLine($"| {entry.Name} | {entry.Status} | {entry.Role ?? "-"} | {entry.TaskCount} | {entry.LastUsedAt:HH:mm:ss} | {entry.SubSessionId?.Substring(0, Math.Min(8, entry.SubSessionId.Length))}... |");
                         return Success(listing.ToString());
+                    }
+
+                    case "cleanup":
+                    {
+                        // 清理单个池化子代理：先清持久化记录并复核，再销毁池条目。
+                        var subAgentManager = _services.GetService<ISubAgentManager>();
+                        if (subAgentManager is null)
+                            return Fail("? ISubAgentManager 服务未注册。");
+
+                        // 定位键：名字能改、条目销毁后连查都查不到，稳定键只能是 SubSessionId。
+                        // 先问池；条目已销毁时退回调用方给的 sub_agent_id——否则「清理失败」不可重试。
+                        var poolAgent = await managementPool.GetAsync(args.PoolName, ct);
+                        var targetSubSessionId = poolAgent?.SubSessionId;
+                        if (string.IsNullOrWhiteSpace(targetSubSessionId))
+                            targetSubSessionId = string.IsNullOrWhiteSpace(args.SubAgentId)
+                                ? null
+                                : args.SubAgentId.Trim();
+
+                        if (targetSubSessionId is null)
+                            return Fail(
+                                DescribePoolEntryMissing(args.PoolName, "cleanup") +
+                                "\n提示：条目已销毁时改用 pool_action=\"cleanup\" " +
+                                "sub_agent_id=\"<SubSessionId>\" 重试（SubSessionId 可用 pool_action=\"list\" 查到），" +
+                                "或用 pool_action=\"cleanup-bulk\" 按父会话批量清理。");
+
+                        // 顺序有两种，不能通用：
+                        // · 忙碌条目必须先销毁——销毁会级联取消在跑的那一单，而清理会跳过「运行中」的记录，
+                        //   先清只会清 0 条，并在下面的复核里被判成失败。
+                        // · 空闲条目必须先清理、复核通过再销毁——反过来一旦清理失败，条目没了，
+                        //   唯一稳定定位键也就没了，重试只能清 0 条却报「已清理」。
+                        var wasBusy = poolAgent?.Status == PooledSubAgentStatus.Busy;
+                        var destroyed = false;
+                        if (wasBusy)
+                            destroyed = await managementPool.DestroyAsync(args.PoolName, ownerScope, ct);
+
+                        // 清理持久化记录：按 SubSessionId 精确清理。只传父会话 + MaxCount=1 时，
+                        // 候选集是该会话下所有非运行中的子代理，删到哪一条取决于返回顺序。
+                        var dbCleaned = await subAgentManager.CleanupAsync(
+                            request.SessionId,
+                            new SubAgentCleanupFilter
+                            {
+                                SubSessionId = targetSubSessionId,
+                                Status = args.CleanupStatus ?? "all",
+                                OlderThanDays = args.CleanupOlderThanDays,
+                                MaxCount = 1,
+                            },
+                            ct);
+
+                        // 独立复核：CleanupAsync 逐条吞异常、只返回计数，「0 条」既可能是没有可清的，
+                        // 也可能是删失败。读一次快照才知道这条子会话是不是真的不在了。
+                        var remaining = await subAgentManager.GetSubAgentsAsync(request.SessionId, null, ct);
+                        var stillThere = remaining.Any(s =>
+                            string.Equals(s.SubSessionId, targetSubSessionId, StringComparison.Ordinal));
+
+                        if (!stillThere && !destroyed)
+                            destroyed = await managementPool.DestroyAsync(args.PoolName, ownerScope, ct);
+
+                        if (stillThere)
+                            return Fail(
+                                $"? 子代理 '{args.PoolName}' 的持久化记录没清掉" +
+                                $"（SubSessionId={targetSubSessionId}，清理返回 {dbCleaned} 条），" +
+                                (destroyed ? "池条目已销毁。" : "池条目已保留。") +
+                                "\n提示：这是可重试状态，原地再调一次 cleanup 即可" +
+                                $"（条目已销毁时用 sub_agent_id=\"{targetSubSessionId}\"）。");
+
+                        return Success(
+                            $"? 子代理 '{args.PoolName}' 已清理。" +
+                            (destroyed ? " 池条目已销毁。" : " 池条目不存在或已销毁。") +
+                            $" 持久化记录已清理 {dbCleaned} 条。");
+                    }
+
+                    case "cleanup-bulk":
+                    {
+                        // 批量清理：不限于池化子代理，清理整个父会话下的子代理记录
+                        var subAgentManager = _services.GetService<ISubAgentManager>();
+                        if (subAgentManager is null)
+                            return Fail("? ISubAgentManager 服务未注册。");
+
+                        var cleaned = await subAgentManager.CleanupAsync(
+                            request.SessionId,
+                            new SubAgentCleanupFilter
+                            {
+                                Status = args.CleanupStatus ?? "all",
+                                OlderThanDays = args.CleanupOlderThanDays,
+                                MaxCount = 100,
+                            },
+                            ct);
+
+                        var filterDesc = args.CleanupStatus ?? "all";
+                        if (args.CleanupOlderThanDays.HasValue)
+                            filterDesc += $", older than {args.CleanupOlderThanDays} days";
+
+                        return Success($"? 批量清理完成: {cleaned} 个子代理已清理（筛选: {filterDesc}）。");
                     }
 
                     case "destroy":
@@ -545,77 +638,6 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                                 role = args.PoolRole ?? "(未指定)",
                                 hint = $"使用 pool_name=\"{args.PoolName}\" (不带 pool_action) 来执行任务。",
                             });
-                    }
-
-                    // list / destroy / sleep 已在 task 解析之前统一处理（见上方「池管理动作」分支）：
-                    // 它们不消费任务正文，也不该先过委派深度与并发守卫。
-
-                    case "cleanup":
-                    {
-                        // 清理单个池化子代理：从池中销毁 + 清理持久化记录
-                        var subAgentManager = _services.GetService<ISubAgentManager>();
-                        if (subAgentManager == null)
-                            return Fail("? ISubAgentManager 服务未注册。");
-
-                        // 先获取子代理信息用于清理持久化记录
-                        var poolAgent = await pool.GetAsync(args.PoolName, ct);
-
-                        // 销毁之前先把目标固定下来：SubSessionId 是唯一稳定的定位键
-                        // （名字能改、条目销毁后就查不到了）。
-                        var targetSubSessionId = poolAgent?.SubSessionId;
-
-                        // 从池中销毁（带归属校验：cleanup 也不能摸到别人的条目）
-                        var destroyed = await pool.DestroyAsync(
-                            args.PoolName,
-                            new PoolOwnerScope(request.SessionId, request.WorkspaceId),
-                            ct);
-
-                        // 清理持久化记录：按 SubSessionId 精确清理。
-                        // 只传父会话 + MaxCount=1 时，候选集是该会话下所有非运行中的子代理，
-                        // 删到哪一条取决于返回顺序——可能是别的成员的历史，也可能恰好清 0 条。
-                        int dbCleaned = 0;
-                        if (targetSubSessionId != null)
-                        {
-                            dbCleaned = await subAgentManager.CleanupAsync(
-                                request.SessionId,
-                                new SubAgentCleanupFilter
-                                {
-                                    SubSessionId = targetSubSessionId,
-                                    Status = args.CleanupStatus ?? "all",
-                                    OlderThanDays = args.CleanupOlderThanDays,
-                                    MaxCount = 1,
-                                },
-                                ct);
-                        }
-
-                        return Success(
-                            $"? 子代理 '{args.PoolName}' 已清理。" +
-                            (destroyed ? " 池条目已销毁。" : " 池条目不存在或已销毁。") +
-                            $" 持久化记录已清理 {dbCleaned} 条。");
-                    }
-
-                    case "cleanup-bulk":
-                    {
-                        // 批量清理：不限于池化子代理，清理整个父会话下的子代理记录
-                        var subAgentManager = _services.GetService<ISubAgentManager>();
-                        if (subAgentManager == null)
-                            return Fail("? ISubAgentManager 服务未注册。");
-
-                        var cleaned = await subAgentManager.CleanupAsync(
-                            request.SessionId,
-                            new SubAgentCleanupFilter
-                            {
-                                Status = args.CleanupStatus ?? "all",
-                                OlderThanDays = args.CleanupOlderThanDays,
-                                MaxCount = 100,
-                            },
-                            ct);
-
-                        var filterDesc = args.CleanupStatus ?? "all";
-                        if (args.CleanupOlderThanDays.HasValue)
-                            filterDesc += $", older than {args.CleanupOlderThanDays} days";
-
-                        return Success($"? 批量清理完成: {cleaned} 个子代理已清理（筛选: {filterDesc}）。");
                     }
 
                     case "execute":
@@ -2110,10 +2132,11 @@ public sealed record SubAgentToolArgs
     public int? LogsTail { get; init; }
 
     /// <summary>
-    /// 要取消的子代理 id（形如 "&lt;parent&gt;-sub-&lt;hash&gt;"），仅用于 pool_action=cancel。
-    /// 可从 query_sub_agents 的 list/running 结果获取。
+    /// 子代理 id（形如 "&lt;parent&gt;-sub-&lt;hash&gt;"）。用于 pool_action=cancel / logs / steer；
+    /// 也是 cleanup 的重试定位键——池条目已销毁、名字查不到时，用它指定要清哪条历史。
+    /// 可从 query_sub_agents 或 pool_action=list 的结果获取。
     /// </summary>
-    [ToolParam("要取消的子代理 id（用于 pool_action=cancel）；可从 query_sub_agents 获取")]
+    [ToolParam("子代理 id（cancel/logs/steer 必填；cleanup 可用作条目已销毁后的重试定位键）")]
     public string? SubAgentId { get; init; }
 
     /// <summary>取消原因（可选，仅用于 pool_action=cancel）。会写入运行归档与事件。</summary>

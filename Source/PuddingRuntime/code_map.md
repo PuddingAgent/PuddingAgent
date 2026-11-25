@@ -1,6 +1,6 @@
 # PuddingRuntime CodeMAP
 
-> 源指纹: Source/PuddingRuntime/**=443-27e1c4a753de · 条目数: 398 · 最近整理: 2026-11-22
+> 源指纹: Source/PuddingRuntime/**=443-abcf76abaab8 · 条目数: 398 · 最近整理: 2026-11-22
 > 定位：Agent 运行时核心（Agent Loop / LLM 调用 / 工具系统 / 上下文管线 / 子代理 / 后台学习）；.NET 10 类库，唯一服务注册入口 `DependencyInjection.cs`。
 > 本文件只做本项目文件级索引；跨项目调用链、测试工程索引、架构文档索引、运行时目录与构建入口只在根 [`code_map.md`](../../code_map.md)。
 > 每对象一行；空字段写 `—`。角色 `observe` 的对象只在文末附录列路径。
@@ -344,7 +344,7 @@
 | `Tools/BuiltIns/Agents/GoalReadTool.cs` | `goal_read`：读取调用方私有的目标文件 | `GoalReadTool` | `Services/GoalMode/GoalModeService.cs` | — |
 | `Tools/BuiltIns/Agents/GoalUpdateTool.cs` | `goal_update`：追加或整体覆盖目标文件 | `GoalUpdateTool` | `Tools/BuiltIns/Agents/GoalReadTool.cs` | — |
 | `Tools/BuiltIns/Agents/QuerySubAgentsTool.cs` | `query_sub_agents`：查询子代理状态 | `QuerySubAgentsTool` | `Services/SubAgentInvocationService.cs` | — |
-| `Tools/BuiltIns/Agents/SubAgentTool.cs` | `spawn_sub_agent` 派生子代理执行任务 | `SubAgentTool`、`SubAgentCleanupFilter.SubSessionId` | `Services/SubAgentInvocationService.cs` | 模型须写全 providerId/modelId；交付物写外部文件；list/destroy/sleep 在 task 解析前；不消费正文；三动作带 `PoolOwnerScope`（跨会话走 admin REST）；五类池失败各渲染，未就绪不报「池为空」 |
+| `Tools/BuiltIns/Agents/SubAgentTool.cs` | `spawn_sub_agent` 派生子代理执行任务 | `SubAgentTool`、`SubAgentCleanupFilter.SubSessionId` | `Services/SubAgentInvocationService.cs` | 模型须写全 providerId/modelId；交付物写外部文件；list/destroy/sleep/cleanup 在 task 解析前；不消费正文；三动作带 `PoolOwnerScope`（跨会话 REST）；五类失败各渲染、未就绪不报空池 |
 | `Tools/BuiltIns/CodeIntelligence/CodeOutlineTool.cs` | `code_outline`：文件顶层结构的树形输出 | `CodeOutlineTool` | `Tools/BuiltIns/CodeIntelligence/OutlineSyntaxVisitor.cs` | — |
 | `Tools/BuiltIns/CodeIntelligence/CodeProjectManagementTools.cs` | 代码索引项目的注册与查询工具 | `CodeProjectAddTool` | `Services/Tools/ToolExposurePlanner.cs` | — |
 | `Tools/BuiltIns/CodeIntelligence/CodeQueryTools.cs` | 符号检索与调用关系查询工具集 | `CodeQueryToolHelper` / `ReadIndexFreshness` | `Tools/BuiltIns/CodeIntelligence/CodeSummaryTool.cs` | 新鲜度只有一处口径：四工具共用 `ReadIndexFreshness`；`status` 是注册记录，运行时真相看 `index_freshness.state` |
@@ -625,6 +625,7 @@
 - 预算与止损：预算裁剪、失败指纹、发现循环三类止损各自有阈值；剩余预算诚实归零并带派生标记。
 - 长任务执行：终端与构建类任务走后台作业加阻塞式等待，不进行秒级轮询。
 - 心跳职责：`Services/HeartbeatService.cs` 只做会话超时清理；Agent 自主心跳编排在 `Services/Background/` 与 `Services/AgentWakeQueue.cs`。
+- 单成员清理顺序：cleanup 先按 `SubSessionId` 清持久化记录并复核，再销毁池条目；清理未生效则不销毁并回传 SubSessionId（先销毁会丢掉唯一定位键，重试只能清 0 条）；忙碌条目反向——先销毁（级联取消）再清理，否则清理会跳过运行中的记录。
 
 ## 观察项（observe，不写语义）
 
