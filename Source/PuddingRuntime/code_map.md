@@ -1,6 +1,6 @@
 # PuddingRuntime CodeMAP
 
-> 源指纹: Source/PuddingRuntime/**=443-f0f5f0bb9edf · 条目数: 398 · 最近整理: 2026-11-22
+> 源指纹: Source/PuddingRuntime/**=444-f84424d89ea4 · 条目数: 398 · 最近整理: 2026-11-22
 > 定位：Agent 运行时核心（Agent Loop / LLM 调用 / 工具系统 / 上下文管线 / 子代理 / 后台学习）；.NET 10 类库，唯一服务注册入口 `DependencyInjection.cs`。
 > 本文件只做本项目文件级索引；跨项目调用链、测试工程索引、架构文档索引、运行时目录与构建入口只在根 [`code_map.md`](../../code_map.md)。
 > 每对象一行；空字段写 `—`。角色 `observe` 的对象只在文末附录列路径。
@@ -343,6 +343,7 @@
 | `Tools/BuiltIns/Agents/AgentTestTool.cs` | `test_tool`：工具试跑入口 | `AgentTestTool` | `Tools/Platform/ToolInvocationService.cs` | — |
 | `Tools/BuiltIns/Agents/GoalReadTool.cs` | `goal_read`：读取调用方私有的目标文件 | `GoalReadTool` | `Services/GoalMode/GoalModeService.cs` | — |
 | `Tools/BuiltIns/Agents/GoalUpdateTool.cs` | `goal_update`：追加或整体覆盖目标文件 | `GoalUpdateTool` | `Tools/BuiltIns/Agents/GoalReadTool.cs` | — |
+| `Tools/BuiltIns/Agents/PoolListingFormatter.cs` | `pool_action=list` 的池状态表渲染（纯函数） | `PoolListingFormatter` | `Tools/BuiltIns/Agents/SubAgentTool.cs` | SubSessionId 必须完整：同会话成员共享父会话前缀，截断后整列同值且无法复制给 cleanup |
 | `Tools/BuiltIns/Agents/QuerySubAgentsTool.cs` | `query_sub_agents`：查询子代理状态 | `QuerySubAgentsTool` | `Services/SubAgentInvocationService.cs` | — |
 | `Tools/BuiltIns/Agents/SubAgentTool.cs` | `spawn_sub_agent` 派生子代理执行任务 | `SubAgentTool`、`SubAgentCleanupFilter.SubSessionId` | `Services/SubAgentInvocationService.cs` | 模型写全 providerId/modelId；交付物外置；list/destroy/sleep/cleanup 在 task 解析前；不消费正文；三动作带 `PoolOwnerScope`（跨会话）；五类失败各渲染、未就绪非空池；模板继承声明（显式优先） |
 | `Tools/BuiltIns/CodeIntelligence/CodeOutlineTool.cs` | `code_outline`：文件顶层结构的树形输出 | `CodeOutlineTool` | `Tools/BuiltIns/CodeIntelligence/OutlineSyntaxVisitor.cs` | — |

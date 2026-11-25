@@ -233,13 +233,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         if (agents.Count == 0)
                             return Success("本会话没有池化子代理（其它会话的成员不在此列出）。" +
                                 "使用 pool_name=\"<name>\" pool_action=\"create\" 创建新的池化子代理。");
-                        var listing = new StringBuilder();
-                        listing.AppendLine($"## 子代理池状态 ({agents.Count} 个)\n");
-                        listing.AppendLine("| 名称 | 状态 | 角色 | 任务数 | 最后使用 | SubSessionId |");
-                        listing.AppendLine("|------|------|------|--------|----------|-------------|");
-                        foreach (var entry in agents)
-                            listing.AppendLine($"| {entry.Name} | {entry.Status} | {entry.Role ?? "-"} | {entry.TaskCount} | {entry.LastUsedAt:HH:mm:ss} | {entry.SubSessionId?.Substring(0, Math.Min(8, entry.SubSessionId.Length))}... |");
-                        return Success(listing.ToString());
+                        return Success(PoolListingFormatter.Format(agents));
                     }
 
                     case "cleanup":
@@ -1764,7 +1758,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                $"{detail}；平台在创建 run 之前就拒绝了本次请求，没有产生失败 run，池计数也没被污染。\n" +
                $"归属：父会话 {owner}，本次请求：{requested}。\n" +
                $"提示：改用本会话自己创建的池条目名；或用 pool_name=\"{entryName}\" pool_action=\"list\" " +
-               "查看可用条目（SubSessionId 前 8 位即父会话标识）。";
+               "查看可用条目（list 里的 SubSessionId 是完整值，可直接复制给 sub_agent_id）。";
     }
 
     /// <summary>池满：容量耗尽。<b>下一步是腾地方</b>，不是等待（等待不会释放容量）。</summary>
