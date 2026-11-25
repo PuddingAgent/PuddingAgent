@@ -502,6 +502,95 @@ public sealed class SubAgentToolPoolFailureTests
             "忙碌条目必须先销毁（级联取消）再清理；归档已删时不重复销毁：" + string.Join(",", calls));
     }
 
+    // ═══════════════════════════════════════════════════════
+    // cleanup-bulk：无预演、删了不可恢复，范围必须写在回执里
+    // ═══════════════════════════════════════════════════════
+
+    [TestMethod]
+    public async Task CleanupBulk_ReceiptStatesScopeLimitAndIrreversibility()
+    {
+        SubAgentCleanupFilter? captured = null;
+        var manager = new Mock<ISubAgentManager>(MockBehavior.Strict);
+        manager.Setup(m => m.CleanupAsync(
+                It.IsAny<string>(), It.IsAny<SubAgentCleanupFilter>(), It.IsAny<CancellationToken>()))
+            .Returns<string, SubAgentCleanupFilter, CancellationToken>((_, filter, _) =>
+            {
+                captured = filter;
+                return Task.FromResult(37);
+            });
+        var pool = new Mock<ISubAgentPool>(MockBehavior.Strict);
+
+        var result = await ExecuteCleanupAsync(pool.Object, manager.Object, runArchiveStore: null,
+            """{"pool_action":"cleanup-bulk"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+
+        // 返回值是删掉的 run 行数，不是「清掉几个子代理」：只有投影没有 run 行的条目也会被清，
+        // 但不计数。旧措辞「N 个子代理已清理」会低报，而读的人无从察觉。
+        StringAssert.Contains(result.Output, "已删除运行归档 37 条",
+            "回执必须与 CleanupAsync 的返回值语义一致");
+        Assert.IsFalse(result.Output.Contains("个子代理已清理"),
+            "旧措辞把「run 行数」说成「子代理数」，会低报");
+
+        StringAssert.Contains(result.Output, "单次最多 100 条",
+            "没有预演与确认，上限是调用方唯一能预先知道的约束");
+        StringAssert.Contains(result.Output, "不限于池化成员",
+            "候选集是整个父会话，不是池里那几个成员");
+        StringAssert.Contains(result.Output, "删除后不可恢复",
+            "归档含磁盘目录，删了没法恢复");
+        StringAssert.Contains(result.Output, "pool_action=\"cleanup\"",
+            "必须指出只清单个成员的入口，否则读者没有更细粒度的选项");
+
+        Assert.IsNotNull(captured);
+        Assert.AreEqual(100, captured!.MaxCount,
+            "回执说的 100 必须就是传给清理器的上限，两头各写一遍会漂移");
+        Assert.IsNull(captured.SubSessionId,
+            "bulk 不得悄悄退化成单点清理");
+    }
+
+    [TestMethod]
+    public async Task CleanupBulk_PassesFiltersThroughAndReflectsThemInReceipt()
+    {
+        SubAgentCleanupFilter? captured = null;
+        var manager = new Mock<ISubAgentManager>(MockBehavior.Strict);
+        manager.Setup(m => m.CleanupAsync(
+                It.IsAny<string>(), It.IsAny<SubAgentCleanupFilter>(), It.IsAny<CancellationToken>()))
+            .Returns<string, SubAgentCleanupFilter, CancellationToken>((_, filter, _) =>
+            {
+                captured = filter;
+                return Task.FromResult(5);
+            });
+        var pool = new Mock<ISubAgentPool>(MockBehavior.Strict);
+
+        var result = await ExecuteCleanupAsync(pool.Object, manager.Object, runArchiveStore: null,
+            """{"pool_action":"cleanup-bulk","cleanup_status":"failed","cleanup_older_than_days":7}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("failed", captured!.Status);
+        Assert.AreEqual(7, captured.OlderThanDays);
+        StringAssert.Contains(result.Output, "状态=failed",
+            "实际生效的筛选条件必须回显，否则调用方无法核对");
+        StringAssert.Contains(result.Output, "早于 7 天");
+    }
+
+    [TestMethod]
+    public async Task CleanupBulk_DefaultStatusReadsAsNoStatusFilter()
+    {
+        var manager = new Mock<ISubAgentManager>(MockBehavior.Strict);
+        manager.Setup(m => m.CleanupAsync(
+                It.IsAny<string>(), It.IsAny<SubAgentCleanupFilter>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+        var pool = new Mock<ISubAgentPool>(MockBehavior.Strict);
+
+        var result = await ExecuteCleanupAsync(pool.Object, manager.Object, runArchiveStore: null,
+            """{"pool_action":"cleanup-bulk"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "不限状态");
+        Assert.IsFalse(result.Output.Contains("状态=all"),
+            "all 是内部默认值，渲染成「状态=all」会让人以为只清状态名为 all 的条目");
+    }
+
     private static ISubAgentPool NewCleanupPool(
         List<string> calls,
         PooledSubAgent? entry,

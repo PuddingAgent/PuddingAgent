@@ -329,21 +329,33 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         if (subAgentManager is null)
                             return Fail("? ISubAgentManager 服务未注册。");
 
+                        // 上限 100 是本次调用的硬约束，回执必须引用同一个常量：
+                        // 两头各写一遍时，改一处漏一处就会出现「回执说 100、实际清 50」的漂移。
+                        const int BulkMaxCount = 100;
+                        var statusFilter = args.CleanupStatus ?? "all";
+                        var olderThanDays = args.CleanupOlderThanDays;
+
                         var cleaned = await subAgentManager.CleanupAsync(
                             request.SessionId,
                             new SubAgentCleanupFilter
                             {
-                                Status = args.CleanupStatus ?? "all",
-                                OlderThanDays = args.CleanupOlderThanDays,
-                                MaxCount = 100,
+                                Status = statusFilter,
+                                OlderThanDays = olderThanDays,
+                                MaxCount = BulkMaxCount,
                             },
                             ct);
 
-                        var filterDesc = args.CleanupStatus ?? "all";
-                        if (args.CleanupOlderThanDays.HasValue)
-                            filterDesc += $", older than {args.CleanupOlderThanDays} days";
+                        var filterDesc = string.IsNullOrWhiteSpace(statusFilter)
+                                         || string.Equals(statusFilter, "all", StringComparison.OrdinalIgnoreCase)
+                            ? "不限状态"
+                            : $"状态={statusFilter}";
+                        if (olderThanDays is > 0)
+                            filterDesc += $"，早于 {olderThanDays} 天";
 
-                        return Success($"? 批量清理完成: {cleaned} 个子代理已清理（筛选: {filterDesc}）。");
+                        return Success($"? 批量清理完成：已删除运行归档 {cleaned} 条（{filterDesc}）。" +
+                                $"\n范围：本会话全部非运行中的子代理，单次最多 {BulkMaxCount} 条，不限于池化成员。" +
+                                "\n运行归档含磁盘目录，删除后不可恢复。" +
+                                "\n只想清某个成员：pool_action=\"cleanup\" + sub_agent_id（那个入口还会复核归档是否真的删掉）。");
                     }
 
                     case "destroy":
