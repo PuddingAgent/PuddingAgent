@@ -290,6 +290,16 @@ public sealed record SubAgentStats
 /// <summary>子代理清理过滤器。</summary>
 public sealed record SubAgentCleanupFilter
 {
+    /// <summary>
+    /// 只清理这个子会话的记录（为空表示不限）。
+    /// <para>
+    /// 单个成员的清理必须用它定位：只给父会话 + <c>MaxCount=1</c> 时，候选集是「同一父会话下
+    /// 所有非运行中的子代理」，删掉哪一条取决于返回顺序——可能是另一个成员的历史，也可能
+    /// 恰好清 0 条。子会话 ID 不能改名（名字能），因此它是唯一稳定的定位键。
+    /// </para>
+    /// </summary>
+    public string? SubSessionId { get; init; }
+
     /// <summary>按状态筛选：failed / completed / all（为 null 表示全部非运行中）。</summary>
     public string? Status { get; init; }
 

@@ -1,5 +1,5 @@
 # PuddingCore CodeMAP
-> 源指纹: Source/PuddingCore/**=444-9092b12ffb3b · 条目数: 145 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingCore/**=444-198e7d2bdae8 · 条目数: 145 · 最近整理: 2026-10-22
 
 > 核心抽象与契约 | 接口 · 模型 · 配置 · 序列化 · Agent 定义
 

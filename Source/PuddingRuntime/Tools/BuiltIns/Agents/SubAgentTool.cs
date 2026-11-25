@@ -560,20 +560,27 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         // 先获取子代理信息用于清理持久化记录
                         var poolAgent = await pool.GetAsync(args.PoolName, ct);
 
+                        // 销毁之前先把目标固定下来：SubSessionId 是唯一稳定的定位键
+                        // （名字能改、条目销毁后就查不到了）。
+                        var targetSubSessionId = poolAgent?.SubSessionId;
+
                         // 从池中销毁（带归属校验：cleanup 也不能摸到别人的条目）
                         var destroyed = await pool.DestroyAsync(
                             args.PoolName,
                             new PoolOwnerScope(request.SessionId, request.WorkspaceId),
                             ct);
 
-                        // 清理持久化记录
+                        // 清理持久化记录：按 SubSessionId 精确清理。
+                        // 只传父会话 + MaxCount=1 时，候选集是该会话下所有非运行中的子代理，
+                        // 删到哪一条取决于返回顺序——可能是别的成员的历史，也可能恰好清 0 条。
                         int dbCleaned = 0;
-                        if (poolAgent != null)
+                        if (targetSubSessionId != null)
                         {
                             dbCleaned = await subAgentManager.CleanupAsync(
                                 request.SessionId,
                                 new SubAgentCleanupFilter
                                 {
+                                    SubSessionId = targetSubSessionId,
                                     Status = args.CleanupStatus ?? "all",
                                     OlderThanDays = args.CleanupOlderThanDays,
                                     MaxCount = 1,

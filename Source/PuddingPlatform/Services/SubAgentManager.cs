@@ -655,12 +655,16 @@ public sealed class SubAgentManager : ISubAgentManager
     // 状态查询
     // ════════════════════════════════════════════════════════
 
-    public Task<IReadOnlyList<SubAgentStatus>> GetSubAgentsAsync(
+    public async Task<IReadOnlyList<SubAgentStatus>> GetSubAgentsAsync(
         string parentSessionId,
         SubAgentQueryFilter? filter = null,
         CancellationToken ct = default)
     {
-        return _ssm.GetSubAgentsAsync(parentSessionId, ct);
+        // 过滤器必须真的生效：忽略它时 caller 以为「只要一条 / 只要失败的」已生效，
+        // 实际拿到的是父会话下全部子代理。清理路径正是靠这里的 Status 与 MaxResults
+        // 限定影响面的（见 SubAgentQueryFiltering）。
+        var all = await _ssm.GetSubAgentsAsync(parentSessionId, ct).ConfigureAwait(false);
+        return SubAgentQueryFiltering.Apply(all, filter);
     }
 
     public Task<int> GetRunningCountAsync(string parentSessionId, CancellationToken ct = default)
@@ -1770,33 +1774,26 @@ public sealed class SubAgentManager : ISubAgentManager
 
         var maxCount = filter.MaxCount > 0 ? filter.MaxCount : 100;
 
-        // 获取匹配的子代理列表
-        var subAgents = await GetSubAgentsAsync(parentSessionId, new SubAgentQueryFilter
-        {
-            Status = filter.Status,
-            MaxResults = maxCount,
-        }, ct);
+        // 选出可删的条目：子会话定位 + 状态 + 时间窗 + 跳过运行中 + 截断，全在
+        // SubAgentQueryFiltering 一处（截断在筛选之后，否则「最多 1 条」会变成「0 条」）。
+        var allSubAgents = await _ssm.GetSubAgentsAsync(parentSessionId, ct).ConfigureAwait(false);
+        var subAgents = SubAgentQueryFiltering.SelectForCleanup(allSubAgents, filter with { MaxCount = maxCount });
 
-        // 如果有 OlderThanDays 限制，过滤
-        if (filter.OlderThanDays.HasValue && filter.OlderThanDays.Value > 0)
-        {
-            var cutoff = DateTimeOffset.UtcNow.AddDays(-filter.OlderThanDays.Value);
-            subAgents = subAgents
-                .Where(s => s.SpawnedAt < cutoff)
-                .ToList();
-        }
+        // 时间窗、跳过运行中、截断都已包含在 SelectForCleanup 里，此处不再重复筛选：
+        // 同一套判定写两遍时，改一处漏一处就会出现「先截断后筛选」那类刚好清不掉的回退。
 
         var cleaned = 0;
         foreach (var subAgent in subAgents)
         {
             ct.ThrowIfCancellationRequested();
 
-            // 跳过运行中的子代理
-            if (string.Equals(subAgent.Status, "running", StringComparison.OrdinalIgnoreCase))
-                continue;
-
+            // runId 取自状态快照本身（SessionStateManager 已带出），不依赖进程内的
+            // _runIdMap：正常收尾后那条映射会被移除，而「清理一条已收尾的子代理」
+            // 恰恰是最常见的场景——靠内存映射时这里恒为空，于是每次都清 0 条。
             var deleted = false;
-            var runId = TryGetRunId(subAgent.SubSessionId);
+            var runId = !string.IsNullOrWhiteSpace(subAgent.RunId)
+                ? subAgent.RunId
+                : TryGetRunId(subAgent.SubSessionId);
             if (!string.IsNullOrWhiteSpace(runId))
             {
                 try

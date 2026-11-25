@@ -261,6 +261,7 @@
 `Services/SubAgentCancellationWiringTests.cs` 覆盖 21 条用例。
 `Services/SubAgentDiagnosticsRunLookupTests.cs` 覆盖 4 条用例。
 `Services/SubAgentManagerMessageTests.cs` 覆盖 34 条用例。
+`Services/SubAgentCleanupScopeTests.cs` 覆盖 5 条用例。
 `Services/SubAgentManagerRevokeCoverageGuardTests.cs` 覆盖 1 条用例。
 `Services/SubAgentManagerTerminalStatusMatrixTests.cs` 覆盖 14 条用例。
 `Services/SubAgentPausedStatusTests.cs` 覆盖 18 条用例。
