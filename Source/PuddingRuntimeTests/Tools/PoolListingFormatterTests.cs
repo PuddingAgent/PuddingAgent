@@ -88,11 +88,11 @@ public sealed class PoolListingFormatterTests
                 status: PooledSubAgentStatus.Sleeping),
         ], static t => t);
 
-        StringAssert.Contains(text, "| 名称 | 状态 | 角色 | 模型 | 任务数 | 最后使用(本地) | SubSessionId |");
+        StringAssert.Contains(text, "| 名称 | 状态 | 角色 | 模型 | 累计派发 | 最后使用(本地) | SubSessionId |");
         var row = string.Join("\n", text.Split('\n').Where(l => l.StartsWith("| scout |", StringComparison.Ordinal)));
         StringAssert.Contains(row, "Sleeping");
         StringAssert.Contains(row, "verifier");
-        StringAssert.Contains(row, "| 7 |");
+        StringAssert.Contains(row, "| 7 次 |");
         // 日期必须跟着出现：只给 HH:mm:ss 时，「四天前」与「今天凌晨」在产物上不可区分。
         StringAssert.Contains(row, "2026-11-25 09:07");
     }
@@ -209,6 +209,38 @@ public sealed class PoolListingFormatterTests
         StringAssert.Contains(inheritRow, "| 跟随 |");
         Assert.IsFalse(inheritRow.Contains("| - |", StringComparison.Ordinal),
             $"未声明角色仍渲染成 -（会被读作不知道）：{inheritRow}");
+    }
+
+    [TestMethod]
+    public void RenderTaskCount_RendersCountWithUnit()
+    {
+        Assert.AreEqual("7 次", PoolListingFormatter.RenderTaskCount(7));
+        Assert.AreEqual("0 次", PoolListingFormatter.RenderTaskCount(0));
+        // 负向不能靠「恒返回固定串」通过：不同次数必须给出不同字样。
+        Assert.AreNotEqual(PoolListingFormatter.RenderTaskCount(7), PoolListingFormatter.RenderTaskCount(8));
+        // 裸数字会被读成「当前有 N 个任务在跑」（与界面「累计派发 N 次」同口径）。
+        Assert.AreNotEqual("7", PoolListingFormatter.RenderTaskCount(7));
+    }
+
+    [TestMethod]
+    public void Format_TaskCountColumn_ReadsAsCumulativeDispatch()
+    {
+        // 现场形态：frontend-ui 在 Sleeping、累计派发 1。裸数字「1」与「Sleeping」同屏并不矛盾，
+        // 于是它会被读成「休眠但有一单在跑」，而没有任何东西会去反驳它。
+        var text = PoolListingFormatter.Format(
+        [
+            Entry("frontend-ui", ParentSessionId + "-sub-e3680149", taskCount: 1, status: PooledSubAgentStatus.Sleeping),
+        ]);
+
+        var row = string.Join("\n", text.Split('\n')
+            .Where(l => l.StartsWith("| frontend-ui |", StringComparison.Ordinal)));
+
+        StringAssert.Contains(row, "Sleeping");
+        StringAssert.Contains(row, "| 1 次 |");
+        Assert.IsFalse(row.Contains("| 1 |", StringComparison.Ordinal), $"仍输出裸数字：{row}");
+        // 单元格带单位还不够：表头也得点明口径，否则读的人仍可能把它当任务数。
+        StringAssert.Contains(text, "| 累计派发 |");
+        Assert.IsFalse(text.Contains("| 任务数 |", StringComparison.Ordinal), $"表头仍是任务数：{text}");
     }
 
     // ===== 辅助 =====

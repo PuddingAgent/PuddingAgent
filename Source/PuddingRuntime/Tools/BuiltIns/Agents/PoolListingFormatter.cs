@@ -68,6 +68,21 @@ internal static class PoolListingFormatter
         => ToolTimeRendering.RenderMinute(lastUsedAt, toLocal);
 
     /// <summary>
+    /// 「累计派发」列的渲染值：次数 + 单位 <c>次</c>。
+    /// <para>
+    /// 原始字段是 <c>TaskCount</c>，语义是<b>累计派发次数</b>（<c>SubAgentPool</c> 在每次收尾时自增），
+    /// 不是「当前有多少任务在跑」。写成裸数字「1」会被读成后者，而同屏的「Sleeping」又不与它矛盾，
+    /// 于是没人会去反驳 —— 休眠中的成员看起来像有一单在执行。
+    /// </para>
+    /// <para>
+    /// 与界面同口径：面板写「累计派发 N 次」。同一个字段在两处渲染成两种字样，
+    /// 读的人会以为它们是两个不同的量。
+    /// </para>
+    /// </summary>
+    internal static string RenderTaskCount(int taskCount)
+        => $"{taskCount} 次";
+
+    /// <summary>
     /// 渲染池状态表。<paramref name="agents"/> 为空时由调用方先说清「本会话没有成员」。
     /// </summary>
     /// <param name="toLocal">
@@ -84,12 +99,13 @@ internal static class PoolListingFormatter
         var listing = new StringBuilder();
         listing.AppendLine($"## 子代理池状态 ({agents.Count} 个)\n");
         // 表头点明「本地」：不写的话读者无法判断 04:26 是哪个时区。
-        listing.AppendLine("| 名称 | 状态 | 角色 | 模型 | 任务数 | 最后使用(本地) | SubSessionId |");
+        // 「累计派发」不写「任务数」：后者会被读成「有 N 个任务在跑」（见 RenderTaskCount）。
+        listing.AppendLine("| 名称 | 状态 | 角色 | 模型 | 累计派发 | 最后使用(本地) | SubSessionId |");
         listing.AppendLine("|------|------|------|------|--------|----------|-------------|");
         foreach (var entry in agents)
         {
             listing.AppendLine(
-                $"| {entry.Name} | {entry.Status} | {RenderRole(entry.Role)} | {RenderModel(entry.ModelId)} | {entry.TaskCount} | " +
+                $"| {entry.Name} | {entry.Status} | {RenderRole(entry.Role)} | {RenderModel(entry.ModelId)} | {RenderTaskCount(entry.TaskCount)} | " +
                 $"{RenderLastUsed(entry.LastUsedAt, convert)} | {RenderSubSessionId(entry.SubSessionId)} |");
         }
 

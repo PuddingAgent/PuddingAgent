@@ -1,6 +1,6 @@
 # PuddingRuntime CodeMAP
 
-> 源指纹: Source/PuddingRuntime/**=445-abaa29cec55f · 条目数: 398 · 最近整理: 2026-11-22
+> 源指纹: Source/PuddingRuntime/**=445-2ed179e211b3 · 条目数: 398 · 最近整理: 2026-11-22
 > 定位：Agent 运行时核心（Agent Loop / LLM 调用 / 工具系统 / 上下文管线 / 子代理 / 后台学习）；.NET 10 类库，唯一服务注册入口 `DependencyInjection.cs`。
 > 本文件只做本项目文件级索引；跨项目调用链、测试工程索引、架构文档索引、运行时目录与构建入口只在根 [`code_map.md`](../../code_map.md)。
 > 每对象一行；空字段写 `—`。角色 `observe` 的对象只在文末附录列路径。
@@ -343,7 +343,7 @@
 | `Tools/BuiltIns/Agents/AgentTestTool.cs` | `test_tool`：工具试跑入口 | `AgentTestTool` | `Tools/Platform/ToolInvocationService.cs` | — |
 | `Tools/BuiltIns/Agents/GoalReadTool.cs` | `goal_read`：读取调用方私有的目标文件 | `GoalReadTool` | `Services/GoalMode/GoalModeService.cs` | — |
 | `Tools/BuiltIns/Agents/GoalUpdateTool.cs` | `goal_update`：追加或整体覆盖目标文件 | `GoalUpdateTool` | `Tools/BuiltIns/Agents/GoalReadTool.cs` | — |
-| `Tools/BuiltIns/Agents/PoolListingFormatter.cs` · `Services/ToolTimeRendering.cs` | 池状态与工具时间渲染 | `PoolListingFormatter`、`ToolTimeRendering`、`FormatEditTime` | `SubAgentTool.cs`、`QuerySubAgentsTool.cs` | SubSessionId 必完整；时间转本地且必带日期（`HH:mm:ss` 丢日期/UTC 当本地）；`default` 渲染 `-`；`InvariantCulture` 防佛历 |
+| `Tools/BuiltIns/Agents/PoolListingFormatter.cs` · `Services/ToolTimeRendering.cs` | 池/工具时间渲染 | `PoolListingFormatter`、`FormatEditTime`、`RenderTaskCount` | `SubAgentTool.cs`、`QuerySubAgentsTool.cs` | SubSessionId 全量；本地+日期（`HH:mm:ss` 丢日、UTC≠本地）；`default`→`-`；`InvariantCulture` 避佛历；派发带「次」（裸数字≠任务数） |
 | `Tools/BuiltIns/Agents/QuerySubAgentsTool.cs` | `query_sub_agents`：查询子代理状态 | `QuerySubAgentsTool` | `Services/ToolTimeRendering.cs` | list/status 的时间走 `ToolTimeRendering`：`HH:mm:ss` 会同时丢日期与把 UTC 当本地（同一 run 与池 list 差 8 小时） |
 | `Tools/BuiltIns/Agents/SubAgentTool.cs` | `spawn_sub_agent` 派生；logs 限本 agent 归档；bulk 可预演 | `SubAgentTool`、`SubAgentToolArgs.DryRun` | `Services/SubAgentInvocationService.cs` | 写全 provider/modelId；交付物外置；管理动作先于 task；不消费正文；带 `PoolOwnerScope`；五类失败分渲染、未就绪≠空池；模板继承显式优先；cleanup 复核归档非投影；dry_run 两模式措辞不混 |
 | `Tools/BuiltIns/CodeIntelligence/CodeOutlineTool.cs` | `code_outline`：文件顶层结构的树形输出 | `CodeOutlineTool` | `Tools/BuiltIns/CodeIntelligence/OutlineSyntaxVisitor.cs` | — |
