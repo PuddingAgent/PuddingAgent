@@ -24,7 +24,8 @@ namespace PuddingHost.Controllers;
 /// 模型见 <c>ISubAgentPool.GetDeclaredModelIdAsync</c>，模板见 <c>GetDeclaredTemplateIdAsync</c>。
 /// 状态类字段（status / task_count / active_execution_id）恰好相反：它们就在内存里且被抢占/收尾
 /// 逻辑判定，改它们必须走池。
-/// 唯一残留是工具侧 <c>pool_action="list"</c> 读内存快照，会显示旧值直到下次派活或进程重启。
+/// 三个读面因此同源：面板查库、派活每单回读、工具侧 <c>pool_action="list"</c> 走
+/// <c>ListOwnedByDeclaredAsync</c>，同样按 <c>pool_id</c> 回读声明列并写回缓存。
 /// </para>
 /// <para>
 /// **鉴权与路由**照抄 <see cref="SubAgentDelegationAdminController"/>：
@@ -325,8 +326,8 @@ public sealed class SubAgentPoolAdminController(
     /// <b><c>role</c> 每单都会从库刷新：</b><c>ExecuteAsync</c> 在构建执行请求前调用
     /// <c>RefreshDeclaredRoleLockedAsync</c>，后者按 <c>pool_id</c> 读库并覆盖内存值，
     /// 因此面板改完这一列，同一进程的下一单就用新角色。刷新失败时退回缓存值并记 warning，
-    /// 不阻断派活。残留的一处陈旧是工具侧 <c>pool_action="list"</c> 读内存快照，
-    /// 它在下次派活或进程重启前仍显示旧值。
+    /// 不阻断派活。工具侧 <c>pool_action="list"</c> 也走 <c>ListOwnedByDeclaredAsync</c>，
+    /// 同样按 <c>pool_id</c> 回读声明列并写回缓存 —— 面板、派活、列表三处不会各说一套。
     /// </para>
     /// <para>
     /// <b>模型路由同样在使用点回读：</b>派活未显式指定 model 时，<c>SubAgentTool</c> 先调
