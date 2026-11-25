@@ -1616,6 +1616,10 @@ public sealed class SubAgentPool : ISubAgentPool
 
     private async Task<bool> DestroyCoreAsync(string name, PoolOwnerScope scope, CancellationToken ct)
     {
+        // 取消请求留到锁外做：它要等的可能是整条执行链的收尾，而 _stateLock 是所有池操作的
+        // 唯一闸门，握着它等外部执行退出会把整池的派发/休眠一起拖住。
+        string? cancelSubSessionId = null;
+
         await _stateLock.WaitAsync(ct);
         try
         {
@@ -1667,26 +1671,47 @@ public sealed class SubAgentPool : ISubAgentPool
 
             var wasBusy = entry.Status == PooledSubAgentStatus.Busy;
             entry.Status = PooledSubAgentStatus.Dead;
-
-            // 同 SleepAsync：条目已死并不代表执行循环已停。先真取消，避免「已销毁但仍在烧 token」。
-            if (wasBusy)
-            {
-                await _subAgentManager.CancelAsync(
-                    entry.SubSessionId,
-                    "Pooled sub-agent destroyed",
-                    ct);
-            }
+            cancelSubSessionId = wasBusy ? entry.SubSessionId : null;
 
             _logger.LogInformation(
                 "[SubAgentPool] Destroyed '{Name}' subSessionId={Sub} taskCount={TaskCount}",
                 name, entry.SubSessionId, entry.TaskCount);
-
-            return true;
         }
         finally
         {
             _stateLock.Release();
         }
+
+        // 同 SleepAsync：条目已死并不代表执行循环已停，仍要真取消，否则「已销毁但仍在烧 token」。
+        //
+        // 但下面的 catch 是刻意的、必须保留：走到这里销毁<b>已经提交</b>（库已 dead + deleted_at、
+        // 内存已摘两个索引）。此时把取消失败或调用方令牌已取消升级成异常，会让调用方「以为没销毁成功」
+        // ——它接着重试，却得到 false（条目已不存在），两个结论互相矛盾；而真实状态是「已销毁，
+        // 但那次执行可能还在烧预算」。这类「把已提交的成功报成失败」与 goal_update 的
+        // 「把损坏当成功」是同一类问题，只是方向相反。
+        //
+        // 令牌仍然透传给取消：销毁已经落地，放弃这次补偿不会留下更坏的状态；而用一个永不取消的
+        // 令牌换「一定发出取消」，代价是调用方无法中断一次卡住的取消请求。
+        if (cancelSubSessionId is not null)
+        {
+            try
+            {
+                await _subAgentManager.CancelAsync(
+                    cancelSubSessionId,
+                    "Pooled sub-agent destroyed",
+                    ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "[SubAgentPool] DestroyAsync: cancel failed after the entry was already destroyed " +
+                    "name={Name} sub={Sub}; the run may keep consuming budget until it finishes",
+                    name, cancelSubSessionId);
+            }
+        }
+
+        return true;
     }
 
     // ════════════════════════════════════════════════════════

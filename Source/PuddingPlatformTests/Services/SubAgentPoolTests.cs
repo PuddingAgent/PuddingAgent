@@ -694,6 +694,47 @@ public sealed class SubAgentPoolTests
             "a dead pool entry does not stop a running loop");
     }
 
+    /// <summary>
+    /// 销毁已提交后，补偿性取消失败不得把成功报成失败。
+    /// <para>
+    /// 走到取消时库里已是 dead + deleted_at、内存已摘两个索引——销毁已经成立。
+    /// 如果这时抛异常，调用方会重试，而重试得到 <c>false</c>（条目已不存在），
+    /// 两个结论互相矛盾；它还会顺带把「已销毁」写成「销毁失败」进了上层日志。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task DestroyAsync_BusyEntry_CancelThrows_StillReportsDestroyed()
+    {
+        var manager = new TestSubAgentManager { DelayMs = 250, CancelThrows = true };
+        var pool = CreatePool(manager);
+        var created = await pool.CreateAsync("agent-a", CreateSpawnRequest());
+
+        var exec = pool.ExecuteAsync("agent-a", CreateSpawnRequest());
+        var becameBusy = false;
+        for (var i = 0; i < 200; i++)
+        {
+            if ((await pool.GetAsync("agent-a"))?.Status == PooledSubAgentStatus.Busy)
+            {
+                becameBusy = true;
+                break;
+            }
+            await Task.Delay(5);
+        }
+        Assert.IsTrue(becameBusy, "precondition: the pooled entry must reach Busy");
+
+        var destroyed = await pool.DestroyAsync("agent-a");
+
+        Assert.IsTrue(destroyed,
+            "the destroy was already committed (store dead + unindexed); a failing compensating cancel " +
+            "must not turn it into a reported failure");
+        Assert.IsNull(await pool.GetAsync("agent-a"), "the entry must really be gone from the pool");
+        Assert.IsTrue(manager.CancelledSubSessionIds.Contains(created.SubSessionId),
+            "the cancel must still have been attempted — swallowing the exception is about reporting, " +
+            "not about skipping the compensation");
+
+        await exec;
+    }
+
     [TestMethod]
     public async Task SleepAsync_IdleEntry_DoesNotCancelAnything()
     {
@@ -902,6 +943,11 @@ public sealed class TestSubAgentManager : ISubAgentManager
     public List<(string SubSessionId, string? ExpectedExecutionId)> CancelExecutionRequests { get; } = new();
     public int DelayMs { get; set; }
     public bool ShouldFail { get; set; }
+
+    /// <summary>
+    /// 取消请求直接抛错。用于验证「销毁已提交之后，补偿动作失败不能把成功报成失败」。
+    /// </summary>
+    public bool CancelThrows { get; set; }
     private int _spawnCounter;
     private int _spawnCallCount;
     private int _executeCallCount;
@@ -949,6 +995,8 @@ public sealed class TestSubAgentManager : ISubAgentManager
     public Task<bool> CancelAsync(string subSessionId, string reason, CancellationToken ct = default)
     {
         CancelledSubSessionIds.Add(subSessionId);
+        if (CancelThrows)
+            throw new InvalidOperationException("Simulated cancel failure");
         return Task.FromResult(true);
     }
     public Task<bool> CancelExecutionAsync(
