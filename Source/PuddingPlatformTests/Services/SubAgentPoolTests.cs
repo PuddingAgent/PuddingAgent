@@ -471,6 +471,25 @@ public sealed class SubAgentPoolTests
     // ═══════════════════════════════════════════════════════════
 
     [TestMethod]
+    public async Task GetDeclaredTemplateIdAsync_ReturnsCreatedTemplate()
+    {
+        // 模板决定提示词、工具与能力上限：派发若要继承它，就得先能读到它，
+        // 否则池成员「是谁」就只剩名字。
+        var pool = CreatePool();
+        await pool.CreateAsync("dev-agent", CreateSpawnRequest() with { TemplateId = "code-agent" });
+
+        Assert.AreEqual("code-agent", await pool.GetDeclaredTemplateIdAsync("dev-agent"));
+    }
+
+    [TestMethod]
+    public async Task GetDeclaredTemplateIdAsync_ReturnsNullForUnknownEntry()
+    {
+        // 「条目不存在」与「读不到」在调用方是同一个处置（用工具默认模板），所以返回 null 而不是抛。
+        var pool = CreatePool();
+        Assert.IsNull(await pool.GetDeclaredTemplateIdAsync("ghost"));
+    }
+
+    [TestMethod]
     public async Task EvictLRU_ReturnsNullWhenNoSleeping()
     {
         var pool = CreatePool();

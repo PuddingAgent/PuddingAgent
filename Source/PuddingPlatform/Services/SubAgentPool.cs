@@ -670,6 +670,37 @@ public sealed class SubAgentPool : ISubAgentPool
     }
 
     /// <summary>
+    /// 读取条目声明的模板 id。
+    /// <para>
+    /// <b>先等就绪再查，与模型继承不同：</b>池还没从库加载完时，内存字典是空的，直接查会
+    /// 得到「没有这个条目」——调用方于是退回工具默认模板，一次重启后的首单就以错误身份执行，
+    /// 而结果里看不出差异。模型退回默认只是换个路由，模板退回默认是换个人，所以这里多等一次加载。
+    /// </para>
+    /// <para>
+    /// <b>读到后不必每单回源库：</b>面板 PATCH 只能改 role / model_id / responsibility / avatar_key
+    /// （无 template 字段），所以模板列在条目生命周期内不变，内存快照就是真值。
+    /// 这一点与 <see cref="GetDeclaredModelIdAsync"/> 刚好相反。
+    /// </para>
+    /// </summary>
+    public async Task<string?> GetDeclaredTemplateIdAsync(string name, CancellationToken ct = default)
+    {
+        try
+        {
+            await EnsureReadyAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 继承是增强：未就绪时退回工具默认模板，不让恢复失败升级成派活失败。
+            _logger.LogDebug(ex, "[SubAgentPool] 池未就绪，本次不继承条目 {Name} 的模板", name);
+            return null;
+        }
+
+        return _pool.TryGetValue(name, out var entry) && !string.IsNullOrWhiteSpace(entry.TemplateId)
+            ? entry.TemplateId
+            : null;
+    }
+
+    /// <summary>
     /// 派发前把条目的声明角色从库里刷新回来。
     /// <para>
     /// <b>为什么必须每单刷新：</b><see cref="PooledSubAgent.Role"/> 是启动时由

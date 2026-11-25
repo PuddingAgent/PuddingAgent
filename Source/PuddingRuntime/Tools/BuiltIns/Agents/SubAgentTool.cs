@@ -394,10 +394,41 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         if (!string.IsNullOrWhiteSpace(resumeSubAgentId) && !string.IsNullOrWhiteSpace(args.PoolName))
             return Fail("resume_sub_agent_id cannot be combined with pool_name; pooled agents already own a reusable session identity.");
 
-        var templateId = GetStringProp(json, "agent_template")
-                      ?? GetStringProp(json, "template")
-                      ?? request.Parameters.GetValueOrDefault("template")
-                      ?? "workspace-task-agent";
+        // 模板解析：显式优先 → 池条目声明的模板 → 工具默认值。
+        // 继承不能省：模板决定子代理的提示词、可用工具与能力上限。池复用只回写 ReuseSubSessionId，
+        // 若模板也退回默认，界面上那个成员「是谁」就只剩名字——建的时候是 codex、派下去变成
+        // workspace-task-agent，而结果里看不出差异。与 model 继承同一处置：显式值仍优先。
+        var explicitTemplateId = GetStringProp(json, "agent_template")
+                              ?? GetStringProp(json, "template")
+                              ?? request.Parameters.GetValueOrDefault("template");
+
+        // 未显式指定模板时的取值优先级：池条目声明 > 工具默认。
+        // 继承查询先做：条目不存在 / 池未就绪都只返回 null，不阻断派活。
+        string? declaredPoolTemplate = null;
+        if (string.IsNullOrWhiteSpace(explicitTemplateId) && !string.IsNullOrWhiteSpace(args.PoolName))
+        {
+            var poolForTemplate = _services.GetService<ISubAgentPool>();
+            if (poolForTemplate is not null)
+            {
+                try
+                {
+                    declaredPoolTemplate = await poolForTemplate.GetDeclaredTemplateIdAsync(args.PoolName, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // 继承失败不阻断派活：条目不存在 / 池未就绪由后面的 ExecuteAsync 统一渲染。
+                    _logger.LogDebug(ex, "[SubAgent] 池条目模板继承查询失败 name={Name}", args.PoolName);
+                }
+            }
+        }
+
+        var inheritedPoolTemplateId = string.IsNullOrWhiteSpace(explicitTemplateId)
+                                   && !string.IsNullOrWhiteSpace(declaredPoolTemplate);
+        var templateId = !string.IsNullOrWhiteSpace(explicitTemplateId)
+            ? explicitTemplateId
+            : inheritedPoolTemplateId
+                ? declaredPoolTemplate!
+                : "workspace-task-agent";
 
         var isSync = GetBoolProp(json, "sync")
                   ?? (request.Parameters.TryGetValue("sync", out var syncVal)
@@ -565,6 +596,12 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             routeAdvisories.Add(
                 $"ℹ️ [spawn_sub_agent] 池条目继承了声明的模型路由 " +
                 $"'{childLlmRoute.Profile.ProviderId}/{childLlmRoute.Profile.ModelId}'（未显式指定 model）。");
+        }
+        if (inheritedPoolTemplateId)
+        {
+            // 模板不是展示字段：不告的话使用者看不到自己拿到的是哪个身份的子代理。
+            routeAdvisories.Add(
+                $"ℹ️ [spawn_sub_agent] 池条目继承了声明的模板 '{template.TemplateId}'（未显式指定 agent_template）。");
         }
 
         var taskPlanning = ReadTaskPlanningContext(json, request, task ?? batchTasksResult.Tasks![0].Task);

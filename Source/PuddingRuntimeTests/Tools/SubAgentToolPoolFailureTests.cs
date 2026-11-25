@@ -530,6 +530,40 @@ public sealed class SubAgentToolPoolFailureTests
         });
     }
 
+    [TestMethod]
+    public async Task Execute_WithoutExplicitTemplate_InheritsDeclaredPoolTemplate()
+    {
+        // 池复用只回写 ReuseSubSessionId；若模板也退回工具默认值，界面上那个成员「是谁」就只剩名字——
+        // 建的时候是 code-agent、派下去变成 workspace-task-agent，而结果里看不出差异。
+        var pool = new FakeSubAgentPool { DeclaredTemplateId = "code-agent" };
+
+        var result = await ExecuteToolAsync(pool, """{"task":"run it","pool_name":"p1"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(
+            "code-agent",
+            pool.LastExecuteTemplateId,
+            "未显式指定 agent_template 时必须继承条目声明的模板，不得退回工具默认值。");
+    }
+
+    [TestMethod]
+    public async Task Execute_WithExplicitTemplate_OverridesDeclaredPoolTemplate()
+    {
+        // 显式值是调用方的明确意图，不能被条目声明盖掉：
+        // 「这个成员平时是 code-agent，这一单临时用 audit」是合法用法。
+        var pool = new FakeSubAgentPool { DeclaredTemplateId = "code-agent" };
+
+        var result = await ExecuteToolAsync(
+            pool,
+            """{"task":"run it","pool_name":"p1","agent_template":"workspace-audit-agent"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(
+            "workspace-audit-agent",
+            pool.LastExecuteTemplateId,
+            "显式 agent_template 必须优先于条目声明的模板。");
+    }
+
     private static async Task<ToolExecutionResult> ExecuteToolAsync(FakeSubAgentPool pool, string argumentsJson)
     {
         using var provider = new ServiceCollection()
@@ -567,6 +601,12 @@ public sealed class SubAgentToolPoolFailureTests
         public PoolReadiness ReadinessValue { get; init; } = PoolReadiness.Ready;
         public IReadOnlyList<PooledSubAgent> Entries { get; init; } = Array.Empty<PooledSubAgent>();
 
+        /// <summary>条目声明的模板 id；null 表示「没有声明」。</summary>
+        public string? DeclaredTemplateId { get; init; }
+
+        /// <summary>工具交给池的那一单实际用的模板 id，供「继承 vs 显式覆盖」断言。</summary>
+        public string? LastExecuteTemplateId { get; private set; }
+
         public int Count => Entries.Count;
         public int MaxCapacity => 4;
         public PoolReadiness Readiness => ReadinessValue;
@@ -593,6 +633,8 @@ public sealed class SubAgentToolPoolFailureTests
             if (ExecuteError is not null)
                 throw ExecuteError;
 
+            LastExecuteTemplateId = request.TemplateId;
+
             return Task.FromResult(new SubAgentExecuteResult
             {
                 SubSessionId = $"{request.ParentSessionId}-sub-{name}",
@@ -604,6 +646,9 @@ public sealed class SubAgentToolPoolFailureTests
         }
 
         public Task<bool> SleepAsync(string name, CancellationToken ct = default) => Task.FromResult(SleepResult);
+
+        public Task<string?> GetDeclaredTemplateIdAsync(string name, CancellationToken ct = default)
+            => Task.FromResult(DeclaredTemplateId);
 
         /// <summary>归属受限重载：本假池不模拟归属，只记录「工具是否带了 scope」供断言用。</summary>
         public PoolOwnerScope? LastScope { get; private set; }

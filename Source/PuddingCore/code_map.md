@@ -1,5 +1,5 @@
 # PuddingCore CodeMAP
-> 源指纹: Source/PuddingCore/**=444-48c3963e75eb · 条目数: 145 · 最近整理: 2026-10-22
+> 源指纹: Source/PuddingCore/**=444-7d7e5e818fb5 · 条目数: 145 · 最近整理: 2026-10-22
 
 > 核心抽象与契约 | 接口 · 模型 · 配置 · 序列化 · Agent 定义
 
@@ -40,7 +40,7 @@
 | `Platform/ReasoningEffortPolicy.cs` | 思考强度唯一决策点：手动 > Agent/模型配置 > 模型默认 > 产品默认 high（细节见「条目细节」） | `ReasoningEffortPolicy.Resolve`、`IsValid`、`Label`、`TryNormalizeSelection`、`IsUserSelectable` | `Platform/ExecutionRunContracts.cs` | 纯函数；仅在模型声明 `reasoning` 能力时用产品默认，否则返 null（细节见「条目细节」） |
 | `Platform/IAgentReasoningEffortStore.cs` | Agent 级思考强度读写端口：`/effort` 命令与聊天面板下拉共写同一份存储 | `IAgentReasoningEffortStore` | `WorkspaceAgentReasoningEffortStore`（Platform）、`SystemCommandHandler` | 只有读一个值/写一个值两个方法：注入整个 Agent 文件服务会把创建/删除/冻结等写能力带进纯文本命令入口，也无法在无数据目录时断言 |
 | `Abstractions/ILlmGatewayUsageRecorder.cs` | 本地计费事实的必达写入契约 | `ILlmGatewayUsageRecorder` | `Services/` | 一次 Provider usage 对应一条本地计费事实 |
-| `Abstractions/ISubAgentPool.cs` | 子代理池最小契约 | `ISubAgentPool`、`PoolReadiness`、`PooledSubAgentStatus`、`PoolOwnerScope` | `Platform/`、`Abstractions/SubAgentPoolExceptions.cs` | 含池状态与池快照（快照带 owner）；`Readiness` 四态（未就绪 `List` 抛异常而非返回空池）、`GetSnapshotAsync`；`ListOwnedBy` 与带 scope 休眠/销毁无默认实现（编译期强制） |
+| `Abstractions/ISubAgentPool.cs` | 子代理池最小契约 | `ISubAgentPool`、`PoolReadiness`、`PooledSubAgentStatus`、`PoolOwnerScope` | `Platform/`、`Abstractions/SubAgentPoolExceptions.cs` | 含池状态与池快照（快照带 owner）；`Readiness` 四态（未就绪 `List` 抛异常而非返回空池）、`GetSnapshotAsync`；`ListOwnedBy`/带 scope 休眠销毁/声明模板均无默认实现（编译期） |
 | `Abstractions/ITokenUsageRecorder.cs` | Token 归因写入边界 | `ITokenUsageRecorder`、`TokenUsageAttribution` | `Services/` | 承载 canonical parent/sub-agent、零基 round 与本轮工具事实；默认接口实现保持旧 recorder 源码兼容 |
 | `Platform/IPlatformRepositories.cs` | Platform 持久化仓储契约 | `IPlatformRepositories`、`ChatMessageRow` | `Abstractions/` | ChatMessageRow 含 WorkspaceId、稳定 platform/business MessageId、TurnId 与消息内容；供 Runtime 压缩/冷水合前增量镜像 canonical 转录并排除当前 Turn；含 Agent Token/熵诊断 Core DTO 查询边界 |
 | `Platform/IExecutionCommandReader.cs` | ExecutionCommand 只读边界 | `IExecutionCommandReader`、`ExecutionWorkUnitContext` | `Platform/IPlatformRepositories.cs` | 返回由 canonical Goal/Task/Plan 解析的上下文及 rounds/tools/duration/token/cost 冻结预算；`ExecutionCommandRecord.ClientRequestId` 仅作受管 Work 关联候选，不是可信预算身份 |

@@ -130,4 +130,19 @@ public interface ISubAgentPool
     /// </summary>
     Task<string?> GetDeclaredModelIdAsync(string name, CancellationToken ct = default)
         => Task.FromResult<string?>(null);
+
+    /// <summary>
+    /// 读取条目声明的模板 id，用于「派活未显式指定模板时继承」。
+    /// <para>
+    /// <b>模板不能像模型那样退回默认值。</b>模型退回默认只是换个路由，模板决定子代理的
+    /// 提示词、可用工具与能力上限：建的时候是 codex、派下去变成 workspace-task-agent，
+    /// 等于换了一个人在干活，而结果里看不出差异。
+    /// </para>
+    /// <para>
+    /// 与 <see cref="GetDeclaredModelIdAsync"/> 同一处置：默认实现返回 <c>null</c>，
+    /// 纯内存实现与测试替身无需改动；「未声明」与「读不到」在调用方合流为「用工具默认模板」。
+    /// </para>
+    /// </summary>
+    Task<string?> GetDeclaredTemplateIdAsync(string name, CancellationToken ct = default)
+        => Task.FromResult<string?>(null);
 }
