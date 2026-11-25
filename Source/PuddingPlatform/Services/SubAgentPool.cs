@@ -45,7 +45,15 @@ public sealed class SubAgentPool : ISubAgentPool
         public string Name { get; }
         public string SubSessionId { get; }
         public string TemplateId { get; }
-        public string? Role { get; }
+
+        /// <summary>
+        /// 条目声明的角色。<b>不是只读常量</b>：面板 PATCH 直接写库、不回写本快照，
+        /// 所以派发前要用库里的值刷新一次（<see cref="ApplyDeclaredRole"/>），
+        /// 否则界面上把 worker 改成 reviewer，同进程下一单仍以 worker 派发，
+        /// 要等重启重载池才生效——那是「缓存冒充真源」的典型症状。
+        /// </summary>
+        public string? Role { get; private set; }
+
         public DateTimeOffset CreatedAt { get; }
         public DateTimeOffset LastUsedAt { get; set; }
         public PooledSubAgentStatus Status { get; set; }
@@ -124,6 +132,15 @@ public sealed class SubAgentPool : ISubAgentPool
             LastSuccess = lastSuccess;
             ActiveExecutionId = activeExecutionId;
         }
+
+        /// <summary>
+        /// 用库里的声明值刷新角色。
+        /// <para>
+        /// <b>只写声明列，不碰运行时状态：</b>status / task_count / active_execution_id 属于「谁在驱动」，
+        /// 它们的真源是本进程；而 role 是「这个成员是谁」，真源在库。两者方向相反，不能混在一个刷新里。
+        /// </para>
+        /// </summary>
+        public void ApplyDeclaredRole(string? role) => Role = role;
 
         public PooledSubAgent ToSnapshot() => new()
         {
@@ -652,6 +669,47 @@ public sealed class SubAgentPool : ISubAgentPool
         }
     }
 
+    /// <summary>
+    /// 派发前把条目的声明角色从库里刷新回来。
+    /// <para>
+    /// <b>为什么必须每单刷新：</b><see cref="PooledSubAgent.Role"/> 是启动时由
+    /// <c>LoadAllAsync</c> 带回的<b>一次性投影</b>，而面板 PATCH 直接写库。两条路径各写一边，
+    /// 派发却只读内存 —— 于是「界面上把 worker 改成 reviewer」在同一进程的下一单仍是 worker，
+    /// 要等重启重载池才生效。角色不是展示字段：它决定子代理的提示词与职责，
+    /// 读旧值等于用错人干活，而且结果里看不出差异。
+    /// </para>
+    /// <para>
+    /// <b>不用 <c>GetDeclaredModelIdAsync</c> 那样的公开方法：</b>那里是调用方（工具层）
+    /// 在解析 LLM 路由前读的，而角色的继承点就在本类内部（<c>ExecuteAsync</c> 构建
+    /// <c>executeRequest</c> 时），多开一个公开面只会多一条要维护的契约。
+    /// </para>
+    /// <para>
+    /// <b>读失败不阻断派发：</b>退回缓存值。缓存可能是旧的，但「旧角色」比「派活直接失败」
+    /// 代价小几个数量级；且下一次派发会自动再试一次。
+    /// </para>
+    /// </summary>
+    private async Task RefreshDeclaredRoleLockedAsync(PoolEntry entry, CancellationToken ct)
+    {
+        if (_entryStore is null)
+            return; // 纯内存模式：没有第二个真源，缓存就是唯一的
+
+        try
+        {
+            var row = await _entryStore.GetByIdAsync(entry.PoolId, ct).ConfigureAwait(false);
+            if (row is null)
+                return; // 已软删 / 不存在：留给后续路径渲染，不在这里抛
+
+            entry.ApplyDeclaredRole(row.Role);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                ex,
+                "[SubAgentPool] 刷新条目 {Name} 的声明角色失败，本次沿用缓存值 role={Role}",
+                entry.Name, entry.Role ?? "<null>");
+        }
+    }
+
     // ════════════════════════════════════════════════════════
     // 执行
     // ════════════════════════════════════════════════════════
@@ -1008,6 +1066,14 @@ public sealed class SubAgentPool : ISubAgentPool
                         $"but was requested from '{request.WorkspaceId}'.",
                         name, ownerSession, request.ParentSessionId,
                         PoolOwnershipMismatchException.OwnerWorkspaceReason);
+                }
+
+                // 角色继承必须在置 Busy 之前读库：池内快照是启动时的一次性投影，
+                // 面板 PATCH 直接写库、不回写这里。只在「本次没显式指定角色」时读，
+                // 因为显式值本来就优先，多读一次库换不来任何行为差异。
+                if (string.IsNullOrWhiteSpace(request.RoleInPlan))
+                {
+                    await RefreshDeclaredRoleLockedAsync(existing, ct);
                 }
 
                 // 标记为 Busy 之前先抢库里的那一行（S5a，DB 是第一道真相）。
