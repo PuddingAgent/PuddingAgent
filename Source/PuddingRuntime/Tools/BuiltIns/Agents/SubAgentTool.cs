@@ -308,9 +308,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         if (targetSubSessionId is null)
                             return Fail(
                                 DescribePoolEntryMissing(args.PoolName, "cleanup") +
-                                "\n提示：条目已销毁时改用 pool_action=\"cleanup\" " +
-                                "sub_agent_id=\"<SubSessionId>\" 重试（SubSessionId 可用 pool_action=\"list\" 查到），" +
-                                "或用 pool_action=\"cleanup-bulk\" 按父会话批量清理。");
+                                "\n提示：条目已销毁后重试：" + CleanupRetryHint(null) +
+                                "。也可以用 pool_action=\"cleanup-bulk\" 按父会话批量清理。");
 
                         // 顺序有两种，不能通用：
                         // · 忙碌条目必须先销毁——销毁会级联取消在跑的那一单，而清理会跳过「运行中」的记录，
@@ -362,7 +361,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                                 $"（runId={runId}，ISubAgentRunStore 不可用，清理返回 {dbCleaned} 条）。" +
                                 (destroyed ? "池条目已销毁。" : "池条目已保留。") +
                                 "\n提示：这是可重试状态，原地再调一次 cleanup 即可" +
-                                $"（条目已销毁时用 sub_agent_id=\"{targetSubSessionId}\"）。");
+                                $"（条目已销毁时仍带 pool_name，再加 sub_agent_id=\"{targetSubSessionId}\"）。");
 
                         if (archivePresent == true)
                             return Fail(
@@ -370,7 +369,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                                 $"（runId={runId}，SubSessionId={targetSubSessionId}，清理返回 {dbCleaned} 条）。" +
                                 (destroyed ? "池条目已销毁。" : "池条目已保留。") +
                                 "\n提示：这是可重试状态，原地再调一次 cleanup 即可" +
-                                $"（条目已销毁时用 sub_agent_id=\"{targetSubSessionId}\"）。");
+                                $"（条目已销毁时仍带 pool_name，再加 sub_agent_id=\"{targetSubSessionId}\"）。");
 
                         return Success(
                             $"? 子代理 '{args.PoolName}' 已清理。" +
@@ -467,7 +466,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         return Success($"? 批量清理完成：已删除运行归档 {cleaned} 条（{filterDesc}）。" +
                                 $"\n范围：本会话全部非运行中的子代理，单次最多 {BulkMaxCount} 条，不限于池化成员。" +
                                 "\n运行归档含磁盘目录，删除后不可恢复。" +
-                                "\n只想清某个成员：pool_action=\"cleanup\" + sub_agent_id（那个入口还会复核归档是否真的删掉）。");
+                                "\n只想清某个成员：" + CleanupRetryHint(null) +
+                                "（那个入口还会复核归档是否真的删掉）。");
                     }
 
                     case "destroy":
@@ -1955,6 +1955,24 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                $"归属：父会话 {owner}，本次请求：{requested}。\n" +
                $"提示：改用本会话自己创建的池条目名；或用 pool_name=\"{entryName}\" pool_action=\"list\" " +
                "查看可用条目（list 里的 SubSessionId 是完整值，可直接复制给 sub_agent_id）。";
+    }
+
+    /// <summary>
+    /// 「条目已销毁后如何重试单条清理」的唯一说法。
+    /// <para>
+    /// <c>pool_name</c> 在管理动作入口是必填（<c>list</c> / <c>cleanup-bulk</c> 除外），
+    /// 所以「只给 <c>sub_agent_id</c>」不是合法形态 —— 照抄会先撞「需要 pool_name」。
+    /// </para>
+    /// <para>
+    /// 此前三处提示都写成 <c>pool_action="cleanup" sub_agent_id="..."</c>，看上去就是一个完整调用。
+    /// 2026-11-26 我本人就是照这条提示建模的，直到运行时三臂（名字解析不到 + 旧 id）才纠正。
+    /// </para>
+    /// </summary>
+    internal static string CleanupRetryHint(string? subSessionId)
+    {
+        var id = string.IsNullOrWhiteSpace(subSessionId) ? "<SubSessionId>" : subSessionId!;
+        return $"pool_action=\"cleanup\" 仍需 pool_name（必填）；条目已销毁时 pool_name 给原名，" +
+               $"再加 sub_agent_id=\"{id}\"（SubSessionId 可用 pool_action=\"list\" 查到）";
     }
 
     /// <summary>

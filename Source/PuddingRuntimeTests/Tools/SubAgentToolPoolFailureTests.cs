@@ -563,6 +563,28 @@ public sealed class SubAgentToolPoolFailureTests
             "忙碌条目必须先销毁（级联取消）再清理；归档已删时不重复销毁：" + string.Join(",", calls));
     }
 
+    [TestMethod]
+    public async Task Cleanup_UnknownName_HintStatesPoolNameStillRequired()
+    {
+        // 这条分支的真实形态：条目已销毁、调用方只给了旧名字。
+        // 旧提示写成 pool_action="cleanup" sub_agent_id="<SubSessionId>"，读起来像「只给 id 就能重试」，
+        // 而管理动作入口要求 pool_name 必填 —— 照抄会先撞「需要 pool_name」，把「怎么重试」绕成一个死胡同。
+        var calls = new List<string>();
+        var pool = NewCleanupPool(calls, entry: null);
+        var manager = NewCleanupManager(calls, cleaned: 0, runId: "run-none");
+
+        var result = await ExecuteCleanupAsync(pool, manager, runArchiveStore: null,
+            """{"pool_name":"gone","pool_action":"cleanup"}""");
+
+        Assert.IsFalse(result.Success, "名字解析不到且没给 id 时必须失败，不能当成「清 0 条」成功");
+        var text = result.Error ?? result.Output;
+        StringAssert.Contains(text, "仍需 pool_name",
+            "重试提示必须点明 pool_name 必填，否则调用方会以为只给 sub_agent_id 就够");
+        StringAssert.Contains(text, "sub_agent_id=\"<SubSessionId>\"",
+            "提示要给出 SubSessionId 的占位形态");
+        Assert.AreEqual(0, calls.Count, "这条分支不应当进入执行链（不得先清再发现定位不到）：" + string.Join(",", calls));
+    }
+
     // ═══════════════════════════════════════════════════════
     // cleanup-bulk：无预演、删了不可恢复，范围必须写在回执里
     // ═══════════════════════════════════════════════════════
@@ -601,6 +623,8 @@ public sealed class SubAgentToolPoolFailureTests
             "归档含磁盘目录，删了没法恢复");
         StringAssert.Contains(result.Output, "pool_action=\"cleanup\"",
             "必须指出只清单个成员的入口，否则读者没有更细粒度的选项");
+        StringAssert.Contains(result.Output, "仍需 pool_name",
+            "那个入口自己也需要 pool_name；旧提示写成「pool_action=cleanup + sub_agent_id」会被这条守卫拒掉");
 
         Assert.IsNotNull(captured);
         Assert.AreEqual(100, captured!.MaxCount,
