@@ -545,7 +545,14 @@ public sealed class FileWriteTool : PuddingToolBase<FileWriteArgs>
             _logger.LogInformation("[FileWriteTool] path={Path} append={Append}", fullPath, args.Append);
             _audit.Write(zone, "file_write", context.AgentInstanceId,
                 args.Path, args.Reason, true, sw.ElapsedMilliseconds, context.Trace);
-            return Task.FromResult(ToolExecutionResult.Ok($"Wrote {args.Path}"));
+            // 回执必须带**实际落盘路径**。args.Path 可能是相对路径，它相对的是执行工作目录 /
+            // 工作区根（见 HostFileToolPaths.TryResolveInsideWorkspace），与调用方心里的根未必一致；
+            // 只回显入参时「写到了哪儿」在回执里看不出来。实测踩过：写 temp/x.ps1 以为落在仓库根，
+            // 实际落在工作区根，随后按仓库根找不到文件，还误判成工具没写。
+            var writtenTarget = string.Equals(args.Path, fullPath, StringComparison.Ordinal)
+                ? fullPath
+                : $"{fullPath} (resolved from '{args.Path}')";
+            return Task.FromResult(ToolExecutionResult.Ok($"Wrote {writtenTarget}"));
         }
         catch (DecoderFallbackException)
         {
