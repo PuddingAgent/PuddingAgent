@@ -54,6 +54,15 @@ public sealed class SubAgentPool : ISubAgentPool
         /// </summary>
         public string? Role { get; private set; }
 
+        /// <summary>
+        /// 条目声明的模型路由（<c>agent_pool.model_id</c>）；<c>null</c> = 跟随派发方。
+        /// <para>
+        /// 与 <see cref="Role"/> 同为声明列：面板 PATCH 写库、不回写快照，所以列表与派发前
+        /// 都要从库里刷新（<see cref="ApplyDeclaredModel"/>）。
+        /// </para>
+        /// </summary>
+        public string? DeclaredModelId { get; private set; }
+
         public DateTimeOffset CreatedAt { get; }
         public DateTimeOffset LastUsedAt { get; set; }
         public PooledSubAgentStatus Status { get; set; }
@@ -142,6 +151,15 @@ public sealed class SubAgentPool : ISubAgentPool
         /// </summary>
         public void ApplyDeclaredRole(string? role) => Role = role;
 
+        /// <summary>
+        /// 用库里的声明值刷新模型路由。
+        /// <para>
+        /// 与 <see cref="ApplyDeclaredRole"/> 同批刷新，不拆成两次读库：两个字段同为「这个成员是谁」，
+        /// 分两次会刷出「角色已新、模型还旧」的半新快照，而半新快照比全旧更难发现。
+        /// </para>
+        /// </summary>
+        public void ApplyDeclaredModel(string? modelId) => DeclaredModelId = modelId;
+
         public PooledSubAgent ToSnapshot() => new()
         {
             PoolId = PoolId,
@@ -149,6 +167,7 @@ public sealed class SubAgentPool : ISubAgentPool
             SubSessionId = SubSessionId,
             TemplateId = TemplateId,
             Role = Role,
+            ModelId = DeclaredModelId,
             CreatedAt = CreatedAt,
             LastUsedAt = LastUsedAt,
             Status = Status,
@@ -841,6 +860,7 @@ public sealed class SubAgentPool : ISubAgentPool
                 return; // 已软删 / 不存在：留给后续路径渲染，不在这里抛
 
             entry.ApplyDeclaredRole(row.Role);
+            entry.ApplyDeclaredModel(row.ModelId);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1781,17 +1801,22 @@ public sealed class SubAgentPool : ISubAgentPool
             try
             {
                 var rows = await _entryStore.LoadAllAsync(ct).ConfigureAwait(false);
-                var declared = new Dictionary<string, string?>(rows.Count, StringComparer.Ordinal);
+                // 一次查询带回两个声明列：角色与模型路由同为「这个成员是谁」的答案，
+                // 且都由面板 PATCH 直接写库。分两次读会出现「角色已刷、模型还是旧的」半新快照。
+                var declared = new Dictionary<string, (string? Role, string? ModelId)>(rows.Count, StringComparer.Ordinal);
                 foreach (var row in rows)
-                    declared[row.PoolId] = row.Role;
+                    declared[row.PoolId] = (row.Role, row.ModelId);
 
                 await _stateLock.WaitAsync(ct).ConfigureAwait(false);
                 try
                 {
                     foreach (var entry in _pool.Values)
                     {
-                        if (declared.TryGetValue(entry.PoolId, out var role))
-                            entry.ApplyDeclaredRole(role);
+                        if (declared.TryGetValue(entry.PoolId, out var d))
+                        {
+                            entry.ApplyDeclaredRole(d.Role);
+                            entry.ApplyDeclaredModel(d.ModelId);
+                        }
                     }
                 }
                 finally

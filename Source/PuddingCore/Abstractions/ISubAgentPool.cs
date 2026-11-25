@@ -31,6 +31,20 @@ public sealed record PooledSubAgent
     public required string SubSessionId { get; init; }
     public required string TemplateId { get; init; }
     public string? Role { get; init; }
+
+    /// <summary>
+    /// 条目声明的模型路由（<c>agent_pool.model_id</c>）；<c>null</c> 表示「跟随派发方」。
+    /// <para>
+    /// 模型是花费的主要变量：同一单在 deepseek 与 gpt-6.2-sol 上差数倍。列表若只给名字与角色，
+    /// 调用方就无法判断「派给这个成员会不会贵」——
+    /// 而那正是派活前要先看清的一件事。
+    /// </para>
+    /// <para>
+    /// 与 <see cref="Role"/> 一样是<b>声明值</b>，真源在库；派发时才由工具层用它解析 LLM 路由。
+    /// </para>
+    /// </summary>
+    public string? ModelId { get; init; }
+
     public required DateTimeOffset CreatedAt { get; init; }
     public required DateTimeOffset LastUsedAt { get; init; }
     public required PooledSubAgentStatus Status { get; init; }

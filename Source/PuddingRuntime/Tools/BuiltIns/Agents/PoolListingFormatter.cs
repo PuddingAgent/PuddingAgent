@@ -25,6 +25,16 @@ internal static class PoolListingFormatter
         => string.IsNullOrWhiteSpace(subSessionId) ? "-" : subSessionId.Trim();
 
     /// <summary>
+    /// 「模型」列的渲染值：声明的路由原样输出；未声明写 <c>跟随</c>。
+    /// <para>
+    /// 不把未声明渲染成 <c>-</c>：这一列的 <c>-</c> 会被读成「不知道」，
+    /// 而 <c>null</c> 的语义是明确的「跟随派发方」——两者处置不同（后者不需要改配置）。
+    /// </para>
+    /// </summary>
+    internal static string RenderModel(string? modelId)
+        => string.IsNullOrWhiteSpace(modelId) ? "跟随" : modelId.Trim();
+
+    /// <summary>
     /// 「最后使用」列的渲染值：<b>本地时区的绝对时间</b>，格式 <c>yyyy-MM-dd HH:mm</c>；未使用过则 <c>-</c>。
     /// </summary>
     /// <remarks>
@@ -59,12 +69,12 @@ internal static class PoolListingFormatter
         var listing = new StringBuilder();
         listing.AppendLine($"## 子代理池状态 ({agents.Count} 个)\n");
         // 表头点明「本地」：不写的话读者无法判断 04:26 是哪个时区。
-        listing.AppendLine("| 名称 | 状态 | 角色 | 任务数 | 最后使用(本地) | SubSessionId |");
-        listing.AppendLine("|------|------|------|--------|----------|-------------|");
+        listing.AppendLine("| 名称 | 状态 | 角色 | 模型 | 任务数 | 最后使用(本地) | SubSessionId |");
+        listing.AppendLine("|------|------|------|------|--------|----------|-------------|");
         foreach (var entry in agents)
         {
             listing.AppendLine(
-                $"| {entry.Name} | {entry.Status} | {entry.Role ?? "-"} | {entry.TaskCount} | " +
+                $"| {entry.Name} | {entry.Status} | {entry.Role ?? "-"} | {RenderModel(entry.ModelId)} | {entry.TaskCount} | " +
                 $"{RenderLastUsed(entry.LastUsedAt, convert)} | {RenderSubSessionId(entry.SubSessionId)} |");
         }
 

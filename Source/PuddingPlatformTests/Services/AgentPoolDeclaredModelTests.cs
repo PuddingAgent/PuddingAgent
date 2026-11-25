@@ -126,6 +126,61 @@ public sealed class AgentPoolDeclaredModelTests
     }
 
     // ═══════════════════════════════════════════════════════
+    // 6. 列表面也以库为准：面板改模型后，一次派发都没发生也要看到新值
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 面板 PATCH 写完模型、<b>还没发生任何派发</b>时，Agent 侧 list 出来的模型必须是新值。
+    /// <para>
+    /// 三个面里的第三个：库是 Claude、派发也会继承 Claude，唯独 Agent 自己 list 出来还是旧值。
+    /// 模型与角色同理——它决定花费量级，而「这个成员会用哪个模型」正是派活前要看清的事。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task ListOwnedByDeclared_ReflectsPanelModelChange_WithoutAnyDispatch()
+    {
+        await using var db = await PoolDb.CreateAsync();
+        await db.Store.TryInsertAsync(
+            InsertRequest("pool-a", "agent-a", "sub-1111aaaa", modelId: null), 0, default);
+
+        var pool = CreatePool(db.Store);
+        await pool.EnsureReadyAsync();
+
+        await db.UpdateModelAsync("agent-a", AdvisorRoute);
+
+        var listed = await pool.ListOwnedByDeclaredAsync(
+            new PoolOwnerScope("parent-session", "default"), default);
+
+        Console.WriteLine($"[evidence] listed modelId={listed.Single().ModelId ?? "<null>"}");
+        Assert.AreEqual(AdvisorRoute, listed.Single().ModelId,
+            "列表面以库为准：面板改模型后，一次派发都没发生也必须看到新值");
+    }
+
+    /// <summary>
+    /// 未声明模型的成员在快照里必须仍是 <c>null</c>。
+    /// <para>
+    /// 正向对照：只断言「改完能看到新值」时，一个「刷新时巧一个默认路由给所有人」的实现也能过。
+    /// 快照层不能编默认值——那是派发层的职责，渲染层负责把 <c>null</c> 写成「跟随」。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task ListOwnedByDeclared_UndeclaredModel_StaysNull()
+    {
+        await using var db = await PoolDb.CreateAsync();
+        await db.Store.TryInsertAsync(
+            InsertRequest("pool-a", "agent-a", "sub-1111aaaa", modelId: null), 0, default);
+
+        var pool = CreatePool(db.Store);
+        await pool.EnsureReadyAsync();
+
+        var listed = await pool.ListOwnedByDeclaredAsync(
+            new PoolOwnerScope("parent-session", "default"), default);
+
+        Assert.IsNull(listed.Single().ModelId,
+            "未声明就是 null：快照层不能编一个默认路由冒充声明值");
+    }
+
+    // ═══════════════════════════════════════════════════════
     // 脚手架
     // ═══════════════════════════════════════════════════════
 
@@ -178,13 +233,27 @@ public sealed class AgentPoolDeclaredModelTests
         private PoolDb(string directory, DbContextOptions<PlatformDbContext> options)
         {
             Directory = directory;
+            Options = options;
             Store = new AgentPoolEntryStore(
                 new TestDbContextFactory(options),
                 NullLogger<AgentPoolEntryStore>.Instance);
         }
 
         public string Directory { get; }
+        public DbContextOptions<PlatformDbContext> Options { get; }
         public IAgentPoolEntryStore Store { get; }
+
+        /// <summary>
+        /// 模拟管理面板的写库：直接改 <c>agent_pool.model_id</c>，刻意<b>不经过池</b>。
+        /// 与角色同理——两条写路径各写一边，派发与列表只读其中一边。
+        /// </summary>
+        public async Task UpdateModelAsync(string name, string? modelId)
+        {
+            await using var db = new PlatformDbContext(Options);
+            var entity = await db.AgentPool.SingleAsync(e => e.Name == name);
+            entity.ModelId = modelId;
+            await db.SaveChangesAsync();
+        }
 
         public static async Task<PoolDb> CreateAsync()
         {

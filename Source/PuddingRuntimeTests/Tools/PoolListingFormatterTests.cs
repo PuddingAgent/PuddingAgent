@@ -88,7 +88,7 @@ public sealed class PoolListingFormatterTests
                 status: PooledSubAgentStatus.Sleeping),
         ], static t => t);
 
-        StringAssert.Contains(text, "| 名称 | 状态 | 角色 | 任务数 | 最后使用(本地) | SubSessionId |");
+        StringAssert.Contains(text, "| 名称 | 状态 | 角色 | 模型 | 任务数 | 最后使用(本地) | SubSessionId |");
         var row = string.Join("\n", text.Split('\n').Where(l => l.StartsWith("| scout |", StringComparison.Ordinal)));
         StringAssert.Contains(row, "Sleeping");
         StringAssert.Contains(row, "verifier");
@@ -136,6 +136,42 @@ public sealed class PoolListingFormatterTests
         Assert.IsFalse(row.Contains("04:26:17", StringComparison.Ordinal), $"端到端仍输出旧形态：{row}");
     }
 
+    [TestMethod]
+    public void RenderModel_Declared_RendersRouteVerbatim()
+    {
+        Assert.AreEqual("fastrouter/gpt-6.2-sol", PoolListingFormatter.RenderModel("fastrouter/gpt-6.2-sol"));
+        // 负向不能靠「恒返回跟随」通过：有效路由必须原样输出。
+        Assert.AreNotEqual("跟随", PoolListingFormatter.RenderModel("deepseek/deepseek-flash"));
+    }
+
+    [TestMethod]
+    public void RenderModel_Undeclared_RendersFollow()
+    {
+        Assert.AreEqual("跟随", PoolListingFormatter.RenderModel(null));
+        Assert.AreEqual("跟随", PoolListingFormatter.RenderModel("   "));
+        // 不用 "-"：这一列的 "-" 在表里会被读作「不知道」，而 null 的语义是明确的「跟随派发方」。
+        Assert.AreNotEqual("-", PoolListingFormatter.RenderModel(null));
+    }
+
+    [TestMethod]
+    public void Format_ModelColumn_ShowsRouteAndFollowPerRow()
+    {
+        var text = PoolListingFormatter.Format(
+        [
+            Entry("顾问", ParentSessionId + "-sub-7bf089fb", modelId: "fastrouter/gpt-6.2-sol"),
+            Entry("跟随者", ParentSessionId + "-sub-31461569"),
+        ]);
+
+        var rows = text.Split('\n').Where(l => l.StartsWith("| ", StringComparison.Ordinal)).ToList();
+        var declaredRow = rows.Single(l => l.StartsWith("| 顾问 |", StringComparison.Ordinal));
+        var inheritRow = rows.Single(l => l.StartsWith("| 跟随者 |", StringComparison.Ordinal));
+
+        StringAssert.Contains(declaredRow, "| fastrouter/gpt-6.2-sol |");
+        StringAssert.Contains(inheritRow, "| 跟随 |");
+        Assert.IsFalse(inheritRow.Contains("fastrouter", StringComparison.Ordinal),
+            $"未声明模型的成员不该借到别人的路由：{inheritRow}");
+    }
+
     // ===== 辅助 =====
 
     private static IEnumerable<string[]> RowCells(string table)
@@ -151,7 +187,8 @@ public sealed class PoolListingFormatterTests
         string? role = null,
         int taskCount = 0,
         PooledSubAgentStatus status = PooledSubAgentStatus.Idle,
-        DateTimeOffset? lastUsedAt = null)
+        DateTimeOffset? lastUsedAt = null,
+        string? modelId = null)
         => new()
         {
             PoolId = "poolid-" + name,
@@ -159,6 +196,7 @@ public sealed class PoolListingFormatterTests
             SubSessionId = subSessionId,
             TemplateId = "workspace-task-agent",
             Role = role,
+            ModelId = modelId,
             CreatedAt = DateTimeOffset.UnixEpoch,
             LastUsedAt = lastUsedAt ?? new DateTimeOffset(2026, 11, 25, 9, 7, 5, TimeSpan.FromHours(8)),
             Status = status,
