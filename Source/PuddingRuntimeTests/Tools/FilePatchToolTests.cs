@@ -1065,6 +1065,91 @@ public sealed class FilePatchToolTests
             "an unaligned structural tail must be reported, so the caller re-reads the file");
     }
 
+    // ── 回执路径必须以「解析时的执行根」为基准（2026-11-26 运行时实测）──
+    // 旧实现在这里用缓存的 HostFileToolPaths.WorkspaceRoot 算相对路径，而 fullPath 是按
+    // context.WorkingDirectory 解析的。部署目录里缓存根回落到进程 cwd（…\win-x64\core），
+    // 于是回执与报错全是 '..\..\..\Data\workspaces\…'，调用方无法定位。
+    // 既有用例没护住，是因为 Setup 把 PUDDING_REPOSITORY_ROOT 设为同一个 _tempDir，两个基准重合。
+
+    [TestMethod]
+    public async Task Receipt_RendersPathRelativeToExecutionRoot_NotCachedWorkspaceRoot()
+    {
+        var cacheRoot = Path.Combine(_tempDir, "cacheroot");
+        var execRoot = Path.Combine(_tempDir, "execroot");
+        Directory.CreateDirectory(cacheRoot);
+        Directory.CreateDirectory(execRoot);
+        Environment.SetEnvironmentVariable("PUDDING_REPOSITORY_ROOT", cacheRoot);
+        HostFileToolPaths.InvalidateWorkspaceRootCache();
+        File.WriteAllText(Path.Combine(execRoot, "sample.txt"), "old\n");
+
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = "sample.txt",
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["oldText"] = "old", ["newText"] = "new" }
+            }
+        }, execRoot);
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.StartsWith(
+            result.Output,
+            "sample.txt: patched",
+            "receipt must be relative to the execution root, not to the cached workspace root");
+        Assert.IsFalse(
+            result.Output.Contains(".."),
+            "a receipt that climbs out of the execution root with '..' cannot be used to locate the file");
+    }
+
+    [TestMethod]
+    public async Task Receipt_FallsBackToAbsolutePath_WhenFileIsOutsideExecutionRoot()
+    {
+        var cacheRoot = Path.Combine(_tempDir, "cacheroot");
+        var execRoot = Path.Combine(_tempDir, "execroot");
+        Directory.CreateDirectory(cacheRoot);
+        Directory.CreateDirectory(execRoot);
+        Environment.SetEnvironmentVariable("PUDDING_REPOSITORY_ROOT", cacheRoot);
+        HostFileToolPaths.InvalidateWorkspaceRootCache();
+        var outsidePath = Path.Combine(cacheRoot, "outside.txt");
+        File.WriteAllText(outsidePath, "old\n");
+
+        var result = await ExecuteAsync(new Dictionary<string, object?>
+        {
+            ["path"] = outsidePath,
+            ["operations"] = new object[]
+            {
+                new Dictionary<string, object?> { ["type"] = "replace", ["oldText"] = "old", ["newText"] = "new" }
+            }
+        }, execRoot, yolo: true);
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(
+            result.Output,
+            outsidePath + ": patched",
+            "a target outside the execution root must be reported by its absolute path");
+    }
+
+    private static Task<ToolExecutionResult> ExecuteAsync(
+        IReadOnlyDictionary<string, object?> parameters,
+        string workingDirectory,
+        bool yolo = false)
+    {
+        var tool = new FilePatchTool();
+        return tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "call-1",
+            ArgumentsJson = JsonSerializer.Serialize(parameters),
+            Context = new ToolExecutionContext
+            {
+                AgentInstanceId = "agent",
+                WorkspaceId = "workspace",
+                SessionId = "session",
+                WorkingDirectory = workingDirectory,
+                IsYoloMode = yolo,
+            },
+        });
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> parameters)
     {
         var tool = new FilePatchTool();

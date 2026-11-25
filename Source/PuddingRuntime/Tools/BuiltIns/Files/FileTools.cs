@@ -63,6 +63,34 @@ internal static class HostFileToolPaths
         return Path.GetFullPath(executionWorkingDirectory);
     }
 
+    /// <summary>
+    /// 回执与报错里显示的路径：相对执行根；越出执行根则退回绝对路径。
+    /// 不能拿缓存的 <see cref="WorkspaceRoot"/> 当基准 —— 部署目录里向上 8 层找不到仓库标记，
+    /// 它会回落到进程 cwd（…\win-x64\core），与 fullPath 的解析基准不同，
+    /// 于是产出 '..\..\..\..\Data\…' 这类调用方无法定位的路径（2026-11-26 运行时实测）。
+    /// </summary>
+    public static string RenderForReceipt(string fullPath, string? executionWorkingDirectory)
+    {
+        string relative;
+        try
+        {
+            relative = Path.GetRelativePath(ResolveWorkspaceRoot(executionWorkingDirectory), fullPath);
+        }
+        catch (ArgumentException)
+        {
+            return fullPath;
+        }
+
+        // 只有 '..' 本身或以 '..' + 分隔符开头才算越界；'..foo' 是合法文件名。
+        var escapesBase = relative.Length >= 2
+            && relative[0] == '.' && relative[1] == '.'
+            && (relative.Length == 2
+                || relative[2] == Path.DirectorySeparatorChar
+                || relative[2] == Path.AltDirectorySeparatorChar);
+
+        return escapesBase || Path.IsPathRooted(relative) ? fullPath : relative;
+    }
+
     public static bool TryResolveInsideWorkspace(
         string path,
         out string fullPath,

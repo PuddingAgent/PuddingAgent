@@ -162,7 +162,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                 }
                 var replacementCount = 0;
                 var errors = new List<string>();
-                var relPath = Path.GetRelativePath(HostFileToolPaths.WorkspaceRoot, fullPath);
+                var relPath = HostFileToolPaths.RenderForReceipt(fullPath, context.WorkingDirectory);
 
                 var ops = patch.Operations ?? [];
 
@@ -1687,7 +1687,7 @@ internal static class UnifiedDiffPatchRunner
 
         var isDryRun = dryRun == true;
         var summaries = touchedFiles
-            .Select(file => $"{Path.GetRelativePath(HostFileToolPaths.WorkspaceRoot, file.FullPath)}: {(isDryRun ? "dry_run=true - preview only, no changes written" : "patched")}\n{SimpleLineDiff.Render(file.Original, file.Current)}")
+            .Select(file => $"{HostFileToolPaths.RenderForReceipt(file.FullPath, context.WorkingDirectory)}: {(isDryRun ? "dry_run=true - preview only, no changes written" : "patched")}\n{SimpleLineDiff.Render(file.Original, file.Current)}")
             .ToArray();
 
         if (isDryRun)
