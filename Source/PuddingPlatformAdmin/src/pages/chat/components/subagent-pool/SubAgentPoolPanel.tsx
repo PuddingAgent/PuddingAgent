@@ -117,6 +117,11 @@ export const describeLastSuccess = (
  * 判据是任务数与执行态，**不是** `lastUsedAt` 是否有值：建条目时后端把
  * `LastUsedAt` 初始化成 `CreatedAt`（`SubAgentPool.cs:85`），所以「时间非空」
  * 对从未使用的条目也成立。只看时间会把创建时刻误读成使用记录。
+ *
+ * `taskCount` 是**累计派发次数**（`SubAgentPool.cs:676` 在收尾时 `TaskCount++`），
+ * 不是「当前任务数」。界面一律写「派发 N 次」，不写「任务 N」——
+ * 后者会被读成「有 N 个任务在跑」，而同屏的「空闲」又恰好不矛盾，
+ * 于是没人会去反驳它。
  */
 export const hasBeenUsed = (
   entry: Pick<SubAgentPoolEntry, 'taskCount' | 'status'>,
@@ -602,7 +607,7 @@ const EntryDetail: React.FC<{
       <DetailRow label="角色" value={textOrDash(entry.role)} />
       <DetailRow label="模型" value={describeModel(entry.modelId)} />
       <DetailRow label="模板" value={textOrDash(entry.templateId)} />
-      <DetailRow label="任务数" value={String(entry.taskCount ?? 0)} />
+      <DetailRow label="累计派发" value={`${entry.taskCount ?? 0} 次`} />
       <DetailRow label="最近使用" value={describeLastUsed(entry)} />
       <DetailRow label="最近成功" value={describeLastSuccess(entry)} />
       <DetailRow label="创建时间" value={formatTimestamp(entry.createdAt)} />
@@ -742,7 +747,7 @@ export const SubAgentPoolPanel: React.FC = () => {
                       {textOrDash(entry.role)}
                     </span>
                     <span className={styles.itemMeta}>
-                      任务 {entry.taskCount ?? 0} ·{' '}
+                      派发 {entry.taskCount ?? 0} 次 ·{' '}
                       {hasBeenUsed(entry)
                         ? `最近使用 ${formatTimestamp(entry.lastUsedAt)}`
                         : '从未使用'}

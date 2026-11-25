@@ -316,6 +316,33 @@ describe('SubAgentPoolPanel', () => {
     expect(used).not.toContain('从未使用');
   });
 
+  it('累计派发次数写成「派发 N 次」，不写成「任务 N」', () => {
+    setPoolState({
+      data: [
+        entry({
+          poolId: 'p-count',
+          name: '派发过三次',
+          taskCount: 3,
+          status: 'idle',
+        }),
+      ],
+      loading: false,
+      error: null,
+    });
+    render(<SubAgentPoolPanel />);
+
+    // 左栏摘要：「任务 3」会被读成「有 3 个任务在跑」，而同屏的「空闲」也不反驳它。
+    const summary =
+      screen.getByTestId('subagent-pool-item-p-count').textContent ?? '';
+    expect(summary).toContain('派发 3 次');
+    expect(summary).not.toContain('任务 3');
+
+    fireEvent.click(screen.getByTestId('subagent-pool-item-p-count'));
+    const detail = screen.getByTestId('subagent-pool-detail').textContent ?? '';
+    expect(detail).toContain('累计派发');
+    expect(detail).not.toContain('任务数');
+  });
+
   it('列表条目直接显示花费，无账本时不渲染（不给 $0）', () => {
     setPoolState({
       data: [
