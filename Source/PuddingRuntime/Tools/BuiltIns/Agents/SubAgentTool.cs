@@ -298,12 +298,14 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         //   先清只会清 0 条，并在下面的复核里被判成失败。
                         // · 空闲条目必须先清理、复核通过再销毁——反过来一旦清理失败，条目没了，
                         //   唯一稳定定位键也就没了，重试只能清 0 条却报「已清理」。
+                        // 两处销毁都只用**这次解析到的那个条目**（poolAgent.Name），不用 args.PoolName：
+                        // 条目销毁后名字立即释放，可能已被别的新成员复用——按入参名字销毁会打掉别人。
                         var wasBusy = poolAgent?.Status == PooledSubAgentStatus.Busy;
                         var destroyed = false;
-                        if (wasBusy)
-                            destroyed = await managementPool.DestroyAsync(args.PoolName, ownerScope, ct);
+                        if (poolAgent is not null && wasBusy)
+                            destroyed = await managementPool.DestroyAsync(poolAgent.Name, ownerScope, ct);
 
-// 运行归档 id 必须在清理**之前**取：清理会删掉 sub_agent_runs 行，
+                        // 运行归档 id 必须在清理**之前**取：清理会删掉 sub_agent_runs 行，
                         // 之后快照里的 RunId 会退回 SubSessionId 这个占位值，查归档恒为「不存在」——
                         // 于是「删成功」与「一条没删」在事后无法区分。
                         var runArchive = _services.GetService<ISubAgentRunStore>();
@@ -327,8 +329,11 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         // 拿投影做验收时这条断言恒为真，于是每次清理都报「没清掉」（2026-11-25 已实测的回归）。
                         var archivePresent = await ProbeRunArchiveAsync(runArchive, runId, ct);
 
-                        if (archivePresent == false && !destroyed)
-                            destroyed = await managementPool.DestroyAsync(args.PoolName, ownerScope, ct);
+                        // poolAgent 为 null = 本会话查不到该条目（典型场景：条目已销毁后用
+                        // sub_agent_id 重试）。此时绝不能按 args.PoolName 销毁——那个名字已经不属于
+                        // 这次清理的目标，可能已被新成员占用，销毁它就是静默干掉一个无关的活条目。
+                        if (poolAgent is not null && archivePresent == false && !destroyed)
+                            destroyed = await managementPool.DestroyAsync(poolAgent.Name, ownerScope, ct);
 
                         // 三个分支的下一步动作不同，不得合并：无法复核要去查服务注册，
                         // 仍在要原地重试，已删才是完成。

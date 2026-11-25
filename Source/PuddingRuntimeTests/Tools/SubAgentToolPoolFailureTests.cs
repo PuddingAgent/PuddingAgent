@@ -483,6 +483,25 @@ public sealed class SubAgentToolPoolFailureTests
     }
 
     [TestMethod]
+    public async Task Cleanup_RetryBySubAgentId_NeverDestroysByName()
+    {
+        // 退化形态：条目销毁后名字立即释放，可能已被**另一个新成员**复用。
+        // 这时再按 args.PoolName 调销毁，打掉的是那个无关的新成员——而回执会写成
+        // 「已清理 + 池条目已销毁」，两个事实都真，唯独死的不是目标。
+        var calls = new List<string>();
+        var pool = NewCleanupPool(calls, entry: null, destroyResult: true);
+        var manager = NewCleanupManager(calls, cleaned: 1, runId: "run-p1");
+        var store = NewArchiveStore(present: false);
+
+        var result = await ExecuteCleanupAsync(pool, manager, store.Object,
+            """{"pool_name":"p1","pool_action":"cleanup","sub_agent_id":"sess-parent-sub-p1"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        CollectionAssert.DoesNotContain(calls, "destroy",
+            "本会话解析不到该条目时不得按名字销毁：名字可能已被新成员复用：" + string.Join(",", calls));
+    }
+
+    [TestMethod]
     public async Task Cleanup_BusyEntry_DestroysFirstSoRunningRunCanBeCleaned()
     {
         var calls = new List<string>();
