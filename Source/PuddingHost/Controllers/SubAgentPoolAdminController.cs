@@ -18,11 +18,13 @@ namespace PuddingHost.Controllers;
 /// <b>读路径直接查库</b>（理由见下方：内存池有就绪门，读接口不该因未预热而报错）。
 /// </para>
 /// <para>
-/// <b>写路径必须经过池实例</b>：<c>SubAgentPool</c> 的内存缓存与 <c>agent_pool</c> 表是真源/缓存关系，
-/// 绕过池直接 UPDATE 库会让内存缓存永久偏差（直到下一次重启重建）。
-/// 代价是写接口会继承池的就绪门与「条目必须在本进程内存里」这一限制，
-/// 因此写失败时如实返回 503/409，不把「不知道」伪装成「成功」。
-/// </para>
+/// <b>写路径直接写库，不经过池实例</b>：<c>agent_pool</c> 表是事实源，池的内存条目是跟随它的缓存。
+/// 之所以能这么写，是因为本控制器的写只碰展示字段，而这些字段的执行消费者都在使用点重新查库
+/// 或每单刷新 —— 角色见 <c>SubAgentPool.RefreshDeclaredRoleLockedAsync</c>，
+/// 模型见 <c>ISubAgentPool.GetDeclaredModelIdAsync</c>，模板见 <c>GetDeclaredTemplateIdAsync</c>。
+/// 状态类字段（status / task_count / active_execution_id）恰好相反：它们就在内存里且被抢占/收尾
+/// 逻辑判定，改它们必须走池。
+/// 唯一残留是工具侧 <c>pool_action="list"</c> 读内存快照，会显示旧值直到下次派活或进程重启。
 /// </para>
 /// <para>
 /// **鉴权与路由**照抄 <see cref="SubAgentDelegationAdminController"/>：
@@ -320,20 +322,17 @@ public sealed class SubAgentPoolAdminController(
     /// active_execution_id）恰好相反：它们就在内存里，必须走池。
     /// </para>
     /// <para>
-    /// <b>唯一的例外是 <c>role</c>，必须如实说明：</b>它<b>确实</b>存在于
-    /// <see cref="PooledSubAgent"/> 快照里（启动恢复时由 <c>LoadAllAsync</c> 带回），
-    /// 但没有任何执行路径读它 —— 全仓只有两处读者：本控制器的列表（直接查库）
-    /// 与 <c>SubAgentTool</c> 的池清单（读内存快照）。状态写入走的是
-    /// <c>TrySetStatusAsync</c> / <c>TryAcquireAsync</c> / <c>TryCompleteAsync</c>
-    /// 这类<b>定向列更新</b>，不会整行回写 role，所以这里改的值不会被后续状态迁移覆盖。
-    /// 代价是：面板立刻看到新值，而 Agent 侧池清单要等进程重启才更新。
-    /// 这是「库是事实源、缓存跟随」的正常表现，不是缺陷；但别把它读成「两处一致」。
+    /// <b><c>role</c> 每单都会从库刷新：</b><c>ExecuteAsync</c> 在构建执行请求前调用
+    /// <c>RefreshDeclaredRoleLockedAsync</c>，后者按 <c>pool_id</c> 读库并覆盖内存值，
+    /// 因此面板改完这一列，同一进程的下一单就用新角色。刷新失败时退回缓存值并记 warning，
+    /// 不阻断派活。残留的一处陈旧是工具侧 <c>pool_action="list"</c> 读内存快照，
+    /// 它在下次派活或进程重启前仍显示旧值。
     /// </para>
     /// <para>
-    /// <b>模型路由目前是「声明」而非「生效配置」：</b>执行路径（<c>SubAgentPool.ExecuteAsync</c>）
-    /// 用的是派发方当轮解析出的 <c>LlmProfile</c>，<b>不会</b>回读本列。
-    /// 所以这里改的是一条可查、可审计的团队约定，不是「下次一定用它跑」。
-    /// 要让本列真正生效，需要改路由解析顺序（执行前先查条目再解析），属独立切片。
+    /// <b>模型路由同样在使用点回读：</b>派活未显式指定 model 时，<c>SubAgentTool</c> 先调
+    /// <c>GetDeclaredModelIdAsync</c> 取本列，取到即用它解析路由；显式 model 仍优先，
+    /// 本列为空时退回平台默认。所以「改完下次就用它跑」对未显式指定 model 的派活成立，
+    /// 对调用方显式指定的派活不成立。
     /// </para>
     /// <para>
     /// <b>只做部分更新</b>：请求体里没给的字段保持原值，不把 null 当成「清空」。
@@ -636,9 +635,9 @@ public sealed class SubAgentPoolEntryDto
     /// <summary>
     /// 团队约定的模型路由 <c>providerId/modelId</c>；为空表示跟随派发方。
     /// <para>
-    /// <b>如实说明：本列目前不被执行路径读取。</b>派发时用的是调用方当轮解析出的
-    /// <c>LlmProfile</c>，因此它是一条「声明/审计」信息，不是生效配置 ——
-    /// 不写这一句，界面把它当默认模型显示就会骗人。
+    /// <b>本列在执行路径上生效，但有前提：</b>派活未显式指定 model 时，
+    /// <c>SubAgentTool</c> 会先用它解析路由；调用方显式给了 model 则显式值优先。
+    /// 所以界面把它显示成「默认模型」是准确的，显示成「强制模型」则不准确。
     /// </para>
     /// </summary>
     public string? ModelId { get; init; }
