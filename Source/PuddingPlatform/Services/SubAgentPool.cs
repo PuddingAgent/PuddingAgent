@@ -965,11 +965,66 @@ public sealed class SubAgentPool : ISubAgentPool
     // 睡眠
     // ════════════════════════════════════════════════════════
 
+    /// <summary>等待「忙碌条目确认退出」的上限。超时不算成功，要如实报告未确认。</summary>
+    private static readonly TimeSpan SleepConfirmTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>等待期间的轮询间隔。只有条目确实忙碌时才会走这条路径。</summary>
+    private static readonly TimeSpan SleepConfirmPollInterval = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>锁内判定休眠的结果：已睡下 / 被拒 / 需在锁外等执行退出。</summary>
+    private enum SleepStep
+    {
+        Slept,
+        Rejected,
+        Busy,
+    }
+
+    /// <summary>
+    /// <see cref="ProbeSleepAsync"/> 的返回值。忙碌时带出要等的执行令牌——
+    /// 等锁外确认退出，不能拿名字当判据（同名条目可能被 destroy → create 换掉）。
+    /// </summary>
+    private readonly record struct SleepProbe(SleepStep Step, PoolEntry? Entry, string? ExecutionId)
+    {
+        public static SleepProbe Slept => new(SleepStep.Slept, null, null);
+        public static SleepProbe Rejected => new(SleepStep.Rejected, null, null);
+    }
+
     /// <summary>
     /// 标记子代理为空闲（Sleeping）。
-    /// 不存在或已销毁时返回 false。
+    /// <para>不存在、已销毁、库拒绝状态迁移时返回 false。</para>
+    /// <para>
+    /// <b>忙碌条目不在这里置 Sleeping</b>：先请求取消，再等那次执行自己收尾
+    /// （<see cref="FinishAsync"/> 会把库和内存一起迁到 sleeping），确认退出后才返回 true。
+    /// 旧行为「发完取消就置 Sleeping」把条目立刻放回可抢占状态，而 CancelAsync 只是请求取消、
+    /// 执行链可能还在跑，于是第二次派发会和旧执行并行驱动同一个子会话。
+    /// 等待上限见 <see cref="SleepConfirmTimeout"/>：超时返回 false（取消已发出但未确认退出），
+    /// 绝不谎报已休眠。
+    /// </para>
     /// </summary>
     public async Task<bool> SleepAsync(string name, CancellationToken ct = default)
+    {
+        var probe = await ProbeSleepAsync(name, ct);
+        if (probe.Step == SleepStep.Busy)
+        {
+            return await SleepBusyEntryAsync(probe.Entry!, probe.ExecutionId, ct);
+        }
+
+        return probe.Step == SleepStep.Slept;
+    }
+
+    /// <summary>
+    /// 锁内判定：不忙碌的条目就地迁到 sleeping；忙碌条目只取令牌，状态与令牌都不动。
+    /// <para>
+    /// 「什么也不动」是这里的核心：可抢占性有两个守门人——内存（<c>ExecuteAsync</c> 见 Busy 直接抛）
+    /// 与库（<c>TryAcquireAsync</c> 的 WHERE 只认 idle/sleeping）。取消尚未生效就先清令牌、先改状态，
+    /// 等于把两个守门人同时放行。真正的休眠必须由那次执行自己的收尾完成。
+    /// </para>
+    /// <para>
+    /// 忙碌分支不在锁内处理：<see cref="FinishAsync"/> 要拿同一把 <c>_stateLock</c>，
+    /// 持锁等待会自锁。
+    /// </para>
+    /// </summary>
+    private async Task<SleepProbe> ProbeSleepAsync(string name, CancellationToken ct)
     {
         await _stateLock.WaitAsync(ct);
         try
@@ -977,26 +1032,18 @@ public sealed class SubAgentPool : ISubAgentPool
             if (!_pool.TryGetValue(name, out var entry))
             {
                 _logger.LogWarning("[SubAgentPool] SleepAsync: '{Name}' not found", name);
-                return false;
+                return SleepProbe.Rejected;
             }
 
             if (entry.Status == PooledSubAgentStatus.Dead)
             {
                 _logger.LogWarning("[SubAgentPool] SleepAsync: '{Name}' is already dead", name);
-                return false;
+                return SleepProbe.Rejected;
             }
 
             if (entry.Status == PooledSubAgentStatus.Busy)
             {
-                // 与缺陷 D1 同型：busy 时只改 Status=Sleeping 会让执行继续在后台烧 token，
-                // 而日志里的 force-sleeping 会让人以为已经停下（日志在说谎）。
-                // 先真取消执行链，再标记休眠。
-                _logger.LogInformation(
-                    "[SubAgentPool] SleepAsync: '{Name}' is busy, cancelling the in-flight run before sleeping", name);
-                await _subAgentManager.CancelAsync(
-                    entry.SubSessionId,
-                    "Pooled sub-agent put to sleep",
-                    ct);
+                return new SleepProbe(SleepStep.Busy, entry, entry.ActiveExecutionId);
             }
 
             // DB 为准（S5a）：先把库里那一行迁到 sleeping，成功才改缓存。
@@ -1026,7 +1073,7 @@ public sealed class SubAgentPool : ISubAgentPool
                         "[SubAgentPool] SleepAsync: store rejected transition for '{Name}' poolId={PoolId} " +
                         "expected={Expected}; memory left untouched (store is the source of truth)",
                         name, entry.PoolId, expected);
-                    return false;
+                    return SleepProbe.Rejected;
                 }
 
                 // 缓存跟随库：库已经把执行令牌清空，内存再留着它会让之后的迟到收尾
@@ -1038,12 +1085,117 @@ public sealed class SubAgentPool : ISubAgentPool
             entry.LastUsedAt = DateTimeOffset.UtcNow;
 
             _logger.LogInformation("[SubAgentPool] '{Name}' set to Sleeping", name);
-            return true;
+            return SleepProbe.Slept;
         }
         finally
         {
             _stateLock.Release();
         }
+    }
+
+    /// <summary>
+    /// 忙碌条目的休眠：先请求取消，再等那次执行真正退出。
+    /// <para>
+    /// 必须在 <c>_stateLock</c> 之外调用：<see cref="FinishAsync"/> 要拿同一把锁。
+    /// </para>
+    /// <para>
+    /// 返回值就是「它现在是不是真的不会再跑了」：
+    /// 取消请求失败、超时未确认退出、或者执行退出了但收尾被库拒绝，一律 false。
+    /// 这比「日志里写着 force-sleeping」诚实——后者曾让人以为已经停下。
+    /// </para>
+    /// </summary>
+    private async Task<bool> SleepBusyEntryAsync(PoolEntry entry, string? executionId, CancellationToken ct)
+    {
+        _logger.LogInformation(
+            "[SubAgentPool] SleepAsync: '{Name}' is busy (exec={Exec}); requesting cancel and waiting for the run to exit",
+            entry.Name, executionId);
+
+        try
+        {
+            await _subAgentManager.CancelAsync(
+                entry.SubSessionId,
+                "Pooled sub-agent put to sleep",
+                ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 取消请求本身失败 = 没有任何证据说明它停了。宁可报 false。
+            _logger.LogWarning(
+                ex, "[SubAgentPool] SleepAsync: cancel request failed for '{Name}' exec={Exec}",
+                entry.Name, executionId);
+            return false;
+        }
+
+        if (!await WaitForExecutionExitAsync(entry, executionId, ct))
+        {
+            _logger.LogWarning(
+                "[SubAgentPool] SleepAsync: '{Name}' cancel issued but the run did not confirm exit within {Ms} ms; " +
+                "entry stays busy and cannot be dispatched again until that run finishes",
+                entry.Name, (int)SleepConfirmTimeout.TotalMilliseconds);
+            return false;
+        }
+
+        await _stateLock.WaitAsync(ct);
+        try
+        {
+            if (_pool.TryGetValue(entry.Name, out var current) &&
+                ReferenceEquals(current, entry) &&
+                current.Status == PooledSubAgentStatus.Busy)
+            {
+                // 执行已经退出，但收尾被库拒了（stale completion）。这是「卡住」而不是「睡着了」，
+                // 必须如实返回 false，让调用方看到并去查 stale completion 的 warning。
+                _logger.LogWarning(
+                    "[SubAgentPool] SleepAsync: '{Name}' run exited but its completion was rejected; entry stays busy",
+                    entry.Name);
+                return false;
+            }
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+
+        _logger.LogInformation("[SubAgentPool] '{Name}' set to Sleeping", entry.Name);
+        return true;
+    }
+
+    /// <summary>
+    /// 等「那次执行已经不再持有这个条目」。
+    /// <para>
+    /// 判据用执行令牌而不是名字或时间：令牌被清空（正常收尾）或被换成另一个（新执行接手）
+    /// 都只可能发生在旧执行退出之后。名字不可靠——同名条目可以被 destroy → create 替换。
+    /// </para>
+    /// <para>
+    /// 不持锁调用；每轮轮询时短暂拿一下锁读状态。
+    /// </para>
+    /// </summary>
+    private async Task<bool> WaitForExecutionExitAsync(PoolEntry entry, string? executionId, CancellationToken ct)
+    {
+        var deadline = DateTimeOffset.UtcNow + SleepConfirmTimeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(SleepConfirmPollInterval, ct);
+
+            await _stateLock.WaitAsync(ct);
+            try
+            {
+                if (entry.Status != PooledSubAgentStatus.Busy)
+                {
+                    return true;
+                }
+
+                if (!string.Equals(entry.ActiveExecutionId, executionId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
+        }
+
+        return false;
     }
 
     // ════════════════════════════════════════════════════════

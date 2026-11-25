@@ -567,6 +567,54 @@ public sealed class SubAgentPoolTests
             "changing Status alone leaves the loop spending while the log claims 'force-sleeping'");
     }
 
+    /// <summary>
+    /// 旧行为：SleepAsync 发完取消就置 Sleeping 并清空令牌，条目立刻又变得可被抢占，
+    /// 而 CancelAsync 只是「请求取消」——执行链可能还在跑，两次派发会并行驱动同一个子会话。
+    /// 这里固定住新的契约：忙碌条目在旧执行确认退出前不得接受第二次派发。
+    /// </summary>
+    [TestMethod]
+    public async Task SleepAsync_BusyEntry_RejectsConcurrentDispatchUntilRunExits()
+    {
+        // 测试替身的 CancelAsync 是空实现（只记录），所以「取消」不会真的提前结束执行；
+        // 这正好是旧行为最危险的场景：取消已发出、执行仍在跑。
+        var manager = new TestSubAgentManager { DelayMs = 400 };
+        var pool = CreatePool(manager);
+        await pool.CreateAsync("agent-a", CreateSpawnRequest());
+
+        var exec = pool.ExecuteAsync("agent-a", CreateSpawnRequest());
+        var becameBusy = false;
+        for (var i = 0; i < 200; i++)
+        {
+            if ((await pool.GetAsync("agent-a"))?.Status == PooledSubAgentStatus.Busy)
+            {
+                becameBusy = true;
+                break;
+            }
+            await Task.Delay(5);
+        }
+        Assert.IsTrue(becameBusy, "precondition: the pooled entry must reach Busy");
+
+        var sleep = pool.SleepAsync("agent-a");
+
+        // 留出时间让 SleepAsync 发出取消并进入等待（调度器、DB 都不存在时的最小观察窗）。
+        await Task.Delay(150);
+
+        await AssertThrowsAsync<InvalidOperationException>(
+            () => pool.ExecuteAsync("agent-a", CreateSpawnRequest()));
+
+        var slept = await sleep;
+        Assert.IsTrue(slept, "执行退出后休眠就应该成功");
+
+        // 返回 true 必须意味着那次执行的收尾已经落账：否则「已休眠」是谎报，
+        // 而且 task_count 会永久少计一笔。
+        var afterSleep = await pool.GetAsync("agent-a");
+        Assert.AreEqual(PooledSubAgentStatus.Sleeping, afterSleep!.Status);
+        Assert.AreEqual(1, afterSleep.TaskCount,
+            "SleepAsync 返回 true 时，旧执行的收尾必须已经生效（否则两次派发被合法化）");
+
+        await exec;
+    }
+
     [TestMethod]
     public async Task DestroyAsync_BusyEntry_CancelsInFlightRun()
     {
