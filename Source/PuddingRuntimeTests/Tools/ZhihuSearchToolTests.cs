@@ -79,7 +79,18 @@ public sealed class ZhihuSearchToolTests
         StringAssert.Contains(result.Output, "| # | Title | Type | Author | Votes | Comments | Edited | Ranking | URL |");
         StringAssert.Contains(
             result.Output,
-            "| 1 | How does async work in C#? | answer | 张三 (优秀答主) | 42 | 3 | 2023-11-14 22:13 | 0.87 | https://www.zhihu.com/question/98765/answer/123456 |");
+            "| 1 | How does async work in C#? | answer | 张三 (优秀答主) | 42 | 3 | ");
+        // 时间单元只断言「日期 + 到分钟」的形状，不钉具体时刻：
+        // 时刻取决于工具进程的本地时区，E2E 钉死具体值会让同一份代码在 UTC 机器上变红。
+        // 时区语义由 ZhihuEditTimeRenderingTests 注入 toLocal 确定性验证。
+        StringAssert.Contains(
+            result.Output,
+            " | 0.87 | https://www.zhihu.com/question/98765/answer/123456 |");
+        Assert.IsTrue(
+            System.Text.RegularExpressions.Regex.IsMatch(
+                result.Output,
+                @"\| 1 \| How does async work in C#\? \| answer \| 张三 \(优秀答主\) \| 42 \| 3 \| \d{4}-\d{2}-\d{2} \d{2}:\d{2} \|"),
+            result.Output);
         StringAssert.Contains(result.Output, "Snippets:");
         StringAssert.Contains(result.Output, "1. Async is about non-blocking concurrency.");
     }

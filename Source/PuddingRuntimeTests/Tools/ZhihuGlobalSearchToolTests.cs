@@ -87,7 +87,14 @@ public sealed class ZhihuGlobalSearchToolTests
         StringAssert.Contains(result.Output, "| # | Title | Type | Author | Votes | Comments | Edited | URL |");
         StringAssert.Contains(
             result.Output,
-            "| 1 | What is .NET 9? | article | 李四 (知乎专栏) | 12 | 1 | 2023-11-14 22:13 | https://zhuanlan.zhihu.com/p/7788 |");
+            "| 1 | What is .NET 9? | article | 李四 (知乎专栏) | 12 | 1 | ");
+        // 同 ZhihuSearchToolTests：时间单元只断言形状，时区语义由注入 toLocal 的单测确定性验证。
+        StringAssert.Contains(result.Output, " | https://zhuanlan.zhihu.com/p/7788 |");
+        Assert.IsTrue(
+            System.Text.RegularExpressions.Regex.IsMatch(
+                result.Output,
+                @"\| 1 \| What is \.NET 9\? \| article \| 李四 \(知乎专栏\) \| 12 \| 1 \| \d{4}-\d{2}-\d{2} \d{2}:\d{2} \|"),
+            result.Output);
         StringAssert.Contains(result.Output, "1. .NET 9 brings new features to the runtime.");
     }
 

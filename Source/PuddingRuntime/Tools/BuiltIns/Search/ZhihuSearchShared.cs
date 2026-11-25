@@ -66,16 +66,24 @@ internal static class ZhihuSearchShared
             .Trim();
     }
 
-    /// <summary>Formats a Unix timestamp (seconds) as a UTC date, or "-" when absent/invalid.</summary>
-    internal static string FormatEditTime(long? unixSeconds)
+    /// <summary>
+    /// Formats a Unix timestamp (seconds) as a <b>local-time</b> <c>yyyy-MM-dd HH:mm</c>, or <c>-</c> when absent/invalid.
+    /// <para>
+    /// 与 <see cref="ToolTimeRendering.RenderMinute"/> 共用同一渲染器。源值是 UTC 纪元秒，直接
+    /// <c>UtcDateTime.ToString(...)</c> 会把 UTC 墙钟当本地时间印出来（东八区差 8 小时），
+    /// 而表头只写 <c>Edited</c>，读的人没有任何线索可判断这是哪个时区。
+    /// </para>
+    /// </summary>
+    /// <param name="toLocal">UTC → 本地时区的转换；默认取机器本地时区，显式参数供用例注入确定转换。</param>
+    internal static string FormatEditTime(long? unixSeconds, Func<DateTimeOffset, DateTimeOffset>? toLocal = null)
     {
         if (unixSeconds is null or <= 0)
             return "-";
 
         try
         {
-            return DateTimeOffset.FromUnixTimeSeconds(unixSeconds.Value)
-                .UtcDateTime.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+            return ToolTimeRendering.RenderMinute(
+                DateTimeOffset.FromUnixTimeSeconds(unixSeconds.Value), toLocal);
         }
         catch (ArgumentOutOfRangeException)
         {
