@@ -101,6 +101,34 @@ public interface IAgentPoolEntryStore
         CancellationToken ct);
 
     /// <summary>
+    /// 插入一条 idle 行，并在<b>同一事务</b>内立刻把它抢给本次执行。
+    /// <para>
+    /// <b>为什么必须是一个动作而不是两步：</b>先 <see cref="TryInsertAsync"/> 再
+    /// <see cref="TryAcquireAsync"/> 是两次提交，中间那段「库里已经有一行 idle、
+    /// 内存里还没有这条目」的窗口没有主人——抢占失败时这行既不会被收尾也不会被谁记住，
+    /// 可它仍然占着唯一索引。于是同一个名字之后的每次派发都会在插入处撞索引，
+    /// 被误报成「池满」，并且在重载池之前永远无法自愈。
+    /// </para>
+    /// <para>
+    /// 归属取自 <see cref="AgentPoolInsertRequest.OwnerSessionId"/> 与
+    /// <see cref="AgentPoolInsertRequest.OwnerWorkspaceId"/>：调用方传一次，
+    /// 插入与抢占用的是同一个值，不存在「写进 A、抢的是 B」这种自相矛盾的前提。
+    /// 两者为空时抛 <see cref="ArgumentException"/>——归属不可表达时抢占谓词恒假，
+    /// 那种情况必须走 <see cref="TryInsertAsync"/> 而非本方法。
+    /// </para>
+    /// <para>
+    /// 返回 0 表示池满，事务已回滚、没有留下任何行。
+    /// 返回 1 表示该行已落成 busy 且 <c>active_execution_id</c> 等于本次执行。
+    /// </para>
+    /// </summary>
+    Task<int> TryInsertAndAcquireAsync(
+        AgentPoolInsertRequest request,
+        int capacity,
+        string executionId,
+        DateTimeOffset now,
+        CancellationToken ct);
+
+    /// <summary>
     /// 条件收尾：只有 <c>status='busy'</c>、执行令牌相同、复用键相同的执行才能写回。
     /// <para>
     /// 令牌（<c>active_execution_id</c>）挡住的是「迟到收尾」：一次执行超时后被重置为 sleeping，

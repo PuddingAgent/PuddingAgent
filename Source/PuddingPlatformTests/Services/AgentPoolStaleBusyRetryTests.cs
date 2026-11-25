@@ -110,6 +110,10 @@ public sealed class AgentPoolStaleBusyRetryTests
         public Task<int> TryInsertAsync(AgentPoolInsertRequest request, int capacity, CancellationToken ct)
             => throw new NotSupportedException("本用例只覆盖复位路径");
 
+        public Task<int> TryInsertAndAcquireAsync(AgentPoolInsertRequest request, int capacity,
+            string executionId, DateTimeOffset now, CancellationToken ct)
+            => throw new NotSupportedException("本用例只覆盖复位路径");
+
         public Task<int> TryAcquireAsync(string poolId, string ownerSessionId, string ownerWorkspaceId,
             string executionId, DateTimeOffset now, CancellationToken ct)
             => throw new NotSupportedException("本用例只覆盖复位路径");

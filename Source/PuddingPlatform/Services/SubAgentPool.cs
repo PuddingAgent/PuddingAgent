@@ -559,23 +559,7 @@ public sealed class SubAgentPool : ISubAgentPool
                 // 先落库再进内存：写库失败时内存里不得留下「看起来存在但库里没有」的条目，
                 // 否则重启后它会凭空消失，而调用方已经拿到了它的 SubSessionId。
                 var inserted = await _entryStore.TryInsertAsync(
-                    new AgentPoolInsertRequest(
-                        PoolId: poolId,
-                        Name: name,
-                        SubSessionId: entry.SubSessionId,
-                        TemplateId: request.TemplateId,
-                        Role: request.RoleInPlan,
-                        OwnerWorkspaceId: request.WorkspaceId,
-                        OwnerSessionId: request.ParentSessionId,
-                        OwnerAgentId: request.ParentAgentId,
-                        CreatedAt: entry.CreatedAt,
-                        // 模型写完整路由，与 List DTO 的「providerId/modelId」口径一致。
-                        // ProviderId 为空时不编造一个「/model」出来。
-                        ModelId: string.IsNullOrWhiteSpace(request.LlmProfile.ProviderId)
-                            ? null
-                            : $"{request.LlmProfile.ProviderId}/{request.LlmProfile.ModelId}",
-                        Responsibility: request.Responsibility,
-                        AvatarKey: request.AvatarKey),
+                    BuildInsertRequest(poolId, name, entry.SubSessionId, entry.CreatedAt, request),
                     capacity: _maxCapacity,
                     ct);
 
@@ -773,6 +757,47 @@ public sealed class SubAgentPool : ISubAgentPool
     }
 
     /// <summary>
+    /// 把一次派发要落库的成员规格集中构造。
+    /// <para>
+    /// 显式创建（<see cref="CreateAsync"/>）与自动建员（<see cref="ExecuteAsync"/>）写的是
+    /// 同一张表、同一套列，字段映射必须放在一处：两份各写一遍时，自动建员那份就漏了
+    /// ModelId / Responsibility / AvatarKey，于是「派活时自动建出来的成员」在界面上没有模型、
+    /// 没有备注、没有头像，而显式建出来的相同位置却有。
+    /// </para>
+    /// </summary>
+    private static AgentPoolInsertRequest BuildInsertRequest(
+        string poolId,
+        string name,
+        string subSessionId,
+        DateTimeOffset createdAt,
+        SubAgentSpawnRequest request)
+        => new(
+            PoolId: poolId,
+            Name: name,
+            SubSessionId: subSessionId,
+            TemplateId: request.TemplateId,
+            Role: request.RoleInPlan,
+            OwnerWorkspaceId: request.WorkspaceId,
+            OwnerSessionId: request.ParentSessionId,
+            OwnerAgentId: request.ParentAgentId,
+            CreatedAt: createdAt,
+            // 模型写完整路由，与 List DTO 的「providerId/modelId」口径一致。
+            // ProviderId 为空时不编造一个「/model」出来。
+            ModelId: string.IsNullOrWhiteSpace(request.LlmProfile.ProviderId)
+                ? null
+                : $"{request.LlmProfile.ProviderId}/{request.LlmProfile.ModelId}",
+            Responsibility: request.Responsibility,
+            AvatarKey: request.AvatarKey);
+
+    /// <summary>
+    /// 池满的拒绝。内存计数与存储计数两条路径共用同一个异常与文案：
+    /// 两种「满」对调用方的处置完全一样，文案不同只会让人以为有两种问题。
+    /// </summary>
+    private InvalidOperationException PoolFullException(string name) => new(
+        $"Sub-agent pool is full (capacity={_maxCapacity}). " +
+        $"Cannot create '{name}'. Consider calling DestroyAsync on unused agents.");
+
+    /// <summary>
     /// 向已有子代理发送新任务，追加到已有会话。
     /// 若子代理不存在则自动创建。
     /// 执行期间状态从 Sleeping/Idle → Busy，完成后 → Sleeping。
@@ -873,35 +898,30 @@ public sealed class SubAgentPool : ISubAgentPool
 
                 if (_entryStore is not null)
                 {
-                    // 自动预留的条目此刻库里还没有行。必须先插成 idle 再走与 CreateAsync 同一道
-                    // TryAcquire：两条路径落成同一种库语义（插入 → 条件抢占），
-                    // 而不是在打开路径里直接写一个 busy 行——后者会让重启恢复读到一个
-                    // 从未被 TryAcquire 校验过归属的 busy 行。
-                    var inserted = await _entryStore.TryInsertAsync(
-                        new AgentPoolInsertRequest(
-                            PoolId: poolId,
-                            Name: name,
-                            SubSessionId: entry.SubSessionId,
-                            TemplateId: request.TemplateId,
-                            Role: request.RoleInPlan,
-                            OwnerWorkspaceId: request.WorkspaceId,
-                            OwnerSessionId: request.ParentSessionId,
-                            OwnerAgentId: request.ParentAgentId,
-                            CreatedAt: entry.CreatedAt),
-                        capacity: _maxCapacity,
-                        ct);
+                    // 自动预留的条目此刻库里还没有行。插入与抢占必须落在同一个事务里：
+                    // 分两次提交时，中间那段「库里有行、内存没条目」的窗口没有主人——
+                    // 抢占失败时那行既不会被收尾也不会被谁记住，可它仍占着 name 与
+                    // sub_session 两个唯一索引，于是同名后的每次派发都会在插入处撞索引、
+                    // 被误报成「池满」，而且在重载池之前永远无法自愈。
+                    var insertRequest = BuildInsertRequest(
+                        poolId, name, entry.SubSessionId, entry.CreatedAt, request);
 
-                    if (inserted == 0)
+                    if (string.IsNullOrEmpty(insertRequest.OwnerSessionId) ||
+                        string.IsNullOrEmpty(insertRequest.OwnerWorkspaceId))
+                    {
+                        // 归属不可表达时抢占谓词恒假，复合方法会直接拒绝。
+                        // 这种形态保留旧语义：只插成 idle，交给后续路径处置。
+                        if (await _entryStore.TryInsertAsync(insertRequest, _maxCapacity, ct) == 0)
+                        {
+                            throw PoolFullException(name);
+                        }
+                    }
+                    else if (await _entryStore.TryInsertAndAcquireAsync(
+                                 insertRequest, _maxCapacity, executionId, DateTimeOffset.UtcNow, ct) == 0)
                     {
                         // 与 CreateAsync 同一文案：两种「满」对调用方的处置完全一样。
-                        throw new InvalidOperationException(
-                            $"Sub-agent pool is full (capacity={_maxCapacity}). " +
-                            $"Cannot create '{name}'. Consider calling DestroyAsync on unused agents.");
+                        throw PoolFullException(name);
                     }
-
-                    // 抢不到就抛：这行刚由本方法插入且是 idle，抢不到只能说明前提判断错了，
-                    // 此时宁可报错也不要把一个未接管的条目塞进内存。
-                    await AcquireInStoreAsync(entry, request, executionId, ct);
                 }
 
                 // 先落库再进内存：库拒绝时内存里不得留下「看起来存在但库里不可抢」的条目。

@@ -88,6 +88,94 @@ public sealed class AgentPoolEntryStore(
     }
 
     /// <inheritdoc />
+    public async Task<int> TryInsertAndAcquireAsync(
+        AgentPoolInsertRequest request,
+        int capacity,
+        string executionId,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrEmpty(request.OwnerSessionId) || string.IsNullOrEmpty(request.OwnerWorkspaceId))
+        {
+            // 归属不可表达时抢占谓词恒假，本方法的「插完必然能抢到」这个前提就不成立。
+            // 不在这里猜一个归属补上：猜错会把条目挂到一个永远不会回来的会话名下。
+            throw new ArgumentException(
+                "TryInsertAndAcquireAsync requires both owner session and owner workspace; " +
+                "use TryInsertAsync when ownership cannot be expressed.",
+                nameof(request));
+        }
+
+        await using var db = await factory.CreateDbContextAsync(ct);
+        var createdAt = FormatTime(request.CreatedAt);
+        var usedAt = FormatTime(now);
+
+        // 容量检查、插入、抢占全在同一个事务里：任何一步不成立都整体回滚，
+        // 不留「插进去了但没人接管」的行。那行看似无害，其实占着 name 与 sub_session
+        // 两个唯一索引，会让同名条目之后的插入永久撞索引并被误报成「池满」。
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        if (capacity > 0)
+        {
+            var live = await db.AgentPool.CountAsync(x => x.DeletedAt == null, ct);
+            if (live >= capacity)
+            {
+                await transaction.RollbackAsync(ct);
+                logger.LogDebug(
+                    "[AgentPool] Insert+acquire rejected: pool full ({Live}/{Capacity}) for {PoolId}",
+                    live, capacity, request.PoolId);
+                return 0;
+            }
+        }
+
+        var inserted = await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "agent_pool"
+                ("pool_id", "owner_workspace_id", "name", "sub_session_id", "template_id", "role",
+                 "owner_session_id", "owner_agent_id", "model_id", "responsibility", "avatar_key",
+                 "active_execution_id", "status", "status_reason",
+                 "task_count", "last_success", "created_at", "last_used_at", "version", "deleted_at")
+            VALUES
+                ({request.PoolId}, {request.OwnerWorkspaceId}, {request.Name}, {request.SubSessionId},
+                 {request.TemplateId}, {request.Role}, {request.OwnerSessionId}, {request.OwnerAgentId},
+                 {request.ModelId}, {request.Responsibility}, {request.AvatarKey},
+                 NULL, {AgentPoolEntity.StatusIdle}, NULL, 0, NULL, {createdAt}, {createdAt}, 0, NULL);
+            """, ct);
+
+        var acquired = await db.Database.ExecuteSqlInterpolatedAsync($"""
+            UPDATE "agent_pool"
+               SET "status" = {AgentPoolEntity.StatusBusy},
+                   "active_execution_id" = {executionId},
+                   "last_used_at" = {usedAt},
+                   "version" = "version" + 1
+             WHERE "pool_id" = {request.PoolId}
+               AND "owner_session_id" = {request.OwnerSessionId}
+               AND "owner_workspace_id" = {request.OwnerWorkspaceId}
+               AND "deleted_at" IS NULL
+               AND "status" IN ({AgentPoolEntity.StatusIdle}, {AgentPoolEntity.StatusSleeping});
+            """, ct);
+
+        if (inserted == 0 || acquired == 0)
+        {
+            // 同事务内刚插入的行只有本事务看得见，状态必为 idle、归属必为已写入的值，
+            // 因此「抢不到」在逻辑上不可达。真出现只能是 SQL 层面的意外，
+            // 宁可整体回滚上一个异常，也不靠返回 0 把一个不知处于何态的行留给上层。
+            await transaction.RollbackAsync(ct);
+            throw new InvalidOperationException(
+                $"Inserted entry '{request.Name}' (poolId={request.PoolId}) but could not acquire it " +
+                $"in the same transaction (inserted={inserted}, acquired={acquired}). " +
+                "Rolled back instead of leaving a row nobody owns.");
+        }
+
+        await transaction.CommitAsync(ct);
+
+        logger.LogDebug(
+            "[AgentPool] Inserted and acquired entry {PoolId} (name={Name}, exec={ExecutionId})",
+            request.PoolId, request.Name, executionId);
+
+        return 1;
+    }
+
+    /// <inheritdoc />
     public async Task<int> TryAcquireAsync(
         string poolId,
         string ownerSessionId,

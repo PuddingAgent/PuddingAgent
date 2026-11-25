@@ -307,6 +307,10 @@ public sealed class AgentPoolReadinessTests
         public Task<int> TryInsertAsync(AgentPoolInsertRequest request, int capacity, CancellationToken ct)
             => Task.FromResult(1);
 
+        public Task<int> TryInsertAndAcquireAsync(AgentPoolInsertRequest request, int capacity,
+            string executionId, DateTimeOffset now, CancellationToken ct)
+            => throw new NotSupportedException("S4 不覆盖插入+抢占写路径");
+
         public Task<int> TryAcquireAsync(string poolId, string ownerSessionId, string ownerWorkspaceId,
             string executionId, DateTimeOffset now, CancellationToken ct)
             => throw new NotSupportedException("S4 不覆盖抢占写路径");

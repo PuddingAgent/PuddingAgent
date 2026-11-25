@@ -362,6 +362,95 @@ public sealed class AgentPoolEntryStoreTests
         Assert.IsNull(row.AvatarKey);
     }
 
+    // ── 插入 + 抢占的单一事务 ──────────────────────
+
+    /// <summary>
+    /// 复合方法必须留下「busy 且带本次执行令牌」的行，并且展示字段一并落库。
+    /// <para>
+    /// 两件事合起来才说明「自动建员」与「显式创建 + 抢占」在库里留下的是同一种行：
+    /// 只断言返回值时，一个「插入后把状态留在 idle」的实现照样能过；
+    /// 只看状态不看展示字段时，一个漏写 ModelId 的映射照样能过。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task TryInsertAndAcquire_HappyPath_LeavesBusyRowWithExecutionAndDisplayFields()
+    {
+        await using var scope = await TestScope.CreateAsync();
+
+        var request = Entry("pool-auto") with
+        {
+            ModelId = "deepseek/deepseek-flash",
+            Responsibility = "review-code",
+            AvatarKey = "owl",
+        };
+
+        var affected = await scope.Store.TryInsertAndAcquireAsync(
+            request, capacity: 0, executionId: "exec-auto", now: BaseTime.AddMinutes(1), default);
+
+        await using var db = scope.CreateDbContext();
+        var row = await db.AgentPool.SingleAsync(x => x.PoolId == "pool-auto");
+
+        Console.WriteLine(
+            $"[evidence] affected={affected}, status={row.Status}, exec={row.ActiveExecutionId}, " +
+            $"model={row.ModelId}, resp={row.Responsibility}, avatar={row.AvatarKey}");
+
+        Assert.AreEqual(1, affected);
+        Assert.AreEqual(AgentPoolEntity.StatusBusy, row.Status,
+            "同一事务内必须已经把该行抢给本次执行，而不是插完就交回去");
+        Assert.AreEqual("exec-auto", row.ActiveExecutionId,
+            "抢占成功的行必须带着本次执行的令牌，否则收尾时会因令牌不匹配把自己当迟到回调丢掉");
+        Assert.AreEqual("deepseek/deepseek-flash", row.ModelId);
+        Assert.AreEqual("review-code", row.Responsibility);
+        Assert.AreEqual("owl", row.AvatarKey);
+    }
+
+    /// <summary>
+    /// 池满时复合方法必须返回 0 且不留半写行。
+    /// <para>
+    /// 这正是旧「先插再抢」两步提交的反面：那种写法在抢占失败时会留下一行没人接管的 idle，
+    /// 它仍然占着 name 与 sub_session 两个唯一索引，让同名后的插入永久撞索引。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task TryInsertAndAcquire_AtCapacity_ReturnsZeroAndLeavesNoRow()
+    {
+        await using var scope = await TestScope.CreateAsync();
+        Assert.AreEqual(1, await InsertAsync(scope, Entry("pool-1")));
+
+        var affected = await scope.Store.TryInsertAndAcquireAsync(
+            Entry("pool-2"), capacity: 1, executionId: "exec-2", now: BaseTime.AddMinutes(1), default);
+
+        var all = await scope.Store.LoadAllAsync(default);
+        Console.WriteLine($"[evidence] affected={affected}, rows after rejected call = {all.Count}");
+
+        Assert.AreEqual(0, affected, "池满时复合插入必须返回 0");
+        Assert.HasCount(1, all, "被容量拒绝的复合插入不得留下半写行");
+        Assert.IsNull(await scope.Store.GetByIdAsync("pool-2", default));
+    }
+
+    /// <summary>
+    /// 归属不可表达时必须当场拒绝，而不是「插进去然后永远抢不到」。
+    /// <para>
+    /// 抢占谓词里 <c>NULL = @p</c> 恒为假，所以没有归属的复合调用注定失败。
+    /// 若它先把行插进去再失败，就退化成上面那个半写行的形态。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task TryInsertAndAcquire_WithoutOwner_ThrowsAndLeavesNoRow()
+    {
+        await using var scope = await TestScope.CreateAsync();
+
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() =>
+            scope.Store.TryInsertAndAcquireAsync(
+                Entry("pool-orphan", ownerSessionId: null),
+                capacity: 0, executionId: "exec-1", now: BaseTime, default));
+
+        var all = await scope.Store.LoadAllAsync(default);
+        Console.WriteLine($"[evidence] rows after rejected call = {all.Count}");
+
+        Assert.IsEmpty(all, "参数被拒绝时不得留下任何行");
+    }
+
     // ── 测试脚手架 ──────────────────────────────────────────
 
     private static AgentPoolInsertRequest Entry(
