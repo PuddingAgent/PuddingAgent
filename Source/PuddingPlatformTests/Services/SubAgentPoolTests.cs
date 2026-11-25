@@ -1026,4 +1026,10 @@ public sealed class TestSubAgentManager : ISubAgentManager
         SubAgentCleanupFilter filter,
         CancellationToken ct = default)
         => Task.FromResult(0);
+
+    public Task<IReadOnlyList<SubAgentStatus>> PreviewCleanupAsync(
+        string parentSessionId,
+        SubAgentCleanupFilter filter,
+        CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<SubAgentStatus>>(Array.Empty<SubAgentStatus>());
 }

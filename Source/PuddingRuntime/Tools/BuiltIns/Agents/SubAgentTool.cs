@@ -369,22 +369,58 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         var statusFilter = args.CleanupStatus ?? "all";
                         var olderThanDays = args.CleanupOlderThanDays;
 
-                        var cleaned = await subAgentManager.CleanupAsync(
-                            request.SessionId,
-                            new SubAgentCleanupFilter
-                            {
-                                Status = statusFilter,
-                                OlderThanDays = olderThanDays,
-                                MaxCount = BulkMaxCount,
-                            },
-                            ct);
-
                         var filterDesc = string.IsNullOrWhiteSpace(statusFilter)
                                          || string.Equals(statusFilter, "all", StringComparison.OrdinalIgnoreCase)
                             ? "不限状态"
                             : $"状态={statusFilter}";
                         if (olderThanDays is > 0)
                             filterDesc += $"，早于 {olderThanDays} 天";
+
+                        var bulkFilter = new SubAgentCleanupFilter
+                        {
+                            Status = statusFilter,
+                            OlderThanDays = olderThanDays,
+                            MaxCount = BulkMaxCount,
+                        };
+
+                        // 预演：不删库、不动盘。批量清理没有撤销路径（归档含磁盘目录），
+                        // 而候选范围是「本会话全部非运行中的子代理」——先看清再删是这条路径唯一的安全阀。
+                        if (args.DryRun == true)
+                        {
+                            var candidates = await subAgentManager
+                                .PreviewCleanupAsync(request.SessionId, bulkFilter, ct)
+                                .ConfigureAwait(false);
+
+                            // 只列前 10 条：候选最多 100，全列会把回执本身变成噪声，
+                            // 而看到「其中哪几条是新的、哪几条是旧的」只需头几条（候选已按最旧优先）。
+                            const int PreviewLimit = 10;
+                            var sb = new StringBuilder();
+                            sb.Append($"🔍 批量清理预演：命中 {candidates.Count} 条（{filterDesc}），**未删除任何内容**。");
+                            sb.Append($"\n范围：本会话全部非运行中的子代理，单次最多 {BulkMaxCount} 条，不限于池化成员。");
+                            if (candidates.Count == 0)
+                            {
+                                sb.Append("\n\n没有匹配的子代理：真正执行也只会清 0 条。");
+                            }
+                            else
+                            {
+                                sb.Append($"\n\n候选（按最旧优先，最多列 {PreviewLimit} 条）：");
+                                foreach (var c in candidates.Take(PreviewLimit))
+                                {
+                                    var name = string.IsNullOrWhiteSpace(c.DisplayName) ? "(未命名)" : c.DisplayName;
+                                    sb.Append($"\n- {name} | {c.SubSessionId} | {ToolTimeRendering.RenderMinute(c.SpawnedAt)} | {c.Status}");
+                                }
+                                if (candidates.Count > PreviewLimit)
+                                    sb.Append($"\n- …另有 {candidates.Count - PreviewLimit} 条未列出");
+                                sb.Append("\n\n确认无误后去掉 dry_run 参数再调一次即真正清理；删除后不可恢复。");
+                            }
+
+                            return Success(sb.ToString());
+                        }
+
+                        var cleaned = await subAgentManager.CleanupAsync(
+                            request.SessionId,
+                            bulkFilter,
+                            ct);
 
                         return Success($"? 批量清理完成：已删除运行归档 {cleaned} 条（{filterDesc}）。" +
                                 $"\n范围：本会话全部非运行中的子代理，单次最多 {BulkMaxCount} 条，不限于池化成员。" +
@@ -2080,6 +2116,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 ["pool_role"] = args.PoolRole,
                 ["cleanup_status"] = args.CleanupStatus,
                 ["cleanup_older_than_days"] = args.CleanupOlderThanDays,
+                ["dry_run"] = args.DryRun,
             };
 
             return JsonSerializer.Serialize(values, JsonOpts);
@@ -2384,6 +2421,16 @@ public sealed record SubAgentToolArgs
 
     [ToolParam("清理超过 N 天的子代理（用于 cleanup-bulk）")]
     public int? CleanupOlderThanDays { get; init; }
+
+    /// <summary>
+    /// 仅预演：只列出 <c>cleanup-bulk</c> 会选中哪些条目，不删库、不删磁盘。
+    /// </summary>
+    /// <remarks>
+    /// 批量清理没有撤销路径（运行归档含磁盘目录），而候选范围是「本会话全部非运行中的子代理」。
+    /// 默认 <c>null</c>/<c>false</c> 保持原行为，所以这是<b>纯增量</b>参数，不改变任何现有调用。
+    /// </remarks>
+    [ToolParam("仅预演：true 时 cleanup-bulk 只列出将被清理的条目，不删任何东西（默认 false）")]
+    public bool? DryRun { get; init; }
 }
 
 public sealed record SubAgentToolTaskArgs

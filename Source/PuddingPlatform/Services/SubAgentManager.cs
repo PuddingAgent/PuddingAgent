@@ -1839,15 +1839,9 @@ public sealed class SubAgentManager : ISubAgentManager
         SubAgentCleanupFilter filter,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(parentSessionId))
-            throw new ArgumentException("parentSessionId cannot be null or empty.", nameof(parentSessionId));
-
-        var maxCount = filter.MaxCount > 0 ? filter.MaxCount : 100;
-
         // 选出可删的条目：子会话定位 + 状态 + 时间窗 + 跳过运行中 + 截断，全在
         // SubAgentQueryFiltering 一处（截断在筛选之后，否则「最多 1 条」会变成「0 条」）。
-        var allSubAgents = await _ssm.GetSubAgentsAsync(parentSessionId, ct).ConfigureAwait(false);
-        var subAgents = SubAgentQueryFiltering.SelectForCleanup(allSubAgents, filter with { MaxCount = maxCount });
+        var subAgents = await SelectCleanupCandidatesAsync(parentSessionId, filter, ct).ConfigureAwait(false);
 
         // 时间窗、跳过运行中、截断都已包含在 SelectForCleanup 里，此处不再重复筛选：
         // 同一套判定写两遍时，改一处漏一处就会出现「先截断后筛选」那类刚好清不掉的回退。
@@ -1923,6 +1917,39 @@ public sealed class SubAgentManager : ISubAgentManager
             cleaned, subAgents.Count, projectionsRemoved);
 
         return cleaned;
+    }
+
+    /// <summary>
+    /// 预演批量清理会选中哪些条目：只读，不删库行、不动磁盘。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="CleanupAsync"/> 共用 <see cref="SelectCleanupCandidatesAsync"/>，不另写一份筛选。
+    /// 两处各写一遍时，预演说的和真删的会悄悄分叉 —— 而分叉恰好出现在最危险的那次调用上，
+    /// 且这种分叉无法从「预演结果看起来合理」中发现。
+    /// </remarks>
+    public Task<IReadOnlyList<SubAgentStatus>> PreviewCleanupAsync(
+        string parentSessionId,
+        SubAgentCleanupFilter filter,
+        CancellationToken ct = default)
+        => SelectCleanupCandidatesAsync(parentSessionId, filter, ct);
+
+    /// <summary>批量清理的默认上限：与工具回执引用的那个数字是同一个语义。</summary>
+    private const int DefaultCleanupMaxCount = 100;
+
+    /// <summary>
+    /// 清理与预演<b>共用的</b>候选选择：定位 + 状态 + 时间窗 + 跳过运行中 + 截断。
+    /// </summary>
+    private async Task<IReadOnlyList<SubAgentStatus>> SelectCleanupCandidatesAsync(
+        string parentSessionId,
+        SubAgentCleanupFilter filter,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(parentSessionId))
+            throw new ArgumentException("parentSessionId cannot be null or empty.", nameof(parentSessionId));
+
+        var maxCount = filter.MaxCount > 0 ? filter.MaxCount : DefaultCleanupMaxCount;
+        var allSubAgents = await _ssm.GetSubAgentsAsync(parentSessionId, ct).ConfigureAwait(false);
+        return SubAgentQueryFiltering.SelectForCleanup(allSubAgents, filter with { MaxCount = maxCount });
     }
 
     /// <summary>

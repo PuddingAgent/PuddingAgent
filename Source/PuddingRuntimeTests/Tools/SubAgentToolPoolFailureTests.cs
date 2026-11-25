@@ -592,6 +592,103 @@ public sealed class SubAgentToolPoolFailureTests
     }
 
     // ═══════════════════════════════════════════════════════
+    // cleanup-bulk 预演：删之前能看到候选集
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// <c>dry_run=true</c> 必须只调预演、不调清理，并列出候选与下一步。
+    /// </summary>
+    /// <remarks>
+    /// <c>CleanupAsync</c> 刻意不 Setup：Strict 下被调用即抛，等于断言「一次都没调」。
+    /// 这比断言「回执里写了预演」强——后者在「先删再列」的实现下同样成立。
+    /// </remarks>
+    [TestMethod]
+    public async Task CleanupBulk_DryRun_ListsCandidatesAndNeverCallsCleanup()
+    {
+        var manager = new Mock<ISubAgentManager>(MockBehavior.Strict);
+        manager.Setup(m => m.PreviewCleanupAsync(
+                It.IsAny<string>(), It.IsAny<SubAgentCleanupFilter>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                Candidate("sub-old", "probe-old", hoursAgo: 6),
+                Candidate("sub-new", "probe-new", hoursAgo: 1),
+            });
+        var pool = new Mock<ISubAgentPool>(MockBehavior.Strict);
+
+        var result = await ExecuteCleanupAsync(pool.Object, manager.Object, runArchiveStore: null,
+            """{"pool_action":"cleanup-bulk","dry_run":true}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "预演", "回执必须标明这是预演，不是已清理");
+        StringAssert.Contains(result.Output, "命中 2 条", "候选总数要如实给");
+        StringAssert.Contains(result.Output, "未删除任何内容", "没有这句，读者会当成已删");
+        StringAssert.Contains(result.Output, "sub-old", "候选必须逐条列出，否则看不出会删什么");
+        StringAssert.Contains(result.Output, "sub-new");
+        StringAssert.Contains(result.Output, "去掉 dry_run", "必须给出从预演转到真删的下一步");
+        Assert.IsFalse(result.Output.Contains("已删除运行归档"),
+            "预演回执不得出现删除完成句式——两种模式共用措辞就分不清看的是哪一种");
+        Assert.IsTrue(
+            result.Output.IndexOf("sub-old", StringComparison.Ordinal) <
+            result.Output.IndexOf("sub-new", StringComparison.Ordinal),
+            "预演必须按服务层给的顺序（最旧优先）列出，不得自己重排");
+    }
+
+    /// <summary>
+    /// <c>dry_run=true</c> 但候选为空时，不得给出「确认后去掉 dry_run」——没东西可删。
+    /// </summary>
+    [TestMethod]
+    public async Task CleanupBulk_DryRun_EmptyCandidateSetSaysNothingToDelete()
+    {
+        var manager = new Mock<ISubAgentManager>(MockBehavior.Strict);
+        manager.Setup(m => m.PreviewCleanupAsync(
+                It.IsAny<string>(), It.IsAny<SubAgentCleanupFilter>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<SubAgentStatus>());
+        var pool = new Mock<ISubAgentPool>(MockBehavior.Strict);
+
+        var result = await ExecuteCleanupAsync(pool.Object, manager.Object, runArchiveStore: null,
+            """{"pool_action":"cleanup-bulk","dry_run":true}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "没有匹配的子代理");
+        Assert.IsFalse(result.Output.Contains("去掉 dry_run"),
+            "候选为空时提示「去掉 dry_run 再调一次」会引导一次必然为空的操作");
+    }
+
+    /// <summary>
+    /// 正向对照：不传 <c>dry_run</c>（或 false）时行为完全不变，仍然真删。
+    /// </summary>
+    /// <remarks>
+    /// 缺这条时，一个「永远只预演」的实现也能让上面两条全绿。
+    /// </remarks>
+    [TestMethod]
+    public async Task CleanupBulk_WithoutDryRun_StillDeletes()
+    {
+        var manager = new Mock<ISubAgentManager>(MockBehavior.Strict);
+        manager.Setup(m => m.CleanupAsync(
+                It.IsAny<string>(), It.IsAny<SubAgentCleanupFilter>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(3);
+        var pool = new Mock<ISubAgentPool>(MockBehavior.Strict);
+
+        var result = await ExecuteCleanupAsync(pool.Object, manager.Object, runArchiveStore: null,
+            """{"pool_action":"cleanup-bulk","dry_run":false}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "已删除运行归档 3 条");
+        Assert.IsFalse(result.Output.Contains("预演"));
+    }
+
+    private static SubAgentStatus Candidate(string subSessionId, string displayName, int hoursAgo) => new()
+    {
+        RunId = "run-" + subSessionId,
+        ParentSessionId = "sess-parent",
+        SubSessionId = subSessionId,
+        Status = "completed",
+        TaskSummary = "candidate " + subSessionId,
+        DisplayName = displayName,
+        SpawnedAt = DateTimeOffset.UtcNow.AddHours(-hoursAgo),
+    };
+
+    // ═══════════════════════════════════════════════════════
     // 运行级动作（cancel / logs / steer）的归属前置
     // ═══════════════════════════════════════════════════════
 

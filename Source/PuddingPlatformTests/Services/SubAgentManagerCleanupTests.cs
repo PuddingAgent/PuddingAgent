@@ -161,11 +161,82 @@ public sealed class SubAgentManagerCleanupTests
             "归档仍在 ⇒ 投影是它的最后线索，不得删");
     }
 
+    // ═══════════════════════════════════════════════════════
+    // ⑤⑥ 预演：批量清理没有撤销路径，必须在删之前就能看到候选集
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 预演只选不删：候选按最旧优先、被 <c>MaxCount</c> 截断，且不碰 run 存储与投影行。
+    /// </summary>
+    /// <remarks>
+    /// 「不删」必须同时断言三条通道（run 行、归档探测、投影）——只断言其中一条时，
+    /// 一个先把投影删了再列候选的实现照样能骗过测试。
+    /// </remarks>
+    [TestMethod]
+    public async Task PreviewCleanupAsync_ReturnsOldestFirstAndDeletesNothing()
+    {
+        var ssm = new RecordingSessionStateManager
+        {
+            SubAgents =
+            [
+                Status("sub-new", spawnedAt: Now.AddMinutes(-10)),
+                Status("sub-old", spawnedAt: Now.AddHours(-5)),
+                Status("sub-mid", spawnedAt: Now.AddHours(-2)),
+            ],
+        };
+        var runStore = new RecordingSubAgentRunStore { DeleteResult = true };
+
+        var preview = await CreateManager(ssm, runStore).PreviewCleanupAsync(
+            "parent-session",
+            new SubAgentCleanupFilter { MaxCount = 2 });
+
+        CollectionAssert.AreEqual(
+            new[] { "sub-old", "sub-mid" },
+            preview.Select(p => p.SubSessionId).ToArray(),
+            "预演必须与真删同序（最旧优先），否则「先看清再删」看到的是另一批");
+        Assert.AreEqual(0, runStore.DeletedRunIds.Count, "预演不得删任何 run 行");
+        Assert.AreEqual(0, runStore.ArchiveProbeCount, "预演不得探测归档（说明它压根没进删除分支）");
+        Assert.IsNull(ssm.LastRemovedProjections, "预演不得删投影行");
+    }
+
+    /// <summary>
+    /// 预演必须<b>准确预言</b>真删会动哪些 run：两条路径共用同一份候选选择。
+    /// </summary>
+    /// <remarks>
+    /// 两侧各写一份筛选时，预演说 A、真删动 B 也能各自「看起来合理」——只有把
+    /// 「预演 ids」与「实际被删 runIds」直接对比才能取红。
+    /// </remarks>
+    [TestMethod]
+    public async Task PreviewCleanupAsync_PredictsExactlyWhatCleanupDeletes()
+    {
+        var ssm = new RecordingSessionStateManager
+        {
+            SubAgents =
+            [
+                Status("sub-c", runId: "run-c", spawnedAt: Now.AddMinutes(-1)),
+                Status("sub-a", runId: "run-a", spawnedAt: Now.AddHours(-6)),
+                Status("sub-b", runId: "run-b", spawnedAt: Now.AddHours(-3)),
+            ],
+        };
+        var runStore = new RecordingSubAgentRunStore { DeleteResult = true };
+        var manager = CreateManager(ssm, runStore);
+        var filter = new SubAgentCleanupFilter { MaxCount = 2 };
+
+        var preview = await manager.PreviewCleanupAsync("parent-session", filter);
+        var cleaned = await manager.CleanupAsync("parent-session", filter);
+
+        Assert.AreEqual(preview.Count, cleaned, "预演说几条，真删就得是几条");
+        CollectionAssert.AreEqual(
+            preview.Select(p => p.RunId).ToArray(),
+            runStore.DeletedRunIds.ToArray(),
+            "预演列出的候选与真正被删的 run 必须一一对应（含顺序）");
+    }
+
     // ── 脚手架 ──────────────────────────────────────────────
 
     private static readonly DateTimeOffset Now = new(2026, 11, 25, 0, 0, 0, TimeSpan.Zero);
 
-    private static SubAgentStatus Status(string subSessionId, string? runId = null) => new()
+    private static SubAgentStatus Status(string subSessionId, string? runId = null, DateTimeOffset? spawnedAt = null) => new()
     {
         RunId = runId ?? ("run-" + subSessionId),
         ParentSessionId = "parent-session",
@@ -173,7 +244,7 @@ public sealed class SubAgentManagerCleanupTests
         Status = "completed",
         TemplateId = "workspace-task-agent",
         TaskSummary = "task of " + subSessionId,
-        SpawnedAt = Now.AddHours(-1),
+        SpawnedAt = spawnedAt ?? Now.AddHours(-1),
     };
 
     private static SubAgentManager CreateManager(
@@ -208,8 +279,14 @@ public sealed class SubAgentManagerCleanupTests
         public ArchiveBehavior ArchiveBehavior { get; init; } = ArchiveBehavior.ReturnsNull;
         public int ArchiveProbeCount { get; private set; }
 
-        public Task<bool> DeleteRunAsync(string runId, CancellationToken ct = default) =>
-            Task.FromResult(DeleteResult);
+        /// <summary>被真正删除过的 runId（按调用顺序）；预演必须让它恒为空。</summary>
+        public List<string> DeletedRunIds { get; } = [];
+
+        public Task<bool> DeleteRunAsync(string runId, CancellationToken ct = default)
+        {
+            DeletedRunIds.Add(runId);
+            return Task.FromResult(DeleteResult);
+        }
 
         public Task<SubAgentRunArchive?> GetRunArchiveAsync(string runId, CancellationToken ct = default)
         {

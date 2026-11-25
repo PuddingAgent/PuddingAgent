@@ -149,6 +149,22 @@ public interface ISubAgentManager
         string parentSessionId,
         SubAgentCleanupFilter filter,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// 预演 <see cref="CleanupAsync"/> 会选中哪些条目，<b>不删除任何东西</b>（不改库、不动磁盘）。
+    /// </summary>
+    /// <remarks>
+    /// 批量清理没有撤销路径（运行归档含磁盘目录），而它的候选范围是「本会话全部非运行中的
+    /// 子代理」。删之前能先看到候选集、顺序与条数，是这条路径唯一的安全阀。
+    /// <para>
+    /// 刻意不给默认实现：默认返回空列表会让一个没实现预演的替身<b>谎报「没有候选」</b>，
+    /// 而这种谎报恰好出现在最危险的那次调用之前。缺实现就在编译期报错。
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlyList<SubAgentStatus>> PreviewCleanupAsync(
+        string parentSessionId,
+        SubAgentCleanupFilter filter,
+        CancellationToken ct = default);
 }
 
 // ════════════════════════════════════════════════════════
