@@ -160,6 +160,24 @@ public sealed class SubAgentPool : ISubAgentPool
     }
 
     private readonly ConcurrentDictionary<string, PoolEntry> _pool = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 按稳定成员 id（<c>agent_pool.pool_id</c>）的第二个索引。
+    /// <para>
+    /// <b>为什么现在就加：</b>池的进程内身份今天是名字（<see cref="_pool"/> 以 name 为键），
+    /// 而名字「全局唯一」这件事只来自库上那条唯一索引。下一步要放宽它，让两个会话各有一个
+    /// <c>reviewer</c>；一旦两个同名条目并存，任何「按名找到唯一一条」的路径都会退化成
+    /// 「谁先到谁占住」的竞态。所以<b>寻址键必须先换成 id，唯一性才能放宽</b>——
+    /// 顺序反过来就是用竞态换功能。
+    /// </para>
+    /// <para>
+    /// 两个字典必须同进同退：只写 <see cref="_pool"/> 会让按 id 查不到（LruCallback 之类
+    /// 已经拿到 id 的路径就只能退回去线性扫）；只删 <see cref="_pool"/> 会让按 id 查到一个
+    /// 已经不在池里的条目。所有增删都收口到 <see cref="IndexEntry"/> / <see cref="UnindexEntry"/>。
+    /// </para>
+    /// </summary>
+    private readonly ConcurrentDictionary<string, PoolEntry> _poolById = new(StringComparer.Ordinal);
+
     private readonly SemaphoreSlim _stateLock = new(1, 1);
 
     /// <summary>
@@ -240,6 +258,43 @@ public sealed class SubAgentPool : ISubAgentPool
     public PoolReadiness Readiness => _readiness;
 
     // ════════════════════════════════════════════════════════
+    // 索引维护
+    // ════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 把条目同时写进「按名」与「按 pool_id」两个索引。
+    /// <para>
+    /// 同一个名字被换成另一个对象时，旧对象的 id 索引必须一起撤掉：否则按 id 会查到一个
+    /// 已经不在池里的条目，而按名查到的是新的那个——两个视图从此各说各话，而这种分叉
+    /// 不会报错，只会让 LRU 淘汰回查与后续按 id 的操作落在不同的对象上。
+    /// </para>
+    /// <para>调用方必须在 <see cref="_stateLock"/> 内调用。</para>
+    /// </summary>
+    private void IndexEntry(PoolEntry entry)
+    {
+        if (_pool.TryGetValue(entry.Name, out var previous) &&
+            !string.Equals(previous.PoolId, entry.PoolId, StringComparison.Ordinal))
+        {
+            _poolById.TryRemove(previous.PoolId, out _);
+        }
+
+        _pool[entry.Name] = entry;
+        _poolById[entry.PoolId] = entry;
+    }
+
+    /// <summary>
+    /// 把条目从两个索引里一起摘掉。
+    /// <para>只摘名字会让按 id 的查询继续命中一个已经不在池里的条目；
+    /// 只摘 id 会让按名的查询照样命中。两者都是「分叉但不报错」。</para>
+    /// <para>调用方必须在 <see cref="_stateLock"/> 内调用（与 <see cref="IndexEntry"/> 同一前提）。</para>
+    /// </summary>
+    private void UnindexEntry(PoolEntry entry)
+    {
+        _pool.TryRemove(entry.Name, out _);
+        _poolById.TryRemove(entry.PoolId, out _);
+    }
+
+    // ════════════════════════════════════════════════════════
     // 就绪
     // ════════════════════════════════════════════════════════
 
@@ -301,7 +356,7 @@ public sealed class SubAgentPool : ISubAgentPool
                 // 用 TryAdd 而不是索引赋值：ExecuteAsync 的「自动预留」路径不经过就绪门，
                 // 可能在加载期间已经建了一个同名条目并正在执行。那个条目带着活的子会话，
                 // 用库里的快照覆盖它会把正在执行的收尾丢掉（FinishAsync 是引用相等判定）。
-                _pool.TryAdd(snapshot.Name, new PoolEntry(
+                var loadedEntry = new PoolEntry(
                     // pool_id 只从快照带回来，绝不在这里重新生成：
                     // 重新生成会让重启后的每个条目都指向一个库里不存在的 id，后续所有条件写都落空。
                     poolId: snapshot.PoolId,
@@ -316,7 +371,15 @@ public sealed class SubAgentPool : ISubAgentPool
                     status: MapStatus(snapshot.Status),
                     taskCount: snapshot.TaskCount,
                     lastSuccess: snapshot.LastSuccess,
-                    activeExecutionId: snapshot.ActiveExecutionId));
+                    activeExecutionId: snapshot.ActiveExecutionId);
+
+                // 只有名字真的加进去了才建 id 索引：TryAdd 失败说明内存里已有一个正在执行的
+                // 同名条目（自动预留不经过就绪门），此时用库快照去盖 id 索引会让
+                // 「按 id」与「按名」指向不同对象——而活的那个才是对的。
+                if (_pool.TryAdd(loadedEntry.Name, loadedEntry))
+                {
+                    _poolById.TryAdd(loadedEntry.PoolId, loadedEntry);
+                }
             }
 
             // S5c：先救「重启前残留的 busy」，再对外宣告就绪。
@@ -615,7 +678,7 @@ public sealed class SubAgentPool : ISubAgentPool
                 }
             }
 
-            _pool[name] = entry;
+            IndexEntry(entry);
         }
         finally
         {
@@ -640,6 +703,26 @@ public sealed class SubAgentPool : ISubAgentPool
         {
             return Task.FromResult<PooledSubAgent?>(entry.ToSnapshot());
         }
+        return Task.FromResult<PooledSubAgent?>(null);
+    }
+
+    /// <summary>
+    /// 按稳定成员 id 取快照。不存在时返回 <c>null</c>。
+    /// <para>
+    /// <b>两条寻址路径今天必须共存：</b>名字是对外语义（工具参数、admin 路由都是名字），
+    /// 而 id 是内部身份。一旦名字不再全局唯一（两个会话各有 <c>reviewer</c>），
+    /// 按名寻址就必须降级为「先用归属限定范围，再取唯一那一个」，而归属不确定时
+    /// 只能报歧义——这比随便选一个安全得多：选错会把单子派到别人的成员上。
+    /// </para>
+    /// <para>不抛业务异常：id 不存在就是 <c>null</c>，与 <see cref="GetAsync"/> 同形。</para>
+    /// </summary>
+    public Task<PooledSubAgent?> GetByPoolIdAsync(string poolId, CancellationToken ct = default)
+    {
+        if (!string.IsNullOrEmpty(poolId) && _poolById.TryGetValue(poolId, out var entry))
+        {
+            return Task.FromResult<PooledSubAgent?>(entry.ToSnapshot());
+        }
+
         return Task.FromResult<PooledSubAgent?>(null);
     }
 
@@ -1170,7 +1253,7 @@ public sealed class SubAgentPool : ISubAgentPool
                 }
 
                 // 先落库再进内存：库拒绝时内存里不得留下「看起来存在但库里不可抢」的条目。
-                _pool[name] = entry;
+                IndexEntry(entry);
                 autoReserved = true;
             }
 
@@ -1550,7 +1633,7 @@ public sealed class SubAgentPool : ISubAgentPool
                 }
             }
 
-            _pool.TryRemove(name, out _);
+            UnindexEntry(entry);
 
             // 条目没了，排队中的收尾就没有对应对象了。留着它只会在同 poolId 意外再现时
             // 被当成新条目的意图；poolId 是 Guid，理论上不会重用，但不值得为这个「理论上」留泄漏。
@@ -1717,7 +1800,7 @@ public sealed class SubAgentPool : ISubAgentPool
                     return null;
                 }
 
-                _pool.TryRemove(candidate.Name, out _);
+                UnindexEntry(candidate);
                 candidate.Status = PooledSubAgentStatus.Dead;
 
                 _logger.LogInformation(
@@ -1737,9 +1820,10 @@ public sealed class SubAgentPool : ISubAgentPool
             }
 
             // 按 PoolId 而不是按名字回查：名字可以被 destroy → create 换成另一个对象，
-            // 只有 PoolId 与库里那一行一一对应。
-            var entry = _pool.Values.FirstOrDefault(e => e.PoolId == evictedPoolId);
-            if (entry is null)
+            // 只有 PoolId 与库里那一行一一对应。走索引而不是线性扫：
+            // 扫一遍得到的是「当时恰好那个」，索引得到的是「池认为的那个」，
+            // 而两者分叉正是这条路径最该暴露的事。
+            if (!_poolById.TryGetValue(evictedPoolId, out var entry))
             {
                 // 库淘汰成功但内存没有对应条目：说明两边已经分叉（例如本进程从未走过
                 // EnsureReadyAsync，或条目只存在于库里）。库已经改了，抛异常只会让
@@ -1751,7 +1835,7 @@ public sealed class SubAgentPool : ISubAgentPool
                 return null;
             }
 
-            _pool.TryRemove(entry.Name, out _);
+            UnindexEntry(entry);
             entry.Status = PooledSubAgentStatus.Dead;
 
             _logger.LogInformation(

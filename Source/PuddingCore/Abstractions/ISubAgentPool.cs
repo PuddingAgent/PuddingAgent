@@ -83,6 +83,22 @@ public interface ISubAgentPool
 
     Task<PooledSubAgent?> GetAsync(string name, CancellationToken ct = default);
 
+    /// <summary>
+    /// 按稳定成员 id（<c>agent_pool.pool_id</c>）取快照。不存在时返回 <c>null</c>。
+    /// <para>
+    /// <b>为什么需要第二条寻址路径：</b>名字是展示名。计划中的「两个会话各有一个
+    /// <c>reviewer</c>」一旦成立，名字就不再全局唯一，任何「按名找到唯一一条」的假设
+    /// 都会变成竞态。id 与库里那一行一一对应，<c>destroy → create</c> 也换不掉它。
+    /// </para>
+    /// <para>
+    /// 默认实现返回 <c>null</c>（即「没有这条 id」），所以纯内存实现与测试替身不需要改：
+    /// 这条路径服务于「已经拿到 id 的调用方」，不是派活前置。做成必实现会影响所有替身，
+    /// 而它们本来就不维护 id 索引。
+    /// </para>
+    /// </summary>
+    Task<PooledSubAgent?> GetByPoolIdAsync(string poolId, CancellationToken ct = default)
+        => Task.FromResult<PooledSubAgent?>(null);
+
     Task<SubAgentExecuteResult> ExecuteAsync(
         string name,
         SubAgentSpawnRequest request,

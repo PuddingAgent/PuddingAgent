@@ -800,6 +800,92 @@ public sealed class SubAgentPoolTests
         Assert.IsTrue(await pool.DestroyAsync("mine", scope));
         Assert.AreEqual(0, pool.Count);
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // 按 pool_id 寻址（双索引）
+    // ═══════════════════════════════════════════════════════════
+    //
+    // 为什么现在就要试：池的进程内身份今天仍是名字，而名字全局唯一这件事只靠
+    // 库上那条唯一索引。放宽唯一性之前，必须先把「按 id 找得到、且只找得到一个」
+    // 变成不依赖名字的事实，否则同名条目一出现就是从「唯一」退化成「谁先到算谁」。
+
+    [TestMethod]
+    public async Task GetByPoolIdAsync_AfterCreate_ResolvesEachEntry()
+    {
+        var pool = CreatePool();
+        var alpha = await pool.CreateAsync("alpha", CreateSpawnRequest());
+        var beta = await pool.CreateAsync("beta", CreateSpawnRequest());
+
+        Assert.AreNotEqual(alpha.PoolId, beta.PoolId, "每个条目必须有自己的稳定 id");
+
+        var byAlpha = await pool.GetByPoolIdAsync(alpha.PoolId);
+        var byBeta = await pool.GetByPoolIdAsync(beta.PoolId);
+
+        Assert.IsNotNull(byAlpha, "按 id 必须能找到刚创建的条目");
+        Assert.IsNotNull(byBeta);
+        Assert.AreEqual("alpha", byAlpha!.Name);
+        Assert.AreEqual("beta", byBeta!.Name);
+    }
+
+    [TestMethod]
+    public async Task GetByPoolIdAsync_AfterDestroy_EntryIsGone_ButNeighbourRemains()
+    {
+        var pool = CreatePool();
+        var alpha = await pool.CreateAsync("alpha", CreateSpawnRequest());
+        var beta = await pool.CreateAsync("beta", CreateSpawnRequest());
+
+        Assert.IsTrue(await pool.DestroyAsync("alpha"));
+
+        Assert.IsNull(await pool.GetByPoolIdAsync(alpha.PoolId),
+            "销毁后按 id 不能再查到——否则命中一个已经不在池里的条目，" +
+            "而这种分叉不会报错，只会让后续按 id 的操作落在幽灵对象上");
+        Assert.IsNotNull(await pool.GetByPoolIdAsync(beta.PoolId),
+            "摘除必须只摘目标条目，不得连带邻居");
+    }
+
+    [TestMethod]
+    public async Task GetByPoolIdAsync_AfterLruEvict_EvictedEntryIsGone()
+    {
+        var pool = CreatePool();
+        var created = new List<PooledSubAgent>
+        {
+            await pool.CreateAsync("alpha", CreateSpawnRequest()),
+            await pool.CreateAsync("beta", CreateSpawnRequest()),
+        };
+
+        foreach (var entry in created)
+        {
+            Assert.IsTrue(await pool.SleepAsync(entry.Name));
+        }
+
+        var evictedName = await pool.EvictLeastRecentlyUsedAsync();
+        Assert.IsNotNull(evictedName, "两条 sleeping 条目里应该能选出候选");
+
+        // 不断言具体淘汰了哪一个：LastUsedAt 同刻时顺序不属于契约。
+        // 要断言的是「被淘汰的那条 id 没了、其余的都还在」——换个淘汰顺序仍然成立。
+        foreach (var entry in created)
+        {
+            var byId = await pool.GetByPoolIdAsync(entry.PoolId);
+            if (entry.Name == evictedName)
+            {
+                Assert.IsNull(byId, "LRU 淘汰与销毁一样是「条目不在了」，id 索引必须同进同退");
+            }
+            else
+            {
+                Assert.IsNotNull(byId, "未被淘汰的条目必须仍可按 id 找到");
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task GetByPoolIdAsync_UnknownOrEmptyId_ReturnsNull()
+    {
+        var pool = CreatePool();
+        await pool.CreateAsync("alpha", CreateSpawnRequest());
+
+        Assert.IsNull(await pool.GetByPoolIdAsync("no-such-pool-id"));
+        Assert.IsNull(await pool.GetByPoolIdAsync(string.Empty));
+    }
 }
 
 public sealed class TestSubAgentManager : ISubAgentManager
