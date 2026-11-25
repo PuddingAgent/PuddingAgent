@@ -172,6 +172,45 @@ public sealed class PoolListingFormatterTests
             $"未声明模型的成员不该借到别人的路由：{inheritRow}");
     }
 
+    [TestMethod]
+    public void RenderRole_Declared_RendersVerbatim()
+    {
+        Assert.AreEqual("verifier", PoolListingFormatter.RenderRole("verifier"));
+        Assert.AreEqual("verifier", PoolListingFormatter.RenderRole("  verifier  "));
+        // 负向不能靠「恒返回跟随」通过：有效角色必须原样输出。
+        Assert.AreNotEqual("跟随", PoolListingFormatter.RenderRole("verifier"));
+    }
+
+    [TestMethod]
+    public void RenderRole_Undeclared_RendersFollow()
+    {
+        Assert.AreEqual("跟随", PoolListingFormatter.RenderRole(null));
+        Assert.AreEqual("跟随", PoolListingFormatter.RenderRole("   "));
+        // 与「模型」列同口径：Role 存的是「未显式指定时用它」的声明值，null 是「跟随派发方」而非缺数据。
+        Assert.AreNotEqual("-", PoolListingFormatter.RenderRole(null));
+        Assert.AreEqual(PoolListingFormatter.RenderModel(null), PoolListingFormatter.RenderRole(null),
+            "两列同为未声明时必须渲染成同一种字样，否则读的人会以为其中一列缺数据");
+    }
+
+    [TestMethod]
+    public void Format_RoleColumn_ShowsDeclaredAndFollowPerRow()
+    {
+        var text = PoolListingFormatter.Format(
+        [
+            Entry("声明者", ParentSessionId + "-sub-88574a1a", role: "verifier"),
+            Entry("跟随者", ParentSessionId + "-sub-7bf089fb"),
+        ]);
+
+        var rows = text.Split('\n').Where(l => l.StartsWith("| ", StringComparison.Ordinal)).ToList();
+        var declaredRow = rows.Single(l => l.StartsWith("| 声明者 |", StringComparison.Ordinal));
+        var inheritRow = rows.Single(l => l.StartsWith("| 跟随者 |", StringComparison.Ordinal));
+
+        StringAssert.Contains(declaredRow, "| verifier |");
+        StringAssert.Contains(inheritRow, "| 跟随 |");
+        Assert.IsFalse(inheritRow.Contains("| - |", StringComparison.Ordinal),
+            $"未声明角色仍渲染成 -（会被读作不知道）：{inheritRow}");
+    }
+
     // ===== 辅助 =====
 
     private static IEnumerable<string[]> RowCells(string table)

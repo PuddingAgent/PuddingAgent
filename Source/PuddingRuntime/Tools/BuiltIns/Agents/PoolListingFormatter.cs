@@ -35,6 +35,21 @@ internal static class PoolListingFormatter
         => string.IsNullOrWhiteSpace(modelId) ? "跟随" : modelId.Trim();
 
     /// <summary>
+    /// 「角色」列的渲染值：声明的角色原样输出；未声明写 <c>跟随</c>。
+    /// <para>
+    /// 与 <see cref="RenderModel"/> 同一口径。<c>Role</c> 存的是「本次没显式指定角色时用它」的声明值
+    /// （<c>ExecuteAsync</c> 里 <c>RoleInPlan</c> 的取值规则：请求优先、否则用条目），
+    /// 所以 <c>null</c> 的语义同样是「跟随派发方」，不是「不知道」。
+    /// </para>
+    /// <para>
+    /// 同一个表里两列同为未声明却渲染成两种字样（一列「跟随」、一列 <c>-</c>），
+    /// 读的人会以为其中一列是缺数据——而它其实只是不做约束。
+    /// </para>
+    /// </summary>
+    internal static string RenderRole(string? role)
+        => string.IsNullOrWhiteSpace(role) ? "跟随" : role.Trim();
+
+    /// <summary>
     /// 「最后使用」列的渲染值：<b>本地时区的绝对时间</b>，格式 <c>yyyy-MM-dd HH:mm</c>；未使用过则 <c>-</c>。
     /// </summary>
     /// <remarks>
@@ -74,7 +89,7 @@ internal static class PoolListingFormatter
         foreach (var entry in agents)
         {
             listing.AppendLine(
-                $"| {entry.Name} | {entry.Status} | {entry.Role ?? "-"} | {RenderModel(entry.ModelId)} | {entry.TaskCount} | " +
+                $"| {entry.Name} | {entry.Status} | {RenderRole(entry.Role)} | {RenderModel(entry.ModelId)} | {entry.TaskCount} | " +
                 $"{RenderLastUsed(entry.LastUsedAt, convert)} | {RenderSubSessionId(entry.SubSessionId)} |");
         }
 
