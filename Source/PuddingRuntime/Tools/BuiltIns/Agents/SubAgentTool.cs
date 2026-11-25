@@ -435,6 +435,24 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                                 }
                                 if (candidates.Count > PreviewLimit)
                                     sb.Append($"\n- …另有 {candidates.Count - PreviewLimit} 条未列出");
+                                // 候选构成：批量范围是整个父会话，而回执原先只说「命中 N 条」，
+                                // 读的人无法判断「删掉会不会动到我还在用的成员」。
+                                IReadOnlyList<PooledSubAgent>? poolMembers = null;
+                                try
+                                {
+                                    var compositionPool = _services.GetService<ISubAgentPool>();
+                                    if (compositionPool is not null)
+                                        poolMembers = await compositionPool
+                                            .ListOwnedByDeclaredAsync(ownerScope, ct)
+                                            .ConfigureAwait(false);
+                                }
+                                catch (Exception ex) when (ex is not OperationCanceledException)
+                                {
+                                    // 池未就绪不该让预演失败：预演的全部意义是「先看清再决定」。
+                                    _logger.LogDebug(ex, "[SubAgent] 批量预演读取池成员失败，构成无法判定");
+                                }
+
+                                sb.Append(DescribeBulkCandidateComposition(candidates, poolMembers));
                                 sb.Append("\n\n确认无误后去掉 dry_run 参数再调一次即真正清理；删除后不可恢复。");
                             }
 
@@ -1939,6 +1957,59 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                "查看可用条目（list 里的 SubSessionId 是完整值，可直接复制给 sub_agent_id）。";
     }
 
+    /// <summary>
+    /// 预演回执的「候选构成」：这些候选里多少属于当前仍在池里的成员，多少是已不在池中的历史记录。
+    /// <para>
+    /// 批量清理的候选范围是<b>整个父会话</b>，而回执原先只说「命中 N 条」——
+    /// 读的人无法判断「删掉会不会动到我还在用的成员」，而那正是决定要不要删的关键信息。
+    /// </para>
+    /// <para>
+    /// <paramref name="poolMembers"/> 为 <c>null</c> 表示池未就绪、无法判定。
+    /// 此时<b>不能</b>退化成「全部是历史记录」：把「不知道」说成「不是你的」会让人误以为可以放心删。
+    /// </para>
+    /// </summary>
+    internal static string DescribeBulkCandidateComposition(
+        IReadOnlyList<SubAgentStatus> candidates,
+        IReadOnlyList<PooledSubAgent>? poolMembers)
+    {
+        if (candidates.Count == 0)
+            return string.Empty;
+
+        if (poolMembers is null)
+            return "\n构成：无法判定（池未就绪或不可用）。删除前请先用 pool_action=\"list\" 核对成员。";
+
+        var nameBySubSession = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var member in poolMembers)
+        {
+            if (!string.IsNullOrWhiteSpace(member.SubSessionId))
+                nameBySubSession[member.SubSessionId] = member.Name;
+        }
+
+        var ownedNames = new List<string>();
+        var historical = 0;
+        foreach (var candidate in candidates)
+        {
+            if (nameBySubSession.TryGetValue(candidate.SubSessionId, out var name))
+                ownedNames.Add(name);
+            else
+                historical++;
+        }
+
+        if (ownedNames.Count == 0)
+            return "\n构成：全部不属于现存池化成员，都是历史记录。";
+
+        var distinctNames = ownedNames.Distinct(StringComparer.Ordinal).ToList();
+        var shown = string.Join("、", distinctNames.Take(5));
+        if (distinctNames.Count > 5)
+            shown += " 等";
+
+        var text = new StringBuilder("\n构成：");
+        text.Append(ownedNames.Count == candidates.Count
+            ? $"全部 {ownedNames.Count} 条都属于当前池化成员（{shown}）"
+            : $"其中 {ownedNames.Count} 条属于当前池化成员（{shown}），另有 {historical} 条是已不在池中的历史记录");
+        text.Append("。删除的是运行归档，成员本身仍留在池中。");
+        return text.ToString();
+    }
     /// <summary>池满：容量耗尽。<b>下一步是腾地方</b>，不是等待（等待不会释放容量）。</summary>
     private static string DescribePoolFull(Exception ex, string entryName)
     {
