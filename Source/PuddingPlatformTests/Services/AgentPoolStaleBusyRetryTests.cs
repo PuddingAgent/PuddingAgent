@@ -119,7 +119,8 @@ public sealed class AgentPoolStaleBusyRetryTests
             => throw new NotSupportedException("本用例只覆盖复位路径");
 
         public Task<int> TrySetStatusAsync(string poolId, string expectedStatus, string newStatus,
-            string? statusReason, bool clearExecution, DateTimeOffset now, CancellationToken ct)
+            string? statusReason, bool clearExecution, DateTimeOffset now, CancellationToken ct,
+            string? expectedOwnerSessionId = null, string? expectedOwnerWorkspaceId = null)
             => throw new NotSupportedException("本用例只覆盖复位路径");
 
         public Task<string?> TryEvictOldestSleepingAsync(DateTimeOffset now, CancellationToken ct)

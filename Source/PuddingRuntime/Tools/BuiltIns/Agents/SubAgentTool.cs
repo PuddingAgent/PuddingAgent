@@ -207,7 +207,14 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             if (managementPool is null)
                 return Fail("? SubAgentPool 服务未注册。请检查 DI 配置。");
 
-            // list 是全局视图，不需要条目名；destroy / sleep 作用于具名条目。
+            // 归属范围：普通 Agent 只能操作自己会话的条目。
+            // 池是按会话隔离的（归属写库、派活时校验），列表/休眠/销毁若走全局入口，
+            // 就会出现「看得见另一个会话的成员，还能让它休眠或销毁」——
+            // 而同一个条目的派活又会被归属校验拒掉，两个入口对同一件事给出相反结论。
+            // 跨会话操作是管理面的能力，走 admin REST，不走这个工具。
+            var ownerScope = new PoolOwnerScope(request.SessionId, request.WorkspaceId);
+
+            // list 不需要条目名；destroy / sleep 作用于具名条目。
             if (managementAction is not "list" && string.IsNullOrWhiteSpace(args.PoolName))
                 return Fail($"pool_action={managementAction} 需要 pool_name。先用 pool_action=list 查看可用条目名。");
 
@@ -217,13 +224,13 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 {
                     case "list":
                     {
-                        // 未就绪时 List() 按契约抛 PoolNotReadyException，**不返回空集合**——
-                        // 因为「还没加载完」与「池里确实为空」处置相反（前者等，后者创建）。
-                        // 所以「池为空」只可能出现在真正 Ready 且确实没有条目时；
+                        // 未就绪时 ListOwnedBy() 按契约抛 PoolNotReadyException，**不返回空集合**——
+                        // 因为「还没加载完」与「本会话确实没有条目」处置相反（前者等，后者创建）。
                         // 未就绪由下面的 catch 渲染成「池未就绪 / 恢复失败」，不会伪装成空池。
-                        var agents = managementPool.List();
+                        var agents = managementPool.ListOwnedBy(ownerScope);
                         if (agents.Count == 0)
-                            return Success("池为空。使用 pool_name=\"<name>\" pool_action=\"create\" 创建新的池化子代理。");
+                            return Success("本会话没有池化子代理（其它会话的成员不在此列出）。" +
+                                "使用 pool_name=\"<name>\" pool_action=\"create\" 创建新的池化子代理。");
                         var listing = new StringBuilder();
                         listing.AppendLine($"## 子代理池状态 ({agents.Count} 个)\n");
                         listing.AppendLine("| 名称 | 状态 | 角色 | 任务数 | 最后使用 | SubSessionId |");
@@ -236,13 +243,14 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                     case "destroy":
                         // false 是「确认没有这个条目」，与「未就绪（还不知道有没有）」是相反的事实，
                         // 所以单独给「未命中 + 下一步」，不并进通用失败文案。
-                        return await managementPool.DestroyAsync(args.PoolName, ct)
+                        // 归属不符会抛 PoolOwnershipMismatchException（由下面的 catch 渲染）。
+                        return await managementPool.DestroyAsync(args.PoolName, ownerScope, ct)
                             ? Success($"? 池化子代理 '{args.PoolName}' 已销毁。")
                             : Fail(DescribePoolEntryMissing(args.PoolName, "destroy"));
 
                     default: // sleep
                         // 同 destroy：false 表示名字未命中或条目已死，不是「池不可用」。
-                        return await managementPool.SleepAsync(args.PoolName, ct)
+                        return await managementPool.SleepAsync(args.PoolName, ownerScope, ct)
                             ? Success($"? 池化子代理 '{args.PoolName}' 已休眠。")
                             : Fail(DescribePoolEntryMissing(args.PoolName, "sleep"));
                 }
@@ -552,8 +560,11 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         // 先获取子代理信息用于清理持久化记录
                         var poolAgent = await pool.GetAsync(args.PoolName, ct);
 
-                        // 从池中销毁
-                        var destroyed = await pool.DestroyAsync(args.PoolName, ct);
+                        // 从池中销毁（带归属校验：cleanup 也不能摸到别人的条目）
+                        var destroyed = await pool.DestroyAsync(
+                            args.PoolName,
+                            new PoolOwnerScope(request.SessionId, request.WorkspaceId),
+                            ct);
 
                         // 清理持久化记录
                         int dbCleaned = 0;

@@ -220,8 +220,17 @@ public sealed class SubAgentTransientDirectoryGcServiceTests
         public Task<bool> SleepAsync(string name, CancellationToken ct = default) =>
             throw new NotSupportedException();
 
+        public Task<bool> SleepAsync(string name, PoolOwnerScope scope, CancellationToken ct = default) =>
+            throw new NotSupportedException();
+
         public Task<bool> DestroyAsync(string name, CancellationToken ct = default) =>
             throw new NotSupportedException();
+
+        public Task<bool> DestroyAsync(string name, PoolOwnerScope scope, CancellationToken ct = default) =>
+            throw new NotSupportedException();
+
+        /// <summary>一组 GC 用例只关心「哪些目录受保护」，归属过滤与 List() 同义。</summary>
+        public IReadOnlyList<PooledSubAgent> ListOwnedBy(PoolOwnerScope scope) => List();
 
         public Task<string?> EvictLeastRecentlyUsedAsync(CancellationToken ct = default) =>
             throw new NotSupportedException();

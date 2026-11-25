@@ -249,6 +249,10 @@ public sealed class SubAgentToolPoolFailureTests
                     LastUsedAt = DateTimeOffset.UnixEpoch,
                     Status = PooledSubAgentStatus.Idle,
                     TaskCount = 0,
+                    // 归属必须给：本用例验的是「不要求 task」，而归属未记录的条目
+                    // 现在不会出现在本会话的列表里（见 ListOwnedBy 契约）。
+                    OwnerSessionId = "sess-parent",
+                    OwnerWorkspaceId = "workspace_1",
                 },
             ],
         };
@@ -269,6 +273,70 @@ public sealed class SubAgentToolPoolFailureTests
         Assert.IsTrue(result.Success, $"destroy 不应要求 task：{result.Error}");
         StringAssert.Contains(result.Output ?? string.Empty, "已销毁");
     }
+
+    // === 池管理动作必须带归属范围（P1-1，2026-11-25）===
+    // 缺陷现场：list / sleep / destroy 走全局池只传名字。另一个会话因此可以看到本会话的成员，
+    // 并让它休眠或销毁；而同一条目的派活又会被归属校验拒掉——两个入口对同一件事给出相反结论。
+
+    [TestMethod]
+    public async Task List_HidesOtherSessionsEntries_AndPassesSessionScope()
+    {
+        var pool = new FakeSubAgentPool
+        {
+            Entries =
+            [
+                OwnedEntry("mine", "sess-parent"),
+                OwnedEntry("theirs", "sess-other"),
+            ],
+        };
+
+        var result = await ExecuteToolAsync(pool, """{"pool_action":"list"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output ?? string.Empty, "mine");
+        Assert.IsFalse((result.Output ?? string.Empty).Contains("theirs"),
+            "另一个会话的成员不得出现在本会话的列表里");
+        Assert.AreEqual("sess-parent", pool.LastScope?.SessionId,
+            "list 必须把执行上下文的会话作为归属范围传下去");
+        Assert.AreEqual("workspace_1", pool.LastScope?.WorkspaceId);
+    }
+
+    [TestMethod]
+    public async Task Destroy_PassesSessionScope()
+    {
+        var pool = new FakeSubAgentPool { DestroyResult = true };
+
+        var result = await ExecuteToolAsync(pool, """{"pool_name":"p1","pool_action":"destroy"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("sess-parent", pool.LastScope?.SessionId,
+            "destroy 必须带归属，否则跨会话销毁会绕过池层校验");
+    }
+
+    [TestMethod]
+    public async Task Sleep_PassesSessionScope()
+    {
+        var pool = new FakeSubAgentPool { SleepResult = true };
+
+        var result = await ExecuteToolAsync(pool, """{"pool_name":"p1","pool_action":"sleep"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("sess-parent", pool.LastScope?.SessionId,
+            "sleep 必须带归属，否则跨会话休眠会绕过池层校验");
+    }
+
+    private static PooledSubAgent OwnedEntry(string name, string ownerSessionId) => new()
+    {
+        Name = name,
+        SubSessionId = $"{ownerSessionId}-sub-{name}",
+        TemplateId = "workspace-task-agent",
+        CreatedAt = DateTimeOffset.UnixEpoch,
+        LastUsedAt = DateTimeOffset.UnixEpoch,
+        Status = PooledSubAgentStatus.Idle,
+        TaskCount = 0,
+        OwnerSessionId = ownerSessionId,
+        OwnerWorkspaceId = "workspace_1",
+    };
 
     [TestMethod]
     public async Task Sleep_WithoutTask_Succeeds()
@@ -381,7 +449,22 @@ public sealed class SubAgentToolPoolFailureTests
 
         public Task<bool> SleepAsync(string name, CancellationToken ct = default) => Task.FromResult(SleepResult);
 
+        /// <summary>归属受限重载：本假池不模拟归属，只记录「工具是否带了 scope」供断言用。</summary>
+        public PoolOwnerScope? LastScope { get; private set; }
+
+        public Task<bool> SleepAsync(string name, PoolOwnerScope scope, CancellationToken ct = default)
+        {
+            LastScope = scope;
+            return Task.FromResult(SleepResult);
+        }
+
         public Task<bool> DestroyAsync(string name, CancellationToken ct = default) => Task.FromResult(DestroyResult);
+
+        public Task<bool> DestroyAsync(string name, PoolOwnerScope scope, CancellationToken ct = default)
+        {
+            LastScope = scope;
+            return Task.FromResult(DestroyResult);
+        }
 
         public IReadOnlyList<PooledSubAgent> List()
         {
@@ -389,6 +472,22 @@ public sealed class SubAgentToolPoolFailureTests
                 throw ListError;
 
             return Entries;
+        }
+
+        public IReadOnlyList<PooledSubAgent> ListOwnedBy(PoolOwnerScope scope)
+        {
+            LastScope = scope;
+            if (ListError is not null)
+                throw ListError;
+
+            if (scope.IsUnscoped)
+                return Entries;
+
+            return Entries
+                .Where(e =>
+                    (string.IsNullOrEmpty(scope.SessionId) || string.Equals(scope.SessionId, e.OwnerSessionId, StringComparison.Ordinal)) &&
+                    (string.IsNullOrEmpty(scope.WorkspaceId) || string.Equals(scope.WorkspaceId, e.OwnerWorkspaceId, StringComparison.Ordinal)))
+                .ToList();
         }
 
         public Task<string?> EvictLeastRecentlyUsedAsync(CancellationToken ct = default)

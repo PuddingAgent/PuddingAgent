@@ -1,5 +1,5 @@
 # PuddingPlatform CodeMAP
-> 源指纹: Source/PuddingPlatform/**=662-46aaa30fa57a · 条目数: 274 · 最近整理: 2026-11-22
+> 源指纹: Source/PuddingPlatform/**=662-4afea75e93b8 · 条目数: 274 · 最近整理: 2026-11-22
 
 > 平台层 | Session 管理 · API · EF Core 持久化 · 消息网关
 
@@ -114,7 +114,7 @@
 |---|---|---|---|---|
 | `Middleware/TraceableExceptionMiddleware.cs` | 未处理异常的可检索 500 | `TraceableExceptionMiddleware` | — | 仅当 RequestAborted 已取消时把 OperationCanceledException 视为客户端断开（499 + Debug），不污染 Error 日志 |
 | `Services/SubAgentManager.cs` | 子代理预算与结果身份 | `SubAgentManager`、`SubAgentResultIdentity.Compute(childRunId, 规范化终态, 父会话)` | — | 预算解析（N00）：`maxRounds = request.MaxRounds ?? options.MaxRounds`、maxToolCallsTotal 同理；同 SubSessionId + 新 runId 续跑重置计数器；resultId 复用为 MessageId 去重 |
-| `Services/SubAgentPool.cs` | Core `ISubAgentPool` 的 Platform 实现 | `SubAgentPool`、`PoolEntry` | `Services/AgentPool/IAgentPoolEntryStore.cs`、`Services/AgentPoolWarmupService.cs` | 四态就绪门：未就绪 `List` 抛 `PoolNotReadyException`，不降级；写操作先落库成功再改内存（含 LRU 淘汰）；归属 fail-closed；复位僵尸 busy 失败只 LogWarning |
+| `Services/SubAgentPool.cs` | Core `ISubAgentPool` 的 Platform 实现 | `SubAgentPool`、`PoolEntry` | `Services/AgentPool/IAgentPoolEntryStore.cs`、`Services/AgentPoolWarmupService.cs` | 四态就绪门：未就绪 `List` 抛错不降级；先落库再改内存（含 LRU 淘汰）；归属 fail-closed 且受限入口写库带归属 WHERE；复位僵尸 busy 失败只 LogWarning |
 | `Services/AgentPoolSchemaBootstrapper.cs` | 存量库 `agent_pool` 的幂等补表 | `AgentPoolSchemaBootstrapper` | `Data/Entities/AgentPoolEntity.cs` | 列清单必须与实体声明一致；存量库逐列 `PRAGMA table_info` 守卫后 `ALTER TABLE ADD COLUMN`（SQLite 无 ADD COLUMN IF NOT EXISTS，守卫不可省）；列数与二次幂等由 `AgentPoolSchemaBootstrapperTests` 锁死 |
 | `Data/Entities/AgentPoolEntity.cs` | 子代理池条目的持久化实体（21 列 = 18 基础 + model_id / avatar_key / responsibility） | `AgentPoolEntity` | `Data/PlatformDbContext.cs` | 状态常量与 `StatusReasonRecoveredBusy` 原因常量集中于此；`name` 为部分唯一索引（`deleted_at IS NULL`） |
 | `Services/AgentPool/IAgentPoolEntryStore.cs` | 池条目存储层契约 | `IAgentPoolEntryStore`、`AgentPoolEntrySnapshot`、`AgentPoolInsertRequest` | `Services/AgentPool/AgentPoolEntryStore.cs` | 9 个方法全部返回受影响行数：0 行 = 前置条件不成立（池满/归属不符/令牌不符），不是异常 |

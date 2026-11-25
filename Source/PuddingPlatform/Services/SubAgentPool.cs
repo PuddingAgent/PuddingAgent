@@ -136,6 +136,8 @@ public sealed class SubAgentPool : ISubAgentPool
             Status = Status,
             TaskCount = TaskCount,
             LastSuccess = LastSuccess,
+            OwnerSessionId = OwnerSessionId,
+            OwnerWorkspaceId = OwnerWorkspaceId,
         };
     }
 
@@ -1001,9 +1003,16 @@ public sealed class SubAgentPool : ISubAgentPool
     /// 绝不谎报已休眠。
     /// </para>
     /// </summary>
-    public async Task<bool> SleepAsync(string name, CancellationToken ct = default)
+    public Task<bool> SleepAsync(string name, CancellationToken ct = default)
+        => SleepCoreAsync(name, PoolOwnerScope.Unscoped, ct);
+
+    /// <inheritdoc />
+    public Task<bool> SleepAsync(string name, PoolOwnerScope scope, CancellationToken ct = default)
+        => SleepCoreAsync(name, scope, ct);
+
+    private async Task<bool> SleepCoreAsync(string name, PoolOwnerScope scope, CancellationToken ct)
     {
-        var probe = await ProbeSleepAsync(name, ct);
+        var probe = await ProbeSleepAsync(name, scope, ct);
         if (probe.Step == SleepStep.Busy)
         {
             return await SleepBusyEntryAsync(probe.Entry!, probe.ExecutionId, ct);
@@ -1024,7 +1033,7 @@ public sealed class SubAgentPool : ISubAgentPool
     /// 持锁等待会自锁。
     /// </para>
     /// </summary>
-    private async Task<SleepProbe> ProbeSleepAsync(string name, CancellationToken ct)
+    private async Task<SleepProbe> ProbeSleepAsync(string name, PoolOwnerScope scope, CancellationToken ct)
     {
         await _stateLock.WaitAsync(ct);
         try
@@ -1034,6 +1043,10 @@ public sealed class SubAgentPool : ISubAgentPool
                 _logger.LogWarning("[SubAgentPool] SleepAsync: '{Name}' not found", name);
                 return SleepProbe.Rejected;
             }
+
+            // 归属先于一切状态改动：否则一次跨会话休眠会先把条目置成 sleeping，
+            // 被拒绝时已经改坏了别人的状态。
+            EnsureScopeMatches(entry, scope);
 
             if (entry.Status == PooledSubAgentStatus.Dead)
             {
@@ -1065,7 +1078,9 @@ public sealed class SubAgentPool : ISubAgentPool
                     statusReason: null,
                     clearExecution: true,
                     now: DateTimeOffset.UtcNow,
-                    ct);
+                    ct,
+                    expectedOwnerSessionId: scope.SessionId,
+                    expectedOwnerWorkspaceId: scope.WorkspaceId);
 
                 if (affected == 0)
                 {
@@ -1206,7 +1221,14 @@ public sealed class SubAgentPool : ISubAgentPool
     /// 销毁子代理，释放资源。
     /// 不存在时返回 false（不抛异常）。
     /// </summary>
-    public async Task<bool> DestroyAsync(string name, CancellationToken ct = default)
+    public Task<bool> DestroyAsync(string name, CancellationToken ct = default)
+        => DestroyCoreAsync(name, PoolOwnerScope.Unscoped, ct);
+
+    /// <inheritdoc />
+    public Task<bool> DestroyAsync(string name, PoolOwnerScope scope, CancellationToken ct = default)
+        => DestroyCoreAsync(name, scope, ct);
+
+    private async Task<bool> DestroyCoreAsync(string name, PoolOwnerScope scope, CancellationToken ct)
     {
         await _stateLock.WaitAsync(ct);
         try
@@ -1216,6 +1238,9 @@ public sealed class SubAgentPool : ISubAgentPool
                 _logger.LogWarning("[SubAgentPool] DestroyAsync: '{Name}' not found", name);
                 return false;
             }
+
+            // 同 SleepAsync：归属断言必须在状态/库写入之前。
+            EnsureScopeMatches(entry, scope);
 
             // 同 SleepAsync：先让库迁到 dead（store 会同时写 deleted_at），成功后才动内存。
             // 两种侧重点不同的错误在这里对称：
@@ -1234,7 +1259,9 @@ public sealed class SubAgentPool : ISubAgentPool
                     statusReason: null,
                     clearExecution: true,
                     now: DateTimeOffset.UtcNow,
-                    ct);
+                    ct,
+                    expectedOwnerSessionId: scope.SessionId,
+                    expectedOwnerWorkspaceId: scope.WorkspaceId);
 
                 if (affected == 0)
                 {
@@ -1306,6 +1333,74 @@ public sealed class SubAgentPool : ISubAgentPool
     {
         await EnsureReadyAsync(ct);
         return List();
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<PooledSubAgent> ListOwnedBy(PoolOwnerScope scope)
+    {
+        // 管理面：语义上不属于任何会话，看全量。
+        if (scope.IsUnscoped)
+            return List();
+
+        return List()
+            .Where(entry => ScopeMatches(scope, entry.OwnerSessionId, entry.OwnerWorkspaceId))
+            .ToList();
+    }
+
+    /// <summary>
+    /// 快照的归属是否在 <paramref name="scope"/> 之内。
+    /// <para>
+    /// 两个维度都按「scope 非空则要求相等」处理，两处不可写成「有一个相等就放行」。
+    /// 条目归属为 <c>null</c> 时一律不匹配——「不知道属于谁」不是「属于所有人」。
+    /// </para>
+    /// </summary>
+    private static bool ScopeMatches(PoolOwnerScope scope, string? ownerSessionId, string? ownerWorkspaceId)
+    {
+        if (!string.IsNullOrEmpty(scope.SessionId) &&
+            !string.Equals(scope.SessionId, ownerSessionId, StringComparison.Ordinal))
+            return false;
+
+        if (!string.IsNullOrEmpty(scope.WorkspaceId) &&
+            !string.Equals(scope.WorkspaceId, ownerWorkspaceId, StringComparison.Ordinal))
+            return false;
+
+        return true;
+    }
+
+    /// <summary>
+    /// 锁内归属断言：不符就抛 <see cref="PoolOwnershipMismatchException"/>。
+    /// <para>
+    /// 抛错而不是返回 <c>false</c>：<c>false</c> 的契约是「确认没有这个条目」，
+    /// 而「存在但不归你」处置完全不同（前者去创建，后者去用对自己的名字）。
+    /// 与 <see cref="ExecuteAsync"/> 的归属拒绝保持同一种异常，同一个边界只该有一种语义。
+    /// </para>
+    /// </summary>
+    private static void EnsureScopeMatches(PoolEntry entry, PoolOwnerScope scope)
+    {
+        if (scope.IsUnscoped)
+            return;
+
+        var ownerSession = entry.OwnerSessionId;
+        if (!string.IsNullOrEmpty(scope.SessionId) &&
+            !string.Equals(scope.SessionId, ownerSession, StringComparison.Ordinal))
+        {
+            throw new PoolOwnershipMismatchException(
+                $"Sub-agent '{entry.Name}' belongs to parent session '{Shorten(ownerSession ?? "(unrecorded)")}' " +
+                $"but was addressed by '{Shorten(scope.SessionId)}'.",
+                entry.Name, ownerSession, scope.SessionId,
+                PoolOwnershipMismatchException.OwnerSessionReason);
+        }
+
+        var ownerWorkspace = entry.OwnerWorkspaceId;
+        if (!string.IsNullOrEmpty(scope.WorkspaceId) &&
+            !string.Equals(scope.WorkspaceId, ownerWorkspace, StringComparison.Ordinal))
+        {
+            throw new PoolOwnershipMismatchException(
+                $"Sub-agent '{entry.Name}' belongs to workspace '{ownerWorkspace ?? "(unrecorded)"}' " +
+                $"but was addressed from '{scope.WorkspaceId}'.",
+                entry.Name, ownerSession, scope.SessionId,
+                PoolOwnershipMismatchException.OwnerWorkspaceReason);
+        }
     }
 
     // ════════════════════════════════════════════════════════

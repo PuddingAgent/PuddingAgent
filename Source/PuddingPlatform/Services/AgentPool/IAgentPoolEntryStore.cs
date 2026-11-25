@@ -128,7 +128,9 @@ public interface IAgentPoolEntryStore
         string? statusReason,
         bool clearExecution,
         DateTimeOffset now,
-        CancellationToken ct);
+        CancellationToken ct,
+        string? expectedOwnerSessionId = null,
+        string? expectedOwnerWorkspaceId = null);
 
     /// <summary>
     /// 淘汰一条最久未使用的 sleeping 条目（置 dead + 写 deleted_at），返回被淘汰条目的 <c>pool_id</c>；

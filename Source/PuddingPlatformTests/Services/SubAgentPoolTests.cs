@@ -655,6 +655,100 @@ public sealed class SubAgentPoolTests
         Assert.AreEqual(0, manager.CancelledSubSessionIds.Count,
             "an idle entry has nothing to cancel; cancelling anyway would emit spurious events");
     }
+
+    // ═══════════════════════════════════════════
+    // 归属范围（P1-1）：池按会话隔离，普通入口不得跨会话
+    // ═══════════════════════════════════════════
+
+    private static SubAgentSpawnRequest CreateSpawnRequestForSession(string sessionId) => new()
+    {
+        ParentSessionId = sessionId,
+        WorkspaceId = "default",
+        TaskDescription = "test task",
+        LlmConfig = CreateLlmConfig(),
+        LlmProfile = CreateLlmProfile(),
+        TemplateId = "workspace-task-agent",
+    };
+
+    [TestMethod]
+    public async Task ListOwnedBy_ReturnsOnlyThatSessionEntries_AndSnapshotCarriesOwner()
+    {
+        var pool = CreatePool();
+        await pool.CreateAsync("mine", CreateSpawnRequestForSession("sess-a"));
+        await pool.CreateAsync("theirs", CreateSpawnRequestForSession("sess-b"));
+
+        var mine = pool.ListOwnedBy(new PoolOwnerScope("sess-a", "default"));
+
+        Assert.AreEqual(1, mine.Count);
+        Assert.AreEqual("mine", mine[0].Name);
+        // 快照必须带出归属：否则工具层无法判断「是不是我的」，只能回头用全局入口。
+        Assert.AreEqual("sess-a", mine[0].OwnerSessionId);
+        Assert.AreEqual("default", mine[0].OwnerWorkspaceId);
+    }
+
+    [TestMethod]
+    public async Task ListOwnedBy_Unscoped_ReturnsAllEntries_ForManagementPlane()
+    {
+        var pool = CreatePool();
+        await pool.CreateAsync("mine", CreateSpawnRequestForSession("sess-a"));
+        await pool.CreateAsync("theirs", CreateSpawnRequestForSession("sess-b"));
+
+        var all = pool.ListOwnedBy(PoolOwnerScope.Unscoped);
+
+        Assert.AreEqual(2, all.Count, "管理面跨会话，必须看得到全部");
+    }
+
+    [TestMethod]
+    public async Task SleepAsync_CrossSession_Throws_AndLeavesStatusUntouched()
+    {
+        var pool = CreatePool();
+        await pool.CreateAsync("theirs", CreateSpawnRequestForSession("sess-b"));
+
+        await AssertThrowsAsync<PoolOwnershipMismatchException>(() =>
+            pool.SleepAsync("theirs", new PoolOwnerScope("sess-a", "default")));
+
+        var entry = await pool.GetAsync("theirs");
+        Assert.IsNotNull(entry, "被拒的休眠不得把条目弄丢");
+        Assert.AreEqual(PooledSubAgentStatus.Idle, entry.Status,
+            "归属断言必须先于状态变更：否则拒绝时已把别人的条目标成 sleeping");
+    }
+
+    [TestMethod]
+    public async Task DestroyAsync_CrossSession_Throws_AndKeepsEntry()
+    {
+        var pool = CreatePool();
+        await pool.CreateAsync("theirs", CreateSpawnRequestForSession("sess-b"));
+
+        await AssertThrowsAsync<PoolOwnershipMismatchException>(() =>
+            pool.DestroyAsync("theirs", new PoolOwnerScope("sess-a", "default")));
+
+        Assert.IsNotNull(await pool.GetAsync("theirs"), "被拒的销毁不得删掉别人的条目");
+        Assert.AreEqual(1, pool.Count);
+    }
+
+    [TestMethod]
+    public async Task DestroyAsync_CrossWorkspace_Throws()
+    {
+        var pool = CreatePool();
+        await pool.CreateAsync("mine", CreateSpawnRequestForSession("sess-a"));
+
+        await AssertThrowsAsync<PoolOwnershipMismatchException>(() =>
+            pool.DestroyAsync("mine", new PoolOwnerScope("sess-a", "other-workspace")));
+    }
+
+    [TestMethod]
+    public async Task ScopedOperations_OnOwnEntry_Succeed()
+    {
+        var pool = CreatePool();
+        await pool.CreateAsync("mine", CreateSpawnRequestForSession("sess-a"));
+        var scope = new PoolOwnerScope("sess-a", "default");
+
+        Assert.IsTrue(await pool.SleepAsync("mine", scope));
+        Assert.AreEqual(PooledSubAgentStatus.Sleeping, (await pool.GetAsync("mine"))!.Status);
+
+        Assert.IsTrue(await pool.DestroyAsync("mine", scope));
+        Assert.AreEqual(0, pool.Count);
+    }
 }
 
 public sealed class TestSubAgentManager : ISubAgentManager

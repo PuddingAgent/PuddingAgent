@@ -178,7 +178,9 @@ public sealed class AgentPoolEntryStore(
         string? statusReason,
         bool clearExecution,
         DateTimeOffset now,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? expectedOwnerSessionId = null,
+        string? expectedOwnerWorkspaceId = null)
     {
         await using var db = await factory.CreateDbContextAsync(ct);
         var stamp = FormatTime(now);
@@ -199,7 +201,13 @@ public sealed class AgentPoolEntryStore(
                    "version" = "version" + 1
              WHERE "pool_id" = {poolId}
                AND "status" = {expectedStatus}
-               AND "deleted_at" IS NULL;
+               AND "deleted_at" IS NULL
+               -- 归属闸门：参数为 NULL 表示「不限该维度」（管理面），非 NULL 则要求相等。
+               -- 写成 IS NULL OR 而不是拼 SQL：两种语义共用一条参数化语句，不留拼接分支。
+               -- 早期行 owner 为 NULL 时不会匹配任何具体会话——「不知道属于谁」
+               -- 不能当成「属于所有人」，否则边界会从这里被绕开。
+               AND ({expectedOwnerSessionId} IS NULL OR "owner_session_id" = {expectedOwnerSessionId})
+               AND ({expectedOwnerWorkspaceId} IS NULL OR "owner_workspace_id" = {expectedOwnerWorkspaceId});
             """, ct);
 
         return affected;

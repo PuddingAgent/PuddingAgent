@@ -141,6 +141,47 @@ public sealed class AgentPoolEntryStoreTests
     }
 
     [TestMethod]
+    public async Task TrySetStatus_OwnerMismatch_ReturnsZeroAndLeavesRowUntouched()
+    {
+        await using var scope = await TestScope.CreateAsync();
+        await InsertAsync(scope, Entry("pool-1"));
+
+        // 负向：声称另一个会话。必须命中 0 行，且状态不能动。
+        var wrong = await scope.Store.TrySetStatusAsync(
+            "pool-1", AgentPoolEntity.StatusIdle, AgentPoolEntity.StatusSleeping,
+            statusReason: null, clearExecution: false, now: BaseTime.AddMinutes(1), ct: default,
+            expectedOwnerSessionId: "session-zzz", expectedOwnerWorkspaceId: "default");
+
+        // 正向对照：同一行、同一状态、只改归属。没有它，一个「永远返回 0」的实现也会让负向绿。
+        var right = await scope.Store.TrySetStatusAsync(
+            "pool-1", AgentPoolEntity.StatusIdle, AgentPoolEntity.StatusSleeping,
+            statusReason: null, clearExecution: false, now: BaseTime.AddMinutes(2), ct: default,
+            expectedOwnerSessionId: "session-a", expectedOwnerWorkspaceId: "default");
+
+        Console.WriteLine($"[evidence] owner-mismatch={wrong} owner-match={right}");
+
+        Assert.AreEqual(0, wrong, "归属不符必须命中 0 行（归属闸门写在 WHERE 里）");
+        Assert.AreEqual(1, right, "归属相符必须成功：否则归零是「实现从不生效」而不是「闸门拦住」");
+
+        var snapshot = await scope.Store.GetByIdAsync("pool-1", default);
+        Assert.AreEqual(AgentPoolEntity.StatusSleeping, snapshot!.Status);
+    }
+
+    [TestMethod]
+    public async Task TrySetStatus_ExpectedOwnerNull_StillWorks_ForManagementPlane()
+    {
+        await using var scope = await TestScope.CreateAsync();
+        await InsertAsync(scope, Entry("pool-1"));
+
+        // 管理面不声明归属：两个参数为 null 时必须不加过滤（否则 admin 的休眠/销毁全会失效）。
+        var affected = await scope.Store.TrySetStatusAsync(
+            "pool-1", AgentPoolEntity.StatusIdle, AgentPoolEntity.StatusSleeping,
+            statusReason: null, clearExecution: false, now: BaseTime.AddMinutes(1), ct: default);
+
+        Assert.AreEqual(1, affected, "未声明归属时必须等同于不限归属");
+    }
+
+    [TestMethod]
     public async Task TryEvictOldestSleeping_TwiceConcurrently_DeletesAtMostOneRow()
     {
         await using var scope = await TestScope.CreateAsync();

@@ -316,7 +316,8 @@ public sealed class AgentPoolReadinessTests
             => throw new NotSupportedException("S4 不覆盖收尾写路径");
 
         public Task<int> TrySetStatusAsync(string poolId, string expectedStatus, string newStatus,
-            string? statusReason, bool clearExecution, DateTimeOffset now, CancellationToken ct)
+            string? statusReason, bool clearExecution, DateTimeOffset now, CancellationToken ct,
+            string? expectedOwnerSessionId = null, string? expectedOwnerWorkspaceId = null)
             => throw new NotSupportedException("S4 不覆盖状态迁移写路径");
 
         public Task<string?> TryEvictOldestSleepingAsync(DateTimeOffset now, CancellationToken ct)
@@ -342,6 +343,19 @@ public sealed class AgentPoolReadinessTests
         public IReadOnlyList<PooledSubAgent> List() => throw new PoolNotReadyException(
             "[SubAgentPool] Pool is not ready (readiness=Failed); refusing to report an empty pool.",
             PoolReadiness.Failed);
+
+        /// <summary>归属过滤不能绕开就绪门：否则先剥掉 scope 就能拿到空集合当「无成员」。</summary>
+        public IReadOnlyList<PooledSubAgent> ListOwnedBy(PoolOwnerScope scope) => List();
+
+        public Task<bool> SleepAsync(string name, PoolOwnerScope scope, CancellationToken ct = default)
+            => throw new PoolNotReadyException(
+                "[SubAgentPool] Pool is not ready (readiness=Failed); refusing to mutate entries.",
+                PoolReadiness.Failed);
+
+        public Task<bool> DestroyAsync(string name, PoolOwnerScope scope, CancellationToken ct = default)
+            => throw new PoolNotReadyException(
+                "[SubAgentPool] Pool is not ready (readiness=Failed); refusing to mutate entries.",
+                PoolReadiness.Failed);
 
         public Task<IReadOnlyList<PooledSubAgent>> GetSnapshotAsync(CancellationToken ct = default)
             => throw new PoolNotReadyException(
