@@ -310,6 +310,28 @@ public sealed class SubAgentPool : ISubAgentPool
     /// 「个别条目继续停在 busy」——后者仍有日志可查，且下次重启还会再试一次。
     /// </para>
     /// </summary>
+    /// <summary>
+    /// 启动期 stale-busy 复位是否值得再试一轮。
+    /// <para>
+    /// 判据是「还有几条没救回来」（<paramref name="pendingBusy"/> &gt; 已救回数），
+    /// 不是「这一轮救到了东西」：连续几轮返回 0 并不等于没希望——那只是
+    /// <c>run</c> 尚未被收成终态，下一轮可能就好了；而一旦救回条数追上起始 busy 数，
+    /// 剩下的即使仍 busy 也是「有活动 run 的」，再等也不会变。
+    /// </para>
+    /// <para>
+    /// 两种偏差的代价不对称：救少了会让条目卡到下次重启（本方法存在的理由），
+    /// 多等一轮只是 <c>Task.Delay</c>（且仅当确实存在 busy 条目时才发生）。
+    /// </para>
+    /// </summary>
+    internal static bool ShouldRetryStaleBusySweep(
+        int totalReset, int pendingBusy, int attempt, int maxAttempts)
+    {
+        if (attempt >= maxAttempts)
+            return false;
+
+        return totalReset < pendingBusy;
+    }
+
     private async Task TryRecoverStaleBusyAsync(
         IReadOnlyList<AgentPoolEntrySnapshot> loaded, CancellationToken ct)
     {
@@ -317,8 +339,10 @@ public sealed class SubAgentPool : ISubAgentPool
             return;
 
         // 只有「确实存在 busy 条目」时才值得重试：正常启动没有 busy，多睡这几轮是白等。
-        var hasBusy = loaded.Any(static row =>
+        // 计数而不是布尔：重试判据是「还有几条没救回来」，需要起始待救条数。
+        var pendingBusy = loaded.Count(static row =>
             string.Equals(row.Status, AgentPoolEntity.StatusBusy, StringComparison.Ordinal));
+        var hasBusy = pendingBusy > 0;
 
         // 重试的理由是顺序竞态，不是「上一次失败」：本方法在池就绪之前跑，而把上一进程遗留的
         // running 收成终态的是 SubAgentConversationProjectionWorker 的启动恢复——那是
@@ -329,6 +353,7 @@ public sealed class SubAgentPool : ISubAgentPool
         var retryDelays = new[] { 250, 500, 1000 };
         var maxAttempts = hasBusy ? retryDelays.Length + 1 : 1;
         var reset = 0;
+        var totalReset = 0;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             try
@@ -345,17 +370,28 @@ public sealed class SubAgentPool : ISubAgentPool
                 return;
             }
 
-            if (reset > 0 || attempt == maxAttempts)
+            // 判据是「还剩几条没救回来」，不是「这一轮是否救到了东西」：
+            // 两条残留 busy 时分批转终态，第一条救回后第二条仍未就绪；
+            // 而单条时连续两轮 0 行也只是 run 还没收完，不能就此收手。
+            // 旧写法 reset > 0 在第一种形态下少救一条；
+            // 只看「本轮 reset」又会在第二种形态下过早放弃——两者都不对。
+            totalReset += reset;
+            if (!ShouldRetryStaleBusySweep(totalReset, pendingBusy, attempt, maxAttempts))
                 break;
 
+            // 日志说「这一轮扫到几条」而不是「什么都没扫到」：本轮可能确实救回了条目，
+            // 但还有其它 busy 没轮到（它们的 run 尚未终态），所以仍需再试一轮。
             _logger.LogDebug(
-                "[SubAgentPool] Stale-busy sweep attempt {Attempt}/{Max} reset nothing; " +
+                "[SubAgentPool] Stale-busy sweep attempt {Attempt}/{Max} reset {Reset} this attempt; " +
                 "retrying after interrupted-run recovery has a chance to finish",
-                attempt, maxAttempts);
+                attempt, maxAttempts, reset);
             await Task.Delay(retryDelays[attempt - 1], ct);
         }
 
-        if (reset <= 0)
+        // 用累计值而不是本轮的 reset：最后一轮可能返回 0（前面已经救回过），
+        // 用本轮值会误判成「一条也没救」而跳过下面的内存同步，
+        // 留下「库里已 sleeping、内存仍 busy」——那正是本方法要消灭的那种状态。
+        if (totalReset <= 0)
         {
             if (hasBusy)
             {
@@ -380,7 +416,7 @@ public sealed class SubAgentPool : ISubAgentPool
             _logger.LogWarning(
                 ex,
                 "[SubAgentPool] Stale-busy reset applied ({Count}) but re-read failed; " +
-                "in-memory entries may still report Busy", reset);
+                "in-memory entries may still report Busy", totalReset);
             return;
         }
 
@@ -888,9 +924,14 @@ public sealed class SubAgentPool : ISubAgentPool
 
         // 构建复用会话的请求：保持相同的 SubSessionId 以复用会话历史
         // 通过 ReuseSubSessionId 传入 pool entry 的 SubSessionId 以复用会话
+        //
+        // 角色同理继承：池复用的意义是「同一个成员、同一套配置」，显式传的字段优先
+        // （允许单次覆盖），没传的字段继承成员保存的声明。否则「advisor 永远当审阅者」
+        // 这类约定会退化成每次派活都要重新指定一遍，而漏指定时执行器看到的是空值。
         var executeRequest = request with
         {
             ReuseSubSessionId = entry.SubSessionId,
+            RoleInPlan = string.IsNullOrWhiteSpace(request.RoleInPlan) ? entry.Role : request.RoleInPlan,
         };
 
         SubAgentExecuteResult result;

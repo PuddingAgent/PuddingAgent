@@ -263,6 +263,45 @@ public sealed class AgentPoolBusyRecoveryTests
     /// 单个用例的独立环境：临时目录里的真实 SQLite 文件库 + 真实 store。
     /// 刻意不用内存库：多连接（池写库 / 用例直读）在 private cache 的内存库上互相看不见表。
     /// </summary>
+    // ═══════════════════════════════════════════════════════
+    // 4. 重试判据：救回一条不等于救完（两条 busy、分批到终态）
+    // ═══════════════════════════════════════════════════════
+
+    [TestMethod]
+    public void SweepRetry_ContinuesWhileFewerEntriesRescuedThanPending()
+    {
+        // 两条 busy、第一条先解：已救 1 < 待救 2 ⇒ 必须继续。
+        // 旧实现（reset > 0 即 break）正在这里收手，第二条继续卡到下次重启。
+        Assert.IsTrue(SubAgentPool.ShouldRetryStaleBusySweep(
+            totalReset: 1, pendingBusy: 2, attempt: 1, maxAttempts: 4));
+        // 两块都救回：剩下的即使仍 busy 也是「有活动 run 的」，再等也不会变。
+        Assert.IsFalse(SubAgentPool.ShouldRetryStaleBusySweep(
+            totalReset: 2, pendingBusy: 2, attempt: 2, maxAttempts: 4));
+    }
+
+    [TestMethod]
+    public void SweepRetry_KeepsTryingOnConsecutiveZeroWhileEntriesStillPending()
+    {
+        // 连续两轮 0 行不代表没希望：那只是 run 还没收成终态。
+        // 按「本轮 reset」判断会在这里过早放弃——既有收敛用例
+        // Sweep_RetriesWhileBusyEntryExists_UntilInterruptedRunRecoveryConverges 抓到的正是这一点。
+        Assert.IsTrue(SubAgentPool.ShouldRetryStaleBusySweep(
+            totalReset: 0, pendingBusy: 1, attempt: 1, maxAttempts: 4));
+        Assert.IsTrue(SubAgentPool.ShouldRetryStaleBusySweep(
+            totalReset: 0, pendingBusy: 1, attempt: 3, maxAttempts: 4));
+    }
+
+    [TestMethod]
+    public void SweepRetry_StopsWhenAttemptsExhaustedEvenIfEntriesStillPending()
+    {
+        // 重试有上限：不能因为「还有没救回的」而无限等。
+        Assert.IsFalse(SubAgentPool.ShouldRetryStaleBusySweep(
+            totalReset: 1, pendingBusy: 2, attempt: 4, maxAttempts: 4));
+        // 没有 busy 时 maxAttempts=1：首轮就停。
+        Assert.IsFalse(SubAgentPool.ShouldRetryStaleBusySweep(
+            totalReset: 0, pendingBusy: 0, attempt: 1, maxAttempts: 1));
+    }
+
     private sealed class PoolDb : IAsyncDisposable
     {
         private PoolDb(string directory, DbContextOptions<PlatformDbContext> options)

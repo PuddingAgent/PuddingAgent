@@ -196,6 +196,33 @@ public sealed class SubAgentPoolTests
     }
 
     [TestMethod]
+    public async Task ExecuteAsync_InheritsStoredRoleWhenRequestOmitsIt()
+    {
+        var manager = new TestSubAgentManager();
+        var pool = CreatePool(manager);
+
+        // 建员时声明角色，派活时不传：执行器必须看到成员保存的那个角色。
+        await pool.CreateAsync("dev-agent", CreateSpawnRequest() with { RoleInPlan = "verifier" });
+        await pool.ExecuteAsync("dev-agent", CreateSpawnRequest("check") with { RoleInPlan = null });
+
+        Assert.AreEqual("verifier", manager.LastExecuteRequest?.RoleInPlan,
+            "未显式传角色时必须继承成员保存的声明，否则「这个成员永远是审阅者」这类约定形同不存在");
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_ExplicitRoleOverridesStoredOne()
+    {
+        var manager = new TestSubAgentManager();
+        var pool = CreatePool(manager);
+
+        await pool.CreateAsync("dev-agent", CreateSpawnRequest() with { RoleInPlan = "verifier" });
+        await pool.ExecuteAsync("dev-agent", CreateSpawnRequest("one-off") with { RoleInPlan = "implementer" });
+
+        Assert.AreEqual("implementer", manager.LastExecuteRequest?.RoleInPlan,
+            "单次派活显式传的角色必须覆盖成员声明（允许例外），而不是被成员配置吃掉");
+    }
+
+    [TestMethod]
     public async Task ExecuteAsync_StaleCompletion_AfterDestroyAndRecreate_DoesNotTouchNewEntry()
     {
         // D-P0-3 回归：同名条目在「置 Busy」与「收尾」之间被 destroy → create 换成新对象后，
