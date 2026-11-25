@@ -145,6 +145,30 @@ public sealed class SubAgentPool : ISubAgentPool
     private readonly SemaphoreSlim _stateLock = new(1, 1);
 
     /// <summary>
+    /// 「收尾写库失败」留下的重放意图，键是 <c>poolId:executionId</c>。
+    /// <para>
+    /// <b>为什么必须留下来：</b>执行器已经返回，唯一没做成的是把这一次的收尾写进库。
+    /// 此时库里的那一行仍是 <c>busy</c>、内存里令牌也还挂着——若不留这条意图，
+    /// 该成员会在这个进程里永远派不了活（内存见 Busy 直接拒、库的抢占谓词也只认 idle/sleeping），
+    /// 而重启复位也救不到它：它连一个 run 都不缺。
+    /// </para>
+    /// <para>
+    /// 键用 <c>(poolId, executionId)</c> 而不是名字：名字可被 destroy → create 换掉，
+    /// 令牌则唯一标识「是哪一单还没收完」。这也是重放幂等的前提
+    /// （<c>TryCompleteAsync</c> 自带 <c>status='busy' AND active_execution_id=@exec</c> 谓词）。
+    /// </para>
+    /// </summary>
+    private readonly ConcurrentDictionary<string, PendingFinish> _pendingFinishes =
+        new(StringComparer.Ordinal);
+
+    /// <summary>一次「已跑完、收尾还没写进库」的幂等重放记录。</summary>
+    private readonly record struct PendingFinish(
+        string PoolId,
+        string SubSessionId,
+        string ExecutionId,
+        bool Success);
+
+    /// <summary>
     /// 持久化存储。<c>null</c> 表示纯内存模式（既有行为，测试与未接存储的宿主都走这条路）。
     /// 非空时池必须先就绪才能读写：未就绪就去写，会与库里的既有条目撞唯一索引，
     /// 而那时候池本身还看不到那些条目。
@@ -677,13 +701,30 @@ public sealed class SubAgentPool : ISubAgentPool
             // 而且看起来像另一个无关模块的 bug。
             if (_entryStore is not null)
             {
-                var affected = await _entryStore.TryCompleteAsync(
-                    executedEntry.PoolId,
-                    executedEntry.SubSessionId,
-                    executionId,
-                    success,
-                    DateTimeOffset.UtcNow,
-                    ct);
+                int affected;
+                try
+                {
+                    affected = await _entryStore.TryCompleteAsync(
+                        executedEntry.PoolId,
+                        executedEntry.SubSessionId,
+                        executionId,
+                        success,
+                        DateTimeOffset.UtcNow,
+                        ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // 库抖动（锁超时、磁盘满、连接被回收）不是「收尾不成立」，而是「还没写成」。
+                    // 把意图留下等重放，内存<b>不</b>前进：清掉令牌等于宣告收尾成功，
+                    // 而库里那行仍是 busy，下次抢占会被它自己拒掉，且再没有线索能对上这次执行。
+                    QueuePendingFinish(executedEntry, executionId, success);
+                    _logger.LogWarning(
+                        ex,
+                        "[SubAgentPool] Finish write failed; queued for idempotent retry " +
+                        "name={Name} poolId={PoolId} sub={Sub} exec={Exec}",
+                        name, executedEntry.PoolId, executedEntry.SubSessionId, executionId);
+                    return;
+                }
 
                 if (affected == 0)
                 {
@@ -694,16 +735,112 @@ public sealed class SubAgentPool : ISubAgentPool
                 }
             }
 
-            current.Status = PooledSubAgentStatus.Sleeping;
-            current.TaskCount++;
-            current.LastSuccess = success;
-            current.LastUsedAt = DateTimeOffset.UtcNow;
-            current.ActiveExecutionId = null;
+            // 写成了：任何残留的重放意图都作废（可能正是它重放成功的）。
+            _pendingFinishes.TryRemove(PendingFinishKey(executedEntry.PoolId, executionId), out _);
+            ApplyCompletionLocked(current, success);
         }
         finally
         {
             _stateLock.Release();
         }
+    }
+
+    /// <summary>
+    /// 收尾写库成功之后才做的内存推进（库是事实源，缓存跟随）。
+    /// <para>
+    /// 抽成一处是因为它有两条入口：正常收尾，以及「写库失败后重放成功」。
+    /// 两处各写一遍时，重放那条迟早会漏掉某个计数，而那种分叉只会在下一次
+    /// LRU 选型或面板展示时才暴露。
+    /// </para>
+    /// </summary>
+    private static void ApplyCompletionLocked(PoolEntry current, bool success)
+    {
+        current.Status = PooledSubAgentStatus.Sleeping;
+        current.TaskCount++;
+        current.LastSuccess = success;
+        current.LastUsedAt = DateTimeOffset.UtcNow;
+        current.ActiveExecutionId = null;
+    }
+
+    private static string PendingFinishKey(string poolId, string executionId) =>
+        poolId + ":" + executionId;
+
+    private void QueuePendingFinish(PoolEntry entry, string executionId, bool success) =>
+        _pendingFinishes[PendingFinishKey(entry.PoolId, executionId)] =
+            new PendingFinish(entry.PoolId, entry.SubSessionId, executionId, success);
+
+    /// <summary>条目被销毁时把它名下的重放意图一并清掉（对象已不存在，重放无处落地）。</summary>
+    private void RemovePendingFinishesForPool(string poolId)
+    {
+        var prefix = poolId + ":";
+        foreach (var key in _pendingFinishes.Keys)
+        {
+            if (key.StartsWith(prefix, StringComparison.Ordinal))
+                _pendingFinishes.TryRemove(key, out _);
+        }
+    }
+
+    /// <summary>
+    /// 重放一次「写库失败的收尾」。<b>调用方必须已持有 <c>_stateLock</c></b>。
+    /// <para>
+    /// 幂等来自 <c>TryCompleteAsync</c> 的条件谓词（<c>status='busy'</c> 且令牌匹配），
+    /// 所以重放 <i>n</i> 次与 1 次等价；不需要在这里再判一次「是否已经收过尾」。
+    /// </para>
+    /// <para>
+    /// 三种结果分开报，绝不混成同一个 false：
+    /// 写成 → 内存推进、返回 true（条目已可再次抢占）；
+    /// 又失败 → 保留意图、返回 false（仍然忙，但下次还能再试）；
+    /// 0 行 → 库已判过这次收尾不成立（休眠 / 重启复位 / 被别的执行接手），丢掉意图、返回 false。
+    /// 最后一种刻意不在这里猜内存该是什么状态：猜错会把「谁在跑」变成第二个真相源。
+    /// </para>
+    /// </summary>
+    private async Task<bool> FlushPendingFinishLockedAsync(PoolEntry entry, CancellationToken ct)
+    {
+        var executionId = entry.ActiveExecutionId;
+        if (_entryStore is null || string.IsNullOrEmpty(executionId))
+            return false;
+
+        var key = PendingFinishKey(entry.PoolId, executionId);
+        if (!_pendingFinishes.TryGetValue(key, out var pending))
+            return false;
+
+        int affected;
+        try
+        {
+            affected = await _entryStore.TryCompleteAsync(
+                pending.PoolId,
+                pending.SubSessionId,
+                pending.ExecutionId,
+                pending.Success,
+                DateTimeOffset.UtcNow,
+                ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                ex,
+                "[SubAgentPool] Pending finish retry failed; keeping it queued " +
+                "name={Name} poolId={PoolId} exec={Exec}",
+                entry.Name, pending.PoolId, pending.ExecutionId);
+            return false;
+        }
+
+        _pendingFinishes.TryRemove(key, out _);
+
+        if (affected == 0)
+        {
+            _logger.LogWarning(
+                "[SubAgentPool] Pending finish no longer applicable name={Name} poolId={PoolId} exec={Exec}; " +
+                "memory stays busy until the store view is reconciled",
+                entry.Name, pending.PoolId, pending.ExecutionId);
+            return false;
+        }
+
+        ApplyCompletionLocked(entry, pending.Success);
+        _logger.LogInformation(
+            "[SubAgentPool] Pending finish replayed name={Name} poolId={PoolId} exec={Exec} success={Success}",
+            entry.Name, pending.PoolId, pending.ExecutionId, pending.Success);
+        return true;
     }
 
     /// <summary>
@@ -827,6 +964,16 @@ public sealed class SubAgentPool : ISubAgentPool
         {
             if (_pool.TryGetValue(name, out var existing))
             {
+                if (existing.Status == PooledSubAgentStatus.Busy)
+                {
+                    // 这条 busy 可能是「正在跑」，也可能是「跑完了但收尾没写进库」。
+                    // 两者在内存与库里长得一模一样，只有重放一次幂等收尾才能区分：
+                    // 能写成就说明那次执行早已结束。不先试这一次，一次库抖动就会让该成员
+                    // 在本进程内永久「忙」——内存见 Busy 直接拒、库的抢占谓词只认 idle/sleeping，
+                    // 而重启复位也救不到它（它不缺 run，只缺那一次写回）。
+                    await FlushPendingFinishLockedAsync(existing, ct);
+                }
+
                 if (existing.Status == PooledSubAgentStatus.Busy)
                 {
                     throw new InvalidOperationException(
@@ -1079,6 +1226,14 @@ public sealed class SubAgentPool : ISubAgentPool
 
             if (entry.Status == PooledSubAgentStatus.Busy)
             {
+                // 同 ExecuteAsync：先看这条 busy 是不是「收尾没写回库」留下的。是的话它其实
+                // 已经停了——对着一个不存在的执行发取消、再等满超时，只会让操作者以为它还在跑。
+                if (await FlushPendingFinishLockedAsync(entry, ct))
+                    return SleepProbe.Slept;
+            }
+
+            if (entry.Status == PooledSubAgentStatus.Busy)
+            {
                 return new SleepProbe(SleepStep.Busy, entry, entry.ActiveExecutionId);
             }
 
@@ -1298,6 +1453,10 @@ public sealed class SubAgentPool : ISubAgentPool
             }
 
             _pool.TryRemove(name, out _);
+
+            // 条目没了，排队中的收尾就没有对应对象了。留着它只会在同 poolId 意外再现时
+            // 被当成新条目的意图；poolId 是 Guid，理论上不会重用，但不值得为这个「理论上」留泄漏。
+            RemovePendingFinishesForPool(entry.PoolId);
 
             var wasBusy = entry.Status == PooledSubAgentStatus.Busy;
             entry.Status = PooledSubAgentStatus.Dead;

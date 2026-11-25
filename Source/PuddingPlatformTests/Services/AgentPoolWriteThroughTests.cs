@@ -252,6 +252,112 @@ public sealed class AgentPoolWriteThroughTests
         Console.WriteLine($"[evidence] poolId={persisted.PoolId}, slept={slept}, bogus={bogus}");
     }
 
+    // ═══════════════════════════════════════════════════════
+    // 7. 收尾写库失败：留下重放意图，下一次入口就地幂等重放
+    // ═══════════════════════════════════════════════════════
+
+    [TestMethod]
+    public async Task Execute_WhenFinishWriteFailsOnce_NextDispatchReplaysInsteadOfStayingBusy()
+    {
+        await using var db = await PoolDb.CreateAsync();
+        var manager = new TestSubAgentManager { DelayMs = 100 };
+        var store = new FailingCompleteStore(db.Store, failures: 1);
+        var pool = CreatePool(manager, store);
+
+        var created = await pool.CreateAsync("agent-a", CreateSpawnRequest());
+
+        // 第一次：执行本身成功，但收尾写库失败。派发不得因此变成失败。
+        var first = await pool.ExecuteAsync("agent-a", CreateSpawnRequest("first"));
+        Assert.IsTrue(first.Success, "执行成功 + 收尾写失败，不应把整次派发报成失败");
+
+        var stuck = await db.Store.GetBySubSessionAsync(created.SubSessionId, default);
+        Assert.IsNotNull(stuck);
+        Assert.AreEqual(AgentPoolEntity.StatusBusy, stuck.Status, "收尾没写成时库里必须仍是 busy");
+        Assert.AreEqual(0, stuck.TaskCount, "收尾没写成时不得累加 task_count");
+        Assert.IsNotNull(stuck.ActiveExecutionId, "收尾没写成时令牌必须还在，它是重放的定位键");
+
+        var busySnapshot = await pool.GetAsync("agent-a");
+        Assert.IsNotNull(busySnapshot);
+        Assert.AreEqual(PooledSubAgentStatus.Busy, busySnapshot.Status,
+            "内存也不得前进：库是事实源，抢在库前面改状态就是分叉");
+
+        // 第二次：同一条目再派活。必须先重放那次收尾（库已恢复），再照常执行。
+        var second = await pool.ExecuteAsync("agent-a", CreateSpawnRequest("second"));
+        Assert.IsTrue(second.Success);
+        Assert.AreEqual(2, manager.ExecuteCallCount, "重放之后必须真的跑了第二单");
+
+        var after = await db.Store.GetBySubSessionAsync(created.SubSessionId, default);
+        Assert.IsNotNull(after);
+        Assert.AreEqual(AgentPoolEntity.StatusSleeping, after.Status);
+        Assert.AreEqual(2, after.TaskCount, "两单都应计数：第一单只是写回迟到，不是没跑");
+        Assert.IsNull(after.ActiveExecutionId);
+
+        var snapshot = await pool.GetAsync("agent-a");
+        Assert.IsNotNull(snapshot);
+        Assert.AreEqual(PooledSubAgentStatus.Sleeping, snapshot.Status);
+        Assert.AreEqual(2, snapshot.TaskCount, "缓存必须跟随库");
+        Assert.AreEqual(2, store.CompletedWrites,
+            "两单各自真正落到库一次；重放不得跳过库直接改内存");
+    }
+
+    [TestMethod]
+    public async Task Execute_WhenFinishWriteKeepsFailing_StaysBusyAndRejectsUntilStoreRecovers()
+    {
+        await using var db = await PoolDb.CreateAsync();
+        var manager = new TestSubAgentManager { DelayMs = 50 };
+        var store = new FailingCompleteStore(db.Store, failures: 2);
+        var pool = CreatePool(manager, store);
+
+        var created = await pool.CreateAsync("agent-a", CreateSpawnRequest());
+        await pool.ExecuteAsync("agent-a", CreateSpawnRequest("first"));
+
+        // 第二次派发时重放再次失败：必须仍然拒绝，而不是「假装已收尾」放行——
+        // 放行会让两个执行并行驱动同一个子会话，而库里那一行还归前一单。
+        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => pool.ExecuteAsync("agent-a", CreateSpawnRequest("must not run")));
+        Console.WriteLine($"[evidence] still-busy reject: {ex.Message}");
+
+        Assert.AreEqual(1, manager.ExecuteCallCount, "重放失败时不得进入执行链");
+
+        var stillBusy = await db.Store.GetBySubSessionAsync(created.SubSessionId, default);
+        Assert.IsNotNull(stillBusy);
+        Assert.AreEqual(AgentPoolEntity.StatusBusy, stillBusy.Status);
+        Assert.AreEqual(0, stillBusy.TaskCount, "被拒绝的执行不得动库里的计数");
+
+        // 第三次：库恢复，重放成功，条目重新可用。
+        var third = await pool.ExecuteAsync("agent-a", CreateSpawnRequest("third"));
+        Assert.IsTrue(third.Success);
+        Assert.AreEqual(2, manager.ExecuteCallCount);
+
+        var after = await db.Store.GetBySubSessionAsync(created.SubSessionId, default);
+        Assert.IsNotNull(after);
+        Assert.AreEqual(AgentPoolEntity.StatusSleeping, after.Status);
+        Assert.AreEqual(2, after.TaskCount);
+    }
+
+    [TestMethod]
+    public async Task Sleep_WhenFinishWriteFailed_ReplaysInsteadOfWaitingForCancellationTimeout()
+    {
+        await using var db = await PoolDb.CreateAsync();
+        var manager = new TestSubAgentManager { DelayMs = 50 };
+        var store = new FailingCompleteStore(db.Store, failures: 1);
+        var pool = CreatePool(manager, store);
+
+        var created = await pool.CreateAsync("agent-a", CreateSpawnRequest());
+        await pool.ExecuteAsync("agent-a", CreateSpawnRequest("first"));
+
+        // 这条 busy 其实已经停了（唯一没做成的是写回）。对着一个不存在的执行发取消、
+        // 再等满超时，只会让操作者以为它还在跑。
+        var slept = await pool.SleepAsync("agent-a");
+        Assert.IsTrue(slept, "收尾没写成留下的 busy 已无执行在跑，休眠应就地重放成功");
+
+        var row = await db.Store.GetBySubSessionAsync(created.SubSessionId, default);
+        Assert.IsNotNull(row);
+        Assert.AreEqual(AgentPoolEntity.StatusSleeping, row.Status);
+        Assert.AreEqual(1, row.TaskCount, "重放仍必须把那一单计入");
+        Assert.IsNull(row.ActiveExecutionId);
+    }
+
     // ── 测试脚手架 ──────────────────────────────────────────
 
     private static SubAgentPool CreatePool(TestSubAgentManager manager, PoolDb db)
@@ -260,6 +366,13 @@ public sealed class AgentPoolWriteThroughTests
             new ConfigurationBuilder().Build(),
             NullLogger<SubAgentPool>.Instance,
             db.Store);
+
+    private static SubAgentPool CreatePool(TestSubAgentManager manager, IAgentPoolEntryStore store)
+        => new(
+            manager,
+            new ConfigurationBuilder().Build(),
+            NullLogger<SubAgentPool>.Instance,
+            store);
 
     private static SubAgentSpawnRequest CreateSpawnRequest(string task = "test task") => new()
     {
@@ -386,6 +499,88 @@ public sealed class AgentPoolWriteThroughTests
 
             return ValueTask.CompletedTask;
         }
+    }
+
+    /// <summary>
+    /// 只让前 <c>failures</c> 次收尾写库抛错，其余全部委托真实 store。
+    /// <para>
+    /// 这是唯一能造出「执行已返回、内存与库都还是 busy」的路径：不写库就没有别的入口能
+    /// 把一次真实收尾变成「没写回」，而直接改库只会得到一条没有对应执行的 busy（那是另一个缺陷）。
+    /// </para>
+    /// </summary>
+    private sealed class FailingCompleteStore(IAgentPoolEntryStore inner, int failures) : IAgentPoolEntryStore
+    {
+        private int _remainingFailures = failures;
+
+        /// <summary>真正落到库里的收尾次数——用来区分「重放了」与「直接跳过库改内存」。</summary>
+        public int CompletedWrites { get; private set; }
+
+        public async Task<int> TryCompleteAsync(
+            string poolId,
+            string subSessionId,
+            string executionId,
+            bool success,
+            DateTimeOffset now,
+            CancellationToken ct)
+        {
+            if (_remainingFailures > 0)
+            {
+                _remainingFailures--;
+                throw new InvalidOperationException("simulated finish write failure");
+            }
+
+            CompletedWrites++;
+            return await inner.TryCompleteAsync(poolId, subSessionId, executionId, success, now, ct);
+        }
+
+        public Task<int> TryInsertAsync(AgentPoolInsertRequest request, int capacity, CancellationToken ct)
+            => inner.TryInsertAsync(request, capacity, ct);
+
+        public Task<int> TryAcquireAsync(
+            string poolId,
+            string ownerSessionId,
+            string ownerWorkspaceId,
+            string executionId,
+            DateTimeOffset now,
+            CancellationToken ct)
+            => inner.TryAcquireAsync(poolId, ownerSessionId, ownerWorkspaceId, executionId, now, ct);
+
+        public Task<int> TryInsertAndAcquireAsync(
+            AgentPoolInsertRequest request,
+            int capacity,
+            string executionId,
+            DateTimeOffset now,
+            CancellationToken ct)
+            => inner.TryInsertAndAcquireAsync(request, capacity, executionId, now, ct);
+
+        public Task<int> TrySetStatusAsync(
+            string poolId,
+            string expectedStatus,
+            string newStatus,
+            string? statusReason,
+            bool clearExecution,
+            DateTimeOffset now,
+            CancellationToken ct,
+            string? expectedOwnerSessionId = null,
+            string? expectedOwnerWorkspaceId = null)
+            => inner.TrySetStatusAsync(
+                poolId, expectedStatus, newStatus, statusReason, clearExecution, now, ct,
+                expectedOwnerSessionId, expectedOwnerWorkspaceId);
+
+        public Task<string?> TryEvictOldestSleepingAsync(DateTimeOffset now, CancellationToken ct)
+            => inner.TryEvictOldestSleepingAsync(now, ct);
+
+        public Task<int> ResetStaleBusyAsync(DateTimeOffset now, CancellationToken ct)
+            => inner.ResetStaleBusyAsync(now, ct);
+
+        public Task<IReadOnlyList<AgentPoolEntrySnapshot>> LoadAllAsync(CancellationToken ct)
+            => inner.LoadAllAsync(ct);
+
+        public Task<AgentPoolEntrySnapshot?> GetByIdAsync(string poolId, CancellationToken ct)
+            => inner.GetByIdAsync(poolId, ct);
+
+        public Task<AgentPoolEntrySnapshot?> GetBySubSessionAsync(string subSessionId, CancellationToken ct)
+            => inner.GetBySubSessionAsync(subSessionId, ct);
     }
 
     private sealed class TestDbContextFactory(DbContextOptions<PlatformDbContext> options)
