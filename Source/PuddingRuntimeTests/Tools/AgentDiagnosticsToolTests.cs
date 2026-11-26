@@ -663,6 +663,8 @@ public sealed class AgentDiagnosticsToolTests
 
         StringAssert.Contains(text, "not about the tool", $"0 命中必须被限定为窗口结论：{text}");
         StringAssert.Contains(text, "activities_in_window", $"须给出准确读法的键：{text}");
+        Assert.IsFalse(text.Contains("total_activities_in_db"),
+            $"该键的值是窗口内条数、名字却宣称库内总数（实测两键恒等），已删除，不得为兼容加回：{text}");
         Assert.IsFalse(text.Contains("Tool 'send_message' not found"),
             $"旧文案读起来像「工具不存在」，会把人引向错误结论：{text}");
     }

@@ -195,7 +195,7 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                 total_calls = 0,
                 hint = "No RuntimeActivity records exist for any tool in the queried window. " +
                        "The activity store may have been cleared on restart, or nothing has been recorded since the last deployment.",
-                diagnostics = new { total_activities_in_db = 0, activities_in_window = 0, query_component = RuntimeActivityComponents.ToolRunner }
+                diagnostics = new { activities_in_window = 0, query_component = RuntimeActivityComponents.ToolRunner }
             });
 
         // 统计必须覆盖**全部匹配活动**，不得被 limit 截断：limit 只决定「每次向 sink 采样多少条」，
@@ -231,9 +231,9 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                        "Confirm registration separately (tools.jsonl / tool catalog) before concluding anything.",
                 diagnostics = new
                 {
-                    // 旧键名与值语义不符（它是窗口内条数，不是库内总数）；保留是为了不破坏可能的消费者，
-                    // 新增 activities_in_window 作为准确读法。
-                    total_activities_in_db = activities.Count,
+                    // 只上报一个键。旧键 total_activities_in_db 的值其实是窗口内条数，名字却宣称「库内总数」；
+                    // 两键并存时实测恒等，读的人会以为后者是前者的一部分。名不副实的键已删除 ——
+                    // 真要报库内总数，得先给 IRuntimeActivitySink 加计数能力，不要为「兼容」把它加回来。
                     activities_in_window = activities.Count,
                     query_component = RuntimeActivityComponents.ToolRunner,
                     available_tool_names = availableTools
