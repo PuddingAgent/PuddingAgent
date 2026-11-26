@@ -24,6 +24,9 @@ public sealed class FailureSuggestionTests
     private const string DirectoryMisusePrefix =
         "   💡 Suggestion: 'directory' must be a folder, not a file.";
 
+    private const string CommandNotFoundPrefix =
+        "   💡 Suggestion: exit code 9009 (cmd) / 127 (sh)";
+
     private static SkillResult Failed(string? error) => new()
     {
         Success = false,
@@ -70,6 +73,34 @@ public sealed class FailureSuggestionTests
         var suggestion = AgentExecutionService.BuildFailureSuggestion("exit code 1");
 
         Assert.AreEqual(GenericSuggestion, suggestion, "无法归因的失败必须保持原通用建议，逐字不变");
+    }
+
+    /// <summary>
+    /// 9009（cmd）/ 127（sh）是 shell 自己定义的「找不到命令」，可以安全归因；
+    /// 实测本机 <c>python</c> 是 Store 别名桩，就返回 9009。
+    /// </summary>
+    [DataTestMethod]
+    [DataRow("exit code 9009")]
+    [DataRow("exit code 127")]
+    [DataRow("  EXIT CODE 127  ")]
+    public void CommandNotFoundError_PointsToPathAndShell(string error)
+    {
+        var suggestion = AgentExecutionService.BuildFailureSuggestion(error);
+
+        StringAssert.StartsWith(suggestion, CommandNotFoundPrefix);
+        StringAssert.Contains(suggestion, "PATH");
+    }
+
+    /// <summary>
+    /// 反例：<c>exit code 1271</c> 是真实命令退出码，不能被前缀猜成「找不到命令」——
+    /// 否则会把用户引到 PATH 上去查一个根本不存在的环境问题。
+    /// </summary>
+    [DataTestMethod]
+    [DataRow("exit code 1271")]
+    [DataRow("exit code 90091")]
+    public void CommandNotFoundLookalike_StaysOnGenericSuggestion(string error)
+    {
+        Assert.AreEqual(GenericSuggestion, AgentExecutionService.BuildFailureSuggestion(error));
     }
 
     [TestMethod]

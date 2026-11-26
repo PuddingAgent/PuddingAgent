@@ -2159,6 +2159,13 @@ public sealed partial class AgentExecutionService
             "   💡 Suggestion: 'directory' must be a folder, not a file. Pass the containing folder, " +
             "or use 'pattern' to match content inside it.";
 
+        // 9009（cmd）与 127（sh/bash）是 shell 自己定义的「找不到命令」，不是被调命令的退出码，
+        // 因此可以安全归因；而 exit code 1 / 2 之类的语义属于命令本身，仍走通用建议。
+        const string CommandNotFoundSuggestion =
+            "   💡 Suggestion: exit code 9009 (cmd) / 127 (sh) means the shell could not find the " +
+            "command itself. Check the command name and PATH, and pick the shell= that matches the " +
+            "syntax you wrote (cmd vs pwsh vs wsl).";
+
         const string FallbackSuggestion =
             "   💡 Suggestion: Check the tool's parameter constraints. " +
             "If the tool has access restrictions, try an alternative approach.";
@@ -2166,7 +2173,19 @@ public sealed partial class AgentExecutionService
         if (string.IsNullOrWhiteSpace(error)) return FallbackSuggestion;
         if (error.Contains("timed out", StringComparison.OrdinalIgnoreCase)) return TimedOutSuggestion;
         if (error.Contains("is a file, not a directory", StringComparison.OrdinalIgnoreCase)) return DirectoryMisuseSuggestion;
+        if (IsCommandNotFound(error)) return CommandNotFoundSuggestion;
         return FallbackSuggestion;
+    }
+
+    /// <summary>
+    /// 整串相等比较，不用 <c>Contains</c>：<c>1271</c> 这类真实命令退出码不能被误判成
+    /// 「找不到命令」，否则建议会把用户引到 PATH 上去查一个根本不存在的环境问题。
+    /// </summary>
+    private static bool IsCommandNotFound(string error)
+    {
+        var trimmed = error.Trim();
+        return trimmed.Equals("exit code 9009", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("exit code 127", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>计算字符串的 SHA256 哈希（小写十六进制），用于审计日志中脱敏参数。</summary>
