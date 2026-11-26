@@ -23,7 +23,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.LogId,
         name: "Git Log",
-        description: "显示提交历史/日志（git log），含作者、日期和消息。何时用：了解最近的提交、定位某次变更的 SHA、按分支或文件过滤历史。怎么用/坑：MaxCount 默认 20、上限 100；Branch 缺省为当前分支；FilePath 可限定到单个文件；只读操作、并发安全。",
+        description: "显示提交历史/日志（git log），含作者、日期和消息。何时用：了解最近的提交、定位某次变更的 SHA、按分支或文件过滤历史。怎么用/坑：MaxCount 默认 20、上限 100；数量被夹取或历史没取完时回执带 truncated 与 notice；Branch 缺省为当前分支，**指定的分支不存在会直接失败**（不静默回落）；FilePath 支持相对仓库根的路径或绝对路径；只读操作、并发安全。",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -38,7 +38,13 @@ namespace PuddingRuntime.Services.Tools
                 ?? HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory);
 
             using var repo = new Repository(repoPath);
-            var count = Math.Clamp(args.MaxCount, 1, 100);
+
+            // 2026-11-26：修三处「回执说的和实际做的不是一回事」（同一段代码里并存，一并处理）。
+            // ① FilePath 声明了参数、写进了工具描述，却从未被读取 ⇒ 传了过滤条件仍拿到整支分支历史；
+            // ② 分支名不存在时 Branches[...] 返回 null，旧代码静默回落到当前分支，回执里 branch 还写着 HEAD；
+            // ③ 数量被截断时没有任何信号 ⇒ 无法区分「到上限了」与「历史就这么长」，与 list_dir 的 MaxEntriesNotice 同类。
+            var requestedCount = args.MaxCount;
+            var count = Math.Clamp(requestedCount, 1, 100);
 
             var filter = new CommitFilter
             {
@@ -48,11 +54,26 @@ namespace PuddingRuntime.Services.Tools
             if (!string.IsNullOrWhiteSpace(args.Branch))
             {
                 var branch = repo.Branches[args.Branch];
-                if (branch != null)
-                    filter.IncludeReachableFrom = branch.Tip;
+                if (branch is null)
+                {
+                    return Task.FromResult(ToolExecutionResult.Fail(
+                        $"Branch '{args.Branch}' not found. Use git_branch_list to see the branches that exist."));
+                }
+
+                filter.IncludeReachableFrom = branch.Tip;
             }
 
-            var commits = repo.Commits.QueryBy(filter).Take(count);
+            var filePath = NormalizeFilterPath(repo, args.FilePath);
+
+            // 多取一条判定截断：比「是否还有下一条」走完整条历史便宜得多。
+            // LogEntry 不是 Commit 的子类（它持有一个 Commit），所以要显式投影，
+            // 两个 QueryBy 重载才能在同一个变量里汇合。
+            var query = filePath is null
+                ? repo.Commits.QueryBy(filter).AsEnumerable()
+                : repo.Commits.QueryBy(filePath, filter).Select(e => e.Commit);
+            var probe = query.Take(count + 1).ToList();
+            var truncated = probe.Count > count;
+            var commits = truncated ? probe.Take(count).ToList() : probe;
 
             var entries = commits.Select(c => new
             {
@@ -67,9 +88,58 @@ namespace PuddingRuntime.Services.Tools
             {
                 path = repoPath,
                 branch = repo.Head.FriendlyName,
+                file_path = filePath,
                 count = entries.Count,
+                truncated,
+                notice = BuildNotice(requestedCount, count, truncated),
                 commits = entries
             })));
+        }
+
+        /// <summary>
+        /// 把调用方给的文件过滤路径规整成 git 认的仓库相对形式（正斜杠）。
+        /// 绝对路径按仓库工作目录换算；换算后仍在仓库外则原样返回——LibGit2Sharp 会得到一个
+        /// 匹配不到任何提交的 pathspec，回执里 count=0 与 file_path 原值足以让调用方看出没匹配上。
+        /// </summary>
+        private static string? NormalizeFilterPath(Repository repo, string? filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+                return null;
+
+            var candidate = filePath.Trim();
+            if (Path.IsPathRooted(candidate))
+            {
+                var root = repo.Info.WorkingDirectory;
+                if (!string.IsNullOrEmpty(root))
+                {
+                    var relative = Path.GetRelativePath(root, candidate);
+                    if (!relative.StartsWith("..", StringComparison.Ordinal))
+                        candidate = relative;
+                }
+            }
+
+            return candidate.Replace('\\', '/');
+        }
+
+        /// <summary>
+        /// 只在「调用方要的和拿到的不是一回事」时才产出说明；正常查询返回 null，避免给每次调用加噪声。
+        /// </summary>
+        private static string? BuildNotice(int requested, int applied, bool truncated)
+        {
+            var parts = new List<string>();
+            if (requested != applied)
+            {
+                parts.Add(
+                    $"max_count={requested} was clamped to the supported range 1..100 (applied {applied})");
+            }
+
+            if (truncated)
+            {
+                parts.Add(
+                    $"showing the {applied} newest commit(s); older history was not returned — raise max_count or narrow the query with branch/file_path");
+            }
+
+            return parts.Count == 0 ? null : string.Join("; ", parts);
         }
     }
 }
