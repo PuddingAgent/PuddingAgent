@@ -4,6 +4,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingRuntime.Services;
@@ -189,6 +190,43 @@ public sealed class ToolCallPresentationEmissionTests
             : null;
     }
 
+    /// <summary>
+    /// 流式路径必须写 <c>tool_runner</c> 活动：<c>tool_stats</c> 只读这一路。
+    /// 2026-11-26 实测：<c>runtime_activity</c> 全表非子代理（非 <c>-sub-</c> session）的
+    /// <c>tool_runner</c> 行数为 0，而同一主会话同期写了 72181 条 <c>agent_execution</c> /
+    /// 47142 条 <c>llm_gateway</c> —— 工具诊断对主循环完全失明，于是把「窗口内没有」
+    /// 渲染成「工具不存在」。本用例住在该文件是因为这里是唯一以真实工具调用驱动
+    /// <see cref="AgentExecutionService.ExecuteStreamAsync"/> 的夹具。
+    /// </summary>
+    [TestMethod]
+    public async Task StreamingToolCall_RecordsToolRunnerActivity()
+    {
+        var activities = new RecordingActivitySink();
+        var tools = new StubToolInvocationService(TerminalResultJson);
+        var service = CreateService(
+            new ToolCallingLlmClient(
+                new LlmResponse(null, [new ToolCall("call-activity", "terminal_start", TerminalStartArgs)]),
+                new LlmResponse("finished", null)),
+            tools,
+            activitySink: activities);
+
+        await DrainAsync(service.ExecuteStreamAsync(CreateDispatchRequest("session-tool-activity")));
+
+        var recorded = activities.Activities
+            .Where(a => a.Component == RuntimeActivityComponents.ToolRunner
+                        && a.Operation == "execute_tool")
+            .ToList();
+        Assert.HasCount(1, recorded, "一次工具调用必须恰好落一条 tool_runner 活动。");
+        Assert.AreEqual(RuntimeActivityStatuses.Succeeded, recorded[0].Status);
+        Assert.AreEqual(
+            "terminal_start",
+            recorded[0].Metadata!.GetValueOrDefault("tool_name"),
+            "活动元数据必须携带 tool_name，否则 tool_stats 无法归组。");
+        Assert.AreEqual(
+            "session-tool-activity",
+            recorded[0].Metadata!.GetValueOrDefault("session_id"));
+    }
+
     // ── Fixture ────────────────────────────────────────────────────────────
     private static async Task<List<ServerSentEventFrame>> DrainAsync(
         IAsyncEnumerable<ServerSentEventFrame> frames)
@@ -204,7 +242,8 @@ public sealed class ToolCallPresentationEmissionTests
         IToolInvocationService tools,
         IToolPresentationProjector? projector = null,
         IEnumerable<IAgentLoopHook>? hooks = null,
-        IExecutionEnvironmentProvider? executionEnvironment = null)
+        IExecutionEnvironmentProvider? executionEnvironment = null,
+        IRuntimeActivitySink? activitySink = null)
     {
         var sessionManager = new AgentSessionManager(NullLogger<AgentSessionManager>.Instance);
         var runtimeSessionStore = new InMemoryRuntimeSessionStore();
@@ -259,7 +298,8 @@ public sealed class ToolCallPresentationEmissionTests
             NullLogger<AgentExecutionService>.Instance,
             sessionExecutionGate,
             toolInvocationService: tools,
-            toolPresentationProjector: projector);
+            toolPresentationProjector: projector,
+            activitySink: activitySink);
     }
 
     private static RuntimeDispatchRequest CreateDispatchRequest(string sessionId) => new()
@@ -389,5 +429,20 @@ public sealed class ToolCallPresentationEmissionTests
     private sealed class FakeHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new();
+    }
+
+    private sealed class RecordingActivitySink : IRuntimeActivitySink
+    {
+        public List<RuntimeActivity> Activities { get; } = [];
+
+        public Task RecordAsync(RuntimeActivity activity, CancellationToken ct = default)
+        {
+            Activities.Add(activity);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<RuntimeActivity>> QueryAsync(
+            RuntimeActivityQuery query, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<RuntimeActivity>>([]);
     }
 }

@@ -1723,6 +1723,60 @@ public sealed partial class AgentExecutionService
                     toolSw.Stop();
                     turnTimings.RegisterToolCall(toolSw.ElapsedMilliseconds);
 
+                    // 流式路径必须与 Buffered 路径产出同一份工具活动流：
+                    // tool_stats 读的是 runtime_activity 的 tool_runner，而本方法此前只写 telemetry 指标不写活动。
+                    // 2026-11-26 实测后果：主会话累计 72181 条 agent_execution / 47142 条 llm_gateway，
+                    // tool_runner 全表非子代理行为 0 条 —— 工具诊断对主循环完全失明，且会把「窗口内没有」
+                    // 渲染成「工具不存在」。
+                    var streamToolArgsHash = ComputeSha256Hash(toolArgsJson ?? "");
+                    if (result.Success)
+                    {
+                        await RecordActivityAsync(
+                            streamTrace,
+                            component: RuntimeActivityComponents.ToolRunner,
+                            operation: "execute_tool",
+                            status: RuntimeActivityStatuses.Succeeded,
+                            toolStartedAt,
+                            endedAt: DateTimeOffset.UtcNow,
+                            durationMs: toolSw.ElapsedMilliseconds,
+                            summary: $"Tool '{tc.Name}' executed successfully.",
+                            metadata: new Dictionary<string, string>
+                            {
+                                ["tool_name"] = tc.Name,
+                                ["tool_args_hash"] = streamToolArgsHash,
+                                ["tool_args_length"] = (toolArgsJson?.Length ?? 0).ToString(),
+                                ["tool_duration_ms"] = toolSw.ElapsedMilliseconds.ToString(),
+                                ["tool_output_length"] = (result.Output?.Length ?? 0).ToString(),
+                                ["session_id"] = request.SessionId,
+                            },
+                            error: null,
+                            ct: CancellationToken.None);
+                    }
+                    else
+                    {
+                        await RecordActivityAsync(
+                            streamTrace,
+                            component: RuntimeActivityComponents.ToolRunner,
+                            operation: "execute_tool",
+                            status: RuntimeActivityStatuses.Failed,
+                            toolStartedAt,
+                            endedAt: DateTimeOffset.UtcNow,
+                            durationMs: toolSw.ElapsedMilliseconds,
+                            summary: $"Tool '{tc.Name}' execution failed.",
+                            metadata: new Dictionary<string, string>
+                            {
+                                ["tool_name"] = tc.Name,
+                                ["tool_args_hash"] = streamToolArgsHash,
+                                ["tool_args_length"] = (toolArgsJson?.Length ?? 0).ToString(),
+                                ["tool_duration_ms"] = toolSw.ElapsedMilliseconds.ToString(),
+                                ["error_code"] = "tool_failed",
+                                ["error_message"] = Truncate(result.Error ?? "", 500),
+                                ["session_id"] = request.SessionId,
+                            },
+                            error: new Exception(result.Error),
+                            ct: CancellationToken.None);
+                    }
+
                     await RecordToolMetricAsync(
                         streamTrace,
                         tc.Name,
