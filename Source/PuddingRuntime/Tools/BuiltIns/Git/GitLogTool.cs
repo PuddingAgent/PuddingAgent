@@ -94,7 +94,7 @@ namespace PuddingRuntime.Services.Tools
             return Task.FromResult(ToolExecutionResult.Ok(JsonSerializer.Serialize(new
             {
                 path = repoPath,
-                branch = queriedBranch ?? repo.Head.FriendlyName,
+                branch = queriedBranch ?? GitHeadIdentity.Describe(repo),
                 file_path = filePath,
                 count = entries.Count,
                 truncated,

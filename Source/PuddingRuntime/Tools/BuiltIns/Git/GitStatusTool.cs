@@ -43,7 +43,7 @@ namespace PuddingRuntime.Services.Tools
             return Task.FromResult(ToolExecutionResult.Ok(JsonSerializer.Serialize(new
             {
                 path = repoPath,
-                branch = repo.Head.FriendlyName,
+                branch = GitHeadIdentity.Describe(repo),
                 has_changes = status.IsDirty,
                 entries
             })));

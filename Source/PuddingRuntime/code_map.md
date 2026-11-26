@@ -1,6 +1,6 @@
 # PuddingRuntime CodeMAP
 
-> 源指纹: Source/PuddingRuntime/**=445-a5509fb1868d · 条目数: 398 · 最近整理: 2026-11-22
+> 源指纹: Source/PuddingRuntime/**=446-fd8acec53345 · 条目数: 398 · 最近整理: 2026-11-22
 > 定位：Agent 运行时核心（Agent Loop / LLM 调用 / 工具系统 / 上下文管线 / 子代理 / 后台学习）；.NET 10 类库，唯一服务注册入口 `DependencyInjection.cs`。
 > 本文件只做本项目文件级索引；跨项目调用链、测试工程索引、架构文档索引、运行时目录与构建入口只在根 [`code_map.md`](../../code_map.md)。
 > 每对象一行；空字段写 `—`。角色 `observe` 的对象只在文末附录列路径。
@@ -379,14 +379,14 @@
 | `Tools/BuiltIns/Git/GitDiffTool.cs` | `git_diff`：差异输出 | `GitDiffTool` | `Tools/BuiltIns/Git/GitStatusTool.cs` | — |
 | `Tools/BuiltIns/Git/GitFetchTool.cs` | `git_fetch`：抓取远端更新 | `GitFetchTool` | `Tools/BuiltIns/Git/GitPullTool.cs` | — |
 | `Tools/BuiltIns/Git/GitInitTool.cs` | `git_init`：初始化仓库 | `GitInitTool` | `Tools/BuiltIns/Git/GitCloneTool.cs` | — |
-| `Tools/BuiltIns/Git/GitLogTool.cs` | `git_log`：提交历史查询 | `GitLogTool` | `Tools/BuiltIns/Git/GitBlameTool.cs` | `file_path` 必走 `NormalizeFilterPath`；`branch` 不存在即失败、不回落；回执 `branch` 报实际查询分支（非 HEAD）；截断/夹取报 `truncated`+`notice` |
+| `Tools/BuiltIns/Git/GitLogTool.cs` | `git_log`：提交历史查询 | `GitLogTool` | `Tools/BuiltIns/Git/GitBlameTool.cs` | `file_path` 必走 `NormalizeFilterPath`；`branch` 不存在即失败、不回落；回执 `branch` 报实际查询分支（非 HEAD）；截断/夹取报 `truncated`+`notice`；游离 HEAD 报 `detached at <sha>` |
 | `Tools/BuiltIns/Git/GitMergeTool.cs` | `git_merge`：合并分支 | `GitMergeTool` | `Tools/BuiltIns/Git/GitPullTool.cs` | — |
-| `Tools/BuiltIns/Git/GitPullTool.cs` | `git_pull`：拉取并合并 | `GitPullTool` | `Tools/BuiltIns/Git/GitFetchTool.cs` | — |
-| `Tools/BuiltIns/Git/GitPushTool.cs` | `git_push`：推送本地提交 | `GitPushTool` | `Tools/BuiltIns/Git/GitRemoteTool.cs` | — |
+| `Tools/BuiltIns/Git/GitPullTool.cs` | `git_pull`：拉取并合并 | `GitPullTool` | `Tools/BuiltIns/Git/GitFetchTool.cs` | 游离 HEAD 未指定 branch 时失败关闭 |
+| `Tools/BuiltIns/Git/GitPushTool.cs` | `git_push`：推送本地提交 | `GitPushTool` | `Tools/BuiltIns/Git/GitRemoteTool.cs` | 游离 HEAD 未指定 branch 时失败关闭 |
 | `Tools/BuiltIns/Git/GitRemoteTool.cs` | `git_remote`：远端配置的查看与设置 | `GitRemoteTool` | `Tools/BuiltIns/Git/GitCloneTool.cs` | — |
 | `Tools/BuiltIns/Git/GitResetTool.cs` | `git_reset`：重置暂存区或提交 | `GitResetTool` | `Tools/BuiltIns/Git/GitCheckoutTool.cs` | — |
 | `Tools/BuiltIns/Git/GitStashTool.cs` | `git_stash`：工作区暂存与恢复 | `GitStashTool` | `Tools/BuiltIns/Git/GitStatusTool.cs` | — |
-| `Tools/BuiltIns/Git/GitStatusTool.cs` | `git_status`：工作区状态查询 | `GitStatusTool` | `Tools/BuiltIns/Git/GitDiffTool.cs` | 默认不枚举忽略文件；显式 include_ignored 可诊断忽略规则 |
+| `Tools/BuiltIns/Git/GitStatusTool.cs` | `git_status`：工作区状态查询 | `GitStatusTool` | `Tools/BuiltIns/Git/GitDiffTool.cs` | 默认不枚举忽略文件；显式 include_ignored 可诊断忽略规则；游离 HEAD 报 `detached at <sha>` |
 | `Tools/BuiltIns/Git/GitTagTool.cs` | `git_tag`：标签管理 | `GitTagTool` | `Tools/BuiltIns/Git/GitLogTool.cs` | — |
 | `Tools/BuiltIns/Http/FlurlWebClient.cs` | 基于 Flurl 的 HTTP 传输实现 | `IWebClient` | `Tools/BuiltIns/Http/HttpFetchContracts.cs` | — |
 | `Tools/BuiltIns/Http/HttpFetchContentFormatter.cs` | 抓取结果到可读文本的格式化 | `IHttpFetchContentFormatter` | `PuddingHtml`（叶子组件：正文抽取 + Markdown 转换） | — |

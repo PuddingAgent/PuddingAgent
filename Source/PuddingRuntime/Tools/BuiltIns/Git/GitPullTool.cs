@@ -43,7 +43,11 @@ namespace PuddingRuntime.Services.Tools
                     return Task.FromResult(ToolExecutionResult.Fail(
                         $"Remote '{args.Remote}' does not exist."));
 
-                var branchName = args.Branch ?? repo.Head.FriendlyName;
+                if (!GitHeadIdentity.TryResolveBranchName(repo, args.Branch, out var branchName, out var branchError))
+                {
+                    // 同 git_push：游离 HEAD 下没有本地分支可拉，不能拿 "(no branch)" 当分支名。
+                    return Task.FromResult(ToolExecutionResult.Fail(branchError!));
+                }
                 var refSpecs = new[]
                 {
                     $"refs/heads/{branchName}:refs/remotes/{args.Remote}/{branchName}"
