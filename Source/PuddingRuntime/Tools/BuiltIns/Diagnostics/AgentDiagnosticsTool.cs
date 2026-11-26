@@ -193,8 +193,9 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             {
                 tool_name = toolName,
                 total_calls = 0,
-                hint = "No RuntimeActivity records exist for any tool. The activity database may have been cleared on restart (in-memory storage) or no tool calls have been recorded yet since the last deployment.",
-                diagnostics = new { total_activities_in_db = 0, query_component = RuntimeActivityComponents.ToolRunner }
+                hint = "No RuntimeActivity records exist for any tool in the queried window. " +
+                       "The activity store may have been cleared on restart, or nothing has been recorded since the last deployment.",
+                diagnostics = new { total_activities_in_db = 0, activities_in_window = 0, query_component = RuntimeActivityComponents.ToolRunner }
             });
 
         // 统计必须覆盖**全部匹配活动**，不得被 limit 截断：limit 只决定「每次向 sink 采样多少条」，
@@ -221,10 +222,19 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             {
                 tool_name = toolName,
                 total_calls = 0,
-                hint = $"Tool '{toolName}' not found in {activities.Count} RuntimeActivity records.",
+                // 「窗口内没找到调用」不等于「工具不存在」：实测 send_message 全表 0 条，而它刚刚成功发出过消息，
+                // 说明该表并不覆盖所有工具。旧文案 "Tool 'X' not found" 会被读成「工具没注册」——
+                // 我自己就据此误判过一次。文案必须把结论限定在窗口内，并指名下一步去哪里确认。
+                hint = $"No invocation of '{toolName}' in the last {activities.Count} RuntimeActivity record(s). " +
+                       "Zero hits is a statement about this window, not about the tool: the scan covers the " +
+                       "tool_runner component only and not every tool is recorded here. " +
+                       "Confirm registration separately (tools.jsonl / tool catalog) before concluding anything.",
                 diagnostics = new
                 {
+                    // 旧键名与值语义不符（它是窗口内条数，不是库内总数）；保留是为了不破坏可能的消费者，
+                    // 新增 activities_in_window 作为准确读法。
                     total_activities_in_db = activities.Count,
+                    activities_in_window = activities.Count,
                     query_component = RuntimeActivityComponents.ToolRunner,
                     available_tool_names = availableTools
                 }

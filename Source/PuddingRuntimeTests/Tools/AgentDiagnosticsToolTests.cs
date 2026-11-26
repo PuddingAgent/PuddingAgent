@@ -642,6 +642,31 @@ public sealed class AgentDiagnosticsToolTests
         Assert.AreEqual("zeta failure", errors[1].GetProperty("message").GetString());
     }
 
+    [TestMethod]
+    public async Task ToolStats_UnknownTool_HintScopesConclusionToWindow()
+    {
+        // 实测反例（2026-11-26）：send_message 刚成功发出一条消息，全表却查不到它的活动记录 ——
+        // 该表并不覆盖所有工具。所以「0 命中」只能是窗口结论；旧文案 "Tool 'X' not found"
+        // 会被读成「工具没注册」，我自己就据此误判过一次。
+        var sink = new FakeActivitySink([Activity("file_patch", RuntimeActivityStatuses.Succeeded, 10)]);
+
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var tool = new AgentDiagnosticsTool(
+            activitySink: sink,
+            scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+        var result = await ExecuteAsync(tool, """{"action":"tool_stats","tool_name":"send_message"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        var text = result.Output;
+
+        StringAssert.Contains(text, "not about the tool", $"0 命中必须被限定为窗口结论：{text}");
+        StringAssert.Contains(text, "activities_in_window", $"须给出准确读法的键：{text}");
+        Assert.IsFalse(text.Contains("Tool 'send_message' not found"),
+            $"旧文案读起来像「工具不存在」，会把人引向错误结论：{text}");
+    }
+
     // ── tool_stats 总览/排名模式（2026-10-08）────────────────────────────────
 
     [TestMethod]
