@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
 using System.Text.Json;
@@ -25,6 +26,26 @@ public sealed class FileReadToolTests
     {
         if (Directory.Exists(_tempDir))
             Directory.Delete(_tempDir, recursive: true);
+    }
+    // 契约测试：参数说明必须与实现语义一致（2026-11-27）。
+    // 旧说明「Use with OffsetLines」暗示 limit_lines 必须与 offset_lines 成对，
+    // 而实现已允许单独传入 = 从首行起前 N 行；说明不跟上，模型就不会单独用它。
+    [TestMethod]
+    public void LimitLinesDescription_DocumentsStandaloneFirstLines()
+    {
+        var limit = typeof(FileReadArgs).GetProperty(nameof(FileReadArgs.LimitLines))!
+            .GetCustomAttribute<ToolParamAttribute>()!;
+        StringAssert.Contains(limit.Description, "first N lines");
+        StringAssert.Contains(limit.Description, "OffsetLines");
+    }
+
+    [TestMethod]
+    public void OffsetLinesDescription_DoesNotImplyMandatoryPairing()
+    {
+        var offset = typeof(FileReadArgs).GetProperty(nameof(FileReadArgs.OffsetLines))!
+            .GetCustomAttribute<ToolParamAttribute>()!;
+        Assert.IsFalse(offset.Description.Contains("Use with LimitLines"),
+            $"OffsetLines description still implies a mandatory pairing: {offset.Description}");
     }
 
     // Test 1: Small file unaffected — returns full content

@@ -704,10 +704,10 @@ public sealed record FileReadArgs
     [ToolParam("Read the last N lines.")]
     public int? TailLines { get; init; }
 
-    [ToolParam("0-based line offset to start reading from. Use with LimitLines.")]
+    [ToolParam("0-based line offset to start reading from. Without LimitLines the read continues to the end of the file.")]
     public int? OffsetLines { get; init; }
 
-        [ToolParam("Maximum lines to read. Use with OffsetLines for arbitrary window.")]
+    [ToolParam("Maximum lines to read. Alone it reads the first N lines; with OffsetLines it reads N lines from that offset.")]
     public int? LimitLines { get; init; }
 
     [ToolParam("Read as many lines as fit in one call (skips the default 400-line window). The 8 KiB inline byte budget still applies, so oversized results are truncated with a continuation offset.")]
