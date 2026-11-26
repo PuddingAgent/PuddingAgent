@@ -833,6 +833,61 @@ public sealed class FileReadToolTests
             "the large-file call site must reach the same verdict as the small-file one");
     }
 
+    // Test 31: 首行自身超 inline 字节预算时，即使请求的预算比首行还小，结论也必须与小预算无关 ——
+    // 实测 20001 字节首行、max_chars=3000 先说「Raise max_chars to at least the length of one line」，
+    // 而照做（max_chars=20000）才改口「no max_chars value can deliver it」，白费一次往返。2026-11-27.
+    [TestMethod]
+    public async Task MaxChars_BelowFirstLine_WithFirstLineOverBudget_SaysNoBudgetCanDeliver()
+    {
+        var content = new string('H', 20_000) + "\n" + string.Join("\n", Enumerable.Range(1, 5).Select(i => $"tail{i}"));
+        var filePath = Path.Combine(_tempDir, "maxchars_below_first_line_over_budget.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var fileInfo = new FileInfo(filePath);
+        Assert.IsTrue(
+            fileInfo.Length < FileChunkService.LargeFileByteThreshold,
+            $"small-file path expected, got {fileInfo.Length} bytes");
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["MaxChars"] = 3_000
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "no max_chars value can deliver it");
+        Assert.IsFalse(
+            result.Output.Contains("Raise max_chars"),
+            "the first line alone exceeds the byte budget, so no max_chars value can deliver it — raising the budget only changes the receipt, never the outcome");
+    }
+
+    // Test 32: 同一个判据的大文件路径调用点 —— 只修一处时另一处必须红。2026-11-27.
+    [TestMethod]
+    public async Task MaxChars_BelowFirstLine_OnLargeFilePath_SaysNoBudgetCanDeliver()
+    {
+        var lines = new[] { new string('J', 20_000) }.Concat(
+            Enumerable.Range(1, 1500).Select(i => $"ROW{i:D4}-0123456789012345678901234567890123456789012345678901"));
+        var filePath = Path.Combine(_tempDir, "maxchars_below_first_line_over_budget_large.txt");
+        await File.WriteAllTextAsync(filePath, string.Join("\n", lines), Encoding.UTF8);
+
+        var fileInfo = new FileInfo(filePath);
+        Assert.IsTrue(
+            fileInfo.Length > FileChunkService.LargeFileByteThreshold,
+            $"large-file path expected, got {fileInfo.Length} bytes");
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["MaxChars"] = 3_000
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "no max_chars value can deliver it");
+        Assert.IsFalse(
+            result.Output.Contains("Raise max_chars"),
+            "the large-file call site must reach the same verdict as the small-file one");
+    }
+
     // Test 29: a one-line file larger than the 8 KiB inline budget was cut to 7680 bytes with NO
     // notice at all — `emittedLines < lines.Length` was false because there is only one line, so
     // the truncation was real and completely silent. MaxChars is passed only to bypass the

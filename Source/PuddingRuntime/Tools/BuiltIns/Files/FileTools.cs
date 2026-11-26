@@ -271,6 +271,23 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
     }
 
     /// <summary>
+    /// 窗口首行是否本身就超出 inline 字节预算。
+    ///
+    /// 2026-11-27：<c>DescribeMaxCharsTruncation</c> 的「预算比首行短」分支要分开两种情形，
+    /// 而判据必须取**切片前**的窗口首行 —— <c>MaxChars</c> 截断会把首行切短，切片后再判会得出
+    /// 「首行没超预算」，于是同一份文件只因请求的预算不同就给出自相矛盾的两种建议：
+    /// 实测 20001 字节首行，<c>max_chars=3000</c> 得到「Raise max_chars to at least the length of
+    /// one line」，而照做（<c>max_chars=20000</c>）得到的是「no max_chars value can deliver it」。
+    /// 判据与 <see cref="TakeLinesWithinByteBudget"/> 完全一致（首行 UTF-8 字节数 &gt; 预算）。
+    /// </summary>
+    private static bool WindowFirstLineExceedsInlineBudget(string windowContent)
+    {
+        var newline = windowContent.IndexOf('\n');
+        var firstLine = newline < 0 ? windowContent : windowContent[..newline];
+        return Encoding.UTF8.GetByteCount(firstLine) > InlineBudgetBytes;
+    }
+
+    /// <summary>
     /// GUARDRAIL 尾串：续读位置只描述**已交付**内容。
     ///
     /// 2026-11-27：两处 GUARDRAIL 原先无条件写 <c>OffsetLines={taken}+LimitLines</c>，而
@@ -521,9 +538,12 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 string? maxCharsNotice = null;
                 if (args.MaxChars.HasValue && content.Length > args.MaxChars.Value)
                 {
+                    // 2026-11-27：判据取切片前的窗口首行（见 WindowFirstLineExceedsInlineBudget）。
+                    var firstLineOverBudget = WindowFirstLineExceedsInlineBudget(content);
                     content = content[..args.MaxChars.Value];
                     maxCharsNotice = DescribeMaxCharsTruncation(
-                        args.MaxChars.Value, windowStart, content, totalChars, totalLines);
+                        args.MaxChars.Value, windowStart, content, totalChars, totalLines,
+                        firstLineTruncated: firstLineOverBudget);
                 }
 
                 var boundedSmall = BoundInlineBody(content, windowStart);
@@ -596,9 +616,11 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 _logger.LogWarning(
                     "[FileReadTool] MaxChars truncated a large-file window path={Path} max_chars={Max}",
                     args.Path, args.MaxChars.Value);
+                var firstLineOverBudgetLarge = WindowFirstLineExceedsInlineBudget(windowContent);
                 windowContent = windowContent[..args.MaxChars.Value];
                 maxCharsNoticeLarge = DescribeMaxCharsTruncation(
-                    args.MaxChars.Value, windowStartLarge, windowContent, totalChars: null, totalLinesLarge);
+                    args.MaxChars.Value, windowStartLarge, windowContent, totalChars: null, totalLinesLarge,
+                    firstLineTruncated: firstLineOverBudgetLarge);
             }
 
             var boundedLarge = BoundInlineBody(windowContent, windowStartLarge);
