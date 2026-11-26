@@ -516,6 +516,81 @@ public sealed class FileReadToolTests
         StringAssert.Contains(result.Output, "beyond the end of the file");
     }
 
+    // Test 19b: 2026-11-27 — HeadLines/TailLines 存在时 OffsetLines 不参与窗口计算。
+    // 旧行为静默：offset=8 + tail=3 返回 L8..L10，调用方以为「从第 9 行起的末 3 行」。
+    [TestMethod]
+    public async Task OffsetLines_WithTailLines_ReportsIgnored()
+    {
+        var filePath = Path.Combine(_tempDir, "offset_with_tail.txt");
+        await File.WriteAllTextAsync(filePath, "L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8\nL9\nL10\n", Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["OffsetLines"] = 8,
+            ["TailLines"] = 3
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "[PAGING:");
+        StringAssert.Contains(result.Output, "OffsetLines=8 was ignored");
+        StringAssert.Contains(result.Output, "TailLines=3");
+    }
+
+    // Test 19c: LimitLines 同样被 HeadLines 静默推翻。
+    [TestMethod]
+    public async Task LimitLines_WithHeadLines_ReportsIgnored()
+    {
+        var filePath = Path.Combine(_tempDir, "limit_with_head.txt");
+        await File.WriteAllTextAsync(filePath, "L1\nL2\nL3\nL4\nL5\n", Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["HeadLines"] = 5,
+            ["LimitLines"] = 2
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "LimitLines=2 was ignored");
+        StringAssert.Contains(result.Output, "L5");
+    }
+
+    // Test 19d: HeadLines 优先于 TailLines。
+    [TestMethod]
+    public async Task TailLines_WithHeadLines_ReportsPrecedence()
+    {
+        var filePath = Path.Combine(_tempDir, "tail_with_head.txt");
+        await File.WriteAllTextAsync(filePath, "L1\nL2\nL3\nL4\nL5\n", Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["HeadLines"] = 2,
+            ["TailLines"] = 3
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "TailLines=3 was ignored because HeadLines takes precedence");
+    }
+
+    // Test 19e: 正向对照 —— 单独给 HeadLines 不该出现 [PAGING:。
+    // 没有这一条，一个恒发提示的实现也能让上面三条全绿。
+    [TestMethod]
+    public async Task HeadLines_Alone_HasNoPagingNotice()
+    {
+        var filePath = Path.Combine(_tempDir, "head_alone.txt");
+        await File.WriteAllTextAsync(filePath, "L1\nL2\nL3\n", Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["HeadLines"] = 2
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsFalse(result.Output.Contains("[PAGING:"), result.Output);
+    }
     // Test 20: a negative offset used to be clamped to 0 silently — the caller got the first line
     // and had no way to tell its argument was rewritten.
     [TestMethod]

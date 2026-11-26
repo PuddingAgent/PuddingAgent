@@ -385,8 +385,35 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
         int? tailLines,
         int totalLines)
     {
+        // 2026-11-27：HeadLines/TailLines 存在时，OffsetLines / LimitLines 不参与窗口计算。
+        // 旧实现这里直接 return null —— 连「你给的另一个参数被丢弃了」都不说。实测：
+        //   offset_lines=8 + tail_lines=3 → 返回 L8..L10（offset 被当成 0）
+        //   limit_lines=2 + head_lines=5 → 返回 5 行（limit 被当成无穷）
+        // 行为不变，只把「丢弃」说出来。
         if (headLines.HasValue || tailLines.HasValue)
-            return null;
+        {
+            var effective = headLines.HasValue
+                ? $"HeadLines={headLines.Value}"
+                : $"TailLines={tailLines.Value}";
+            var ignored = new List<string>();
+
+            if (headLines.HasValue && tailLines.HasValue)
+            {
+                ignored.Add($"TailLines={tailLines.Value} was ignored because HeadLines takes precedence.");
+            }
+
+            if (offsetLines.HasValue)
+            {
+                ignored.Add($"OffsetLines={offsetLines.Value} was ignored because the window is selected by {effective}.");
+            }
+
+            if (limitLines.HasValue)
+            {
+                ignored.Add($"LimitLines={limitLines.Value} was ignored because the window is selected by {effective}.");
+            }
+
+            return ignored.Count == 0 ? null : string.Join(" ", ignored);
+        }
 
         var notes = new List<string>();
         if (offsetLines.HasValue)
