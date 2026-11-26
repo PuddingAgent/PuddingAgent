@@ -26,10 +26,16 @@ public sealed class BrowserBridgeServiceCollectionExtensionsTests
             .Select(type => type!.Name)
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(
-            ["BrowserContextTool", "BrowserEvaluateTool", "BrowserInteractTool", "BrowserLocateTool", "BrowserNavigateTool",
-                "BrowserScreenshotTool", "BrowserSnapshotTool", "BrowserTabsTool", "BrowserWaitForTool"],
-            toolTypes);
+        // 扫描面是整个 PuddingHost 程序集，无关工具（面板等）也会被登记。这里先把实际集合收窄到
+        // Browser* 前缀，再双向相等——单向「期望 ⊆ 实际」挡不住漏写期望项（实测：从 expected
+        // 删掉一项仍全绿），而全局集合相又会被无关工具推翻。
+        string[] expected =
+        [
+            "BrowserContextTool", "BrowserEvaluateTool", "BrowserInteractTool", "BrowserLocateTool", "BrowserNavigateTool",
+            "BrowserScreenshotTool", "BrowserSnapshotTool", "BrowserTabsTool", "BrowserWaitForTool",
+        ];
+        var browserToolTypes = toolTypes.Where(name => name.StartsWith("Browser", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(expected.OrderBy(name => name, StringComparer.Ordinal), browserToolTypes);
     }
 
     [Fact]

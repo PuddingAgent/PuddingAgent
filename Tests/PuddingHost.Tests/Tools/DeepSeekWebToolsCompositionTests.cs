@@ -35,20 +35,28 @@ public sealed class DeepSeekWebToolsCompositionTests
             var builder = PuddingApplicationHost.CreateBuilder([], options);
             await using var app = PuddingApplicationHost.Build(builder);
 
-            // 1) 产品组合根里的 IPuddingTool 集合包含两个工具（assembly scan 自动发现，无需逐一手工登记）。
-            var toolInstances = app.Services.GetServices<IPuddingTool>().ToList();
-            var searchTool = Assert.Single(toolInstances.OfType<DeepSeekSearchTool>());
-            var fetchTool = Assert.Single(toolInstances.OfType<DeepSeekFetchTool>());
-
-            // 2) 注册表（Agent 可见工具清单）包含两个工具 id，且 registry 解析到同一扫描实例。
+            // 1) 两个工具在产品组合根下经 contextual host package 暴露（非 Kernel 工具不以 IPuddingTool
+            //    身份登记，见 HostToolContributions.RegisterBinding），所以断言从 registry 取且带 capability policy。
+            var capability = new CapabilityPolicy { AllowedToolNames = ["deepseek_search", "deepseek_fetch"] };
+            var context = new ToolExecutionContext
+            {
+                WorkspaceId = "test", SessionId = "test", AgentInstanceId = "test", CapabilityPolicy = capability,
+            };
             var registry = app.Services.GetRequiredService<IPuddingToolRegistry>();
-            var available = registry.ListAvailable(new CapabilityPolicy())
+            var available = registry.ListAvailable(capability, context)
                 .Select(descriptor => descriptor.ToolId)
                 .ToArray();
             Assert.Contains("deepseek_search", available);
             Assert.Contains("deepseek_fetch", available);
-            Assert.Same(searchTool, registry.GetTool("deepseek_search"));
-            Assert.Same(fetchTool, registry.GetTool("deepseek_fetch"));
+
+            // registry 的 contextual 路径返回 MountedTool 包装，只用于断言可见性；实例与描述符
+            // 从 DI 的具体类型登记取（binding 会补 type→type 单例）。
+            Assert.NotNull(registry.GetTool("deepseek_search", context));
+            Assert.NotNull(registry.GetTool("deepseek_fetch", context));
+            var searchTool = app.Services.GetRequiredService<DeepSeekSearchTool>();
+            var fetchTool = app.Services.GetRequiredService<DeepSeekFetchTool>();
+            Assert.Same(searchTool, app.Services.GetRequiredService<DeepSeekSearchTool>());
+            Assert.Same(fetchTool, app.Services.GetRequiredService<DeepSeekFetchTool>());
 
             // 3) 用户裁定：工具风险权限 = 低风险、无需授权（AutoAllowed）。
             var policy = new ToolPermissionPolicyService();

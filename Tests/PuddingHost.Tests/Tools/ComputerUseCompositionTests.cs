@@ -1,6 +1,7 @@
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingAgent.Tools;
+using PuddingCode.Platform;
 using PuddingCode.Tools;
 using PuddingComputer.Windows;
 using PuddingHost.Hosting;
@@ -23,11 +24,21 @@ public sealed class ComputerUseCompositionTests
             await using var app = PuddingApplicationHost.Build(PuddingApplicationHost.CreateBuilder([], options));
             var session = app.Services.GetRequiredService<ComputerDesktopSession>();
             var registry = app.Services.GetRequiredService<IPuddingToolRegistry>();
-            var all = app.Services.GetServices<IPuddingTool>().ToArray();
+            var policy = new CapabilityPolicy { AllowedToolNames = ["computer_input", "computer_observe"] };
+            var context = new ToolExecutionContext
+            {
+                WorkspaceId = "test", SessionId = "test", AgentInstanceId = "test", CapabilityPolicy = policy,
+            };
             foreach (var (id, type) in new[] { ("computer_input", typeof(ComputerInputTool)), ("computer_observe", typeof(ComputerObserveTool)) })
             {
-                var tool = Assert.Single(all, item => item.GetType() == type);
-                Assert.Same(tool, registry.GetTool(id));
+                // registry 的 contextual 路径返回 MountedTool 包装；可见性用它判，实例身份与
+                // 共享依赖从 DI 的具体类型登记取（RegisterBinding 会补 type→type 单例）。
+                var mounted = registry.GetTool(id, context);
+                Assert.NotNull(mounted);
+                Assert.Equal(id, mounted!.Descriptor.ToolId);
+                var tool = (IPuddingTool)app.Services.GetRequiredService(type);
+                Assert.IsType(type, tool);
+                Assert.Same(tool, app.Services.GetRequiredService(type));
                 var field = Assert.Single(type.GetFields(BindingFlags.Instance | BindingFlags.NonPublic), f => f.FieldType == typeof(ComputerDesktopSession));
                 Assert.Same(session, field.GetValue(tool));
                 if (id == "computer_input")

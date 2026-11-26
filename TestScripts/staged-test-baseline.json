@@ -67,7 +67,6 @@
     }
   },
   "knownFailures": [
-    "PuddingHost.Tests.BrowserBridge.BrowserBridgeServiceCollectionExtensionsTests.DesktopChild_RegistersRemoteRuntimeAndAllBrowserTools",
     "PuddingHost.Tests.BrowserBridge.ConfiguredAgentBrowserSnapshotPolicyExecutionTests.ConfiguredAgent_BrowserSnapshotTool_TraversesPolicyExecutionAndAuthenticatedBridge",
     "PuddingHost.Tests.BrowserBridge.BrowserAgentToolBridgeIntegrationTests.BrowserContextTool_TraversesAuthenticatedBridgeAndReturnsDesktopResult",
     "PuddingHost.Tests.BrowserBridge.BrowserAgentToolBridgeIntegrationTests.BrowserSnapshotTool_TraversesAuthenticatedBridgeAndReturnsVersionedRefs",

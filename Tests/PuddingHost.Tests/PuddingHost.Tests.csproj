@@ -35,6 +35,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      声明式 host package 清单必须与产品输出同构：HostToolContributions 从
+      AppContext.BaseDirectory/tools/host-packages 读 exports，非 Kernel 工具只能经它暴露。
+      这条规则与 Source/PuddingHost/Build/PuddingHostContent.props 的 host-packages 行
+      保持同一目标路径；该 props 整体不导入测试工程——它还带 worker 项目引用与前端资产复制。
+    -->
+    <Content Include="..\..\Source\PuddingHost\ToolPackages\*.json"
+             Link="tools/host-packages/%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 

@@ -1,5 +1,5 @@
 # Tests/PuddingHost.Tests
-> 源指纹: *.cs=7-543ca2411f6c, *.csproj=1-af0da96cd41a · 条目数: 0 · 最近整理: 2026-11-23
+> 源指纹: *.cs=7-543ca2411f6c, *.csproj=1-4f2e900c455d · 条目数: 0 · 最近整理: 2026-11-23
 
 测试工程，引用 PuddingHost、Pudding.Contracts；用例全部为进程内单测，不需要真实宿主或外部服务。
 
