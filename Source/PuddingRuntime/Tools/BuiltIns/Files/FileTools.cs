@@ -342,7 +342,10 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 if (endsWithNewline && lines.Length > 0)
                     lines = lines[..^1];
 
-                var meta = $"[META: size={totalChars} chars, lines={totalLines}, encoding=utf-8]";
+                // 2026-11-26：META 的 size 同时给字符数与字节数。只给 chars 时，与大文件路径
+                // （旧实现把 fileInfo.Length 冒充 chars，见下方 large 分支）对比会得出
+                // 「chars == bytes」的错误结论。
+                var meta = $"[META: size={totalChars} chars / {fileInfo.Length} bytes, lines={totalLines}, encoding=utf-8]";
 
                 // Guardrail: auto-truncate large files when no explicit pagination or FullFile
                 var hasExplicitSlice = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue;
@@ -396,8 +399,12 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
 
             // Large file path: use FileChunkService for streaming reads
             var totalLinesLarge = await _chunk.CountLinesAsync(fullPath, ct);
-            var totalCharsLarge = (int)Math.Min(fileInfo.Length, int.MaxValue);
-            var metaLarge = $"[META: size={totalCharsLarge} chars, lines={totalLinesLarge}, encoding=utf-8]";
+            // 2026-11-26 修正：这里原先把 fileInfo.Length（字节数）写进了 `chars` 字段——
+            // 于是同一字段在小文件路径是字符数、在大文件路径是字节数（阈值 100_000 字节），
+            // 而调用方把 META 与文件长度对比时会「验证通过」并继续按 chars 理解。
+            // 大文件不为报字符数再全量读一遍，所以只报字节，不冒充 chars。
+            var totalBytesLarge = fileInfo.Length;
+            var metaLarge = $"[META: size={totalBytesLarge} bytes, lines={totalLinesLarge}, encoding=utf-8]";
 
             // Guardrail: auto-truncate large files when no explicit pagination or FullFile
             // 2026-08-22 模型倾向适配：模型心智是"整文件"，120 行窗口导致实测同文件
@@ -409,7 +416,7 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 // 同上：字节预算与行数取更严格者，否则会被二次 spill。
                 var preview = TakeLinesWithinByteBudget(rawPreview.Split('\n'), GuardrailPreviewLines, out var takenLarge);
                 return ToolExecutionResult.Ok(
-                    $"{metaLarge}\n{preview}\n... [GUARDRAIL: {totalLinesLarge} lines, {totalCharsLarge} chars — showing first {takenLarge} lines ({Encoding.UTF8.GetByteCount(preview)} bytes, inline budget {InlineBudgetBytes}). Use OffsetLines={takenLarge}+LimitLines to continue from line {takenLarge + 1}, or TailLines for the end.]");
+                    $"{metaLarge}\n{preview}\n... [GUARDRAIL: {totalLinesLarge} lines, {totalBytesLarge} bytes — showing first {takenLarge} lines ({Encoding.UTF8.GetByteCount(preview)} bytes, inline budget {InlineBudgetBytes}). Use OffsetLines={takenLarge}+LimitLines to continue from line {takenLarge + 1}, or TailLines for the end.]");
             }
 
             // MaxChars requires full read for accurate char count — warn and truncate

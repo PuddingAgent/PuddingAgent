@@ -253,6 +253,56 @@ public sealed class FileReadToolTests
         Assert.IsFalse(result.Output.Contains("alpha"));
     }
 
+    // 2026-11-26 缺陷：大文件路径曾把 fileInfo.Length（字节）写进 `chars` 字段，
+    // 同一字段在小/大文件下分别是字符数与字节数。下面两条用例分别钉住两个路径。
+    [TestMethod]
+    public async Task Meta_OnLargeFile_ReportsBytesNotChars()
+    {
+        var line = new string('中', 20) + "\n";
+        var content = string.Concat(Enumerable.Repeat(line, 2000)); // 42000 chars, 122000 bytes
+        var filePath = Path.Combine(_tempDir, "meta_large.txt");
+        await File.WriteAllTextAsync(filePath, content, new UTF8Encoding(false));
+
+        var fileInfo = new FileInfo(filePath);
+        Assert.IsTrue(fileInfo.Length > FileChunkService.LargeFileByteThreshold,
+            $"Fixture must exceed the large-file threshold, got {fileInfo.Length}");
+        Assert.AreNotEqual(fileInfo.Length, content.Length, "Fixture must have bytes != chars");
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["HeadLines"] = 1
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, $"size={fileInfo.Length} bytes");
+        Assert.IsFalse(result.Output.Contains($"size={fileInfo.Length} chars"),
+            "A byte count must never be rendered as chars: " + result.Output.Split('\n')[0]);
+    }
+
+    [TestMethod]
+    public async Task Meta_OnSmallFile_ReportsCharsAndBytes()
+    {
+        var line = new string('中', 20) + "\n";
+        var content = string.Concat(Enumerable.Repeat(line, 1000)); // 21000 chars, 61000 bytes
+        var filePath = Path.Combine(_tempDir, "meta_small.txt");
+        await File.WriteAllTextAsync(filePath, content, new UTF8Encoding(false));
+
+        var fileInfo = new FileInfo(filePath);
+        Assert.IsTrue(fileInfo.Length < FileChunkService.LargeFileByteThreshold,
+            $"Fixture must stay below the large-file threshold, got {fileInfo.Length}");
+        Assert.AreNotEqual(fileInfo.Length, content.Length, "Fixture must have bytes != chars");
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["HeadLines"] = 1
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, $"size={content.Length} chars / {fileInfo.Length} bytes");
+    }
+
     // Test 11: OffsetLines out of range on a small file returns empty Ok (not Fail)
     [TestMethod]
     public async Task OffsetLines_OutOfRange_SmallFile_ReturnsEmptyOk()
