@@ -89,6 +89,10 @@ public sealed class FailureSuggestionTests
 
         StringAssert.StartsWith(suggestion, CommandNotFoundPrefix);
         StringAssert.Contains(suggestion, "PATH");
+        // PATH 能解析到也可能失败：Windows 的 Store 别名桩（python.exe）就是这么报 9009 的，
+        // 只让用户「查 PATH」会把正确配置的人引到错误方向。
+        StringAssert.Contains(suggestion, "App Execution Alias");
+        StringAssert.Contains(suggestion, "'py'");
     }
 
     /// <summary>

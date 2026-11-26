@@ -2159,12 +2159,15 @@ public sealed partial class AgentExecutionService
             "   💡 Suggestion: 'directory' must be a folder, not a file. Pass the containing folder, " +
             "or use 'pattern' to match content inside it.";
 
-        // 9009（cmd）与 127（sh/bash）是 shell 自己定义的「找不到命令」，不是被调命令的退出码，
+        // 9009（cmd）与 127（sh/bash）是 shell 自己定义的可执行性失败，不是被调命令的退出码，
         // 因此可以安全归因；而 exit code 1 / 2 之类的语义属于命令本身，仍走通用建议。
+        // 两种成因：名字找不到；名字能找到但无法执行（Windows 的 Store 别名桩，如 python.exe → 9009）。
         const string CommandNotFoundSuggestion =
-            "   💡 Suggestion: exit code 9009 (cmd) / 127 (sh) means the shell could not find the " +
-            "command itself. Check the command name and PATH, and pick the shell= that matches the " +
-            "syntax you wrote (cmd vs pwsh vs wsl).";
+            "   💡 Suggestion: exit code 9009 (cmd) / 127 (sh) means the shell could not execute the " +
+            "command. Check the command name and PATH, and pick the shell= that matches the " +
+            "syntax you wrote (cmd vs pwsh vs wsl). A name that PATH does resolve can still fail this " +
+"way: on Windows 'python' is normally a Microsoft Store App Execution Alias stub that " +
+"reports 9009 — use the real launcher ('py') or the interpreter's absolute path.";
 
         const string FallbackSuggestion =
             "   💡 Suggestion: Check the tool's parameter constraints. " +
