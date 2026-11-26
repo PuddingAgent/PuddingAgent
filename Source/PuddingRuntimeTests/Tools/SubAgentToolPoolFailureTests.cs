@@ -434,6 +434,44 @@ public sealed class SubAgentToolPoolFailureTests
     }
 
     [TestMethod]
+    public async Task Sleep_EntryDead_ReportsMissingNotStillThere()
+    {
+        // Dead 条目仍在内存里（List() 不按状态过滤），但它已不可驱动：
+        // 报「仍是 Dead」会把人引去等一个状态永不再变的成员，正确处置与「解析不到」相同。
+        var pool = new FakeSubAgentPool
+        {
+            SleepResult = false,
+            Entries = [OwnedEntry("p1", "sess-parent") with { Status = PooledSubAgentStatus.Dead }],
+        };
+
+        var result = await ExecuteToolAsync(pool, """{"pool_name":"p1","pool_action":"sleep"}""");
+
+        Assert.IsFalse(result.Success);
+        var error = result.Error ?? string.Empty;
+
+        StringAssert.Contains(error, "未命中", $"Dead 条目应与「解析不到」同等处置：{error}");
+        Assert.IsFalse(error.Contains("仍是"), $"Dead 条目被渲染成「仍在」：{error}");
+    }
+
+    [TestMethod]
+    public async Task Destroy_EntryDead_ReportsMissingNotStillThere()
+    {
+        var pool = new FakeSubAgentPool
+        {
+            DestroyResult = false,
+            Entries = [OwnedEntry("p1", "sess-parent") with { Status = PooledSubAgentStatus.Dead }],
+        };
+
+        var result = await ExecuteToolAsync(pool, """{"pool_name":"p1","pool_action":"destroy"}""");
+
+        Assert.IsFalse(result.Success);
+        var error = result.Error ?? string.Empty;
+
+        StringAssert.Contains(error, "未命中", $"Dead 条目应与「解析不到」同等处置：{error}");
+        Assert.IsFalse(error.Contains("仍在池里"), $"Dead 条目被渲染成「仍在」：{error}");
+    }
+
+    [TestMethod]
     public async Task Destroy_WithoutPoolName_AsksForPoolName()
     {
         var result = await ExecuteToolAsync(new FakeSubAgentPool(), """{"pool_action":"destroy"}""");
