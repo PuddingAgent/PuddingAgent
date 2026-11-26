@@ -643,6 +643,52 @@ public sealed class AgentDiagnosticsToolTests
     }
 
     [TestMethod]
+    public async Task ToolStats_CommonErrors_TruncationIsExplicitInsteadOfSilent()
+    {
+        // 静默截断（与已修的 tool_names Take(30) 同一类）：旧实现直接 Take(5)、不给任何提示，
+        // 调用方只看到 5 条就以为「只有 5 种错误」。实测整表 search_grep 有 16 种、file_read 13 种、
+        // shell 11 种 —— 窗口积累到 5 种以上即发生无声丢弃。所以这是**潜在**缺陷，不是已发生事故。
+        var manyErrors = Enumerable.Range(0, 7)
+            .Select(i => Activity("search_grep", RuntimeActivityStatuses.Failed, 5, $"err-{i}"))
+            .ToList();
+        var fewErrors = new List<RuntimeActivity>
+        {
+            Activity("file_read", RuntimeActivityStatuses.Failed, 5, "only"),
+            Activity("file_read", RuntimeActivityStatuses.Succeeded, 5),
+        };
+
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+
+        var many = await ExecuteAsync(
+            new AgentDiagnosticsTool(activitySink: new FakeActivitySink(manyErrors), scopeFactory: scopeFactory),
+            """{"action":"tool_stats","tool_name":"search_grep"}""");
+        Assert.IsTrue(many.Success, many.Error);
+        using var manyRoot = JsonDocument.Parse(many.Output);
+        var manyStats = manyRoot.RootElement;
+
+        Assert.AreEqual(5, manyStats.GetProperty("common_errors").GetArrayLength(),
+            "明细仍只列前 5 条，避免输出膨胀");
+        Assert.AreEqual(7, manyStats.GetProperty("common_errors_distinct_total").GetInt32(),
+            "必须上报不同错误的总数，否则「只见到 5 种」会被读成「只有 5 种」");
+        Assert.IsTrue(manyStats.GetProperty("common_errors_truncated").GetBoolean(),
+            $"确实有 2 种被截掉时必须标注：{many.Output}");
+
+        var few = await ExecuteAsync(
+            new AgentDiagnosticsTool(activitySink: new FakeActivitySink(fewErrors), scopeFactory: scopeFactory),
+            """{"action":"tool_stats","tool_name":"file_read"}""");
+        Assert.IsTrue(few.Success, few.Error);
+        using var fewRoot = JsonDocument.Parse(few.Output);
+        var fewStats = fewRoot.RootElement;
+
+        Assert.AreEqual(1, fewStats.GetProperty("common_errors").GetArrayLength());
+        Assert.AreEqual(1, fewStats.GetProperty("common_errors_distinct_total").GetInt32());
+        Assert.IsFalse(fewStats.GetProperty("common_errors_truncated").GetBoolean(),
+            $"未超过上限时不得报「已截断」，否则标记本身失去信息量：{few.Output}");
+    }
+
+    [TestMethod]
     public async Task ToolStats_UnknownTool_HintScopesConclusionToWindow()
     {
         // 实测反例（2026-11-26）：send_message 刚成功发出一条消息，全表却查不到它的活动记录 ——

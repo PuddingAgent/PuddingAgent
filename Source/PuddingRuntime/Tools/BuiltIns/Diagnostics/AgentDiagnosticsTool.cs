@@ -256,12 +256,19 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
         var avgDuration = toolActivities.Average(a => a.DurationMs ?? 0);
         var maxDuration = toolActivities.Max(a => a.DurationMs ?? 0);
 
-        var errors = toolActivities
+        // 静默截断（与已修的 tool_names Take(30) 同一类）：旧实现直接 Take(5)，调用方只看到 5 条，
+        // 无从知道还有多少种错误被丢掉。实测整表里 search_grep 有 16 种不同错误、file_read 13 种、
+        // shell 11 种 —— 窗口一旦积累到 5 种以上就会无声丢弃。改为先聚合全量、再取前 5，
+        // 并把「共有几种」与「是否被截断」如实上报。
+        const int CommonErrorLimit = 5;
+        var allErrorGroups = toolActivities
             .Where(a => !string.IsNullOrWhiteSpace(a.ErrorMessage))
             .GroupBy(a => TruncateError(a.ErrorMessage!))
             .OrderByDescending(g => g.Count())
             .ThenBy(g => g.Key, StringComparer.Ordinal) // 同计数时给稳定次序，避免每次查询顺序漂移
-            .Take(5)
+            .ToList();
+        var errors = allErrorGroups
+            .Take(CommonErrorLimit)
             .Select(g => new { message = g.Key, count = g.Count() })
             .ToList();
 
@@ -277,6 +284,9 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             avg_duration_ms = Math.Round(avgDuration, 1),
             max_duration_ms = maxDuration,
             common_errors = errors,
+            // 被截掉的部分必须可见，否则「只见到 5 种」会被读成「只有 5 种」。
+            common_errors_distinct_total = allErrorGroups.Count,
+            common_errors_truncated = allErrorGroups.Count > CommonErrorLimit,
             // 统计口径：上面的数字覆盖「本样本内匹配到的全部活动」，不是「最近 limit 次」。
             sample = new
             {
