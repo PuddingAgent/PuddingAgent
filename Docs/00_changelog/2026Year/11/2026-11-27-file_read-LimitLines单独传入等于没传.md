@@ -85,3 +85,33 @@ M3 的红点与两者不相交，证明大文件路径此前**没有任何用例
 - `FileReadToolTests.cs` 52649 → 57211 字节，保持 LF（CRLF=0、BARE_LF=1211），无 BOM
 - 新增 5 条用例：`LimitLines_Alone_ReadsFirstLines` / `_HasNoPagingNotice` / `_BypassesGuardrail` /
   `_LargeFileReadsFirstLines`、`NonPositiveLimitLines_Alone_EmptyBodyMatchesNotice`
+
+## 运行时验收（2026-11-27 07:14 · 部署 `6fb2f17`）
+
+live 进程 PID 47944 @ 07:12:42；`PuddingRuntime.dll` 07:11:57、`PuddingAgent.dll` 07:12:01，
+均晚于提交 07:10:27（路径取自 `Get-Process.Modules`）。
+
+探针：`temp/probe_limit_1127.txt`（10 行 / 41 字节）、`temp/probe_big_1127.txt`（400 行 / 5492 字节，
+命中 `totalLines > 300` 的大文件路径）。六条期望值先由 `DescribePagingAnomaly` 与两条读取分支算出，再实调比对：
+
+| # | 入参 | 期望（读码得出） | 实测 |
+|---|---|---|---|
+| P1 | `limit_lines=2` | 仅 L1..L2，无 `[PAGING:` | 一致 |
+| P2 | `limit_lines=0` | 空正文 + `LimitLines=0 requests no line` | 一致 |
+| P3 | `head_lines=2` | L1..L2，无 `[PAGING:`（正向对照） | 一致 |
+| P4 | `offset_lines=8` + `tail_lines=3` | L8..L10 + `OffsetLines=8 was ignored … TailLines=3` | 一致 |
+| P5 | `head_lines=5` + `limit_lines=2` | L1..L5 + `LimitLines=2 was ignored … HeadLines=5` | 一致 |
+| P6 | `head_lines=2` + `limit_lines=2` + `tail_lines=3` | L1 L2 + 两条 ignored（Tail 让位 Head、Limit 让位 Head） | 一致 |
+| P7 | 400 行文件 `limit_lines=3` | BIG-LINE-1..3，**无** `[GUARDRAIL` | 一致 |
+| P8 | 同一文件不加分页参数 | 出 `[GUARDRAIL: 400 lines` 预览 | 一致 |
+
+P7 与 P8 是一对：P8 证明该文件确实触发护栏（`400 > 300`），P7 证明显式切片绕过了它并只读 3 行。
+这一对才是「大文件分支新增 `LimitLines` 判据」的行为证据 —— 单看 P7 无法排除「文件根本没触发护栏」。
+P2 同时证伪了旧实现那句自相矛盾的提示：旧行为返回整个文件却写着 body is empty。
+
+## 验收中新发现（未修，另立任务）
+
+`LimitLines` 的参数说明仍是「Maximum lines to read. Use with OffsetLines for arbitrary window.」
+（`FileTools.cs:711`），`OffsetLines` 的说明也写着「Use with LimitLines」。行为已改成
+「`limit_lines` 单独传入 = 从首行起前 N 行」，契约却仍暗示两者必须成对 —— 模型读 schema 时会因此不单独用它，
+修复在契约层不可见。另：该 `[ToolParam]` 行缩进为 8 空格（同块其余为 4），属同一处的笔误。
