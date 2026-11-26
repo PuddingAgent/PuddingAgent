@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using PuddingCode.Tools;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.Tools;
@@ -672,6 +673,85 @@ public sealed class FileReadToolTests
         Assert.IsFalse(result.Output.Contains("[GUARDRAIL:"), result.Output);
         StringAssert.Contains(result.Output, "beta");
         Assert.IsFalse(result.Output.Contains("alpha"), result.Output);
+    }
+
+    // Test 27: MaxChars and the 8 KiB inline byte budget both bind. The receipt used to carry two
+    // continuation offsets computed from different truncation points: the body showed only the lines
+    // that fit the byte budget, while the MaxChars notice told the caller to resume past lines that
+    // were never delivered. Both notices must name the SAME offset, and that offset must sit exactly
+    // one line past the last fully delivered line. 2026-11-27.
+    [TestMethod]
+    public async Task MaxChars_WithInlineByteBudgetBound_ReportsSingleContinuationOffset()
+    {
+        var lines = Enumerable.Range(1, 500).Select(i => $"ROW{i:D4}-0123456789012345678901234567890123456789");
+        var filePath = Path.Combine(_tempDir, "maxchars_inline_bound.txt");
+        await File.WriteAllTextAsync(filePath, string.Join("\n", lines) + "\n", Encoding.UTF8);
+
+        var fileInfo = new FileInfo(filePath);
+        Assert.IsTrue(
+            fileInfo.Length < FileChunkService.LargeFileByteThreshold,
+            $"small-file path expected, got {fileInfo.Length} bytes");
+        Assert.IsTrue(fileInfo.Length > 10_000, $"file must exceed the 8 KiB inline budget, got {fileInfo.Length}");
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["MaxChars"] = 20_000
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "inline budget bound first");
+        Assert.IsFalse(result.Output.Contains("truncated at 20000 chars"), result.Output);
+        AssertContinuationMatchesDelivery(result.Output);
+    }
+
+    // Test 28: the same invariant on the streaming path — it is a separate call site, so a fix
+    // applied to only one branch must fail here.
+    [TestMethod]
+    public async Task MaxChars_OnLargeFilePath_WithInlineByteBudgetBound_ReportsSingleContinuationOffset()
+    {
+        var lines = Enumerable.Range(1, 4000).Select(i => $"ROW{i:D4}-0123456789012345678901234567890123456789");
+        var filePath = Path.Combine(_tempDir, "maxchars_inline_bound_large.txt");
+        await File.WriteAllTextAsync(filePath, string.Join("\n", lines), Encoding.UTF8);
+
+        var fileInfo = new FileInfo(filePath);
+        Assert.IsTrue(
+            fileInfo.Length > FileChunkService.LargeFileByteThreshold,
+            $"large-file path expected, got {fileInfo.Length} bytes");
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["MaxChars"] = 20_000
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "inline budget bound first");
+        Assert.IsFalse(result.Output.Contains("truncated at 20000 chars"), result.Output);
+        AssertContinuationMatchesDelivery(result.Output);
+    }
+
+    /// <summary>
+    /// 两道预算同时生效时必须只有一个续读位置，且它恰好等于「已完整交付的最后一行 + 1」。
+    /// 断两个方向：少一条 notice 会变多值（Count != 1），偏移跳远会与正文末行对不上。
+    /// </summary>
+    private static void AssertContinuationMatchesDelivery(string output)
+    {
+        var offsets = Regex.Matches(output, @"OffsetLines=(\d+)\+LimitLines")
+            .Select(m => int.Parse(m.Groups[1].Value))
+            .Distinct()
+            .ToList();
+
+        Assert.AreEqual(
+            1,
+            offsets.Count,
+            $"expected one continuation offset, got [{string.Join(", ", offsets)}]");
+
+        var offset = offsets[0];
+        StringAssert.Contains(output, $"ROW{offset:D4}-", $"line ROW{offset:D4} must be the first line after the window");
+        Assert.IsFalse(
+            output.Contains($"ROW{offset + 1:D4}-"),
+            $"ROW{offset + 1:D4} was never delivered, so it cannot sit before the continuation point");
     }
 
     private static Task<ToolExecutionResult> ExecuteAsync(

@@ -275,11 +275,12 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
     /// 因此：行数是软约束（由调用方参数决定想读多少），**字节数是硬不变量**（永不超
     /// <see cref="InlineBudgetBytes"/>）。超预算时给出可直接照抄的续读位置。
     /// </summary>
-    private static string BoundInlineBody(string body, int startLine, out int emittedLines)
+    private static string BoundInlineBody(string body, int startLine, out int emittedLines, out bool truncated)
     {
         var lines = body.Split('\n');
         var bounded = TakeLinesWithinByteBudget(lines, lines.Length, out emittedLines);
-        if (emittedLines >= lines.Length)
+        truncated = emittedLines < lines.Length;
+        if (!truncated)
             return bounded;
 
         var next = startLine + emittedLines;
@@ -355,13 +356,22 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
     /// 续读位置按「已完整读过的换行数」算：截断点落在行中时，那一行会被重读一次而不会漏。
     /// </summary>
     internal static string DescribeMaxCharsTruncation(
-        int maxChars, int windowStart, string truncatedContent, int? totalChars, int totalLines)
+        int maxChars, int windowStart, string truncatedContent, int? totalChars, int totalLines,
+        int? deliveredLines = null)
     {
-        var consumedLines = truncatedContent.Count(c => c == '\n');
+        // 2026-11-27：两道预算同时生效时，续读位置必须以**实际交付**为准。
+        // 旧实现只用 MaxChars 截断点算续读（此时内容尚未过 inline 字节闸门），
+        // 于是同一条回执给出两个数字，前者的偏移跳过了一大段从未交付的行——
+        // 实测 502 行文件 max_chars=20000：正文只给 156 行，续读却说 OffsetLines=408。
+        var consumedLines = deliveredLines ?? truncatedContent.Count(c => c == '\n');
         var nextOffset = windowStart + consumedLines;
         var scope = totalChars.HasValue
             ? $"of this window; file has {totalChars.Value} chars / {totalLines} line(s)"
             : $"of this window; file has {totalLines} line(s)";
+
+        if (deliveredLines.HasValue)
+            return $"(requested max_chars={maxChars} chars {scope}, but the {InlineBudgetBytes}-byte inline budget bound first; continue with OffsetLines={nextOffset}+LimitLines)";
+
         return $"(truncated at {maxChars} chars {scope}; continue with OffsetLines={nextOffset}+LimitLines)";
     }
 
@@ -459,7 +469,14 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                         args.MaxChars.Value, windowStart, content, totalChars, totalLines);
                 }
 
-                var body = $"{meta}\n{BoundInlineBody(content, windowStart, out _)}";
+                var boundedSmall = BoundInlineBody(content, windowStart, out var emittedSmall, out var byteBoundedSmall);
+                if (maxCharsNotice is not null && byteBoundedSmall)
+                {
+                    // 字节闸门先于 MaxChars 生效：续读位置改按实际交付的行数算。
+                    maxCharsNotice = DescribeMaxCharsTruncation(
+                        args.MaxChars!.Value, windowStart, content, totalChars, totalLines, emittedSmall);
+                }
+                var body = $"{meta}\n{boundedSmall}";
                 if (maxCharsNotice is not null)
                     body = $"{body}\n... {maxCharsNotice}";
                 var paging = DescribePagingAnomaly(
@@ -525,7 +542,13 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                     args.MaxChars.Value, windowStartLarge, windowContent, totalChars: null, totalLinesLarge);
             }
 
-            var bodyLarge = $"{metaLarge}\n{BoundInlineBody(windowContent, windowStartLarge, out _)}";
+            var boundedLarge = BoundInlineBody(windowContent, windowStartLarge, out var emittedLarge, out var byteBoundedLarge);
+            if (maxCharsNoticeLarge is not null && byteBoundedLarge)
+            {
+                maxCharsNoticeLarge = DescribeMaxCharsTruncation(
+                    args.MaxChars!.Value, windowStartLarge, windowContent, totalChars: null, totalLinesLarge, emittedLarge);
+            }
+            var bodyLarge = $"{metaLarge}\n{boundedLarge}";
             if (maxCharsNoticeLarge is not null)
                 bodyLarge = $"{bodyLarge}\n... {maxCharsNoticeLarge}";
             var pagingLarge = DescribePagingAnomaly(
