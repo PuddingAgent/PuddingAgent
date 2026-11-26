@@ -622,7 +622,7 @@ public sealed record FileWriteArgs
 [Tool(
     id: "list_dir",
     name: "List directory",
-    description: "返回宿主工作区目录的结构化清单。需要文件名和元数据时优先使用此工具而非 shell ls/dir。默认排除 bin/obj/node_modules/.git/dist 等构建与依赖目录（与 search_grep 同源）；需要全量时设 include_noise_dirs=true，相当于 ls -a。max_entries 默认 100、上限 2000；recursive=true 在大目录上会产生大量条目并可能触发截断，优先用 pattern 收窄。Truncated 表示**确有条目被省略**：工具会多探一条（上限 +1）来区分「恰好 N 条」与「还有更多」，因此条目数恰好等于上限时 Truncated 为 false；确有省略时 Count 等于上限且 Truncated 为 true，此时把 max_entries 调大再列一次（上限 2000；超顶会被夹取并在结果 MaxEntriesNotice 里说明），或用 pattern 收窄。Return a structured listing for a directory in the host workspace. Prefer this over shell ls/dir when the agent needs file names and metadata.",
+    description: "返回宿主工作区目录的结构化清单。需要文件名和元数据时优先使用此工具而非 shell ls/dir。默认排除 bin/obj/node_modules/.git/dist 等构建与依赖目录（与 search_grep 同源）；需要全量时设 include_noise_dirs=true，相当于 ls -a。max_entries 默认 100、上限 2000（低于 1 会被夹取到 1，两端夹取都写进 MaxEntriesNotice）；recursive=true 在大目录上会产生大量条目并可能触发截断，优先用 pattern 收窄。Truncated 表示**确有条目被省略**：工具会多探一条（上限 +1）来区分「恰好 N 条」与「还有更多」，因此条目数恰好等于上限时 Truncated 为 false；确有省略时 Count 等于上限且 Truncated 为 true，此时把 max_entries 调大再列一次（上限 2000；超顶会被夹取并在结果 MaxEntriesNotice 里说明），或用 pattern 收窄。Return a structured listing for a directory in the host workspace. Prefer this over shell ls/dir when the agent needs file names and metadata.",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -656,12 +656,19 @@ public sealed class ListDirectoryTool : PuddingToolBase<ListDirectoryArgs>
         var recursive = args.Recursive == true;
         var includeHidden = args.IncludeHidden == true;
         var includeNoiseDirs = args.IncludeNoiseDirs == true;
-        var maxEntries = Math.Clamp(args.MaxEntries ?? 100, 1, MaxEntriesCeiling);
-        // 请求值超硬顶时必须说明（2026-11-16）：描述里写着「把 max_entries 调大再列一次」，
-        // 但超过 2000 会被夹取，那个动作已经做不到了。
-        var maxEntriesNotice = args.MaxEntries is > MaxEntriesCeiling
-            ? $"max_entries={args.MaxEntries} exceeds the hard ceiling {MaxEntriesCeiling} and was clamped; if the listing is truncated, narrow with pattern or a subdirectory instead (raising max_entries cannot return more)"
-            : null;
+        var requestedMaxEntries = args.MaxEntries;
+        var maxEntries = Math.Clamp(requestedMaxEntries ?? 100, 1, MaxEntriesCeiling);
+        // 两端夹取都要说明（2026-11-16 / 2026-11-26）：描述里写着「把 max_entries 调大再列一次」，
+        // 但超过 2000 会被夹取，那个动作已经做不到了；而低于下限时调用方拿到的是 1 条而不是自己
+        // 要的那个数，不说明就成了静默增量。
+        var maxEntriesNotice = requestedMaxEntries switch
+        {
+            > MaxEntriesCeiling =>
+                $"max_entries={requestedMaxEntries} exceeds the hard ceiling {MaxEntriesCeiling} and was clamped; if the listing is truncated, narrow with pattern or a subdirectory instead (raising max_entries cannot return more)",
+            < 1 =>
+                $"max_entries={requestedMaxEntries} is below the minimum 1 and was clamped to 1; max_entries cannot request an empty listing — use pattern to filter instead",
+            _ => null,
+        };
         var pattern = string.IsNullOrWhiteSpace(args.Pattern) ? "*" : args.Pattern;
         var entries = new List<ListDirectoryEntry>();
 
