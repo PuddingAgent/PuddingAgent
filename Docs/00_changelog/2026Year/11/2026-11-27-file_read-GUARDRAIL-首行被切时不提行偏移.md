@@ -80,3 +80,27 @@ M1 打红两条是如实记录的局限——这两条共用同一处调用点�
 ## 关系
 
 延续 `2026-11-27-file_read-续读位置只按实际交付算` 的同一条不变量：**续读位置只能描述已经交付的内容**。上一轮把它实施在 MaxChars 与 BoundInlineBody 两条路径上，本轮补上 GUARDRAIL 两条路径——同一不变量的第四个、第五个落点。
+
+## 运行时验收（2026-11-27 03:32 部署后实测）
+
+部署链：提交 `1e5150a` @03:30:14 → live DLL @03:31:39–43（`temp\build\winui3\…\core\`）→ 进程 PID 55100 @03:32:13。
+
+| 探针 | 构造 | 实测回执 |
+|---|---|---|
+| P2 | 单行 20002 字节 | `Only the first 7680 bytes of line 1 were delivered; the rest of that line is not addressable … Use TailLines for the end.` |
+| P3 | 首行 19999 字节 + 19 短行（20399 B） | 同一句；未出现 `continue from line 2` |
+| P4 | 单行 121000 字节（>100 KB，分块路径） | `[TRUNCATED: line 1 alone exceeds the 7680-byte inline budget … not addressable …]` |
+
+P4 走的是 `BoundInlineBody` 的首行分支（回执 `[META: size=121001 bytes`），与 P2/P3 的 `DescribeGuardrailSuffix` 是两个落点，因此两条路径都有运行时样本。
+
+正向对照（首行不超预算时仍给行偏移）：
+
+- 500 行 × 15 字节（8000 B）无参调用 → `Use OffsetLines=480+LimitLines to continue from line 481.`，且 `7679 = 480×15 + 479` 逐字节吻合。
+- 同一文件 `max_chars=3000` → `continue with OffsetLines=187+LimitLines`；`head_lines=2` / `tail_lines=3` 均正常。
+
+**「OffsetLines=400」不是常量**：它由该次窗口内实际放得下的行数决定，换文件即变（此处 480、187）。任何按固定值写的断言都站不住。
+
+## 未验证（补充）
+
+- P4 只有「单行超长」这一个形态；多行文件的首行超长且总字节 >100 KB 未取样。
+- 两条提示仍并存（字节闸门一行 + MaxChars 说明一行），只是数字一致；合并属回执格式调整，未做。
