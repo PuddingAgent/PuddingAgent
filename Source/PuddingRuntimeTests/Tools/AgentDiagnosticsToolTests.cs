@@ -782,6 +782,48 @@ public sealed class AgentDiagnosticsToolTests
         Assert.AreEqual("file_patch", root.GetProperty("tools")[0].GetProperty("tool_name").GetString());
     }
 
+    [TestMethod]
+    public async Task ToolStats_ZeroHit_NameListIsScopedToWindowAndFlagsTruncation()
+    {
+        // 旧键 available_tool_names 的值是「窗口内记录到的 tool_name 去重」，名字却宣称「可用工具」——
+        // 实测窗口里同时出现 write 与 file_write，而可调用 id 是 file_write，名单里的名字未必可调用。
+        // 另外旧实现 Take(30) 静默截断：31 个名字时调用方只看到 30 个，没有任何提示。
+        var manySink = new FakeActivitySink(
+            Enumerable.Range(0, 31)
+                .Select(i => Activity($"probe_tool_{i:D2}", RuntimeActivityStatuses.Succeeded, 1))
+                .ToArray());
+        var fewSink = new FakeActivitySink([Activity("file_read", RuntimeActivityStatuses.Succeeded, 1)]);
+
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+
+        var many = await ExecuteAsync(
+            new AgentDiagnosticsTool(activitySink: manySink, scopeFactory: scopeFactory),
+            """{"action":"tool_stats","tool_name":"definitely_absent"}""");
+        Assert.IsTrue(many.Success, many.Error);
+        using var manyRoot = JsonDocument.Parse(many.Output);
+        var manyDiag = manyRoot.RootElement.GetProperty("diagnostics");
+
+        Assert.AreEqual(30, manyDiag.GetProperty("tool_names_in_window").GetArrayLength(),
+            "名单仍只列前 30 个，避免无限膨胀");
+        Assert.IsTrue(manyDiag.GetProperty("tool_names_in_window_truncated").GetBoolean(),
+            $"截断必须显式标注，否则「只见到 30 个」会被读成「只有 30 个」：{many.Output}");
+        Assert.IsFalse(many.Output.Contains("available_tool_names"),
+            $"旧键名宣称「可用工具」，而值是窗口内记录到的名字，已改名，不得为兼容加回：{many.Output}");
+
+        var few = await ExecuteAsync(
+            new AgentDiagnosticsTool(activitySink: fewSink, scopeFactory: scopeFactory),
+            """{"action":"tool_stats","tool_name":"definitely_absent"}""");
+        Assert.IsTrue(few.Success, few.Error);
+        using var fewRoot = JsonDocument.Parse(few.Output);
+        var fewDiag = fewRoot.RootElement.GetProperty("diagnostics");
+
+        Assert.AreEqual(1, fewDiag.GetProperty("tool_names_in_window").GetArrayLength());
+        Assert.IsFalse(fewDiag.GetProperty("tool_names_in_window_truncated").GetBoolean(),
+            $"截断标记不得恒真：只有 1 个名字时不能声称被截断：{few.Output}");
+    }
+
     private static RuntimeActivity Activity(
         string toolName, string status, long durationMs, string? error = null)
         => new()

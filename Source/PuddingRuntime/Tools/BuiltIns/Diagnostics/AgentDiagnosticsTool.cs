@@ -211,13 +211,20 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
 
         if (toolActivities.Count == 0)
         {
-            var availableTools = activities
+            // 名不副实（与已删除的 total_activities_in_db 同一类）：旧键 available_tool_names 的值是
+            // 「本窗口记录到的 tool_name 去重」，不是「可用工具」。实测窗口里同时出现 write 与 file_write，
+            // 而可调用 id 是 file_write —— write 只是内部/历史别名，所以名单里的名字未必可调用。
+            // 名字必须限定在窗口内；并且多取一条来判定截断：旧实现 Take(30) 静默截断，
+            // 调用方会把「只见到 30 个」读成「只有 30 个」。
+            const int ToolNameListLimit = 30;
+            var toolNamesInWindow = activities
                 .Where(a => a.Metadata is not null && a.Metadata.TryGetValue("tool_name", out _))
                 .Select(a => a.Metadata!["tool_name"])
                 .Where(n => !string.IsNullOrEmpty(n))
                 .Distinct()
-                .Take(30)
                 .ToList();
+            var toolNamesInWindowTruncated = toolNamesInWindow.Count > ToolNameListLimit;
+            var toolNamesInWindowSample = toolNamesInWindow.Take(ToolNameListLimit).ToList();
             return JsonSerializer.Serialize(new
             {
                 tool_name = toolName,
@@ -236,7 +243,8 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                     // 真要报库内总数，得先给 IRuntimeActivitySink 加计数能力，不要为「兼容」把它加回来。
                     activities_in_window = activities.Count,
                     query_component = RuntimeActivityComponents.ToolRunner,
-                    available_tool_names = availableTools
+                    tool_names_in_window = toolNamesInWindowSample,
+                    tool_names_in_window_truncated = toolNamesInWindowTruncated
                 }
             });
         }
