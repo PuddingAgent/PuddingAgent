@@ -50,10 +50,13 @@ namespace PuddingRuntime.Services.Tools
 
                 Commands.Checkout(repo, branch);
 
+                // Branches[...] 也会匹配远端跟踪分支（origin/x），而检出远端跟踪分支会分离 HEAD；
+                // 旧实现此时把 Head.FriendlyName 的 "(no branch)" 当 name 回给调用方，
+                // 与同一回执里的 switched=true 互相矛盾。改用 Describe 报实际形态。
                 return Task.FromResult(ToolExecutionResult.Ok(JsonSerializer.Serialize(new
                 {
                     path = repoPath,
-                    name = repo.Head.FriendlyName,
+                    name = GitHeadIdentity.Describe(repo),
                     switched = true
                 })));
             }

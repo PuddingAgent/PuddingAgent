@@ -43,10 +43,13 @@ namespace PuddingRuntime.Services.Tools
 
                 Commands.Checkout(repo, args.Target.Trim());
 
+                // 检出 tag / commit 会分离 HEAD，此时 Head.FriendlyName 是字面量 "(no branch)"。
+                // 本工具的描述里明写「检出非分支时会分离 HEAD」—— 所以这条路径是常规用法，不是边角。
+                // 用 Describe 让回执说真话：在分支上报分支名，游离时报 "detached at <短 sha>"。
                 return Task.FromResult(ToolExecutionResult.Ok(JsonSerializer.Serialize(new
                 {
                     path = repoPath,
-                    current_branch = repo.Head.FriendlyName,
+                    current_branch = GitHeadIdentity.Describe(repo),
                     target = args.Target.Trim()
                 })));
             }
