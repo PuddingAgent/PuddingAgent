@@ -307,6 +307,47 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
         return value[..lo];
     }
 
+    /// <summary>
+    /// 2026-11-26：分页参数的越界与夹取必须出声。
+    /// 旧行为有两种静默：<c>OffsetLines</c> 超过文件末尾、或 <c>LimitLines &lt;= 0</c> 时正文为空，
+    /// 回执与「文件真的是空的」不可区分；<c>OffsetLines</c> 为负时被静默按 0 处理，返回的是文件开头。
+    /// 两种都让调用方无法判断是自己给错了参数。
+    /// 判据只看入参与总行数，小文件全读与大文件流式两条路径共用——分头实现正是本类历史上
+    /// 同一个字段两种口径的成因（见下方 META 的两处 2026-11-26 注释）。
+    /// <c>HeadLines</c>/<c>TailLines</c> 是「从一端取 N 行」的语义，N 超过总行数等于全取，不算异常。
+    /// </summary>
+    internal static string? DescribePagingAnomaly(
+        int? offsetLines,
+        int? limitLines,
+        int? headLines,
+        int? tailLines,
+        int totalLines)
+    {
+        if (headLines.HasValue || tailLines.HasValue)
+            return null;
+
+        var notes = new List<string>();
+        if (offsetLines.HasValue)
+        {
+            if (offsetLines.Value < 0)
+            {
+                notes.Add($"OffsetLines={offsetLines.Value} is negative and was applied as 0, so the window starts at the first line.");
+            }
+            else if (offsetLines.Value >= totalLines)
+            {
+                var lastValid = Math.Max(0, totalLines - 1);
+                notes.Add($"OffsetLines={offsetLines.Value} is at or beyond the end of the file ({totalLines} line(s), valid offset 0..{lastValid}), so no line was returned.");
+            }
+        }
+
+        if (limitLines.HasValue && limitLines.Value <= 0)
+        {
+            notes.Add($"LimitLines={limitLines.Value} requests no line (must be >= 1), so the body is empty.");
+        }
+
+        return notes.Count == 0 ? null : string.Join(" ", notes);
+    }
+
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         FileReadArgs args, ToolExecutionContext context, CancellationToken ct)
     {
@@ -394,7 +435,10 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                     }
                 }
 
-                return ToolExecutionResult.Ok($"{meta}\n{BoundInlineBody(content, windowStart, out _)}");
+                var body = $"{meta}\n{BoundInlineBody(content, windowStart, out _)}";
+                var paging = DescribePagingAnomaly(
+                    args.OffsetLines, args.LimitLines, args.HeadLines, args.TailLines, totalLines);
+                return ToolExecutionResult.Ok(paging is null ? body : $"{body}\n... [PAGING: {paging}]");
             }
 
             // Large file path: use FileChunkService for streaming reads
@@ -457,7 +501,10 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 windowContent = await _chunk.ReadChunkAsync(fullPath, 0, totalLinesLarge, ct);
             }
 
-            return ToolExecutionResult.Ok($"{metaLarge}\n{BoundInlineBody(windowContent, windowStartLarge, out _)}");
+            var bodyLarge = $"{metaLarge}\n{BoundInlineBody(windowContent, windowStartLarge, out _)}";
+            var pagingLarge = DescribePagingAnomaly(
+                args.OffsetLines, args.LimitLines, args.HeadLines, args.TailLines, totalLinesLarge);
+            return ToolExecutionResult.Ok(pagingLarge is null ? bodyLarge : $"{bodyLarge}\n... [PAGING: {pagingLarge}]");
         }
         catch (Exception ex)
         {

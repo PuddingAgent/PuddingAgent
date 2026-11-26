@@ -469,6 +469,114 @@ public sealed class FileReadToolTests
         Assert.IsFalse(result.Output.Contains("TRUNCATED"), result.Output);
     }
 
+    // Test 18: offset beyond the end of the file must say so, not return a bare META line.
+    // 2026-11-27: 旧行为回到空正文 + 无提示，与「文件真的是空的」不可区分。
+    [TestMethod]
+    public async Task OffsetBeyondEnd_ReportsPagingNotice()
+    {
+        var content = "line1\nline2\nline3\n";
+        var filePath = Path.Combine(_tempDir, "offset_beyond.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["OffsetLines"] = 99
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "[PAGING:");
+        StringAssert.Contains(result.Output, "beyond the end of the file");
+        StringAssert.Contains(result.Output, "3 line(s)");
+    }
+
+    // Test 19: same silence on the large-file streaming path. This is the arm that would break
+    // if the check were implemented twice and only one copy kept.
+    [TestMethod]
+    public async Task OffsetBeyondEnd_ReportsPagingNotice_OnLargeFilePath()
+    {
+        var lines = Enumerable.Range(1, 4000).Select(i => $"line {i:D5} " + new string('y', 30));
+        var filePath = Path.Combine(_tempDir, "offset_beyond_large.txt");
+        await File.WriteAllTextAsync(filePath, string.Join("\n", lines), Encoding.UTF8);
+
+        var fileInfo = new FileInfo(filePath);
+        Assert.IsTrue(
+            fileInfo.Length > FileChunkService.LargeFileByteThreshold,
+            $"File should exceed large-file byte threshold, got {fileInfo.Length}");
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["OffsetLines"] = 999_999
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "[PAGING:");
+        StringAssert.Contains(result.Output, "beyond the end of the file");
+    }
+
+    // Test 20: a negative offset used to be clamped to 0 silently — the caller got the first line
+    // and had no way to tell its argument was rewritten.
+    [TestMethod]
+    public async Task NegativeOffset_ReportsClampedNotice_AndReadsFromFirstLine()
+    {
+        var content = "alpha\nbeta\ngamma\n";
+        var filePath = Path.Combine(_tempDir, "offset_negative.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["OffsetLines"] = -5,
+            ["LimitLines"] = 1
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "negative and was applied as 0");
+        StringAssert.Contains(result.Output, "alpha");
+        Assert.IsFalse(result.Output.Contains("beta"), result.Output);
+    }
+
+    // Test 21: LimitLines <= 0 reads nothing; without the notice the empty body looks like an empty file.
+    [TestMethod]
+    public async Task NonPositiveLimitLines_ReportsEmptyBodyNotice()
+    {
+        var content = "alpha\nbeta\n";
+        var filePath = Path.Combine(_tempDir, "limit_zero.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["OffsetLines"] = 0,
+            ["LimitLines"] = 0
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "requests no line");
+    }
+
+    // Test 22: positive control — a well-formed window must stay quiet, otherwise the notice
+    // becomes noise and models learn to ignore it.
+    [TestMethod]
+    public async Task OffsetWithinRange_HasNoPagingNotice()
+    {
+        var content = "alpha\nbeta\ngamma\ndelta\n";
+        var filePath = Path.Combine(_tempDir, "offset_fine.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["OffsetLines"] = 1,
+            ["LimitLines"] = 2
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsFalse(result.Output.Contains("[PAGING:"), result.Output);
+        StringAssert.Contains(result.Output, "beta");
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(
         FileReadTool tool,
         string path,
