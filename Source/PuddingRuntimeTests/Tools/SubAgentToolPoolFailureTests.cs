@@ -354,6 +354,86 @@ public sealed class SubAgentToolPoolFailureTests
     }
 
     [TestMethod]
+    public async Task Sleep_BusyEntryNotConfirmed_ReportsStillBusyNotMissing()
+    {
+        // 池层 false 有三种来源，只有前两种是「没有这个条目」。
+        // 忙碌且取消后未确认退出时条目仍在内存里且仍是 Busy——报成「名字拼错」
+        // 会把人引去查拼写，而真实原因是那一单还在跑、还在烧 token。
+        var pool = new FakeSubAgentPool
+        {
+            SleepResult = false,
+            Entries =
+            [
+                new PooledSubAgent
+                {
+                    PoolId = "poolid-p1",
+                    Name = "p1",
+                    SubSessionId = "sess-parent-sub-p1",
+                    TemplateId = "workspace-task-agent",
+                    CreatedAt = DateTimeOffset.UnixEpoch,
+                    LastUsedAt = DateTimeOffset.UnixEpoch,
+                    Status = PooledSubAgentStatus.Busy,
+                    TaskCount = 0,
+                    OwnerSessionId = "sess-parent",
+                    OwnerWorkspaceId = "workspace_1",
+                },
+            ],
+        };
+
+        var result = await ExecuteToolAsync(pool, """{"pool_name":"p1","pool_action":"sleep"}""");
+
+        Assert.IsFalse(result.Success);
+        var error = result.Error ?? string.Empty;
+        StringAssert.Contains(error, "仍是 Busy", $"必须点出条目仍在且状态未变：{error}");
+        Assert.IsFalse(error.Contains("未命中"),
+            $"条目存在时报「未命中」等于指向错误原因：{error}");
+    }
+
+    [TestMethod]
+    public async Task Sleep_EntryGone_StillReportsMissing()
+    {
+        // 正向对照：同一个 false，条目确实不在时仍必须报「未命中」。
+        // 只有「不在→未命中」与「还在→仍忙碌」两侧都红得住，才能区分「按状态分文案」与「一律改文案」。
+        var pool = new FakeSubAgentPool { SleepResult = false };
+
+        var result = await ExecuteToolAsync(pool, """{"pool_name":"p1","pool_action":"sleep"}""");
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error ?? string.Empty, "未命中");
+    }
+
+    [TestMethod]
+    public async Task Destroy_StoreRejected_ReportsStillThereNotMissing()
+    {
+        // DestroyAsync 在库拒绝状态迁移时返回 false 并刻意保留内存条目；
+        // 那一条仍然是 Idle，报「名字未命中」会掩盖「库与内存不一致」。
+        var pool = new FakeSubAgentPool
+        {
+            DestroyResult = false,
+            Entries = [OwnedEntry("p1", "sess-parent")],
+        };
+
+        var result = await ExecuteToolAsync(pool, """{"pool_name":"p1","pool_action":"destroy"}""");
+
+        Assert.IsFalse(result.Success);
+        var error = result.Error ?? string.Empty;
+        StringAssert.Contains(error, "仍在池里", $"必须点出内存条目还在：{error}");
+        Assert.IsFalse(error.Contains("未命中"),
+            $"条目存在时报「未命中」会掩盖库与内存不一致：{error}");
+    }
+
+    [TestMethod]
+    public async Task Destroy_EntryGone_StillReportsMissing()
+    {
+        var pool = new FakeSubAgentPool { DestroyResult = false };
+
+        var result = await ExecuteToolAsync(pool, """{"pool_name":"p1","pool_action":"destroy"}""");
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error ?? string.Empty, "未命中");
+    }
+
+    [TestMethod]
     public async Task Destroy_WithoutPoolName_AsksForPoolName()
     {
         var result = await ExecuteToolAsync(new FakeSubAgentPool(), """{"pool_action":"destroy"}""");

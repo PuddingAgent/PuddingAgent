@@ -471,18 +471,40 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                     }
 
                     case "destroy":
-                        // false 是「确认没有这个条目」，与「未就绪（还不知道有没有）」是相反的事实，
-                        // 所以单独给「未命中 + 下一步」，不并进通用失败文案。
+                    {
+                        // false 不止一种来源：池里确实没有这个条目；或者库拒绝了这次状态迁移
+                        // （DestroyAsync 因此把内存条目刻意保留，见其注释）。后者条目还在内存里，
+                        // 报成「名字未命中」会把人引去查拼写，而真实原因是库与内存不一致。
                         // 归属不符会抛 PoolOwnershipMismatchException（由下面的 catch 渲染）。
-                        return await managementPool.DestroyAsync(args.PoolName, ownerScope, ct)
-                            ? Success($"? 池化子代理 '{args.PoolName}' 已销毁。")
-                            : Fail(DescribePoolEntryMissing(args.PoolName, "destroy"));
+                        if (await managementPool.DestroyAsync(args.PoolName, ownerScope, ct))
+                            return Success($"✅ 池化子代理 '{args.PoolName}' 已销毁。");
 
-                    default: // sleep
-                        // 同 destroy：false 表示名字未命中或条目已死，不是「池不可用」。
-                        return await managementPool.SleepAsync(args.PoolName, ownerScope, ct)
-                            ? Success($"? 池化子代理 '{args.PoolName}' 已休眠。")
-                            : Fail(DescribePoolEntryMissing(args.PoolName, "sleep"));
+                        return FailAfterPoolFalse(
+                            managementPool, ownerScope, args.PoolName, "destroy",
+                            stillThere =>
+                                $"⚠️ 子代理 '{args.PoolName}' 没有销毁：条目仍在池里（当前 {stillThere.Status}）。" +
+                                "\n这通常意味着库拒绝了这次状态迁移（我看到的那个前置状态已经不成立）。" +
+                                "内存条目被刻意保留——否则会出现「库里还活着、内存里没了」，重启后又复活。" +
+                                "\n提示：pool_action=\"list\" 看它当前状态。若反复失败，说明库与内存已不一致" +
+                                "（该行可能已被别处置 dead 或软删），需要重启进程让池从库重建。");
+                    }
+
+                    default: // sleep（外层已限定 pool_action 只可能是这五个值之一）
+                    {
+                        // false 有三种来源：池里没有这个条目 / 条目已销毁 / 忙碌但没等到退出。
+                        // 最后一种是「它还在跑、还在烧 token」，报成「名字未命中」会完全掩盖真因。
+                        if (await managementPool.SleepAsync(args.PoolName, ownerScope, ct))
+                            return Success($"✅ 池化子代理 '{args.PoolName}' 已休眠。");
+
+                        return FailAfterPoolFalse(
+                            managementPool, ownerScope, args.PoolName, "sleep",
+                            stillThere =>
+                                $"⚠️ 子代理 '{args.PoolName}' 没有进入休眠：它当前仍是 {stillThere.Status}（条目仍在池里）。" +
+                                "\n忙碌条目的休眠是「请求取消 + 等那一单真正退出」——取消不是立即生效，" +
+                                "等不到退出就判失败；期间条目保持可查，也不会被再次派发。" +
+                                "\n提示：等这一单结束后重试；或 pool_action=\"destroy\" 直接销毁" +
+                                "（销毁会级联取消在跑的那一单）。");
+                    }
                 }
             }
             catch (InvalidOperationException ex)
@@ -2117,6 +2139,38 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
     private static string DescribePoolEntryMissing(string? poolName, string action)
         => $"? 子代理 '{poolName}' 未命中：池里没有这个条目名（可能从未创建、已销毁，或名字拼错）。\n" +
            $"提示：先用 pool_name=\"{poolName}\" pool_action=\"list\" 查看可用条目名，再重试 {action}。";
+
+    /// <summary>
+    /// 池层返回 <c>false</c> 之后的归属复核：区分「确实没有这个条目」与「条目还在，只是这次没成」。
+    /// <para>
+    /// <b>为什么不能把 false 一律当「未命中」：</b><c>SleepAsync</c> 在「忙碌且取消后未确认退出」
+    /// 「退出但收尾被库拒」时返回 false，<c>DestroyAsync</c> 在「库拒绝状态迁移」时返回 false ——
+    /// 这三种情况下条目都还在内存里、状态未变。报成「名字拼错 / 从未创建」会让人去排查一个不存在的问题，
+    /// 而真实原因是「那一单还在跑」或「库与内存不一致」。
+    /// </para>
+    /// <para>
+    /// 回读只用于选文案：状态可能在两次调用之间变化，所以文案只陈述「此刻仍是 X」，不断言过去。
+    /// </para>
+    /// </summary>
+    private static ToolExecutionResult FailAfterPoolFalse(
+        ISubAgentPool pool,
+        PoolOwnerScope scope,
+        string? entryName,
+        string action,
+        Func<PooledSubAgent, string> describeStillThere)
+    {
+        PooledSubAgent? stillThere = null;
+        if (!string.IsNullOrWhiteSpace(entryName))
+        {
+            stillThere = pool.ListOwnedBy(scope)
+                .FirstOrDefault(a => string.Equals(a.Name, entryName, StringComparison.Ordinal));
+        }
+
+        // Dead 与「解析不到」同等处置：名字还在但已不可驱动，重试只会再失败一次。
+        return stillThere is null || stillThere.Status == PooledSubAgentStatus.Dead
+            ? Fail(DescribePoolEntryMissing(entryName, action))
+            : Fail(describeStillThere(stillThere));
+    }
 
     /// <summary>从池满文案里取回容量数值，让报错给出可核对的数字而不是只有「已满」。</summary>
     private static string? TryReadPoolCapacity(string message)
