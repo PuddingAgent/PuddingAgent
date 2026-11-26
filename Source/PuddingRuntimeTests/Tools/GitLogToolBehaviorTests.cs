@@ -12,6 +12,7 @@ namespace PuddingRuntimeTests.Tools;
 /// <item>FilePath 声明了参数、写进了工具描述，却从未被读取 ⇒ 传了过滤条件仍拿到整支分支历史；</item>
 /// <item>分支名不存在时 Branches[...] 返回 null，旧代码静默回落到当前分支，回执里 branch 仍写着 HEAD；</item>
 /// <item>数量被截断（或 max_count 被夹取）时没有任何信号 ⇒ 无法区分「到上限了」与「历史就这么长」。</item>
+/// <item>回执的 branch 无条件写 <c>repo.Head.FriendlyName</c> ⇒ 指定别的分支查询时，内容来自该分支而回执标成 HEAD。</item>
 /// </list>
 /// 每条用例都配了一条「正常路径不产生噪声」的对照，避免用「恒为真」的实现蒙过去。
 /// </summary>
@@ -142,6 +143,49 @@ public sealed class GitLogToolBehaviorTests
             var notice = json.GetProperty("notice").GetString();
             StringAssert.Contains(notice, "max_count=0 was clamped");
             StringAssert.Contains(notice, "older history was not returned");
+        }
+        finally
+        {
+            DeleteFixture(root);
+        }
+    }
+
+    [TestMethod]
+    public async Task Branch_EchoesTheQueriedBranch_NotHead()
+    {
+        // 修复前该字段无条件写 repo.Head.FriendlyName：指定 feature-x 能拿到该分支的提交，
+        // 回执却把它标成 master —— 回执与内容互相矛盾，调用方据此判断「查的是哪一支」就会错。
+        var root = CreateFixture();
+        try
+        {
+            string featureTip;
+            using (var repo = new Repository(root))
+            {
+                var c2 = repo.Head.Tip.Parents.First();
+                featureTip = repo.Branches.Add("feature-x", c2).Tip.Sha;
+            }
+
+            using (var doc = await Log(root, new { path = root, branch = "feature-x", max_count = 20 }))
+            {
+                var json = doc.RootElement;
+                Assert.AreEqual("feature-x", json.GetProperty("branch").GetString(), "回执应报实际查询的分支");
+                Assert.AreEqual(featureTip, json.GetProperty("commits")[0].GetProperty("sha").GetString(),
+                    "内容必须来自 feature-x（其 tip 与 master 不同）");
+            }
+
+            // 再一臂：传 refs/heads/ 规范形式，回执仍须给短名 —— 这臂能抓住「逐字回显入参」的实现。
+            using (var canonicalDoc = await Log(root, new { path = root, branch = "refs/heads/feature-x" }))
+            {
+                Assert.AreEqual("feature-x", canonicalDoc.RootElement.GetProperty("branch").GetString(),
+                    "回执给 git 规范短名，不回显入参");
+            }
+
+            // 对照：不传 branch 时仍报当前分支 —— 否则一个「无条件回显入参」的实现也能过上面两条。
+            using (var headDoc = await Log(root, new { path = root, max_count = 20 }))
+            {
+                Assert.AreEqual("master", headDoc.RootElement.GetProperty("branch").GetString(),
+                    "未指定分支时应报当前 HEAD 名");
+            }
         }
         finally
         {

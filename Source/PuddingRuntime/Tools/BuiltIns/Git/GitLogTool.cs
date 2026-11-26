@@ -51,6 +51,10 @@ namespace PuddingRuntime.Services.Tools
                 SortBy = CommitSortStrategies.Topological | CommitSortStrategies.Time
             };
 
+            // ④ 回执的 branch 必须是「实际查询的那一支」，不是当前 HEAD —— 否则指定分支查出的历史
+            //    会被自己的回执标成另一支（2026-11-26 运行时实测：branch=feature/r1-xss-fix 拿到该分支
+            //    tip e59b9c0，回执 branch 却写 master）。
+            string? queriedBranch = null;
             if (!string.IsNullOrWhiteSpace(args.Branch))
             {
                 var branch = repo.Branches[args.Branch];
@@ -61,6 +65,9 @@ namespace PuddingRuntime.Services.Tools
                 }
 
                 filter.IncludeReachableFrom = branch.Tip;
+                // FriendlyName 是 git 的规范名：Windows 上传入 "MASTER" 会被解析成 master，
+                // 回执跟着规范名走，调用方才能确认自己问的是哪一支。
+                queriedBranch = branch.FriendlyName;
             }
 
             var filePath = NormalizeFilterPath(repo, args.FilePath);
@@ -87,7 +94,7 @@ namespace PuddingRuntime.Services.Tools
             return Task.FromResult(ToolExecutionResult.Ok(JsonSerializer.Serialize(new
             {
                 path = repoPath,
-                branch = repo.Head.FriendlyName,
+                branch = queriedBranch ?? repo.Head.FriendlyName,
                 file_path = filePath,
                 count = entries.Count,
                 truncated,
