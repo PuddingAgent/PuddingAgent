@@ -1,18 +1,25 @@
 {
   "note": "Known-failing tests tolerated by TestScripts/check-staged-tests.ps1. Ratchet: entries may only be REMOVED (when fixed), never added without a dated reason. Measured by full `dotnet test <proj> --no-restore` runs.",
-  "measuredAtUtc": "2026-10-27T11:05:00Z",
-  "measuredAtCommit": "2d6f439",
+  "measuredAtUtc": "2026-11-26T06:47:54Z",
+  "measuredAtCommit": "de7b69d",
   "measuredTotals": {
     "Tests/PuddingHost.Tests/PuddingHost.Tests.csproj": {
-      "total": 396,
-      "passed": 391,
-      "failed": 5
+      "total": 461,
+      "passed": 460,
+      "failed": 1
     },
     "Source/PuddingWebApiTests/PuddingWebApiTests.csproj": {
       "note": "3 failures, all environment-induced (see reasonGroups.environmentKeyVault); not counted here"
     }
   },
   "reasonGroups": {
+    "environmentJwtKeyPlaceholder": {
+      "recordedAt": "2026-11-26",
+      "reason": "PuddingHost.Tests 的 bootstrap 用例要求 <DataRoot>/config/security.json 的 jwt.key 是真实密钥。本机该值是未展开的凭据引用 {{vault:...}}，PuddingJwtSettings.FromConfiguration 主动拒绝（fail-closed：否则 HS256 签名密钥等于一个公开可见的字符串，任何人可伪造登录态）。这是正确行为的守护，不是缺陷；换一台填了真实密钥的机器应绿，届时应从基线移除。2026-11-26 全量实测 461 例 / 460 通过 / 仅此 1 条失败（此次登记同时把 measuredTotals 从 10-27 的 396/391/5 更新为实测值）。",
+      "affected": [
+        "PuddingHost.Tests.Hosting.PuddingDataRootSecurityBootstrapTests.BootstrappedSecurityJson_IsTheJwtConfigurationSource"
+      ]
+    },
     "pluginWorkerPrerequisites": {
       "recordedAt": "2026-11-20",
       "reason": "PuddingModelEvaluation / PuddingOperatorApi / PuddingPluginAgentApi 的集成用例在 Fixture 构造函数里就抛 InvalidOperationException: Test root required.（之后还需要 PUDDING_PLUGIN_WORKER）。这两个变量由 TestScripts/test-model-evaluation-api.ps1 与 TestScripts/test-pudding-tool-plugins.ps1 负责构建 Worker 并注入。提交门禁直接跑 dotnet test，不带这两个变量，所以失败发生在任何产品代码执行之前（堆栈停在 Fixture..ctor），与当次改动无关——实测 8 条失败全部如此。修法二选一：让门禁改走那两个脚本，或在门禁环境预置变量；修好后应从基线移除。",
@@ -67,6 +74,7 @@
     }
   },
   "knownFailures": [
+    "PuddingHost.Tests.Hosting.PuddingDataRootSecurityBootstrapTests.BootstrappedSecurityJson_IsTheJwtConfigurationSource",
     "PuddingHost.Tests.BrowserBridge.ConfiguredAgentBrowserSnapshotPolicyExecutionTests.ConfiguredAgent_BrowserSnapshotTool_TraversesPolicyExecutionAndAuthenticatedBridge",
     "PuddingHost.Tests.BrowserBridge.BrowserAgentToolBridgeIntegrationTests.BrowserContextTool_TraversesAuthenticatedBridgeAndReturnsDesktopResult",
     "PuddingHost.Tests.BrowserBridge.BrowserAgentToolBridgeIntegrationTests.BrowserSnapshotTool_TraversesAuthenticatedBridgeAndReturnsVersionedRefs",
