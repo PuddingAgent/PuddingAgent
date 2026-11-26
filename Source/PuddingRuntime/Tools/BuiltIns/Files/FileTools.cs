@@ -236,19 +236,26 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
     /// <summary>
     /// 取前若干行，并保证 UTF-8 字节数不超预算（行数与字节取更严格者）。
     /// 至少返回一行：单行即超预算时按字节截断，避免模型什么都看不到。
+    /// <paramref name="firstLineTruncated"/> 为真时，返回内容的首行**只剩前缀**。
     /// </summary>
-    private static string TakeLinesWithinByteBudget(IReadOnlyList<string> lines, int maxLines, out int taken)
+    private static string TakeLinesWithinByteBudget(
+        IReadOnlyList<string> lines, int maxLines, out int taken, out bool firstLineTruncated)
     {
         var budget = InlineBudgetBytes;
         var sb = new StringBuilder();
         var bytes = 0;
         taken = 0;
+        // 2026-11-27：首行被切成半行时，本方法返回的内容**不是整行**，调用方不能按行偏移续读。
+        firstLineTruncated = false;
         var cap = Math.Min(maxLines, lines.Count);
         for (var i = 0; i < cap; i++)
         {
             var line = lines[i];
             if (i == 0 && Encoding.UTF8.GetByteCount(line) > budget)
+            {
                 line = TruncateToUtf8Bytes(line, budget);
+                firstLineTruncated = true;
+            }
 
             var lineBytes = Encoding.UTF8.GetByteCount(line) + (i > 0 ? 1 : 0);
             if (i > 0 && bytes + lineBytes > budget)
@@ -275,17 +282,37 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
     /// 因此：行数是软约束（由调用方参数决定想读多少），**字节数是硬不变量**（永不超
     /// <see cref="InlineBudgetBytes"/>）。超预算时给出可直接照抄的续读位置。
     /// </summary>
-    private static string BoundInlineBody(string body, int startLine, out int emittedLines, out bool truncated)
+    private static BoundedInlineBody BoundInlineBody(string body, int startLine)
     {
         var lines = body.Split('\n');
-        var bounded = TakeLinesWithinByteBudget(lines, lines.Length, out emittedLines);
-        truncated = emittedLines < lines.Length;
+        var bounded = TakeLinesWithinByteBudget(lines, lines.Length, out var emittedLines, out var firstLineTruncated);
+        // 2026-11-27：单行即超预算时 lines.Length == 1，「已交付行数 < 总行数」为假 ——
+        // 旧判据会把这次截断当作「没截断」，正文被砍掉大半却一个字都不说。首行被切本身就是截断。
+        var truncated = firstLineTruncated || emittedLines < lines.Length;
         if (!truncated)
-            return bounded;
+            return new BoundedInlineBody(bounded, emittedLines, Truncated: false, FirstLineTruncated: false);
 
         var next = startLine + emittedLines;
-        return $"{bounded}\n... [TRUNCATED: lines {startLine + 1}..{next} shown ({Encoding.UTF8.GetByteCount(bounded)} bytes, inline budget {InlineBudgetBytes}). Use OffsetLines={next}+LimitLines to continue from line {next + 1}.]";
+        if (firstLineTruncated)
+        {
+            // 行偏移落不进一行中间：报 OffsetLines=next 会跳过这一行尚未交付的剩余内容。
+            return new BoundedInlineBody(
+                $"{bounded}\n... [TRUNCATED: line {startLine + 1} alone exceeds the {InlineBudgetBytes}-byte inline budget — only its first {Encoding.UTF8.GetByteCount(bounded)} bytes were delivered, and the rest of this line is not addressable: no argument of this tool resumes inside a line.]",
+                emittedLines,
+                Truncated: true,
+                FirstLineTruncated: true);
+        }
+
+        return new BoundedInlineBody(
+            $"{bounded}\n... [TRUNCATED: lines {startLine + 1}..{next} shown ({Encoding.UTF8.GetByteCount(bounded)} bytes, inline budget {InlineBudgetBytes}). Use OffsetLines={next}+LimitLines to continue from line {next + 1}.]",
+            emittedLines,
+            Truncated: true,
+            FirstLineTruncated: false);
     }
+
+    /// <summary>字节闸门的交付结果：正文、完整交付行数、是否截断、是否连首行都被切成半行。</summary>
+    private readonly record struct BoundedInlineBody(
+        string Body, int EmittedLines, bool Truncated, bool FirstLineTruncated);
 
     /// <summary>按 UTF-8 字节数截断字符串，不切断代理对。</summary>
     private static string TruncateToUtf8Bytes(string value, int maxBytes)
@@ -369,6 +396,12 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
             ? $"of this window; file has {totalChars.Value} chars / {totalLines} line(s)"
             : $"of this window; file has {totalLines} line(s)";
 
+        // 2026-11-27：预算比首行还短时没有任何完整行交付，续读位置会原地不动 ——
+        // 实测 max_chars=10 得到「continue with OffsetLines=0」，照做即得同一份回执（自我循环）。
+        // 这种情况下给出偏移等于给出死路，改为说明该怎么改预算。
+        if (consumedLines == 0)
+            return $"(requested max_chars={maxChars} chars {scope}, but no complete line fits in that budget: the first line of this window is longer, so OffsetLines={windowStart} would return this same output again. Raise max_chars to at least the length of one line.)";
+
         if (deliveredLines.HasValue)
             return $"(requested max_chars={maxChars} chars {scope}, but the {InlineBudgetBytes}-byte inline budget bound first; continue with OffsetLines={nextOffset}+LimitLines)";
 
@@ -426,7 +459,7 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                     // 的 8 KiB 注入上限；结果被再次 spill 成新 artifact，而 artifact 的 notice 又
                     // 引导模型 file_read —— 模型在「读 artifact」与「生成 artifact」之间无限循环
                     // （实测 28 请求 / 362 万 token 未收敛）。改为行数与字节预算双约束。
-                    var preview = TakeLinesWithinByteBudget(lines, GuardrailPreviewLines, out var taken);
+                    var preview = TakeLinesWithinByteBudget(lines, GuardrailPreviewLines, out var taken, out _);
                     return ToolExecutionResult.Ok(
                         $"{meta}\n{preview}\n... [GUARDRAIL: {totalLines} lines, {totalChars} chars — showing first {taken} lines ({Encoding.UTF8.GetByteCount(preview)} bytes, inline budget {InlineBudgetBytes}). Use OffsetLines={taken}+LimitLines to continue from line {taken + 1}, or TailLines for the end.]");
                 }
@@ -469,14 +502,15 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                         args.MaxChars.Value, windowStart, content, totalChars, totalLines);
                 }
 
-                var boundedSmall = BoundInlineBody(content, windowStart, out var emittedSmall, out var byteBoundedSmall);
-                if (maxCharsNotice is not null && byteBoundedSmall)
+                var boundedSmall = BoundInlineBody(content, windowStart);
+                if (maxCharsNotice is not null && boundedSmall.Truncated)
                 {
-                    // 字节闸门先于 MaxChars 生效：续读位置改按实际交付的行数算。
+                    // 字节闸门先于 MaxChars 生效：续读位置改按实际交付的**完整**行数算（首行被切成半行时为 0）。
                     maxCharsNotice = DescribeMaxCharsTruncation(
-                        args.MaxChars!.Value, windowStart, content, totalChars, totalLines, emittedSmall);
+                        args.MaxChars!.Value, windowStart, content, totalChars, totalLines,
+                        boundedSmall.FirstLineTruncated ? 0 : boundedSmall.EmittedLines);
                 }
-                var body = $"{meta}\n{boundedSmall}";
+                var body = $"{meta}\n{boundedSmall.Body}";
                 if (maxCharsNotice is not null)
                     body = $"{body}\n... {maxCharsNotice}";
                 var paging = DescribePagingAnomaly(
@@ -501,7 +535,7 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
             {
                 var rawPreview = await _chunk.ReadChunkAsync(fullPath, 0, GuardrailPreviewLines, ct);
                 // 同上：字节预算与行数取更严格者，否则会被二次 spill。
-                var preview = TakeLinesWithinByteBudget(rawPreview.Split('\n'), GuardrailPreviewLines, out var takenLarge);
+                var preview = TakeLinesWithinByteBudget(rawPreview.Split('\n'), GuardrailPreviewLines, out var takenLarge, out _);
                 return ToolExecutionResult.Ok(
                     $"{metaLarge}\n{preview}\n... [GUARDRAIL: {totalLinesLarge} lines, {totalBytesLarge} bytes — showing first {takenLarge} lines ({Encoding.UTF8.GetByteCount(preview)} bytes, inline budget {InlineBudgetBytes}). Use OffsetLines={takenLarge}+LimitLines to continue from line {takenLarge + 1}, or TailLines for the end.]");
             }
@@ -542,13 +576,14 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                     args.MaxChars.Value, windowStartLarge, windowContent, totalChars: null, totalLinesLarge);
             }
 
-            var boundedLarge = BoundInlineBody(windowContent, windowStartLarge, out var emittedLarge, out var byteBoundedLarge);
-            if (maxCharsNoticeLarge is not null && byteBoundedLarge)
+            var boundedLarge = BoundInlineBody(windowContent, windowStartLarge);
+            if (maxCharsNoticeLarge is not null && boundedLarge.Truncated)
             {
                 maxCharsNoticeLarge = DescribeMaxCharsTruncation(
-                    args.MaxChars!.Value, windowStartLarge, windowContent, totalChars: null, totalLinesLarge, emittedLarge);
+                    args.MaxChars!.Value, windowStartLarge, windowContent, totalChars: null, totalLinesLarge,
+                    boundedLarge.FirstLineTruncated ? 0 : boundedLarge.EmittedLines);
             }
-            var bodyLarge = $"{metaLarge}\n{boundedLarge}";
+            var bodyLarge = $"{metaLarge}\n{boundedLarge.Body}";
             if (maxCharsNoticeLarge is not null)
                 bodyLarge = $"{bodyLarge}\n... {maxCharsNoticeLarge}";
             var pagingLarge = DescribePagingAnomaly(

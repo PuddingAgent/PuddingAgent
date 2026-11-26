@@ -754,6 +754,75 @@ public sealed class FileReadToolTests
             $"ROW{offset + 1:D4} was never delivered, so it cannot sit before the continuation point");
     }
 
+    // Test 28: a budget shorter than the first line delivers no complete line, and the old notice
+    // still advised `OffsetLines=0` — following that advice re-issued the same call and returned the
+    // same receipt, forever. 实测 max_chars=10 对 18 字首行得到「continue with OffsetLines=0」。
+    // 2026-11-27.
+    [TestMethod]
+    public async Task MaxChars_ShorterThanFirstLine_DoesNotAdviseNonAdvancingOffset()
+    {
+        var content = "0123456789abcdef\nsecond line\nthird line\n";
+        var filePath = Path.Combine(_tempDir, "maxchars_short_first_line.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["MaxChars"] = 5
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "no complete line fits in that budget");
+        StringAssert.Contains(result.Output, "would return this same output again");
+        Assert.IsFalse(
+            result.Output.Contains("continue with OffsetLines=0"),
+            "a non-advancing continuation offset is a dead end, not advice");
+    }
+
+    // Test 29: a one-line file larger than the 8 KiB inline budget was cut to 7680 bytes with NO
+    // notice at all — `emittedLines < lines.Length` was false because there is only one line, so
+    // the truncation was real and completely silent. MaxChars is passed only to bypass the
+    // guardrail preview and reach the byte gate with the whole file as the window. 2026-11-27.
+    [TestMethod]
+    public async Task SingleLineLongerThanInlineBudget_AnnouncesTruncation()
+    {
+        var filePath = Path.Combine(_tempDir, "single_long_line.txt");
+        await File.WriteAllTextAsync(filePath, new string('x', 20_000), Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["MaxChars"] = 20_000
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "[TRUNCATED:");
+    }
+
+    // Test 30: when the first line alone overflows the byte gate, the old notice said
+    // 「Use OffsetLines=1+LimitLines to continue from line 2」 — jumping over the ~12 KB of that line
+    // that were never delivered. A line offset cannot resume inside a line, so the receipt must say
+    // so instead of naming an offset. 2026-11-27.
+    [TestMethod]
+    public async Task LongFirstLine_DoesNotAdviseOffsetPastUndeliveredRemainder()
+    {
+        var lines = new List<string> { new string('X', 20_000) };
+        lines.AddRange(Enumerable.Range(2, 10).Select(i => $"tail-{i}"));
+        var filePath = Path.Combine(_tempDir, "long_first_line_multi.txt");
+        await File.WriteAllTextAsync(filePath, string.Join("\n", lines) + "\n", Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["MaxChars"] = 30_000
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "not addressable");
+        Assert.IsFalse(result.Output.Contains("continue from line 2"), result.Output);
+        Assert.IsFalse(result.Output.Contains("tail-2"), result.Output);
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(
         FileReadTool tool,
         string path,
