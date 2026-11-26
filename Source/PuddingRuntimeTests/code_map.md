@@ -237,7 +237,7 @@
 `Tools/FileNoisePathFilterTests.cs` 覆盖 9 条用例。
 `Tools/FilePatchToolDryRunDefaultTests.cs` 覆盖 10 条用例。
 `Tools/FilePatchToolTests.cs` 覆盖 46 条用例。
-`Tools/FileReadToolTests.cs` 覆盖 19 条用例。
+`Tools/FileReadToolTests.cs` 覆盖 50 条用例（含 MaxChars 先定窗再截顶、续读位只按实际交付、LimitLines 单独也可选窗与护栏让位）。
 `Tools/FileSearchBudgetTests.cs` 覆盖 8 条用例。
 `Tools/FileSearchToolTests.cs` 覆盖 27 条用例。
 `Tools/GitCheckoutAndSwitchToolBehaviorTests.cs` 覆盖 4 条用例。

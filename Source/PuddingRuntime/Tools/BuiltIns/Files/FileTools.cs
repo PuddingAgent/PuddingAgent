@@ -519,7 +519,9 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 // Guardrail: auto-truncate large files when no explicit pagination or FullFile
                 // 2026-11-27：MaxChars 本身就是调用方给的输出预算，等同显式分页——否则护栏先命中，
                 // MaxChars 整段作废（实测：502 行文件传 max_chars=300 只会拿到 [GUARDRAIL] 预览）。
-                var hasExplicitSlice = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue || args.MaxChars.HasValue;
+                // 2026-11-27：LimitLines 也算显式切片 —— 单独给 limit 的调用方要的是「前 N 行」，
+                // 不是「整个文件」。不列入这里，护栏会先命中并把该参数一并作废。
+                var hasExplicitSlice = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue || args.LimitLines.HasValue || args.MaxChars.HasValue;
                 if (!hasExplicitSlice && args.FullFile != true && (totalLines > 300 || fileInfo.Length > 8_192))
                 {
                     // 2026-08-22 模型倾向适配：窗口 120→400 行，减少同文件翻页重读。
@@ -557,6 +559,17 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                         var limit = args.LimitLines ?? (lines.Length - offset);
                         content = string.Join("\n", lines.Skip(offset).Take(Math.Max(0, limit)));
                     }
+                }
+                else if (args.LimitLines.HasValue)
+                {
+                    // 2026-11-27：LimitLines 单独给出时同样是显式窗口（从首行起前 N 行）。
+                    // 旧实现只有 OffsetLines 分支会读 LimitLines，于是 limit_lines 单独传入等于没传：
+                    // 正文返回整个文件，而 LimitLines<=0 时的提示还写着「body is empty」——
+                    // 回执与正文互相矛盾，调用方无法判断该信哪一个。实测 10 行文件：
+                    //   limit_lines=2 → 全部 10 行、无任何提示
+                    //   limit_lines=0 → 全部 10 行，却报「requests no line … so the body is empty」
+                    windowStart = 0;
+                    content = string.Join("\n", lines.Take(Math.Max(0, args.LimitLines.Value)));
                 }
 
                 // 2026-11-27：MaxChars 是「本次窗口」的字符预算，必须在窗口选定之后施加。
@@ -602,7 +615,7 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
             // Guardrail: auto-truncate large files when no explicit pagination or FullFile
             // 2026-08-22 模型倾向适配：模型心智是"整文件"，120 行窗口导致实测同文件
             // 重读 8 次。预览放大到 400 行：≤400 行文件一次覆盖，大文件翻页次数降 70%。
-            var hasExplicitSliceLarge = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue || args.MaxChars.HasValue;
+            var hasExplicitSliceLarge = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue || args.LimitLines.HasValue || args.MaxChars.HasValue;
             if (!hasExplicitSliceLarge && args.FullFile != true && (totalLinesLarge > 300 || fileInfo.Length > 8_192))
             {
                 var rawPreview = await _chunk.ReadChunkAsync(fullPath, 0, GuardrailPreviewLines, ct);
@@ -629,6 +642,11 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 windowStartLarge = Math.Max(0, args.OffsetLines.Value);
                 var limit = args.LimitLines ?? (totalLinesLarge - windowStartLarge);
                 windowContent = await _chunk.ReadChunkAsync(fullPath, windowStartLarge, limit, ct);
+            }
+            else if (args.LimitLines.HasValue)
+            {
+                // 与上方小文件路径同一条语义：LimitLines 单独给出 = 从首行起前 N 行。
+                windowContent = await _chunk.ReadChunkAsync(fullPath, 0, Math.Max(0, args.LimitLines.Value), ct);
             }
             else
             {

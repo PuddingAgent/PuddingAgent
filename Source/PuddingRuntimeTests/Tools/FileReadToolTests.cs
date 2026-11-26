@@ -1083,6 +1083,103 @@ public sealed class FileReadToolTests
         Assert.IsFalse(result.Output.Contains("continue from line 2"), result.Output);
     }
 
+    // 2026-11-27：LimitLines 单独给出时也是显式窗口（前 N 行）。
+    // 旧实现只把 LimitLines 当 OffsetLines 的附属参数，于是单独传入等于没传：
+    // 正文返回整个文件，而 LimitLines<=0 的提示又写着「body is empty」——回执与正文矛盾。
+    [TestMethod]
+    public async Task LimitLines_Alone_ReadsFirstLines()
+    {
+        var filePath = Path.Combine(_tempDir, "limit_alone.txt");
+        await File.WriteAllTextAsync(filePath, "L1\nL2\nL3\nL4\nL5\n", Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["LimitLines"] = 2
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "L2");
+        Assert.IsFalse(result.Output.Contains("L4"), result.Output);
+    }
+
+    // 正向对照：合法窗口不该发提示，否则提示变噪音。
+    [TestMethod]
+    public async Task LimitLines_Alone_HasNoPagingNotice()
+    {
+        var filePath = Path.Combine(_tempDir, "limit_alone_quiet.txt");
+        await File.WriteAllTextAsync(filePath, "L1\nL2\nL3\nL4\nL5\n", Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["LimitLines"] = 2
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsFalse(result.Output.Contains("[PAGING:"), result.Output);
+    }
+
+    // 回执与正文必须一致：旧实现在 limit<=0 时报「body is empty」但正文是整个文件。
+    [TestMethod]
+    public async Task NonPositiveLimitLines_Alone_EmptyBodyMatchesNotice()
+    {
+        var filePath = Path.Combine(_tempDir, "limit_zero_alone.txt");
+        await File.WriteAllTextAsync(filePath, "alpha\nbeta\n", Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["LimitLines"] = 0
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "requests no line");
+        Assert.IsFalse(result.Output.Contains("alpha"), result.Output);
+    }
+
+    // LimitLines 必须算作「显式切片」：否则护栏先命中，用户给的 limit 被路过的预览推翻。
+    [TestMethod]
+    public async Task LimitLines_Alone_BypassesGuardrail()
+    {
+        var lines = Enumerable.Range(1, 350).Select(i => $"row {i:D3} " + new string('w', 36));
+        var filePath = Path.Combine(_tempDir, "limit_alone_guardrail.txt");
+        await File.WriteAllTextAsync(filePath, string.Join("\n", lines) + "\n", Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["LimitLines"] = 3
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsFalse(result.Output.Contains("GUARDRAIL"), result.Output);
+        StringAssert.Contains(result.Output, "row 003");
+        Assert.IsFalse(result.Output.Contains("row 004"), result.Output);
+    }
+
+    // 大文件路径（>100_000 字节，走 chunk 读）是与小文件**不同的调用点**：
+    // 它的选择器分支与 hasExplicitSliceLarge 各需一条守护。
+    [TestMethod]
+    public async Task LimitLines_Alone_LargeFileReadsFirstLines()
+    {
+        var lines = Enumerable.Range(1, 400).Select(i => $"row {i:D5} " + new string('q', 290));
+        var filePath = Path.Combine(_tempDir, "limit_alone_large.txt");
+        await File.WriteAllTextAsync(filePath, string.Join("\n", lines) + "\n", Encoding.UTF8);
+        Assert.IsTrue(new FileInfo(filePath).Length > FileChunkService.LargeFileByteThreshold);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["LimitLines"] = 3
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsFalse(result.Output.Contains("GUARDRAIL"), result.Output);
+        StringAssert.Contains(result.Output, "row 00003");
+        Assert.IsFalse(result.Output.Contains("row 00004"), result.Output);
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(
         FileReadTool tool,
         string path,
