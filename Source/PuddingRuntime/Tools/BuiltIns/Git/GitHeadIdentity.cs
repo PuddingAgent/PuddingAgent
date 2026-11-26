@@ -23,7 +23,7 @@ namespace PuddingRuntime.Services.Tools
         /// </summary>
         public static string Describe(Repository repo)
         {
-            if (!repo.Info.IsHeadDetached)
+            if (IsHeadSymbolic(repo))
                 return repo.Head.FriendlyName;
 
             var sha = repo.Head.Tip?.Sha;
@@ -51,7 +51,7 @@ namespace PuddingRuntime.Services.Tools
                 return true;
             }
 
-            if (repo.Info.IsHeadDetached)
+            if (!IsHeadSymbolic(repo))
             {
                 var sha = repo.Head.Tip?.Sha;
                 var where = sha is null ? "detached" : $"detached at {Shorten(sha)}";
@@ -63,6 +63,22 @@ namespace PuddingRuntime.Services.Tools
 
             name = repo.Head.FriendlyName;
             return true;
+        }
+
+        /// <summary>
+        /// HEAD 是不是**符号引用**（指向 <c>refs/heads/&lt;name&gt;</c>）。
+        ///
+        /// 为什么不用 <c>Repository.Info.IsHeadDetached</c>：该属性在「游离且 HEAD 没有提交」时报
+        /// <c>false</c>（libgit2 的 head_detached 对 unborn HEAD 返回错误码而非 1），于是
+        /// <see cref="Describe"/> 会掉进「在分支上」的支路，把 <c>(no branch)</c> 当分支名报出去——
+        /// 正是本类型要消灭的那个字面量。改为直接看 HEAD 的引用形态：符号引用的 TargetIdentifier 形如
+        /// <c>refs/heads/x</c>，直接引用（游离）是 40 位 sha。
+        /// </summary>
+        private static bool IsHeadSymbolic(Repository repo)
+        {
+            var head = repo.Refs.Head;
+            var target = head?.TargetIdentifier;
+            return target is not null && target.StartsWith("refs/", StringComparison.Ordinal);
         }
 
         private static string Shorten(string sha)

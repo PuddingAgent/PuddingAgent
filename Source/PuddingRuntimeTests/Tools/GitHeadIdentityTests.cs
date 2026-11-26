@@ -71,6 +71,46 @@ public class GitHeadIdentityTests
         StringAssert.Contains(error, "git_branch_switch", "必须给出可执行的下一步");
     }
 
+    [TestMethod]
+    public void Describe_DetachedUnbornHead_ReportsNoCommit_NotPlaceholder()
+    {
+        // 游离且 HEAD 没有提交：.git/HEAD 是直接引用，但指向一个不存在的对象。
+        // 这个形态下 LibGit2Sharp 的 Info.IsHeadDetached 报 false（libgit2 对 unborn HEAD 返回错误码），
+        // 旧实现因此掉进「在分支上」支路，把 (no branch) 当分支名报了出去。
+        using var fixture = new GitFixture();
+        fixture.DetachAtUnbornCommit();
+
+        var described = GitHeadIdentity.Describe(fixture.Repo);
+
+        Assert.AreEqual("detached (HEAD has no commit)", described);
+        Assert.AreNotEqual("(no branch)", described);
+    }
+
+    [TestMethod]
+    public void TryResolveBranchName_DetachedUnbornWithoutRequested_FailsClosed()
+    {
+        using var fixture = new GitFixture();
+        fixture.DetachAtUnbornCommit();
+
+        Assert.IsFalse(GitHeadIdentity.TryResolveBranchName(fixture.Repo, null, out var name, out var error));
+        Assert.AreEqual(string.Empty, name, "失败时不应留下半成品分支名（否则会拼出 refs/heads/(no branch)）");
+        StringAssert.Contains(error, "detached", "必须说明 HEAD 游离");
+        StringAssert.Contains(error, "git_branch_switch", "必须给出可执行的下一步");
+    }
+
+    [TestMethod]
+    public void Describe_UnbornBranchWithoutCommits_ReturnsBranchName()
+    {
+        // 正向对照：同样是「HEAD 没有提交」，但 HEAD 是符号引用（指向一个还没出生的分支）。
+        // 这里必须报分支名——否则会把正常的「刚 init、还没提交」误报成游离。
+        using var fixture = new GitFixture();
+        fixture.PointHeadAtUnbornBranch("fixture-unborn");
+
+        Assert.AreEqual("fixture-unborn", GitHeadIdentity.Describe(fixture.Repo));
+        Assert.IsTrue(GitHeadIdentity.TryResolveBranchName(fixture.Repo, null, out var name, out _));
+        Assert.AreEqual("fixture-unborn", name);
+    }
+
     /// <summary>
     /// 两个提交、一个有名字的临时仓库。git 的松散对象在 Windows 上是只读的，清理前要还原属性。
     /// </summary>
@@ -96,7 +136,7 @@ public class GitHeadIdentityTests
             Repo.Commit("c2", author, author);
         }
 
-        public Repository Repo { get; }
+        public Repository Repo { get; private set; }
 
         public string FirstCommitSha { get; }
 
@@ -105,6 +145,25 @@ public class GitHeadIdentityTests
 
         public void DetachAtFirstCommit()
             => Commands.Checkout(Repo, Repo.Lookup<Commit>(FirstCommitSha));
+
+        /// <summary>把 HEAD 写成直接引用、指向一个不存在的对象 = 「游离且没有提交」。</summary>
+        public void DetachAtUnbornCommit()
+        {
+            ReopenWithHead("444b46d5928a54579aab5bc45242a4e95cce54ed");
+        }
+
+        /// <summary>把 HEAD 写成指向一个尚未出生的分支（刚 init、还没提交的样子）。</summary>
+        public void PointHeadAtUnbornBranch(string branchName)
+        {
+            ReopenWithHead("ref: refs/heads/" + branchName);
+        }
+
+        private void ReopenWithHead(string headContent)
+        {
+            Repo.Dispose();
+            File.WriteAllText(Path.Combine(_root, ".git", "HEAD"), headContent + "\n");
+            Repo = new Repository(_root);
+        }
 
         public void Dispose()
         {
