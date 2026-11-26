@@ -236,6 +236,75 @@ public sealed class GitLogToolBehaviorTests
         }
     }
 
+    [TestMethod]
+    public async Task TruncationAtRequestedCeiling_DoesNotAdviseRaisingMaxCount()
+    {
+        // 第九处（2026-11-26 21:2x 在主库以 max_count=100 实测）：请求恰好等于上限时不触发夹取
+        // （requested == applied == 100），旧判据 requested > applied 为 false ⇒ 走了「可以 raise」分支，
+        // 而 raise 到 200 仍会被夹回 100。上限判据必须是「生效值是否已达上限」。
+        var root = CreateLongFixture(120);
+        try
+        {
+            using var doc = await Log(root, new { path = root, max_count = 100 });
+            var json = doc.RootElement;
+            Assert.AreEqual(100, json.GetProperty("count").GetInt32());
+            Assert.IsTrue(json.GetProperty("truncated").GetBoolean());
+            var notice = json.GetProperty("notice").GetString();
+            StringAssert.Contains(notice, "already at the 100 ceiling");
+            Assert.IsFalse(notice.Contains("raise max_count"),
+                "未触发夹取不等于没到上限——此时 raise 仍无效");
+            Assert.IsFalse(notice.Contains("clamped"), "100 在合法区间内，不该报夹取");
+        }
+        finally
+        {
+            DeleteFixture(root);
+        }
+    }
+
+    [TestMethod]
+    public async Task TruncationWithAllFiltersGiven_DoesNotAdviseNarrowing()
+    {
+        // branch 与 file_path 都已给出时，「narrow the query with branch/file_path」是对已用完的手段再推一次。
+        // 两侧断言：既要没 narrow，也要真的给出了剩下的有效路径（raise）。
+        var root = CreateLongFixture(120);
+        try
+        {
+            using var doc = await Log(root, new { path = root, branch = "master", file_path = "a.txt", max_count = 5 });
+            var json = doc.RootElement;
+            Assert.IsTrue(json.GetProperty("truncated").GetBoolean());
+            var notice = json.GetProperty("notice").GetString();
+            StringAssert.Contains(notice, "raise max_count");
+            Assert.IsFalse(notice.Contains("narrow"), "branch 与 file_path 都已指定，再劝收窄等于让调用方换个问题");
+        }
+        finally
+        {
+            DeleteFixture(root);
+        }
+    }
+
+    [TestMethod]
+    public async Task TruncationAtCeilingWithAllFiltersGiven_StatesNoRouteRemains()
+    {
+        // 三者同时成立：已在上限 + branch/file_path 都已给 + 仍截断。
+        // 此时 raise 无效、narrow 无处可窄，回执必须把「本次调用取不完」说清楚，而不是随便挑一条做不到的建议。
+        var root = CreateLongFixture(120);
+        try
+        {
+            using var doc = await Log(root, new { path = root, branch = "master", file_path = "a.txt", max_count = 100 });
+            var json = doc.RootElement;
+            Assert.AreEqual(100, json.GetProperty("count").GetInt32());
+            Assert.IsTrue(json.GetProperty("truncated").GetBoolean());
+            var notice = json.GetProperty("notice").GetString();
+            StringAssert.Contains(notice, "cannot return older history in one call");
+            Assert.IsFalse(notice.Contains("raise max_count"), "已在上限，raise 做不到");
+            Assert.IsFalse(notice.Contains("narrow"), "两个维度都已指定，narrow 无处可去");
+        }
+        finally
+        {
+            DeleteFixture(root);
+        }
+    }
+
     private static async Task<JsonDocument> Log(string root, object arguments)
     {
         var result = await Execute(root, arguments);

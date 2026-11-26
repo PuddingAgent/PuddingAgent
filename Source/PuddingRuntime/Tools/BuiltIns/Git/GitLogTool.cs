@@ -101,7 +101,7 @@ namespace PuddingRuntime.Services.Tools
                 file_path = filePath,
                 count = entries.Count,
                 truncated,
-                notice = BuildNotice(requestedCount, count, truncated),
+                notice = BuildNotice(requestedCount, count, truncated, queriedBranch is not null, filePath is not null),
                 commits = entries
             })));
         }
@@ -133,13 +133,24 @@ namespace PuddingRuntime.Services.Tools
 
         /// <summary>
         /// 只在「调用方要的和拿到的不是一回事」时才产出说明；正常查询返回 null，避免给每次调用加噪声。
+        /// <para>
+        /// 建议必须同时与「实现能力」和「调用方已用尽的手段」同源，否则会给出做不到的指引：
+        /// ① 上限判据是 <c>applied &gt;= MaxCountCeiling</c>，不是 <c>requested &gt; applied</c> ——
+        ///    请求恰好 100 时不触发夹取（requested == applied），但生效值已在天花板上，
+        ///    再 raise 一样还是 100；旧判据把这个形态漏了（2026-11-26 运行时实测，第九处）。
+        /// ② 已经给了 branch / file_path 时不再劝 narrow —— 调用方已把这两个维度用尽，
+        ///    再叫它收窄只能换查询目标，等于换个问题而不是取完当前问题。
+        /// </para>
         /// </summary>
-        private static string? BuildNotice(int requested, int applied, bool truncated)
+        private static string? BuildNotice(
+            int requested, int applied, bool truncated, bool branchGiven, bool filePathGiven)
         {
-            // 夹取有两个方向：削到上限（requested > applied）与抬到下限（requested < applied）。
-            // 到达上限后「raise max_count」是做不到的事 —— 上限就是 100，再写多大的数还是 100，
-            // 这条建议会把调用方领进死胡同；只有抬到下限时「raise max_count」才真的有效。
-            var clampedAtCeiling = requested > applied;
+            var atCeiling = applied >= MaxCountCeiling;
+
+            // 还没被用尽的收窄维度。两者都用尽时，「收窄」这条路对本次查询已经关闭。
+            var unused = new List<string>(2);
+            if (!branchGiven) unused.Add("branch");
+            if (!filePathGiven) unused.Add("file_path");
 
             var parts = new List<string>();
             if (requested != applied)
@@ -150,11 +161,20 @@ namespace PuddingRuntime.Services.Tools
 
             if (truncated)
             {
-                var advice = clampedAtCeiling
-                    ? $"narrow the query with branch/file_path (max_count is already at the {MaxCountCeiling} ceiling)"
-                    : "raise max_count or narrow the query with branch/file_path";
-                parts.Add(
-                    $"showing the {applied} newest commit(s); older history was not returned — {advice}");
+                var narrow = unused.Count > 0
+                    ? $"narrow the query with {string.Join("/", unused)}"
+                    : null;
+
+                var advice = (atCeiling, narrow) switch
+                {
+                    (true, null) =>
+                        $"branch and file_path are already given and max_count is already at the {MaxCountCeiling} ceiling"
+                        + " — this query cannot return older history in one call",
+                    (true, _) => $"{narrow} (max_count is already at the {MaxCountCeiling} ceiling)",
+                    (false, null) => "raise max_count",
+                    (false, _) => $"raise max_count or {narrow}"
+                };
+                parts.Add($"showing the {applied} newest commit(s); older history was not returned — {advice}");
             }
 
             return parts.Count == 0 ? null : string.Join("; ", parts);
