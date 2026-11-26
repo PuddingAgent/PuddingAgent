@@ -265,6 +265,42 @@ public sealed class ToolCallPresentationEmissionTests
             recorded[0].Metadata!.GetValueOrDefault("session_id"));
     }
 
+    /// <summary>
+    /// 失败活动的 <c>error_message</c> 必须被截到 500 字符（+省略号）。
+    /// 工具错误可能是一整段输出或堆栈：不截断就会把一条活动撑到几 KB，
+    /// 并在每次失败时按同样体积重复落库。此前的用例都用短错误，守不住这条边界。
+    /// </summary>
+    [TestMethod]
+    public async Task StreamingToolCall_FailureErrorIsTruncatedTo500Chars()
+    {
+        const int limit = 500;
+        var longError = new string('e', limit * 3);
+        var activities = new RecordingActivitySink();
+        var tools = new StubToolInvocationService(
+            TerminalResultJson, success: false, error: longError);
+        var service = CreateService(
+            new ToolCallingLlmClient(
+                new LlmResponse(null, [new ToolCall("call-long-error", "terminal_start", TerminalStartArgs)]),
+                new LlmResponse("finished", null)),
+            tools,
+            activitySink: activities);
+
+        await DrainAsync(service.ExecuteStreamAsync(CreateDispatchRequest("session-tool-long-error")));
+
+        var recorded = activities.Activities
+            .Where(a => a.Component == RuntimeActivityComponents.ToolRunner
+                        && a.Operation == "execute_tool")
+            .ToList();
+        Assert.HasCount(1, recorded);
+        var message = recorded[0].Metadata!.GetValueOrDefault("error_message");
+        Assert.IsNotNull(message);
+        Assert.AreEqual(
+            limit + 1,
+            message!.Length,
+            "error_message 应为 500 字符 + 1 个省略号，否则单条活动会被超长错误撑大。");
+        Assert.AreEqual(new string('e', limit) + "…", message);
+    }
+
     // ── Fixture ────────────────────────────────────────────────────────────
     private static async Task<List<ServerSentEventFrame>> DrainAsync(
         IAsyncEnumerable<ServerSentEventFrame> frames)
