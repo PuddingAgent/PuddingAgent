@@ -271,6 +271,23 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
     }
 
     /// <summary>
+    /// GUARDRAIL 尾串：续读位置只描述**已交付**内容。
+    ///
+    /// 2026-11-27：两处 GUARDRAIL 原先无条件写 <c>OffsetLines={taken}+LimitLines</c>，而
+    /// <paramref name="takenLines"/> 在首行被切成半行时已把该行算作「已交付」。于是回执让人从
+    /// 第 2 行续读，而第 1 行尚未交付的剩余内容无法用任何行偏移取回——单行文件更是指向一个
+    /// 不存在的行（实测 20002 字节单行文件报 <c>continue from line 2</c>；20000 字节首行 +
+    /// 19 行报同一句，第 1 行余下的 12320 字节永远读不到）。
+    /// </summary>
+    private static string DescribeGuardrailSuffix(int takenLines, bool firstLineTruncated)
+    {
+        if (firstLineTruncated)
+            return $"Only the first {InlineBudgetBytes} bytes of line 1 were delivered; the rest of that line is not addressable — no argument of this tool resumes inside a line. Use TailLines for the end.";
+
+        return $"Use OffsetLines={takenLines}+LimitLines to continue from line {takenLines + 1}, or TailLines for the end.";
+    }
+
+    /// <summary>
     /// 单次 inline 输出的最后一道字节闸门。
     ///
     /// 2026-11-14：<c>FullFile=true</c>、显式分页参数（HeadLines / TailLines / OffsetLines+LimitLines）
@@ -459,9 +476,9 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                     // 的 8 KiB 注入上限；结果被再次 spill 成新 artifact，而 artifact 的 notice 又
                     // 引导模型 file_read —— 模型在「读 artifact」与「生成 artifact」之间无限循环
                     // （实测 28 请求 / 362 万 token 未收敛）。改为行数与字节预算双约束。
-                    var preview = TakeLinesWithinByteBudget(lines, GuardrailPreviewLines, out var taken, out _);
+                    var preview = TakeLinesWithinByteBudget(lines, GuardrailPreviewLines, out var taken, out var firstLineTruncated);
                     return ToolExecutionResult.Ok(
-                        $"{meta}\n{preview}\n... [GUARDRAIL: {totalLines} lines, {totalChars} chars — showing first {taken} lines ({Encoding.UTF8.GetByteCount(preview)} bytes, inline budget {InlineBudgetBytes}). Use OffsetLines={taken}+LimitLines to continue from line {taken + 1}, or TailLines for the end.]");
+                        $"{meta}\n{preview}\n... [GUARDRAIL: {totalLines} lines, {totalChars} chars — showing first {taken} lines ({Encoding.UTF8.GetByteCount(preview)} bytes, inline budget {InlineBudgetBytes}). {DescribeGuardrailSuffix(taken, firstLineTruncated)}]");
                 }
 
                 var windowStart = 0;
@@ -535,9 +552,9 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
             {
                 var rawPreview = await _chunk.ReadChunkAsync(fullPath, 0, GuardrailPreviewLines, ct);
                 // 同上：字节预算与行数取更严格者，否则会被二次 spill。
-                var preview = TakeLinesWithinByteBudget(rawPreview.Split('\n'), GuardrailPreviewLines, out var takenLarge, out _);
+                var preview = TakeLinesWithinByteBudget(rawPreview.Split('\n'), GuardrailPreviewLines, out var takenLarge, out var firstLineTruncatedLarge);
                 return ToolExecutionResult.Ok(
-                    $"{metaLarge}\n{preview}\n... [GUARDRAIL: {totalLinesLarge} lines, {totalBytesLarge} bytes — showing first {takenLarge} lines ({Encoding.UTF8.GetByteCount(preview)} bytes, inline budget {InlineBudgetBytes}). Use OffsetLines={takenLarge}+LimitLines to continue from line {takenLarge + 1}, or TailLines for the end.]");
+                    $"{metaLarge}\n{preview}\n... [GUARDRAIL: {totalLinesLarge} lines, {totalBytesLarge} bytes — showing first {takenLarge} lines ({Encoding.UTF8.GetByteCount(preview)} bytes, inline budget {InlineBudgetBytes}). {DescribeGuardrailSuffix(takenLarge, firstLineTruncatedLarge)}]");
             }
 
 

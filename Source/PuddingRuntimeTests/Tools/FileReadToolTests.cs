@@ -823,6 +823,82 @@ public sealed class FileReadToolTests
         Assert.IsFalse(result.Output.Contains("tail-2"), result.Output);
     }
 
+    // 2026-11-27: 两处 GUARDRAIL（小文件路径与大文件路径）原先无条件写
+    // "Use OffsetLines={taken}+LimitLines"，而首行被切成半行时 taken 已把该行算作已交付。
+    // 于是回执让人从第 2 行续读，而第 1 行尚未交付的剩余内容无法用任何行偏移取回。
+    // 实测：20002 字节单行文件报 "continue from line 2"（文件只有 1 行）。
+    [TestMethod]
+    public async Task Guardrail_SingleLineLongerThanInlineBudget_DoesNotAdviseLineOffset()
+    {
+        var filePath = Path.Combine(_tempDir, "guardrail_single_line.txt");
+        await File.WriteAllTextAsync(filePath, new string('X', 20_000), Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath);
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "GUARDRAIL");
+        StringAssert.Contains(result.Output, "not addressable");
+        Assert.IsFalse(result.Output.Contains("continue from line 2"), result.Output);
+    }
+
+    // 同上，带后续行：行偏移无法落入第 1 行中间，第 1 行余下的字节永远读不到。
+    [TestMethod]
+    public async Task Guardrail_LongFirstLineWithFollowingLines_DoesNotAdviseLineOffset()
+    {
+        var lines = new List<string> { new string('Y', 20_000) };
+        lines.AddRange(Enumerable.Range(2, 19).Select(i => $"tail-line-{i:D2}"));
+        var filePath = Path.Combine(_tempDir, "guardrail_long_first.txt");
+        await File.WriteAllTextAsync(filePath, string.Join("\n", lines) + "\n", Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath);
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "GUARDRAIL");
+        StringAssert.Contains(result.Output, "not addressable");
+        Assert.IsFalse(result.Output.Contains("continue from line 2"), result.Output);
+        // 首行吃满预算，后续行本来就不该出现。
+        Assert.IsFalse(result.Output.Contains("tail-line-02"), result.Output);
+    }
+
+    // 正向对照：首行不超预算时，GUARDRAIL 必须**仍然**给出可直接照抄的行偏移。
+    // 没有这一条，一个「一律不给偏移」的实现也能让上面两条全绿。
+    [TestMethod]
+    public async Task Guardrail_FittingFirstLine_StillAdvisesLineOffset()
+    {
+        var lines = Enumerable.Range(1, 500).Select(i => $"line {i}");
+        var filePath = Path.Combine(_tempDir, "guardrail_fitting_first.txt");
+        await File.WriteAllTextAsync(filePath, string.Join("\n", lines), Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath);
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "GUARDRAIL");
+        StringAssert.Contains(result.Output, "OffsetLines=400+LimitLines");
+        Assert.IsFalse(result.Output.Contains("not addressable"), result.Output);
+    }
+
+    // 大文件路径（> FileChunkService.LargeFileByteThreshold = 100_000 字节，走 chunk 读）是
+    // 与上面两条**不同的调用点**：两者同源但各自缩了 out _。不加这条，大文件那处的
+    // DescribeGuardrailSuffix 调用没有任何用例守护。
+    [TestMethod]
+    public async Task Guardrail_LargeFileSingleLineLongerThanInlineBudget_DoesNotAdviseLineOffset()
+    {
+        var filePath = Path.Combine(_tempDir, "guardrail_large_single_line.txt");
+        await File.WriteAllTextAsync(filePath, new string('Z', 121_000), Encoding.UTF8);
+        Assert.IsTrue(new FileInfo(filePath).Length > FileChunkService.LargeFileByteThreshold);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath);
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "GUARDRAIL");
+        StringAssert.Contains(result.Output, "not addressable");
+        Assert.IsFalse(result.Output.Contains("continue from line 2"), result.Output);
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(
         FileReadTool tool,
         string path,
