@@ -472,6 +472,26 @@ public sealed class SubAgentToolPoolFailureTests
     }
 
     [TestMethod]
+    public async Task Sleep_OtherEntryOnly_ReportsMissingNotOtherEntryStatus()
+    {
+        // 回读必须按名字匹配：池里有别的成员不代表请求的那个存在。
+        // 只用 FirstOrDefault 取首条的实现会把 other 的 Busy 栽给 p1，报成「p1 仍是 Busy」。
+        var pool = new FakeSubAgentPool
+        {
+            SleepResult = false,
+            Entries = [OwnedEntry("other", "sess-parent") with { Status = PooledSubAgentStatus.Busy }],
+        };
+
+        var result = await ExecuteToolAsync(pool, """{"pool_name":"p1","pool_action":"sleep"}""");
+
+        Assert.IsFalse(result.Success);
+        var error = result.Error ?? string.Empty;
+
+        StringAssert.Contains(error, "未命中", $"池里没有 p1，不能拿别人的状态顶上：{error}");
+        Assert.IsFalse(error.Contains("仍是 Busy"), $"把 other 的忙碌状态栽给了 p1：{error}");
+    }
+
+    [TestMethod]
     public async Task Destroy_WithoutPoolName_AsksForPoolName()
     {
         var result = await ExecuteToolAsync(new FakeSubAgentPool(), """{"pool_action":"destroy"}""");
