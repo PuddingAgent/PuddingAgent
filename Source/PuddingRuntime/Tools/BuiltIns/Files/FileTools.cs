@@ -673,10 +673,10 @@ public sealed class ListDirectoryTool : PuddingToolBase<ListDirectoryArgs>
             var truncated = entries.Count > maxEntries;
             if (truncated)
                 entries.RemoveRange(maxEntries, entries.Count - maxEntries);
+            // 与 file_write / file_patch 用同一个渲染器：越出执行根时退回绝对路径，否则调用方
+            // 拿到 '..\..\..\CodeProject\…' 这种只能自己数的路径（2026-11-26 实测）。
             var payload = new ListDirectoryResult(
-                Path.GetRelativePath(
-                    HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory),
-                    fullPath),
+                HostFileToolPaths.RenderForReceipt(fullPath, context.WorkingDirectory),
                 entries.Count,
                 truncated,
                 entries,
