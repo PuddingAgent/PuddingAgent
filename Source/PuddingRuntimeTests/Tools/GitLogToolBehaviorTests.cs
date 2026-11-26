@@ -193,6 +193,49 @@ public sealed class GitLogToolBehaviorTests
         }
     }
 
+    [TestMethod]
+    public async Task TruncationAtCeiling_DoesNotAdviseRaisingMaxCount()
+    {
+        // 2026-11-26 20:50 在主库实测到的组合：requested=1000 → applied=100 → truncated=true，
+        // 旧文案同时给出「raise max_count」——上限就是 100，再写多大的数还是 100，这条建议做不到。
+        var root = CreateLongFixture(120);
+        try
+        {
+            using var doc = await Log(root, new { path = root, max_count = 1000 });
+            var json = doc.RootElement;
+            Assert.AreEqual(100, json.GetProperty("count").GetInt32());
+            Assert.IsTrue(json.GetProperty("truncated").GetBoolean(), "120 条提交只要 100 条时必然截断");
+            var notice = json.GetProperty("notice").GetString();
+            StringAssert.Contains(notice, "clamped to the supported range 1..100");
+            StringAssert.Contains(notice, "older history was not returned");
+            StringAssert.Contains(notice, "already at the 100 ceiling");
+            Assert.IsFalse(notice.Contains("raise max_count"),
+                "上限已生效，再叫调用方 raise max_count 是做不到的事");
+        }
+        finally
+        {
+            DeleteFixture(root);
+        }
+    }
+
+    [TestMethod]
+    public async Task TruncationBelowCeiling_StillAdvisesRaisingMaxCount()
+    {
+        // 对照：没撞上限时 raise max_count 真能解决问题，不能一并删掉。
+        var root = CreateFixture();
+        try
+        {
+            using var doc = await Log(root, new { path = root, max_count = 2 });
+            var notice = doc.RootElement.GetProperty("notice").GetString();
+            StringAssert.Contains(notice, "raise max_count");
+            Assert.IsFalse(notice.Contains("ceiling"), "未撞上限时不该出现天花板措辞");
+        }
+        finally
+        {
+            DeleteFixture(root);
+        }
+    }
+
     private static async Task<JsonDocument> Log(string root, object arguments)
     {
         var result = await Execute(root, arguments);
@@ -238,6 +281,24 @@ public sealed class GitLogToolBehaviorTests
         File.WriteAllText(Path.Combine(root, "a.txt"), "a3");
         Commands.Stage(repo, new[] { "a.txt" });
         repo.Commit("c3", author, author);
+
+        return root;
+    }
+
+    /// <summary>建一个超过 max_count 上限（100）的仓库，用于验证「撞到天花板 + 截断」这个组合。</summary>
+    private static string CreateLongFixture(int commitCount)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pudding-git-log", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        Repository.Init(root);
+        using var repo = new Repository(root);
+        var author = new Signature("test", "test@example.invalid", DateTimeOffset.UtcNow);
+        for (var i = 1; i <= commitCount; i++)
+        {
+            File.WriteAllText(Path.Combine(root, "a.txt"), "a" + i);
+            Commands.Stage(repo, new[] { "a.txt" });
+            repo.Commit("c" + i, author, author);
+        }
 
         return root;
     }

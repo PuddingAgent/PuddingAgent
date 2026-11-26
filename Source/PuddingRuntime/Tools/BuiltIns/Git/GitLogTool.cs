@@ -31,6 +31,9 @@ namespace PuddingRuntime.Services.Tools
     // 2026-08-28 裁定（依据用户 2026-08-28 指示）：git_log 纯本地只读查询（ReadOnly 标注），不写/删任何数据，Low+ReadOnly|ConcurrencySafe 免审直通
     public sealed class GitLogTool : PuddingToolBase<GitLogArgs>
     {
+        /// <summary>max_count 的硬上限。回执里的建议文案必须与它同源，否则会出现「叫人调到 200」这类做不到的建议。</summary>
+        internal const int MaxCountCeiling = 100;
+
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(
             GitLogArgs args, ToolExecutionContext context, CancellationToken ct)
         {
@@ -44,7 +47,7 @@ namespace PuddingRuntime.Services.Tools
             // ② 分支名不存在时 Branches[...] 返回 null，旧代码静默回落到当前分支，回执里 branch 还写着 HEAD；
             // ③ 数量被截断时没有任何信号 ⇒ 无法区分「到上限了」与「历史就这么长」，与 list_dir 的 MaxEntriesNotice 同类。
             var requestedCount = args.MaxCount;
-            var count = Math.Clamp(requestedCount, 1, 100);
+            var count = Math.Clamp(requestedCount, 1, MaxCountCeiling);
 
             var filter = new CommitFilter
             {
@@ -133,17 +136,25 @@ namespace PuddingRuntime.Services.Tools
         /// </summary>
         private static string? BuildNotice(int requested, int applied, bool truncated)
         {
+            // 夹取有两个方向：削到上限（requested > applied）与抬到下限（requested < applied）。
+            // 到达上限后「raise max_count」是做不到的事 —— 上限就是 100，再写多大的数还是 100，
+            // 这条建议会把调用方领进死胡同；只有抬到下限时「raise max_count」才真的有效。
+            var clampedAtCeiling = requested > applied;
+
             var parts = new List<string>();
             if (requested != applied)
             {
                 parts.Add(
-                    $"max_count={requested} was clamped to the supported range 1..100 (applied {applied})");
+                    $"max_count={requested} was clamped to the supported range 1..{MaxCountCeiling} (applied {applied})");
             }
 
             if (truncated)
             {
+                var advice = clampedAtCeiling
+                    ? $"narrow the query with branch/file_path (max_count is already at the {MaxCountCeiling} ceiling)"
+                    : "raise max_count or narrow the query with branch/file_path";
                 parts.Add(
-                    $"showing the {applied} newest commit(s); older history was not returned — raise max_count or narrow the query with branch/file_path");
+                    $"showing the {applied} newest commit(s); older history was not returned — {advice}");
             }
 
             return parts.Count == 0 ? null : string.Join("; ", parts);
