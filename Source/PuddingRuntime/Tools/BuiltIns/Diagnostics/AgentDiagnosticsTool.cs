@@ -272,6 +272,8 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             .Select(g => new { message = g.Key, count = g.Count() })
             .ToList();
 
+        var sampleRange = SampleTimeRange(activities);
+
         return JsonSerializer.Serialize(new
         {
             tool_name = toolName,
@@ -295,8 +297,30 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                 sample_limit_effective = effectiveSampleLimit,
                 tool_activities_matched = toolActivities.Count,
                 sample_truncated_by_sink_limit = activities.Count >= effectiveSampleLimit,
+                sample_oldest_utc = sampleRange.OldestUtc,
+                sample_newest_utc = sampleRange.NewestUtc,
             }
         });
+    }
+
+    /// <summary>
+    /// 样本的时间范围（UTC，到秒）。为空表示样本没有可用时间戳。
+    /// <para>
+    /// <b>为什么必须报：</b><c>tool_stats</c> 只读 sink 窗口（最多 500 条），窗口里的「最近」是相对记录流而言，
+    /// 不是相对当下。记录源一旦停写，同样一份 500 条样本会被读成「刚刚发生的 500 次调用」——
+    /// 2026-11-26 实测 <c>tool_runner</c> 自 11-24 06:36Z 起无新记录，而 <c>tool_stats</c> 照旧输出
+    /// success_rate / avg_duration_ms，看不出任何陈旧迹象。缺这两个时间戳，仪器就在替调用方断言「这是现状」。
+    /// </para>
+    /// </summary>
+    private static (string? OldestUtc, string? NewestUtc) SampleTimeRange(IReadOnlyList<RuntimeActivity> activities)
+    {
+        if (activities.Count == 0)
+            return (null, null);
+
+        return (FormatUtc(activities.Min(a => a.StartedAtUtc)), FormatUtc(activities.Max(a => a.StartedAtUtc)));
+
+        static string FormatUtc(DateTimeOffset value)
+            => value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ");
     }
 
     /// <summary>
@@ -352,6 +376,8 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             .Take(limit)
             .ToList();
 
+        var sampleRange = SampleTimeRange(activities);
+
         return JsonSerializer.Serialize(new
         {
             mode = "overview",
@@ -373,6 +399,8 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
                 sample_limit_requested = requestedSampleLimit,
                 sample_limit_effective = effectiveSampleLimit,
                 sample_truncated_by_sink_limit = activities.Count >= effectiveSampleLimit,
+                sample_oldest_utc = sampleRange.OldestUtc,
+                sample_newest_utc = sampleRange.NewestUtc,
                 query_component = queriedComponent,
             }
         });

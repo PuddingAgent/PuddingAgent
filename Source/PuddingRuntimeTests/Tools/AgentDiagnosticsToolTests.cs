@@ -870,6 +870,88 @@ public sealed class AgentDiagnosticsToolTests
             $"截断标记不得恒真：只有 1 个名字时不能声称被截断：{few.Output}");
     }
 
+    /// <summary>
+    /// 仪器缺陷回归（2026-11-26）：<c>tool_stats</c> 只读 sink 窗口（最多 500 条），而窗口的「最近」是相对
+    /// 记录流而非当下。实测 <c>tool_runner</c> 自 2026-11-24T06:36Z 起再无新记录，而 <c>tool_stats</c> 仍输出
+    /// success_rate / avg_duration_ms，看不出任何陈旧迹象。样本必须自带时间范围，否则仪器在替调用方断言「这是现状」。
+    /// </summary>
+    [TestMethod]
+    public async Task ToolStats_SampleBlockReportsTimeRangeOfTheWindow()
+    {
+        var oldest = new DateTimeOffset(2026, 11, 22, 5, 46, 11, TimeSpan.Zero);
+        var newest = new DateTimeOffset(2026, 11, 24, 6, 36, 54, TimeSpan.Zero);
+        var sink = new FakeActivitySink(
+        [
+            ActivityAt("shell", RuntimeActivityStatuses.Succeeded, 10, newest),
+            ActivityAt("shell", RuntimeActivityStatuses.Succeeded, 20, oldest),
+        ]);
+
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var tool = new AgentDiagnosticsTool(
+            activitySink: sink,
+            scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+        var result = await ExecuteAsync(tool, """{"action":"tool_stats","tool_name":"shell"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        using var doc = JsonDocument.Parse(result.Output);
+        var sample = doc.RootElement.GetProperty("sample");
+
+        // 两个值必须不同，才能排除「两键永远相等」的退化实现。
+        Assert.AreEqual("2026-11-22T05:46:11Z", sample.GetProperty("sample_oldest_utc").GetString(),
+            "oldest 必须取样本内最早时间（UTC）");
+        Assert.AreEqual("2026-11-24T06:36:54Z", sample.GetProperty("sample_newest_utc").GetString(),
+            "newest 必须取样本内最晚时间（UTC）；两键写反时本断言会红");
+    }
+
+    /// <summary>
+    /// 与单工具路径同一缺陷，但概览是独立的第二条代码路径：只修一条会让另一条静默缺时间范围。
+    /// </summary>
+    [TestMethod]
+    public async Task ToolStatsOverview_SampleBlockReportsTimeRangeOfTheWindow()
+    {
+        var oldest = new DateTimeOffset(2026, 11, 22, 5, 46, 11, TimeSpan.Zero);
+        var newest = new DateTimeOffset(2026, 11, 24, 6, 36, 54, TimeSpan.Zero);
+        var sink = new FakeActivitySink(
+        [
+            ActivityAt("shell", RuntimeActivityStatuses.Succeeded, 10, newest),
+            ActivityAt("file_read", RuntimeActivityStatuses.Failed, 20, oldest, "boom"),
+        ]);
+
+        var services = new ServiceCollection();
+        using var provider = services.BuildServiceProvider();
+        var tool = new AgentDiagnosticsTool(
+            activitySink: sink,
+            scopeFactory: provider.GetRequiredService<IServiceScopeFactory>());
+
+        var result = await ExecuteAsync(tool, """{"action":"tool_stats","tool_name":"all"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        using var doc = JsonDocument.Parse(result.Output);
+        var root = doc.RootElement;
+        Assert.AreEqual("overview", root.GetProperty("mode").GetString());
+
+        var sample = root.GetProperty("sample");
+        Assert.AreEqual("2026-11-22T05:46:11Z", sample.GetProperty("sample_oldest_utc").GetString(),
+            "概览路径也必须报样本时间范围，否则一个只修单工具路径的改动能骗过整组用例");
+        Assert.AreEqual("2026-11-24T06:36:54Z", sample.GetProperty("sample_newest_utc").GetString());
+    }
+
+    private static RuntimeActivity ActivityAt(
+        string toolName, string status, long durationMs, DateTimeOffset startedAtUtc, string? error = null)
+        => new()
+        {
+            Trace = RuntimeTraceContext.CreateNew(sessionId: "session-1", workspaceId: "default"),
+            Component = RuntimeActivityComponents.ToolRunner,
+            Operation = $"tool.{toolName}",
+            Status = status,
+            DurationMs = durationMs,
+            ErrorMessage = error,
+            StartedAtUtc = startedAtUtc,
+            Metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["tool_name"] = toolName },
+        };
+
     private static RuntimeActivity Activity(
         string toolName, string status, long durationMs, string? error = null)
         => new()
