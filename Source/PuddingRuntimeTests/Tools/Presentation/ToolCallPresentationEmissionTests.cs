@@ -227,6 +227,44 @@ public sealed class ToolCallPresentationEmissionTests
             recorded[0].Metadata!.GetValueOrDefault("session_id"));
     }
 
+    /// <summary>
+    /// 失败分支必须落 <c>Failed</c> 活动并携带 <c>error_message</c>。
+    /// 成功用例守不住这里：把失败写成 <c>Succeeded</c>、或干脆不写，成功路径都仍然是绿的，
+    /// 而 <c>tool_stats</c> 会把真实失败计成成功、或静默不计。
+    /// </summary>
+    [TestMethod]
+    public async Task StreamingToolCall_FailureRecordsFailedToolRunnerActivity()
+    {
+        var activities = new RecordingActivitySink();
+        var tools = new StubToolInvocationService(
+            TerminalResultJson, success: false, error: "boom-from-stub");
+        var service = CreateService(
+            new ToolCallingLlmClient(
+                new LlmResponse(null, [new ToolCall("call-failed-activity", "terminal_start", TerminalStartArgs)]),
+                new LlmResponse("finished", null)),
+            tools,
+            activitySink: activities);
+
+        await DrainAsync(service.ExecuteStreamAsync(CreateDispatchRequest("session-tool-failed")));
+
+        var recorded = activities.Activities
+            .Where(a => a.Component == RuntimeActivityComponents.ToolRunner
+                        && a.Operation == "execute_tool")
+            .ToList();
+        Assert.HasCount(1, recorded, "失败的工具调用也必须恰好落一条 tool_runner 活动。");
+        Assert.AreEqual(RuntimeActivityStatuses.Failed, recorded[0].Status);
+        Assert.AreEqual(
+            "terminal_start",
+            recorded[0].Metadata!.GetValueOrDefault("tool_name"));
+        Assert.AreEqual(
+            "boom-from-stub",
+            recorded[0].Metadata!.GetValueOrDefault("error_message"),
+            "失败活动必须携带 error_message，否则诊断只能看到「失败了」而不知道原因。");
+        Assert.AreEqual(
+            "session-tool-failed",
+            recorded[0].Metadata!.GetValueOrDefault("session_id"));
+    }
+
     // ── Fixture ────────────────────────────────────────────────────────────
     private static async Task<List<ServerSentEventFrame>> DrainAsync(
         IAsyncEnumerable<ServerSentEventFrame> frames)
@@ -370,7 +408,8 @@ public sealed class ToolCallPresentationEmissionTests
                 : throw new InvalidOperationException("Scripted LLM exhausted: more rounds than scripted responses.");
     }
 
-    private sealed class StubToolInvocationService(string output) : IToolInvocationService
+    private sealed class StubToolInvocationService(string output, bool success = true, string? error = null)
+        : IToolInvocationService
     {
         public List<ToolInvocationRequest> Requests { get; } = [];
 
@@ -381,10 +420,11 @@ public sealed class ToolCallPresentationEmissionTests
             Requests.Add(request);
             return Task.FromResult(new ToolInvocationResult
             {
-                Success = true,
+                Success = success,
                 ToolCallId = request.ToolCallId,
                 ToolName = request.ToolName,
-                Output = output,
+                Output = success ? output : "",
+                Error = error,
             });
         }
     }
