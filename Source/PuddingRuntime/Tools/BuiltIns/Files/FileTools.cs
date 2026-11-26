@@ -401,7 +401,7 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
     /// </summary>
     internal static string DescribeMaxCharsTruncation(
         int maxChars, int windowStart, string truncatedContent, int? totalChars, int totalLines,
-        int? deliveredLines = null)
+        int? deliveredLines = null, bool firstLineTruncated = false)
     {
         // 2026-11-27：两道预算同时生效时，续读位置必须以**实际交付**为准。
         // 旧实现只用 MaxChars 截断点算续读（此时内容尚未过 inline 字节闸门），
@@ -415,7 +415,14 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
 
         // 2026-11-27：预算比首行还短时没有任何完整行交付，续读位置会原地不动 ——
         // 实测 max_chars=10 得到「continue with OffsetLines=0」，照做即得同一份回执（自我循环）。
-        // 这种情况下给出偏移等于给出死路，改为说明该怎么改预算。
+        // 这种情况下给出偏移等于给出死路。
+        // 2026-11-27：还要分开「预算比首行短」与「首行本身就超字节预算」两种情况 ——
+        // 后者下任何 max_chars 都取不到那一行。实测 max_chars=20000 对 20000 字节首行仍得到
+        // 「Raise max_chars to at least the length of one line」，而调用方已把预算给到等于行长，
+        // 照做只会原地循环；此时唯一真话是「这一行用本工具的任何参数都读不全」。
+        if (consumedLines == 0 && firstLineTruncated)
+            return $"(requested max_chars={maxChars} chars {scope}, but the first line of this window alone exceeds the {InlineBudgetBytes}-byte inline budget: no max_chars value can deliver it, and no argument of this tool resumes inside a line.)";
+
         if (consumedLines == 0)
             return $"(requested max_chars={maxChars} chars {scope}, but no complete line fits in that budget: the first line of this window is longer, so OffsetLines={windowStart} would return this same output again. Raise max_chars to at least the length of one line.)";
 
@@ -525,7 +532,8 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                     // 字节闸门先于 MaxChars 生效：续读位置改按实际交付的**完整**行数算（首行被切成半行时为 0）。
                     maxCharsNotice = DescribeMaxCharsTruncation(
                         args.MaxChars!.Value, windowStart, content, totalChars, totalLines,
-                        boundedSmall.FirstLineTruncated ? 0 : boundedSmall.EmittedLines);
+                        boundedSmall.FirstLineTruncated ? 0 : boundedSmall.EmittedLines,
+                        firstLineTruncated: boundedSmall.FirstLineTruncated);
                 }
                 var body = $"{meta}\n{boundedSmall.Body}";
                 if (maxCharsNotice is not null)
@@ -598,7 +606,8 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
             {
                 maxCharsNoticeLarge = DescribeMaxCharsTruncation(
                     args.MaxChars!.Value, windowStartLarge, windowContent, totalChars: null, totalLinesLarge,
-                    boundedLarge.FirstLineTruncated ? 0 : boundedLarge.EmittedLines);
+                    boundedLarge.FirstLineTruncated ? 0 : boundedLarge.EmittedLines,
+                    firstLineTruncated: boundedLarge.FirstLineTruncated);
             }
             var bodyLarge = $"{metaLarge}\n{boundedLarge.Body}";
             if (maxCharsNoticeLarge is not null)
