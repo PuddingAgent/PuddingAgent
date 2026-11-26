@@ -577,6 +577,103 @@ public sealed class FileReadToolTests
         StringAssert.Contains(result.Output, "beta");
     }
 
+    // Test 23: MaxChars is a budget on THIS window. The old implementation applied it to the
+    // whole file before the paging branches ran, so max_chars silently discarded OffsetLines.
+    // 2026-11-27.
+    [TestMethod]
+    public async Task MaxChars_WithOffset_TruncatesWindowNotFileHead()
+    {
+        var content = "line1\nline2\nline3\nline4\nline5\nline6\n";
+        var filePath = Path.Combine(_tempDir, "maxchars_offset.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["OffsetLines"] = 3,
+            ["LimitLines"] = 2,
+            ["MaxChars"] = 8
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "line4");
+        Assert.IsFalse(result.Output.Contains("line1"), result.Output);
+        StringAssert.Contains(result.Output, "truncated at 8 chars");
+        StringAssert.Contains(result.Output, "continue with OffsetLines=4+LimitLines");
+    }
+
+    // Test 24: a file above the guardrail thresholds used to skip MaxChars entirely — the
+    // guardrail returned its own preview and max_chars never took effect. MaxChars is itself
+    // an explicit output budget, so it must win over the automatic preview.
+    [TestMethod]
+    public async Task MaxChars_OnFileAboveGuardrail_DoesNotFallBackToGuardrail()
+    {
+        var lines = Enumerable.Range(1, 350).Select(i => $"row {i:D5} " + new string('z', 40));
+        var filePath = Path.Combine(_tempDir, "maxchars_guardrail.txt");
+        await File.WriteAllTextAsync(filePath, string.Join("\n", lines) + "\n", Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["MaxChars"] = 200
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "truncated at 200 chars");
+        Assert.IsFalse(result.Output.Contains("[GUARDRAIL:"), result.Output);
+    }
+
+    // Test 25: the same silence on the large-file streaming path — the arm that would break if
+    // the window were selected twice and only one copy honoured the paging arguments.
+    [TestMethod]
+    public async Task MaxChars_OnLargeFilePath_HonorsOffsetAndReportsContinuation()
+    {
+        var lines = Enumerable.Range(1, 4000).Select(i => $"line {i:D5} " + new string('y', 30));
+        var filePath = Path.Combine(_tempDir, "maxchars_large_offset.txt");
+        await File.WriteAllTextAsync(filePath, string.Join("\n", lines), Encoding.UTF8);
+
+        var fileInfo = new FileInfo(filePath);
+        Assert.IsTrue(
+            fileInfo.Length > FileChunkService.LargeFileByteThreshold,
+            $"File should exceed large-file byte threshold, got {fileInfo.Length}");
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["OffsetLines"] = 3500,
+            ["LimitLines"] = 5,
+            ["MaxChars"] = 50
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "line 03501");
+        Assert.IsFalse(result.Output.Contains("line 00001"), result.Output);
+        StringAssert.Contains(result.Output, "continue with OffsetLines=3501+LimitLines");
+    }
+
+    // Test 26: positive control — when the window fits the budget nothing is announced, so a
+    // notice that always fires cannot pass this suite.
+    [TestMethod]
+    public async Task MaxChars_WhenWindowFits_HasNoTruncationNotice()
+    {
+        var content = "alpha\nbeta\ngamma\n";
+        var filePath = Path.Combine(_tempDir, "maxchars_fits.txt");
+        await File.WriteAllTextAsync(filePath, content, Encoding.UTF8);
+
+        var tool = new FileReadTool(NullLogger<FileReadTool>.Instance, new FileChunkService());
+        var result = await ExecuteAsync(tool, filePath, new Dictionary<string, object?>
+        {
+            ["OffsetLines"] = 1,
+            ["MaxChars"] = 10_000
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsFalse(result.Output.Contains("truncated at"), result.Output);
+        Assert.IsFalse(result.Output.Contains("[GUARDRAIL:"), result.Output);
+        StringAssert.Contains(result.Output, "beta");
+        Assert.IsFalse(result.Output.Contains("alpha"), result.Output);
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(
         FileReadTool tool,
         string path,

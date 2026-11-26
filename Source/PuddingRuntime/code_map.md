@@ -1,6 +1,6 @@
 # PuddingRuntime CodeMAP
 
-> 源指纹: Source/PuddingRuntime/**=446-57201bfa83a7 · 条目数: 398 · 最近整理: 2026-11-22
+> 源指纹: Source/PuddingRuntime/**=446-adab6c4bd770 · 条目数: 398 · 最近整理: 2026-11-22
 > 定位：Agent 运行时核心（Agent Loop / LLM 调用 / 工具系统 / 上下文管线 / 子代理 / 后台学习）；.NET 10 类库，唯一服务注册入口 `DependencyInjection.cs`。
 > 本文件只做本项目文件级索引；跨项目调用链、测试工程索引、架构文档索引、运行时目录与构建入口只在根 [`code_map.md`](../../code_map.md)。
 > 每对象一行；空字段写 `—`。角色 `observe` 的对象只在文末附录列路径。
@@ -362,7 +362,7 @@
 | `Tools/BuiltIns/Files/FileMutationQueue.cs` | 同一文件写入的串行队列 | `FileMutationQueue` | `Tools/BuiltIns/Files/FilePatchTool.cs` | — |
 | `Tools/BuiltIns/Files/FilePatchTool.cs` | `file_patch`：文本文件的增量补丁 | `FilePatchTool` | `Tools/BuiltIns/Files/FileMutationQueue.cs` | 删除须显式空替换；行尾等价匹配；new_text 未带换行即删除；容忍歧义边界拒绝写入；预览 diff 按行对齐；scope 行范围按原文计偏移；无变化时上报结构化 status=no_match（成功态，与失败严格区分） |
 | `Tools/BuiltIns/Files/FileSearchTool.cs` | `file_search`：按文件名检索 | `FileSearchTool` | `Tools/BuiltIns/Search/SearchGrepTool.cs` | 无命中只在覆盖完整时输出；参数合同失败上报 contract_error（宿主可用性与目标不存在保持 null） |
-| `Tools/BuiltIns/Files/FileTools.cs` | 文件读写与目录列举工具集 | `HostFileToolPaths` | `Tools/BuiltIns/Files/FilePatchTool.cs` | 普通宿主执行由 AgentExecutionService 冻结工作目录（文件/Shell/插件导入共用）；夹取与越界不得静默：max_entries 走 MaxEntriesNotice，分页参数走 [PAGING]，且两条读取路径共用同一判据；META size 须带单位且与路径口径一致 |
+| `Tools/BuiltIns/Files/FileTools.cs` | 文件读写与目录列举工具集 | `HostFileToolPaths` | `Tools/BuiltIns/Files/FilePatchTool.cs` | AgentExecutionService 冻结工作目录（文件/Shell/插件共用）；夹取/越界不静默：max_entries→MaxEntriesNotice、分页→[PAGING]，两路共用判据；META size 带单位且口径一致；MaxChars 是窗口预算，先定窗再截顶并给续读 OffsetLines |
 | `Tools/BuiltIns/Files/MissingPathDiagnostics.cs` | 文件/目录未命中的诊断语补强 | `MissingPathDiagnostics` | `Tools/BuiltIns/Files/FileTools.cs` | 只补充已发生的事实（解析后的绝对路径、最深已存在祖先、缺失层数）；不猜意图、不做相似度联想；构造异常时原样返回原消息，不得把未命中升级为异常 |
 | `Tools/BuiltIns/Finance/BiyingFinanceTools.cs` | `biying_market` / `biying_financial`：行情与财报，含网关单例 | `BiyingFinanceRuntime` / `BiyingMarketQueryTool` | `../PuddingFinance/Biying/BiyingClient.cs` | 单例持有配额与缓存，调用时新建会静默重置；配置缺失只在调用时报错 |
 | `Tools/BuiltIns/Finance/BiyingRawHostTool.cs` | `biying_raw`：任意注册表端点直通，覆盖前四个工具之外的约 170 个 | `BiyingRawQueryTool` | `../PuddingFinance/Biying/BiyingRawTools.cs` | 端点白名单即 SSRF 边界；查询键校验统一在组件层实现，工具层不重复；默认只回 3 行 |

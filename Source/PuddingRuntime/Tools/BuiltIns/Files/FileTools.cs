@@ -193,7 +193,7 @@ internal static class HostFileToolPaths
 [Tool(
     id: "file_read",
     name: "Read file",
-    description: "从宿主工作区读取 UTF-8 文本文件。Read a UTF-8 text file from the host workspace. 单次返回恒不超过 8 KiB：无论用分页参数、FullFile 还是 MaxChars，超预算即按字节截断并给出可直接照抄的 OffsetLines 续读位置。优先渐进读取：用 OffsetLines+LimitLines 从指定行继续，或用 TailLines 读末尾。",
+    description: "从宿主工作区读取 UTF-8 文本文件。Read a UTF-8 text file from the host workspace. 单次返回恒不超过 8 KiB（inline 预算按字节）；MaxChars 是窗口内的字符预算——与分页参数叠加时先定窗口再截字符，截断回执给出可直接照抄的 OffsetLines 续读位置。优先渐进读取：用 OffsetLines+LimitLines 从指定行继续，或用 TailLines 读末尾。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -348,6 +348,23 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
         return notes.Count == 0 ? null : string.Join(" ", notes);
     }
 
+    /// <summary>
+    /// 2026-11-27：<c>MaxChars</c> 截断必须说清「截的是哪个窗口」并给出续读位置。
+    /// 旧文案只报「truncated at N chars, total T chars」，既没说是窗口内的 N 还是整个文件的 N，
+    /// 也没给续读 <c>OffsetLines</c>（工具描述却承诺给了）。
+    /// 续读位置按「已完整读过的换行数」算：截断点落在行中时，那一行会被重读一次而不会漏。
+    /// </summary>
+    internal static string DescribeMaxCharsTruncation(
+        int maxChars, int windowStart, string truncatedContent, int? totalChars, int totalLines)
+    {
+        var consumedLines = truncatedContent.Count(c => c == '\n');
+        var nextOffset = windowStart + consumedLines;
+        var scope = totalChars.HasValue
+            ? $"of this window; file has {totalChars.Value} chars / {totalLines} line(s)"
+            : $"of this window; file has {totalLines} line(s)";
+        return $"(truncated at {maxChars} chars {scope}; continue with OffsetLines={nextOffset}+LimitLines)";
+    }
+
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         FileReadArgs args, ToolExecutionContext context, CancellationToken ct)
     {
@@ -389,7 +406,9 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 var meta = $"[META: size={totalChars} chars / {fileInfo.Length} bytes, lines={totalLines}, encoding=utf-8]";
 
                 // Guardrail: auto-truncate large files when no explicit pagination or FullFile
-                var hasExplicitSlice = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue;
+                // 2026-11-27：MaxChars 本身就是调用方给的输出预算，等同显式分页——否则护栏先命中，
+                // MaxChars 整段作废（实测：502 行文件传 max_chars=300 只会拿到 [GUARDRAIL] 预览）。
+                var hasExplicitSlice = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue || args.MaxChars.HasValue;
                 if (!hasExplicitSlice && args.FullFile != true && (totalLines > 300 || fileInfo.Length > 8_192))
                 {
                     // 2026-08-22 模型倾向适配：窗口 120→400 行，减少同文件翻页重读。
@@ -403,12 +422,6 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 }
 
                 var windowStart = 0;
-                if (args.MaxChars.HasValue && totalChars > args.MaxChars.Value)
-                {
-                    content = content[..args.MaxChars.Value];
-                    return ToolExecutionResult.Ok(
-                        $"{meta}\n{BoundInlineBody(content, windowStart, out _)}\n... (truncated at {args.MaxChars.Value} chars, total {totalChars} chars, {totalLines} lines, encoding=utf-8)");
-                }
 
                 if (args.HeadLines.HasValue)
                 {
@@ -435,7 +448,20 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                     }
                 }
 
+                // 2026-11-27：MaxChars 是「本次窗口」的字符预算，必须在窗口选定之后施加。
+                // 旧实现把它排在分页分支之前直接 return，于是 max_chars 一旦触发截断，
+                // OffsetLines/LimitLines/HeadLines/TailLines 全部作废，回执从文件第一行开始。
+                string? maxCharsNotice = null;
+                if (args.MaxChars.HasValue && content.Length > args.MaxChars.Value)
+                {
+                    content = content[..args.MaxChars.Value];
+                    maxCharsNotice = DescribeMaxCharsTruncation(
+                        args.MaxChars.Value, windowStart, content, totalChars, totalLines);
+                }
+
                 var body = $"{meta}\n{BoundInlineBody(content, windowStart, out _)}";
+                if (maxCharsNotice is not null)
+                    body = $"{body}\n... {maxCharsNotice}";
                 var paging = DescribePagingAnomaly(
                     args.OffsetLines, args.LimitLines, args.HeadLines, args.TailLines, totalLines);
                 return ToolExecutionResult.Ok(paging is null ? body : $"{body}\n... [PAGING: {paging}]");
@@ -453,7 +479,7 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
             // Guardrail: auto-truncate large files when no explicit pagination or FullFile
             // 2026-08-22 模型倾向适配：模型心智是"整文件"，120 行窗口导致实测同文件
             // 重读 8 次。预览放大到 400 行：≤400 行文件一次覆盖，大文件翻页次数降 70%。
-            var hasExplicitSliceLarge = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue;
+            var hasExplicitSliceLarge = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue || args.MaxChars.HasValue;
             if (!hasExplicitSliceLarge && args.FullFile != true && (totalLinesLarge > 300 || fileInfo.Length > 8_192))
             {
                 var rawPreview = await _chunk.ReadChunkAsync(fullPath, 0, GuardrailPreviewLines, ct);
@@ -463,20 +489,6 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                     $"{metaLarge}\n{preview}\n... [GUARDRAIL: {totalLinesLarge} lines, {totalBytesLarge} bytes — showing first {takenLarge} lines ({Encoding.UTF8.GetByteCount(preview)} bytes, inline budget {InlineBudgetBytes}). Use OffsetLines={takenLarge}+LimitLines to continue from line {takenLarge + 1}, or TailLines for the end.]");
             }
 
-            // MaxChars requires full read for accurate char count — warn and truncate
-            if (args.MaxChars.HasValue)
-            {
-                _logger.LogWarning("[FileReadTool] large file {Path} ({Bytes} bytes) with MaxChars — full read required", args.Path, fileInfo.Length);
-                var fullContent = await File.ReadAllTextAsync(fullPath, Encoding.UTF8, ct);
-                var fullChars = fullContent.Length;
-                if (fullChars > args.MaxChars.Value)
-                {
-                    fullContent = fullContent[..args.MaxChars.Value];
-                    return ToolExecutionResult.Ok(
-                        $"{metaLarge}\n{BoundInlineBody(fullContent, 0, out _)}\n... (truncated at {args.MaxChars.Value} chars, total {fullChars} chars, {totalLinesLarge} lines, encoding=utf-8)");
-                }
-                return ToolExecutionResult.Ok($"{metaLarge}\n{BoundInlineBody(fullContent, 0, out _)}");
-            }
 
             var windowStartLarge = 0;
             string windowContent;
@@ -501,7 +513,21 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 windowContent = await _chunk.ReadChunkAsync(fullPath, 0, totalLinesLarge, ct);
             }
 
+            string? maxCharsNoticeLarge = null;
+            if (args.MaxChars.HasValue && windowContent.Length > args.MaxChars.Value)
+            {
+                // 大文件路径不再为「准确字符总数」整篇读入：窗口已由 chunk 读出，预算只作用于窗口。
+                _logger.LogWarning(
+                    "[FileReadTool] MaxChars truncated a large-file window path={Path} max_chars={Max}",
+                    args.Path, args.MaxChars.Value);
+                windowContent = windowContent[..args.MaxChars.Value];
+                maxCharsNoticeLarge = DescribeMaxCharsTruncation(
+                    args.MaxChars.Value, windowStartLarge, windowContent, totalChars: null, totalLinesLarge);
+            }
+
             var bodyLarge = $"{metaLarge}\n{BoundInlineBody(windowContent, windowStartLarge, out _)}";
+            if (maxCharsNoticeLarge is not null)
+                bodyLarge = $"{bodyLarge}\n... {maxCharsNoticeLarge}";
             var pagingLarge = DescribePagingAnomaly(
                 args.OffsetLines, args.LimitLines, args.HeadLines, args.TailLines, totalLinesLarge);
             return ToolExecutionResult.Ok(pagingLarge is null ? bodyLarge : $"{bodyLarge}\n... [PAGING: {pagingLarge}]");
