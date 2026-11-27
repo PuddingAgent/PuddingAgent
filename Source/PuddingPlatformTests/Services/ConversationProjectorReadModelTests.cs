@@ -283,6 +283,76 @@ public sealed class ConversationProjectorReadModelTests
 
     // ── helpers ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// 投影必须把 agent 归属带到 ChatMessages：事件本身不带身份，真源是受理命令
+    /// （chat_execution_commands），按 turn_id 解析。
+    /// </summary>
+    [TestMethod]
+    public async Task ProjectAsync_ProjectsAgentIdentityFromAcceptanceCommand()
+    {
+        await using var temp = TempProjectorDb.Create();
+        await using (var db = new PlatformDbContext(temp.Options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            db.ChatExecutionCommands.Add(new ChatExecutionCommandEntity
+            {
+                CommandId = "cmd-1",
+                BatchId = "batch-1",
+                WorkspaceId = "ws",
+                SessionId = "conv-1",
+                MessageId = "msg-1",
+                UserMessageId = "user-msg-1",
+                TurnId = "turn-1",
+                AgentInstanceId = "agent-alpha",
+                Status = "running",
+                CreatedAt = 1,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var store = FakeStore(
+            Event(1, ConversationEventTypes.TurnStarted, runId: "run-1"),
+            Event(2, ConversationEventTypes.TurnCompleted, messageId: "assistant-msg-1", payloadJson: """{"reply":"hi"}"""));
+        var projector = NewProjector(temp, store);
+
+        var result = await projector.ProjectAsync("conv-1");
+
+        Assert.IsNull(result.Error);
+        Assert.AreEqual(1, result.ProjectedCount);
+
+        await using var verify = new PlatformDbContext(temp.Options);
+        var message = await verify.ChatMessages.SingleAsync();
+        Assert.AreEqual("assistant-msg-1", message.MessageId);
+        Assert.AreEqual("turn-1", message.TurnId);
+        Assert.AreEqual("agent-alpha", message.AgentInstanceId,
+            "投影必须从受理命令回填 agent 归属，而不是留空");
+    }
+
+    /// <summary>
+    /// 负向对照：没有受理命令时按“无归属”降级，投影不能因此失败。
+    /// </summary>
+    [TestMethod]
+    public async Task ProjectAsync_WithoutAcceptanceCommand_LeavesAgentIdentityEmpty()
+    {
+        await using var temp = TempProjectorDb.Create();
+        await using (var db = new PlatformDbContext(temp.Options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var store = FakeStore(
+            Event(1, ConversationEventTypes.TurnStarted, runId: "run-1"),
+            Event(2, ConversationEventTypes.TurnCompleted, messageId: "assistant-msg-1", payloadJson: """{"reply":"hi"}"""));
+        var projector = NewProjector(temp, store);
+
+        var result = await projector.ProjectAsync("conv-1");
+
+        Assert.IsNull(result.Error);
+        await using var verify = new PlatformDbContext(temp.Options);
+        var message = await verify.ChatMessages.SingleAsync();
+        Assert.AreEqual(string.Empty, message.AgentInstanceId);
+    }
+
     private static ConversationProjector NewProjector(TempProjectorDb temp, IConversationEventStore store)
     {
         var services = new ServiceCollection().BuildServiceProvider();

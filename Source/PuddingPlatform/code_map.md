@@ -1,5 +1,5 @@
 # PuddingPlatform CodeMAP
-> 源指纹: Source/PuddingPlatform/**=663-5c3dc8321ac5 · 条目数: 274 · 最近整理: 2026-11-22
+> 源指纹: Source/PuddingPlatform/**=663-b2af05b0666a · 条目数: 274 · 最近整理: 2026-11-22
 
 > 平台层 | Session 管理 · API · EF Core 持久化 · 消息网关
 
@@ -351,7 +351,7 @@ per-key 连续 deferred 计数与退避档属 Agent 侧诊断（`classifier_stat
 | `Services/TokenUsageRecorder.cs` | Token 用量记录与层级诊断 | `TokenUsageRecorder` | `Data/Entities/LlmGatewayUsageEventEntity.cs` | 持久化 parent/sub-agent 身份与零基 round；prefix-v2 归因 history_anchor_changed 与 serialization_version_changed；不复制 prompt 正文 |
 | `Services/CacheDiagnosticsService.cs` | 会话级 Cache Miss Inspector 后端 | `CacheDiagnosticsService` | `Services/TokenUsageEventRepository.cs` | 汇总 token-weighted hit/miss、prefix churn、首次变化原因与逐轮事实 |
 | `Services/GoodputAttributionService.cs` | Goodput 归因聚合（只读） | `GoodputAttributionService`、`UsageAttribution.Parse`、`PricingClassifier` | `Controllers/Api/StatsApiController.cs` | TraceId 中段→goal_iterations/execution_runs 归因；零成本却非零 token 不得当节省 |
-| `Services/ConversationProjector.cs` | Conversation Event 增量投影（消息+读模型+checkpoint 同事务；陈旧 checkpoint 恢复） | `ConversationProjector` | `Services/AgentChat/ConversationReadModelProjectionStore.cs` | 单事务提交消息/摘要/read_state/checkpoint；读模型落后时补放尾部；usage/catalog/索引在 commit 后；指纹补记保留 |
+| `Services/ConversationProjector.cs` | Conversation Event 增量投影（消息+读模型+checkpoint 同事务；陈旧 checkpoint 恢复） | `ConversationProjector` | `Services/AgentChat/ConversationReadModelProjectionStore.cs` | 单事务提交；读模型落后补放尾部；usage/catalog/索引在 commit 后；agent 归属按 turn_id 从 `chat_execution_commands` 回填，无命令留空 |
 | `Services/TokenUsageEventRepository.cs` | Token 事件持久化与诊断查询 | `TokenUsageEventRepository` | `Services/ConversationProjector.cs` | 向 Runtime 返回 Core 诊断 DTO |
 | `Services/LlmGatewayUsageRecorder.cs` | Provider 成功边界逐请求计费账本 | `LlmGatewayUsageRecorder` | `Data/Entities/LlmGatewayUsageEventEntity.cs` | 与会话归因投影解耦 |
 | `Data/Entities/LlmGatewayUsageEventEntity.cs` | 本地计费事实实体 | `LlmGatewayUsageEventEntity` | `Services/LlmGatewayUsageRecorder.cs` | 表 llm_gateway_usage_events；sourceId 唯一 |

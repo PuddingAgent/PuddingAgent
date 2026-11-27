@@ -70,6 +70,10 @@ public sealed class ConversationProjector(
                     affectedTurnIds.Add(input.TurnId);
             }
 
+            // 转录的 agent 归属：事件本身不携带身份（conversation_events.agent_id 实测恒空），
+            // 受理命令 chat_execution_commands 才是唯一真源；按 turn_id 一次性解析，避免逐条查询。
+            var turnAgents = await ResolveTurnAgentsAsync(db, affectedTurnIds, ct);
+
             var lastSequence = batch.Events[^1].Sequence;
             var now = DateTimeOffset.UtcNow;
             var projectedCount = 0;
@@ -90,6 +94,11 @@ public sealed class ConversationProjector(
                         if (content is null && usage is null)
                             continue;
 
+                        var agentForTurn = evt.TurnId is { Length: > 0 } turnKey
+                            && turnAgents.TryGetValue(turnKey, out var resolvedAgent)
+                                ? resolvedAgent
+                                : null;
+
                         var entity = await transcriptWriter.PersistMessageInTransactionAsync(
                             db,
                             sessionId: conversationId,
@@ -99,6 +108,7 @@ public sealed class ConversationProjector(
                             thinkingJson: thinking,
                             usageJson: usage,
                             workspaceId: evt.WorkspaceId,
+                            agentInstanceId: agentForTurn,
                             messageId: evt.MessageId,
                             turnId: evt.TurnId,
                             commandId: evt.CommandId,
@@ -366,6 +376,41 @@ public sealed class ConversationProjector(
         }
 
         return query;
+    }
+
+    /// <summary>
+    /// 解析本批次涉及的 turn → agent 归属。
+    /// 事件（conversation_events）本身不落 agent 身份（实测 agent_id 恒空），受理命令
+    /// chat_execution_commands 才是唯一真源；一个批次只查一次，缺失时返回空字典，
+    /// 调用方按“无归属”降级，不阻断投影。
+    /// </summary>
+    private static async Task<Dictionary<string, string>> ResolveTurnAgentsAsync(
+        PlatformDbContext db,
+        IEnumerable<string> turnIds,
+        CancellationToken ct)
+    {
+        var ids = turnIds as IReadOnlyCollection<string> ?? turnIds.Distinct(StringComparer.Ordinal).ToList();
+        if (ids.Count == 0)
+            return new(StringComparer.Ordinal);
+
+        var rows = await db.ChatExecutionCommands
+            .AsNoTracking()
+            .Where(command => command.AgentInstanceId != string.Empty
+                && command.TurnId != string.Empty
+                && ids.Contains(command.TurnId))
+            .Select(command => new { command.TurnId, command.AgentInstanceId })
+            .ToListAsync(ct);
+
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var row in rows)
+        {
+            if (string.IsNullOrWhiteSpace(row.TurnId) || string.IsNullOrWhiteSpace(row.AgentInstanceId))
+                continue;
+            // 同一 turn 正常只有一个命令；若出现重复，保留先读到的一条，与“首次受理为准”一致。
+            map.TryAdd(row.TurnId, row.AgentInstanceId);
+        }
+
+        return map;
     }
 
     private static (string role, string? content, string? thinking, string? usage) ExtractFields(ConversationEvent evt)
